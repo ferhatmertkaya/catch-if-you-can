@@ -1,0 +1,30 @@
+CATCH IF YOU CAN — iOS Deploy Paket v2
+======================================
+
+Dein Fehler "Unity 6.3 LTS nicht gefunden" bedeutet:
+Unity ist auf dem Mac noch nicht installiert (oder nicht unter
+/Applications/Unity/Hub/Editor/).
+
+SCHNELLSTART
+------------
+1) Unity Hub + Unity 6.3 LTS + Modul "iOS Build Support" installieren
+   https://unity.com/download
+
+2) Im Finder Doppelklick:
+   CatchIfYouCan/START_HERE_MAC.command
+   (beim ersten Mal: Rechtsklick → Öffnen)
+
+ODER Terminal:
+   cd CatchIfYouCan
+   chmod +x BuildIOS.sh OpenInUnity.sh START_HERE_MAC.command
+   ./BuildIOS.sh
+
+3) Wenn der Auto-Build scheitert:
+   ./OpenInUnity.sh
+   In Unity: Catch If You Can → Setup Project
+             Catch If You Can → Build iOS
+
+4) Xcode: Builds/iOS öffnen → Team → Run auf iPhone
+   Bundle ID: com.catchifyoucan.game
+
+Details: CatchIfYouCan/DEPLOY_IOS.md
