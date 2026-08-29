@@ -342,28 +342,42 @@ is the manifest.
 | `com.unity.textmeshpro` 3.0.9 | **Removed** | From Unity 6 TMP ships inside `com.unity.ugui` 2.0.0 under the same `Unity.TextMeshPro` assembly name, so `using TMPro;` in `UITheme`/`RuntimeUIFactory` and the reflection lookup in `RuntimeUIFactory` both still resolve. The standalone package is legacy and conflicts |
 | `com.unity.addressables` 2.4.3 | **Removed** | **Provably unused** — zero references in any tracked file except two markdown mentions: no code, no asmdef, no `AddressableAssetSettings`, nothing orphaned. Removing it eliminates one of the three errors outright, which is a smaller change than upgrading it |
 
-### Still blocked — needs versions only the Editor can supply
+### Upgraded to the Editor's own versions
 
-`com.unity.ai.navigation`, `com.unity.inputsystem` and
-`com.unity.render-pipelines.universal` must be **updated**, not removed:
+Read from the installed 6000.5.10f1 Editor's recommended-version manifest (§10,
+Path B) — not guessed, and not taken from any registry:
+
+| Package | Was | Now |
+|---|---|---|
+| `com.unity.inputsystem` | 1.14.0 | **1.20.0** |
+| `com.unity.ai.navigation` | 2.0.7 | **2.0.14** |
+| `com.unity.render-pipelines.universal` | 17.1.0 | **17.5.0** |
+| `com.unity.ugui` | 2.0.0 | **2.5.0** |
+
+The Editor manifest records `com.unity.inputsystem` as
+`"minimumVersion": "1.20.0"`, `"mustBeBundled": true` — so 1.14.0 was below a hard
+floor, which is exactly the reported `TreeView`/`TreeViewItem`/`TreeViewState`
+breakage. It also marks `com.unity.textmeshpro` deprecated with
+`removeOnProjectUpgrade`, independently confirming the removal above; uGUI 2.5.0
+now supplies TMP.
+
+These three could not be removed instead of upgraded:
 
 - **`com.unity.inputsystem`** — `EventSystemUtil.cs` uses
   `UnityEngine.InputSystem.UI` behind `#if ENABLE_INPUT_SYSTEM`. Removal would
-  compile, but it would drop `InputSystemUIInputModule` from a touch-first game
-  and orphan `CIYCInputActions.inputactions`. That is a gameplay change, which
-  this pass is not permitted to make.
-- **`com.unity.ai.navigation`** — used by reflection only
-  (`NavMeshRuntimeBuilder`), with a working fallback to the built-in
-  `NavMeshBuilder`. Removal would compile but silently downgrade navigation
-  quality.
-- **`com.unity.render-pipelines.universal` 17.1.0** — SRP packages are locked to
-  the Editor; 17.1.x belongs to the Unity 6.0/6.1 line.
+  compile, but would drop `InputSystemUIInputModule` from a touch-first game and
+  orphan `CIYCInputActions.inputactions`. That is a gameplay change.
+- **`com.unity.ai.navigation`** — reflection-only in `NavMeshRuntimeBuilder` with
+  a working fallback to the built-in `NavMeshBuilder`. Removal would compile but
+  silently downgrade navigation quality.
+- **`com.unity.render-pipelines.universal`** — SRP packages are editor-locked.
 
-The correct versions were **not guessed**. Unity's package registry
-(`packages.unity.com`) and docs are unreachable from the environment that
-prepared this migration, and inventing version numbers would either fail to
-resolve or reproduce Safe Mode on the next attempt. See §10 for how to obtain
-them authoritatively.
+### Not upgraded
+
+`com.unity.test-framework` 1.4.5 is left alone: it is not implicated in any
+reported error, and this pass changes only what compatibility requires. If the
+Editor bundles a different version it will say so — check its entry in the same
+Editor manifest if the EditMode tests fail to appear (§4).
 
 ### Unchanged, deliberately
 
@@ -376,12 +390,12 @@ and send both. That diff is the authoritative compatibility record.
 
 ---
 
-## 10. Recovering the remaining package versions
+## 10. How package versions were resolved (and how to do it again)
 
-Two ways to get authoritative numbers for `com.unity.inputsystem`,
-`com.unity.ai.navigation` and `com.unity.render-pipelines.universal`. Both use
-the installed Editor as the source of truth. Package Manager works in Safe Mode —
-that is what Safe Mode is for.
+Resolved for this migration via Path B. Kept because the same method applies to
+every future Editor upgrade: **the installed Editor is the source of truth**, not
+a registry and not memory. Package Manager works in Safe Mode — that is what Safe
+Mode is for.
 
 ### Path A — let Unity resolve (fastest)
 
