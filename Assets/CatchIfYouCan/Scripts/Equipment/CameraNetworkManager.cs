@@ -41,11 +41,11 @@ namespace CatchIfYouCan.Equipment
             if (_cameras.Count == 0)
                 return;
 
-            if (Input.GetKeyDown(nextCameraKey))
+            if (UnityEngine.Input.GetKeyDown(nextCameraKey))
                 SelectNext();
-            if (Input.GetKeyDown(previousCameraKey))
+            if (UnityEngine.Input.GetKeyDown(previousCameraKey))
                 SelectPrevious();
-            if (Input.GetKeyDown(nightVisionKey))
+            if (UnityEngine.Input.GetKeyDown(nightVisionKey))
                 ToggleNightVision();
 
             UpdateSignalDistortion();

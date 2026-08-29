@@ -60,7 +60,7 @@ namespace CatchIfYouCan.Graphics
             }
             else
             {
-                QualitySettings.shadows = shadows ? ShadowQuality.All : ShadowQuality.Disable;
+                QualitySettings.shadows = shadows ? UnityEngine.ShadowQuality.All : UnityEngine.ShadowQuality.Disable;
                 QualitySettings.pixelLightCount = profile switch
                 {
                     GraphicsProfile.Low => 1,

@@ -53,7 +53,7 @@ namespace CatchIfYouCan.Equipment
         {
             if (!_awaitingResponse)
             {
-                if (Input.GetKeyDown(KeyCode.Tab))
+                if (UnityEngine.Input.GetKeyDown(KeyCode.Tab))
                     CycleQuestion();
                 return;
             }

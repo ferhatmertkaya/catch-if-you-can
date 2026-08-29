@@ -95,7 +95,7 @@ namespace CatchIfYouCan.Player
 
             _controller.Move(move * speed * Time.deltaTime);
 
-            if (jumpHeight > 0f && IsGrounded && Input.GetButtonDown("Jump"))
+            if (jumpHeight > 0f && IsGrounded && UnityEngine.Input.GetButtonDown("Jump"))
                 _velocity.y = Mathf.Sqrt(jumpHeight * -2f * gravity);
 
             _velocity.y += gravity * Time.deltaTime;

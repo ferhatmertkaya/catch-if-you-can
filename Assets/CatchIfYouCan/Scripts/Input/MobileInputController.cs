@@ -64,7 +64,7 @@ namespace CatchIfYouCan.Input
 
         private void ProcessKeyboardLook()
         {
-            if (_blockLookThisFrame || Input.touchCount > 0 || _lookFingerId >= 0)
+            if (_blockLookThisFrame || UnityEngine.Input.touchCount > 0 || _lookFingerId >= 0)
                 return;
 
             float mouseX = UnityEngine.Input.GetAxis("Mouse X");
@@ -99,7 +99,7 @@ namespace CatchIfYouCan.Input
                 return;
             }
 
-            if (Input.touchCount == 0)
+            if (UnityEngine.Input.touchCount == 0)
             {
                 _lookFingerId = -1;
                 return;
@@ -107,9 +107,9 @@ namespace CatchIfYouCan.Input
 
             if (_lookFingerId >= 0)
             {
-                for (int i = 0; i < Input.touchCount; i++)
+                for (int i = 0; i < UnityEngine.Input.touchCount; i++)
                 {
-                    Touch touch = Input.GetTouch(i);
+                    Touch touch = UnityEngine.Input.GetTouch(i);
                     if (touch.fingerId != _lookFingerId)
                         continue;
 
@@ -130,9 +130,9 @@ namespace CatchIfYouCan.Input
                 _lookFingerId = -1;
             }
 
-            for (int i = 0; i < Input.touchCount; i++)
+            for (int i = 0; i < UnityEngine.Input.touchCount; i++)
             {
-                Touch touch = Input.GetTouch(i);
+                Touch touch = UnityEngine.Input.GetTouch(i);
                 if (touch.phase != TouchPhase.Began)
                     continue;
 
@@ -182,11 +182,11 @@ namespace CatchIfYouCan.Input
             if (EventSystem.current == null)
                 return false;
 
-            if (Input.touchCount > 0)
+            if (UnityEngine.Input.touchCount > 0)
             {
-                for (int i = 0; i < Input.touchCount; i++)
+                for (int i = 0; i < UnityEngine.Input.touchCount; i++)
                 {
-                    if (EventSystem.current.IsPointerOverGameObject(Input.GetTouch(i).fingerId))
+                    if (EventSystem.current.IsPointerOverGameObject(UnityEngine.Input.GetTouch(i).fingerId))
                         return true;
                 }
                 return false;

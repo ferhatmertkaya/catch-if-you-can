@@ -1,5 +1,6 @@
 using System.Collections;
 using CatchIfYouCan.Audio;
+using CatchIfYouCan.Content;
 using CatchIfYouCan.Core;
 using CatchIfYouCan.Equipment;
 using CatchIfYouCan.Evidence;

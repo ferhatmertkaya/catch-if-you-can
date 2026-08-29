@@ -43,14 +43,14 @@ namespace CatchIfYouCan.Equipment
             if (!IsEquipped || viewCamera == null)
                 return;
 
-            float scroll = Input.GetAxis("Mouse ScrollWheel");
+            float scroll = UnityEngine.Input.GetAxis("Mouse ScrollWheel");
             if (Mathf.Abs(scroll) > 0.001f)
             {
                 _currentZoom = Mathf.Clamp(_currentZoom - scroll * zoomSpeed, maxZoom, minZoom);
                 viewCamera.fieldOfView = _currentZoom;
             }
 
-            if (Input.GetKeyDown(KeyCode.N))
+            if (UnityEngine.Input.GetKeyDown(KeyCode.N))
                 SetNightVision(!_nightVisionOn);
         }
 

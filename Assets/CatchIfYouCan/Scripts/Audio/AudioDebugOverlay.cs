@@ -20,7 +20,7 @@ namespace CatchIfYouCan.Audio
 
         private void Update()
         {
-            if (Input.GetKeyDown(toggleKey))
+            if (UnityEngine.Input.GetKeyDown(toggleKey))
                 visible = !visible;
         }
 

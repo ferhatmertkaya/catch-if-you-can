@@ -43,13 +43,13 @@ namespace CatchIfYouCan.Equipment
             if (ActiveInstance == null || !ActiveInstance.IsEquipped)
                 return;
 
-            if (Input.GetKeyDown(useKey))
+            if (UnityEngine.Input.GetKeyDown(useKey))
                 ActiveInstance.Use();
 
-            if (Input.GetKeyDown(placeKey))
+            if (UnityEngine.Input.GetKeyDown(placeKey))
                 TryPlaceActive();
 
-            if (Input.GetKeyDown(dropKey))
+            if (UnityEngine.Input.GetKeyDown(dropKey))
                 DropActive();
         }
 

@@ -211,7 +211,7 @@ namespace CatchIfYouCan.UI
         public static RuntimeUIBuildResult BuildCompleteUI()
         {
             var canvas = BuildRootCanvas("RuntimeUI", out _);
-            Object.DontDestroyOnLoad(canvas.gameObject);
+            UnityEngine.Object.DontDestroyOnLoad(canvas.gameObject);
 
             var result = new RuntimeUIBuildResult { Canvas = canvas };
 
@@ -415,7 +415,7 @@ namespace CatchIfYouCan.UI
                 return;
 
             var inputGo = new GameObject("MobileInputController");
-            Object.DontDestroyOnLoad(inputGo);
+            UnityEngine.Object.DontDestroyOnLoad(inputGo);
             var input = inputGo.AddComponent<MobileInputController>();
 
             var joystickGo = new GameObject("MoveJoystick", typeof(RectTransform));
@@ -485,6 +485,8 @@ namespace CatchIfYouCan.UI
             var contentRect = content.GetComponent<RectTransform>();
             contentRect.offsetMax = new Vector2(0, -80);
 
+            var closeButton = CreateButton(panel.transform, "CLOSE", null, false, 44);
+
             journal.BindRuntime(
                 slidePanel: panel.GetComponent<RectTransform>(),
                 tabButtons: new[]
@@ -496,12 +498,12 @@ namespace CatchIfYouCan.UI
                     CreateButton(tabs.transform, "OBJECTIVES", null, false, 40)
                 },
                 contentParent: content.transform,
-                closeButton: CreateButton(panel.transform, "CLOSE", null, false, 44));
+                closeButton: closeButton);
 
             if (journal.GetComponent<JournalAudio>() == null)
                 journal.gameObject.AddComponent<JournalAudio>();
 
-            Position(journal.CloseButton.gameObject, 0.02f, 0.02f, 0.2f, 0.08f);
+            Position(closeButton.gameObject, 0.02f, 0.02f, 0.2f, 0.08f);
         }
 
         private static void WirePause(PauseMenuUI pause, Transform root)
@@ -547,15 +549,17 @@ namespace CatchIfYouCan.UI
             scroll.content = inner.GetComponent<RectTransform>();
             scroll.horizontal = false;
 
+            var closeButton = CreateButton(root, "CLOSE", null, false, 48);
+
             settings.BindRuntime(
                 gameplayTab: CreateButton(tabs.transform, "GAMEPLAY", null, false, 40),
                 graphicsTab: CreateButton(tabs.transform, "GRAPHICS", null, false, 40),
                 audioTab: CreateButton(tabs.transform, "AUDIO", null, false, 40),
                 accessibilityTab: CreateButton(tabs.transform, "ACCESSIBILITY", null, false, 40),
                 contentParent: inner.transform,
-                closeButton: CreateButton(root, "CLOSE", null, false, 48));
+                closeButton: closeButton);
 
-            Position(settings.CloseButton.gameObject, 0.4f, 0.02f, 0.6f, 0.1f);
+            Position(closeButton.gameObject, 0.4f, 0.02f, 0.6f, 0.1f);
         }
 
         private static void WireMissionResult(MissionResultUI ui, Transform root)
@@ -659,7 +663,7 @@ namespace CatchIfYouCan.UI
         private static void WireDebugMenu(DebugMenuUI ui, Transform root)
         {
             Position(root.gameObject, 0.02f, 0.02f, 0.35f, 0.55f);
-            var layout = root.AddComponent<VerticalLayoutGroup>();
+            var layout = root.gameObject.AddComponent<VerticalLayoutGroup>();
             layout.spacing = 4;
             layout.padding = new RectOffset(8, 8, 8, 8);
             ui.BindRuntime(
