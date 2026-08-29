@@ -16,7 +16,7 @@ Built for **Unity 6.5 (6000.5.10f1)** with **URP**, C#, landscape orientation, a
 1. Clone or copy the `CatchIfYouCan` folder.
 2. Open Unity Hub → **Add** → select `CatchIfYouCan`.
 3. Open with Unity 6000.5.10f1.
-4. Wait for package resolve (URP, Input System, AI Navigation, Addressables, TextMeshPro).
+4. Wait for package resolve (URP, Input System, AI Navigation; TextMeshPro now ships inside uGUI).
 5. Menu: **Catch If You Can → Setup Project** (includes CC0 asset integration)
 6. Optional: **Catch If You Can → Integrate External Assets** (rebuild prefabs from bundled Kenney/Quaternius models)
 7. Open scene `Assets/CatchIfYouCan/Scenes/00_Boot.unity` and press Play.

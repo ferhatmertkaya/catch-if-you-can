@@ -48,7 +48,7 @@ replace one fabricated value with another, the line is omitted so **the real
 6000.5.10f1 Editor writes the true revision on first import**.
 
 That is expected and wanted. After the first open, `ProjectVersion.txt` will gain
-a second line — commit it (§10, step 8).
+a second line — commit it (§11, step 9).
 
 Unity Hub resolves `6000.5.10f1` by version string and does not need the
 revision. **If Hub does not offer `6000.5.10f1`, stop and tell us** rather than
@@ -200,7 +200,7 @@ Checks all 24 committed entries (12 seeds × 2 maps) in `GoldenSeedTable.cs`.
 >
 > **Do not run *Generate Golden Seeds*.** That overwrites the only evidence.
 > **Do not bump `GenerationVersion`.** It marks deliberate algorithm changes, and
-> this would not be one. Capture the output and send it (§11).
+> this would not be one. Capture the output and send it (§12).
 
 Related items on the same menu: *Compare Two Layouts* (first authoritative
 difference between two seeds, with per-section hashes), *Print Layout Report*,
@@ -323,50 +323,126 @@ Run the Investigation scene once per platform with the pin in place:
 
 ## 9. Package compatibility review
 
-`Packages/manifest.json` was **deliberately not edited** by the migration. Unity
-resolves editor-locked packages itself on first import; hand-pinning versions for
-an Editor nobody has run would be guessing.
+**First-open on 6000.5.10f1 failed: the project entered Safe Mode.** Every error
+was inside `Library/PackageCache`, none in `Assets/CatchIfYouCan/Scripts`:
 
-| Package | Pinned | Assessment |
+| Package | Error |
+|---|---|
+| `com.unity.addressables` 2.4.3 | `CS0619` `Object.GetInstanceID()` obsolete, use `GetEntityId` |
+| `com.unity.ai.navigation` 2.0.7 | `CS0619` `Object.GetInstanceID()` obsolete, use `GetEntityId` |
+| `com.unity.inputsystem` 1.14.0 | `CS0619` legacy `TreeView` / `TreeViewItem` / `TreeViewState` obsolete |
+
+`Library/PackageCache` is generated data and must never be hand-patched. The fix
+is the manifest.
+
+### Applied
+
+| Package | Action | Why |
 |---|---|---|
-| `com.unity.render-pipelines.universal` | `17.1.0` | **Will be auto-upgraded.** SRP packages are locked to the Editor version; 17.1.x belongs to Unity 6.0/6.1. Let Unity resolve it, then commit the result. Do not hand-edit |
-| `com.unity.textmeshpro` | `3.0.9` | **Migration concern — verify first.** From Unity 6, TextMeshPro ships inside `com.unity.ugui` 2.0.0; the standalone package is legacy. Listing both can produce a resolution conflict or a silent drop. If Unity reports a conflict, removing this entry is the fix — TMP still comes from uGUI. **This predates the migration** (it was already listed alongside uGUI 2.0.0 on the 6000.3 baseline) |
-| `com.unity.ugui` | `2.0.0` | Unity 6 line; expected to carry TMP |
-| `com.unity.addressables` | `2.4.3` | Independently versioned. Not upgraded blindly |
-| `com.unity.ai.navigation` | `2.0.7` | Independently versioned. Used by `NavMeshRuntimeBuilder` via reflection (`Unity.AI.Navigation.NavMeshSurface`) — if the type moved, the builder falls back to `NavMeshBuilder`. Worth watching in the Console |
-| `com.unity.inputsystem` | `1.14.0` | Independently versioned |
-| `com.unity.test-framework` | `1.4.5` | Required by §4. If Unity forces a newer one, that is fine — confirm the EditMode tests still appear |
-| `com.unity.modules.*` | `1.0.0` | Built-in modules; always `1.0.0`, editor-locked. No action |
+| `com.unity.textmeshpro` 3.0.9 | **Removed** | From Unity 6 TMP ships inside `com.unity.ugui` 2.0.0 under the same `Unity.TextMeshPro` assembly name, so `using TMPro;` in `UITheme`/`RuntimeUIFactory` and the reflection lookup in `RuntimeUIFactory` both still resolve. The standalone package is legacy and conflicts |
+| `com.unity.addressables` 2.4.3 | **Removed** | **Provably unused** — zero references in any tracked file except two markdown mentions: no code, no asmdef, no `AddressableAssetSettings`, nothing orphaned. Removing it eliminates one of the three errors outright, which is a smaller change than upgrading it |
 
-**After first import, diff `Packages/manifest.json`** and report what Unity
-changed. That diff is the real compatibility answer; the table above is the
-prediction to check it against.
+### Still blocked — needs versions only the Editor can supply
+
+`com.unity.ai.navigation`, `com.unity.inputsystem` and
+`com.unity.render-pipelines.universal` must be **updated**, not removed:
+
+- **`com.unity.inputsystem`** — `EventSystemUtil.cs` uses
+  `UnityEngine.InputSystem.UI` behind `#if ENABLE_INPUT_SYSTEM`. Removal would
+  compile, but it would drop `InputSystemUIInputModule` from a touch-first game
+  and orphan `CIYCInputActions.inputactions`. That is a gameplay change, which
+  this pass is not permitted to make.
+- **`com.unity.ai.navigation`** — used by reflection only
+  (`NavMeshRuntimeBuilder`), with a working fallback to the built-in
+  `NavMeshBuilder`. Removal would compile but silently downgrade navigation
+  quality.
+- **`com.unity.render-pipelines.universal` 17.1.0** — SRP packages are locked to
+  the Editor; 17.1.x belongs to the Unity 6.0/6.1 line.
+
+The correct versions were **not guessed**. Unity's package registry
+(`packages.unity.com`) and docs are unreachable from the environment that
+prepared this migration, and inventing version numbers would either fail to
+resolve or reproduce Safe Mode on the next attempt. See §10 for how to obtain
+them authoritatively.
+
+### Unchanged, deliberately
+
+`com.unity.test-framework` 1.4.5, `com.unity.ugui` 2.0.0, and every
+`com.unity.modules.*` (built-in, always `1.0.0`, editor-locked). Not upgraded
+blindly.
+
+**After the next import, diff `Packages/manifest.json` and `packages-lock.json`**
+and send both. That diff is the authoritative compatibility record.
 
 ---
 
-## 10. First-open checklist
+## 10. Recovering the remaining package versions
+
+Two ways to get authoritative numbers for `com.unity.inputsystem`,
+`com.unity.ai.navigation` and `com.unity.render-pipelines.universal`. Both use
+the installed Editor as the source of truth. Package Manager works in Safe Mode —
+that is what Safe Mode is for.
+
+### Path A — let Unity resolve (fastest)
+
+1. Close Unity.
+2. `git pull` (removes the two dead packages).
+3. Delete `Packages/packages-lock.json` — it pins the old resolution and will
+   otherwise fight the manifest.
+4. Reopen in **6000.5.10f1**. Expect Safe Mode again: the remaining three are
+   still on incompatible versions.
+5. **Window → Package Manager → In Project**. Each of the three shows an update
+   arrow; take the version Unity offers (it only offers compatible ones).
+6. Let it recompile and exit Safe Mode.
+7. Send back `Packages/manifest.json` and `Packages/packages-lock.json`.
+
+### Path B — read the Editor's own recommended versions
+
+Every Editor ships a built-in manifest naming the versions it recommends:
+
+| OS | Path |
+|---|---|
+| macOS | `/Applications/Unity/Hub/Editor/6000.5.10f1/Unity.app/Contents/Resources/PackageManager/Editor/manifest.json` |
+| Windows | `C:\Program Files\Unity\Hub\Editor\6000.5.10f1\Editor\Data\Resources\PackageManager\Editor\manifest.json` |
+| Linux | `<install>/Editor/Data/Resources/PackageManager/Editor/manifest.json` |
+
+```bash
+cat "/Applications/Unity/Hub/Editor/6000.5.10f1/Unity.app/Contents/Resources/PackageManager/Editor/manifest.json"
+```
+
+Send that file and exact pins can be written for you without another
+open-and-fail cycle.
+
+Either path ends the same way: the resolved `manifest.json` and
+`packages-lock.json` get committed, and **`packages-lock.json` must be committed**
+— it is the reproducible record of what the build actually used.
+
+---
+
+## 11. First-open checklist
 
 - [ ] 1. Install Unity **6000.5.10f1** + Android Build Support (OpenJDK, SDK/NDK) + iOS Build Support (macOS)
-- [ ] 2. Hub → Add → repo root → open with **6000.5.10f1**
-- [ ] 3. Let the first import finish completely (packages + compile)
-- [ ] 4. `git status` — review every modified file against §1's expected list
-- [ ] 5. `git diff Packages/manifest.json` — record what Unity changed (§9)
-- [ ] 6. Confirm `Packages/packages-lock.json` was created
-- [ ] 7. Confirm `ProjectSettings/ProjectVersion.txt` gained a **real** revision
-- [ ] 8. **Commit** `ProjectVersion.txt`, `packages-lock.json`, `manifest.json` — that is the migration's real completion
-- [ ] 9. Force a full recompile (§2); confirm all four assemblies
-- [ ] 10. Console clean of `error CS` (§3)
-- [ ] 11. Test Runner → EditMode → **27/27 green** (§4)
-- [ ] 12. **Validate Golden Seeds → 24/24 reproduce** (§5)
-- [ ] 13. Confirm **no** unexpected diff under `Assets/CatchIfYouCan/Scripts/`
-- [ ] 14. Only then: Android (§6), iOS (§7), cross-platform hashes (§8)
+- [ ] 2. Close Unity, `git pull`, delete `Packages/packages-lock.json`
+- [ ] 3. Hub → Add → repo root → open with **6000.5.10f1**
+- [ ] 4. Resolve the three remaining packages via Package Manager (§10) and let it exit Safe Mode
+- [ ] 5. `git status` — review every modified file against §1's expected list
+- [ ] 6. `git diff Packages/manifest.json` — record what Unity changed (§9)
+- [ ] 7. Confirm `Packages/packages-lock.json` was created
+- [ ] 8. Confirm `ProjectSettings/ProjectVersion.txt` gained a **real** revision
+- [ ] 9. **Commit** `ProjectVersion.txt`, `packages-lock.json`, `manifest.json` — that is the migration's real completion
+- [ ] 10. Force a full recompile (§2); confirm all four assemblies
+- [ ] 11. Console clean of `error CS` (§3)
+- [ ] 12. Test Runner → EditMode → **27/27 green** (§4)
+- [ ] 13. **Validate Golden Seeds → 24/24 reproduce** (§5)
+- [ ] 14. Confirm **no** unexpected diff under `Assets/CatchIfYouCan/Scripts/`
+- [ ] 15. Only then: Android (§6), iOS (§7), cross-platform hashes (§8)
 
-Steps 10–12 are the migration gate. Until all three pass, the migration is
+Steps 11–13 are the migration gate. Until all three pass, the migration is
 **NOT** complete.
 
 ---
 
-## 11. What to send back if anything fails
+## 12. What to send back if anything fails
 
 Send **raw text**, not screenshots — the exact string identifies the cause.
 

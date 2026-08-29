@@ -1,6 +1,5 @@
 {
   "dependencies": {
-    "com.unity.addressables": "2.4.3",
     "com.unity.ai.navigation": "2.0.7",
     "com.unity.inputsystem": "1.14.0",
     "com.unity.modules.ai": "1.0.0",
@@ -19,7 +18,6 @@
     "com.unity.modules.video": "1.0.0",
     "com.unity.render-pipelines.universal": "17.1.0",
     "com.unity.test-framework": "1.4.5",
-    "com.unity.textmeshpro": "3.0.9",
     "com.unity.ugui": "2.0.0"
   }
 }

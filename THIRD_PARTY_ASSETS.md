@@ -8,7 +8,6 @@ V1 of **CATCH IF YOU CAN** includes redistributed CC0 asset packs for furniture,
 | Universal RP | Unity Package Manager | `com.unity.render-pipelines.universal` | Unity Package license | Unity Technologies | Rendering |
 | Input System | Unity Package Manager | `com.unity.inputsystem` | Unity Package license | Unity Technologies | Input |
 | AI Navigation | Unity Package Manager | `com.unity.ai.navigation` | Unity Package license | Unity Technologies | Ghost / player pathing |
-| Addressables | Unity Package Manager | `com.unity.addressables` | Unity Package license | Unity Technologies | Optional content addressing |
 | uGUI / TextMeshPro | Unity Package Manager | `com.unity.ugui` / TMP | Unity Package license | Unity Technologies | UI |
 | Kenney Furniture Kit | OpenGameArt / Kenney.nl | https://kenney.nl/assets/furniture-kit | CC0 (verify on source page) | Kenney | Prop prefabs, house furniture via PropSpawner |
 | Kenney Mini Dungeon | OpenGameArt / Kenney.nl | https://kenney.nl/assets/mini-dungeon | CC0 (verify on source page) | Kenney | Door prefab, ghost humanoid/orc meshes |
