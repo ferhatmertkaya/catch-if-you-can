@@ -14,7 +14,7 @@ Alle gebündelten CC0-Assets werden **automatisch** eingebunden — nicht nur ei
 
 ## Ein-Klick: ALLES einbauen
 
-In Unity 6.3 LTS:
+In Unity 6.5 (6000.5.10f1):
 
 ```
 Catch If You Can → Setup Project

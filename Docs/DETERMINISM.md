@@ -492,16 +492,23 @@ discussion: a reviewer will not catch a reintroduced `Random.Range` in a
 iOS-arm64 build and an IL2CPP Android-arm64 build produce identical hashes needs
 Unity build agents, which CI does not have.
 
-A second, smaller blocker sits in front of T4: `ProjectSettings/ProjectVersion.txt`
-records `m_EditorVersionWithRevision: 6000.3.0f1 (catchifyoucan)`. The revision
-field holds the literal string `catchifyoucan`, not a Unity revision hash. The
-Editor tolerates this, but any CI that provisions Unity by revision — which is how
-most Unity build actions pin a version — cannot resolve it. The true revision is
-not recoverable from anything in this repository and **must not be guessed**:
-substituting a plausible-looking hash would produce a CI job that silently builds
-on the wrong Unity patch, which is precisely the kind of environment drift a
-cross-platform determinism test exists to detect. Recover it from whoever created
-the project, or pin by version string if the chosen CI action supports it. The core is engine-free integer
+A second, smaller blocker sits in front of T4: the Editor revision. The project's
+baseline is now **Unity 6.5, `6000.5.10f1`**, and
+`ProjectSettings/ProjectVersion.txt` deliberately carries only
+`m_EditorVersion: 6000.5.10f1` — the `m_EditorVersionWithRevision` line is
+omitted so the real Editor writes the true revision on first import.
+
+The previous baseline recorded `6000.3.0f1 (catchifyoucan)`: a literal string
+where a 12-hex revision belongs. The Editor tolerated it, but any CI that
+provisions Unity by revision — how most Unity build actions pin a version —
+could not resolve it. Replacing one fabricated value with another would repeat
+the mistake, so the line is left for Unity to write. Until the project has been
+opened once in `6000.5.10f1` and the resulting revision committed, a
+revision-pinned CI job cannot be configured.
+
+See `Docs/UNITY_VALIDATION.md` for the migration state and the first-open
+procedure. **The 6000.5.10f1 migration is not complete**: the project has never
+been compiled on that Editor, so the T4 prerequisite is prepared, not met. The core is engine-free integer
 arithmetic, which is the strongest structural argument available, and the
 `noEngineReferences` assembly flag enforces it at compile time — but that is an
 argument, not a measurement. Until a device job exists, run the EditMode suite on

@@ -17,8 +17,11 @@ fi
 HUB="/Applications/Unity/Hub/Editor"
 UNITY_APP=""
 if [[ -d "$HUB" ]]; then
-  # Prefer 6000.3 then any 6000
-  UNITY_APP="$(find "$HUB" -maxdepth 2 -type d -name 'Unity.app' | grep '/6000.3.' | sort -V | tail -n 1 || true)"
+  # Required baseline 6000.5.10f1, then any 6000.5.x, then any 6000.x
+  UNITY_APP="$(find "$HUB" -maxdepth 2 -type d -name 'Unity.app' | grep '/6000.5.10f1/' | sort -V | tail -n 1 || true)"
+  if [[ -z "$UNITY_APP" ]]; then
+    UNITY_APP="$(find "$HUB" -maxdepth 2 -type d -name 'Unity.app' | grep '/6000.5.' | sort -V | tail -n 1 || true)"
+  fi
   if [[ -z "$UNITY_APP" ]]; then
     UNITY_APP="$(find "$HUB" -maxdepth 2 -type d -name 'Unity.app' | grep '/6000.' | sort -V | tail -n 1 || true)"
   fi

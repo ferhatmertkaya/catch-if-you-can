@@ -15,7 +15,7 @@ Assets/External/
 
 ## One-click integration (Unity Editor)
 
-1. Open the project in **Unity 6.3 LTS**
+1. Open the project in **Unity 6.5 (6000.5.10f1)**
 2. Run **Catch If You Can → Integrate External Assets**  
    (or **Setup Project**, which includes integration)
 3. Run **Catch If You Can → Validator**

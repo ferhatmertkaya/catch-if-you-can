@@ -2,7 +2,7 @@
 
 ## Was ist neu in v2?
 
-- `BuildIOS.sh` findet **jede** installierte Unity-Version (nicht nur 6000.3.0f1)
+- `BuildIOS.sh` bevorzugt **6000.5.10f1**, akzeptiert notfalls andere Unity-6-Versionen (mit Warnung)
 - Klare Fehlermeldung + öffnet Unity Hub / Anleitung
 - Kein `zsh: no matches found` mehr bei fehlendem Xcode-Projekt
 - `START_HERE_MAC.command` → Doppelklick im Finder
@@ -12,7 +12,7 @@
 ## Dein Fehler war
 
 ```
-ERROR: Unity 6.3 LTS nicht gefunden.
+ERROR: Unity 6000.5.10f1 nicht gefunden.
 ```
 
 Das heißt: Auf dem Mac ist (noch) **kein Unity Editor** unter  
@@ -23,7 +23,7 @@ Das heißt: Auf dem Mac ist (noch) **kein Unity Editor** unter
 ### A) Einmalig Unity installieren
 
 1. [Unity Hub](https://unity.com/download) installieren
-2. **Unity 6.3 LTS** installieren
+2. **Unity 6.5 (6000.5.10f1)** installieren - exakt diese Version
 3. Module anhaken: **iOS Build Support**
 4. Xcode aus dem App Store (15+)
 

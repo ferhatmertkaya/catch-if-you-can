@@ -1,64 +1,85 @@
-# Unity Validation Procedure
+# Unity Validation Procedure — Unity 6.5 (6000.5.10f1)
 
 Purpose: execute the validation that `Docs/DETERMINISM.md` §10 lists as **NOT
-EXECUTED**. Everything below needs a real Unity Editor; none of it can be run in
-a headless container.
+EXECUTED**, on the migrated Editor baseline. All of it needs a real Unity Editor;
+none can run in the headless container that produced the determinism work.
 
-What is already proven without Unity, and does **not** need repeating here: the
-deterministic core builds under .NET, the 28-assertion harness passes, and
-`Scripts/check_determinism.sh` passes. Those cover 24 of ~190 C# files. This
-document covers the rest.
+**Migration status: NOT COMPLETE.** The repository has been prepared for
+`6000.5.10f1`, but the project has never been opened in it. The migration is not
+a PASS until §3 compiles clean and §4/§5 execute green. Until then this is a
+prepared, unverified baseline.
+
+Already proven without Unity, and not repeated here: the deterministic core
+builds under .NET, the 28-assertion harness passes, and
+`Scripts/check_determinism.sh` passes. That covers 24 of ~190 C# files.
 
 ---
 
-## 0. Which Unity Editor to install
+## 0. Editor and modules
 
-```
-ProjectSettings/ProjectVersion.txt
-  m_EditorVersion:             6000.3.0f1
-  m_EditorVersionWithRevision: 6000.3.0f1 (catchifyoucan)
-```
+**Install Unity `6000.5.10f1` (Unity 6.5). Exactly this version.**
 
-**Install Unity `6000.3.0f1`.**
+Required modules:
 
-Required modules: **Android Build Support** (with OpenJDK + Android SDK/NDK) and,
-on macOS, **iOS Build Support**.
-
-### The revision hash is not recoverable — do not guess it
-
-The second line should read `6000.3.0f1 (<12-hex-revision>)`. It instead contains
-the literal string `catchifyoucan`. That is not a Unity revision, and the real one
-cannot be recovered from anything in this repository.
-
-Consequences, and what to do:
-
-| Path | Effect |
+| Module | Why |
 |---|---|
-| **Unity Hub install by version** | Works. Hub resolves `6000.3.0f1` itself and ignores the revision field. **Use this.** |
-| Opening the project | Works. The Editor matches on `m_EditorVersion` and only warns about the revision. |
-| CI actions that pin by revision (e.g. `game-ci` `unityVersion` + revision, direct `download.unity3d.com/…/<revision>/` URLs) | **Blocked.** They cannot resolve `catchifyoucan`. |
+| **Android Build Support** | §6 |
+| ├ *OpenJDK* | Android build prerequisite |
+| ├ *Android SDK & NDK Tools* | IL2CPP ARM64 |
+| **iOS Build Support** (macOS only) | §7 |
+| **Universal Windows / Mac / Linux Build Support (IL2CPP)** — the host one | Lets the Editor compile IL2CPP locally; optional but useful for isolating IL2CPP-only failures |
 
-Do **not** substitute a plausible-looking hash. A wrong revision produces a CI job
-that silently builds on a different Unity patch — precisely the environment drift
-a cross-platform determinism test exists to detect. Recover the true revision from
-whoever created the project, or pin by version string only.
+Not required: WebGL, tvOS, visionOS, Linux server.
 
-**If Hub does not offer `6000.3.0f1`:** stop and tell us rather than opening with a
-different patch. Opening with another version rewrites `ProjectVersion.txt` and
-silently changes the toolchain under the determinism baseline. If you decide to
-upgrade, that must be a deliberate, separately committed decision.
+Also needed: **Xcode 15+** (macOS, for §7) and `adb` on `PATH` (for §6).
+
+### The revision hash is intentionally absent
+
+`ProjectSettings/ProjectVersion.txt` now contains exactly one line:
+
+```
+m_EditorVersion: 6000.5.10f1
+```
+
+The `m_EditorVersionWithRevision` line has been **removed on purpose**. The
+previous baseline carried `6000.3.0f1 (catchifyoucan)` — a literal string where a
+12-hex revision belongs, which broke any CI that pins by revision. Rather than
+replace one fabricated value with another, the line is omitted so **the real
+6000.5.10f1 Editor writes the true revision on first import**.
+
+That is expected and wanted. After the first open, `ProjectVersion.txt` will gain
+a second line — commit it (§10, step 8).
+
+Unity Hub resolves `6000.5.10f1` by version string and does not need the
+revision. **If Hub does not offer `6000.5.10f1`, stop and tell us** rather than
+opening with a different patch: doing so rewrites `ProjectVersion.txt` and moves
+the toolchain under the determinism baseline.
 
 ---
 
-## 1. Open the project
+## 1. First open
 
 1. Unity Hub → **Add** → select the repository root (the folder containing
    `Assets/`, `Packages/`, `ProjectSettings/`).
-2. Set the editor version to `6000.3.0f1`.
-3. Open. First import resolves packages and can take several minutes.
-4. If a version-mismatch dialog appears, **cancel** and see §0.
+2. Set the editor version to **`6000.5.10f1`**.
+3. Open. First import resolves packages and recompiles everything; expect several
+   minutes.
+4. Any version-mismatch dialog → **cancel**, see §0.
 
-Expected: the project opens with the Console clear of red entries.
+**Unity will modify files during this import. That is normal.** Expected changes:
+
+| File | What happens |
+|---|---|
+| `ProjectSettings/ProjectVersion.txt` | Gains `m_EditorVersionWithRevision` with the **real** revision — **commit it** |
+| `Packages/manifest.json` | Editor-locked packages (URP and other SRP packages) may be auto-upgraded to the versions 6000.5 ships |
+| `Packages/packages-lock.json` | **Created** (does not exist yet) — **commit it**, it is the reproducible resolution record |
+| `ProjectSettings/*.asset` | Serialization-format touch-ups on version change |
+| `Assets/**/*.meta` | New `.meta` files for anything not yet imported |
+| `Library/` | Regenerated; git-ignored, ignore it |
+
+**Do not accept, without checking:** changes to
+`Assets/CatchIfYouCan/Scripts/Procedural/**`. Nothing in Unity should rewrite
+source. See §9.
 
 ---
 
@@ -67,23 +88,18 @@ Expected: the project opens with the Console clear of red entries.
 A clean import is not the same as a clean recompile — stale `Library/` artifacts
 can hide a broken assembly.
 
-**Preferred (guarantees a from-scratch compile):**
+**Preferred:** close Unity, delete `Library/ScriptAssemblies/`, reopen.
+(Deleting all of `Library/` also works but forces a full reimport.)
 
-1. Close Unity.
-2. Delete `Library/ScriptAssemblies/` (safe: regenerated on next open). Deleting
-   the whole `Library/` folder also works but forces a full reimport.
-3. Reopen the project.
+**Quicker:** **Assets → Reimport All**.
 
-**Quicker (usually sufficient):** in the Editor, **Right-click in Project window →
-Reimport All**, or menu **Assets → Reimport All**.
+**Verify the assemblies exist:**
 
-**Verify the assemblies were actually produced:**
-
-```
+```bash
 ls Library/ScriptAssemblies/
 ```
 
-Expected to exist:
+Expected:
 
 ```
 Assembly-CSharp.dll
@@ -93,25 +109,25 @@ CatchIfYouCan.Determinism.Tests.dll
 ```
 
 A missing `Assembly-CSharp.dll` means the runtime assembly failed to compile —
-§3 will show why.
+§3 shows why.
 
 ---
 
 ## 3. Detect Assembly-CSharp / Assembly-CSharp-Editor compile errors
 
-**This is the step most likely to fail.** Neither assembly has ever been
-compiled — all prior verification used .NET with hand-written UnityEngine stubs,
-which is not evidence that they build.
+**The step most likely to fail, and the whole point of the migration.** Neither
+Unity assembly has ever been compiled — on 6000.3 or 6000.5. All prior
+verification used .NET against hand-written UnityEngine stubs, which is not
+evidence that they build.
 
-1. Open **Window → General → Console**.
+1. **Window → General → Console**.
 2. Enable **Error**, **Warning**, **Info**; disable **Collapse**.
-3. Click **Clear**, then force a recompile (§2).
+3. **Clear**, then force a recompile (§2).
 4. Read every red entry.
 
-Compile errors appear as `Assets/…/File.cs(LINE,COL): error CSxxxx: message`.
+Errors appear as `Assets/…/File.cs(LINE,COL): error CSxxxx: message`.
 
-**Also check the Editor log**, which captures compiler output the Console can
-truncate:
+**Also check the Editor log** — it captures compiler output the Console truncates:
 
 | OS | Path |
 |---|---|
@@ -123,35 +139,35 @@ truncate:
 grep -nE "error CS|Compilation failed|Assembly-CSharp" ~/Library/Logs/Unity/Editor.log | head -50
 ```
 
-**Pass condition:** zero `error CS` entries, and all four assemblies present.
+**Pass:** zero `error CS`, all four assemblies present.
 
-Warnings do not block. Note any that name files under `Scripts/Procedural/`.
+Warnings do not block, but report any naming `Scripts/Procedural/`. On a major
+Editor jump, obsolete-API warnings (`CS0618`) are the likely category.
 
 ---
 
-## 4. Run the determinism EditMode suite
+## 4. Run the 27 EditMode determinism tests
 
-1. **Window → General → Test Runner**.
-2. **EditMode** tab.
-3. Expect the assembly **`CatchIfYouCan.Determinism.Tests`** with **27 tests** under
+1. **Window → General → Test Runner** → **EditMode** tab.
+2. Expect assembly **`CatchIfYouCan.Determinism.Tests`** with **27 tests** under
    `CatchIfYouCan.Tests.DeterminismTests`.
-4. **Run All**.
+3. **Run All**.
 
-If the assembly does not appear: `com.unity.test-framework` (1.4.5) failed to
-resolve, or `Assembly-CSharp` failed to compile. Fix §3 first.
+If the assembly is absent: `com.unity.test-framework` failed to resolve, or
+`Assembly-CSharp` failed to compile. Fix §3 first.
 
-**Pass condition: every test green.** These matter most:
+**Pass: all 27 green.** The ones that matter most on a version migration:
 
-| Test | Why |
+| Test | Why it matters here |
 |---|---|
-| `Pcg32_MatchesPublishedReferenceVectors` | The RNG stream is what the golden hashes rest on |
-| `E_UnityEngineRandom_CannotPerturbGeneration` | Only provable in the real engine |
-| `E_GenerationDoesNotAdvanceUnityEngineRandom` | The converse; also engine-only |
-| `F_GoldenSeeds_ReproduceRecordedHashes` | Unity's toolchain agrees with .NET |
-| `DuplicatePropStableId_IsRejected` and the other duplicate-id tests | Never executed under NUnit |
-| `G_PerturbingCollectionOrder_DoesNotChangeHash` | Hash canonicalisation |
+| `Pcg32_MatchesPublishedReferenceVectors` | Proves 6000.5's compiler produces the same RNG stream. **If this fails, every golden hash is invalid** |
+| `F_GoldenSeeds_ReproduceRecordedHashes` | The migration's core assertion: same seeds, same layouts, new Editor |
+| `E_UnityEngineRandom_CannotPerturbGeneration` | Engine-only; unprovable outside Unity |
+| `E_GenerationDoesNotAdvanceUnityEngineRandom` | The converse |
+| `G_PerturbingCollectionOrder_DoesNotChangeHash` | Hash canonicalisation under a new `List.Sort` implementation |
+| `DuplicatePropStableId_IsRejected` + 5 sibling duplicate-id tests | Have never executed under NUnit |
 
-**Batch mode alternative:**
+**Batch mode:**
 
 ```bash
 "<UnityPath>" -runTests -batchmode -projectPath . \
@@ -161,52 +177,54 @@ resolve, or `Assembly-CSharp` failed to compile. Fix §3 first.
   -logFile ./Builds/Logs/editmode.log
 ```
 
-Exit code `0` = all passed. Results XML names any failure.
+Exit `0` = all passed; the XML names failures.
 
 ---
 
-## 5. Golden-seed validation
+## 5. Validate all 24 golden seeds
 
 Menu: **Tools → Catch If You Can → Determinism → Validate Golden Seeds**
 
-Checks all 24 committed entries (12 seeds × 2 maps) against
-`GoldenSeedTable.cs`.
+Checks all 24 committed entries (12 seeds × 2 maps) in `GoldenSeedTable.cs`.
 
-**Pass:** dialog reports all 24 reproduce; Console shows one info line.
+**Pass:** dialog reports all 24 reproduce.
 
-**Fail:** each mismatch is logged as
-`seed <N> (<MAP>): expected <HASH>, got <HASH>`.
+**Fail:** each mismatch logs `seed <N> (<MAP>): expected <HASH>, got <HASH>`.
 
-A failure here means Unity's compiler produced different generation output from
-.NET's — a genuine cross-toolchain divergence. **Do not run *Generate Golden
-Seeds* to make it pass.** That overwrites the evidence. Send the Console output.
+> ### A golden mismatch after the Unity upgrade is a REGRESSION, not an expected consequence
+>
+> The generation core is engine-free integer arithmetic with a frozen PCG32. A
+> different Unity version must not change its output. If hashes moved, something
+> real changed — compiler codegen, an `int`/`float` behaviour difference, or an
+> accidental source change during import.
+>
+> **Do not run *Generate Golden Seeds*.** That overwrites the only evidence.
+> **Do not bump `GenerationVersion`.** It marks deliberate algorithm changes, and
+> this would not be one. Capture the output and send it (§11).
 
-Related menu items (same path): *Compare Two Layouts* (reports the first
-authoritative difference between two seeds), *Print Layout Report*, *Generate
-Golden Seeds* (regenerate only after a deliberate `GenerationVersion` bump).
+Related items on the same menu: *Compare Two Layouts* (first authoritative
+difference between two seeds, with per-section hashes), *Print Layout Report*,
+*Generate Golden Seeds* (only after a deliberate `GenerationVersion` bump).
 
-> Note: these Editor tools use `ContentSnapshot.CreateFallback()`, not the
-> project's authored `PropDefinition`/`RoomDefinition` assets. They validate the
-> generator, not the shipped content. §8 covers the authored-content path.
+> These Editor tools use `ContentSnapshot.CreateFallback()`, not the project's
+> authored `PropDefinition`/`RoomDefinition` assets. They validate the generator,
+> not the shipped content. §8 exercises the authored path.
 
 ---
 
 ## 6. Android Development Build
 
-Player settings are already correct in `ProjectSettings.asset` — **IL2CPP**
-(`scriptingBackend.Android: 1`), **ARM64** (`AndroidTargetArchitectures: 2`),
-min SDK 24, target SDK 35, `com.catchifyoucan.game`. The Development build
-therefore already satisfies the IL2CPP requirement; no settings change is needed.
+`ProjectSettings.asset` already specifies **IL2CPP** (`scriptingBackend.Android: 1`),
+**ARM64** (`AndroidTargetArchitectures: 2`), min SDK 24, target SDK 35,
+`com.catchifyoucan.game`. The Development build therefore already satisfies the
+IL2CPP requirement — no settings change needed.
 
 1. **File → Build Settings → Android → Switch Platform** (first switch is slow).
-2. Confirm all four scenes are listed and enabled:
-   `00_Boot`, `01_MainMenu`, `02_Training`, `03_Investigation`.
-3. Menu: **Catch If You Can → Build Android Development**
-   (sets `BuildOptions.Development | AllowDebugging`).
+2. Confirm four scenes listed and enabled: `00_Boot`, `01_MainMenu`,
+   `02_Training`, `03_Investigation`.
+3. **Catch If You Can → Build Android Development**.
 
 Output: `Builds/Android/CatchIfYouCan_dev.apk`
-
-Install and capture logs:
 
 ```bash
 adb install -r Builds/Android/CatchIfYouCan_dev.apk
@@ -218,53 +236,51 @@ adb logcat | tee android-run.log | grep -E "CIYC|Unity"
 
 ## 7. iOS Xcode build
 
-macOS + Xcode 15+ required.
+macOS + Xcode 15+.
 
-**Scripted:** `./BuildIOS.sh` — prefers an installed `6000.3.x`, runs
+**Scripted:** `./BuildIOS.sh` — now prefers `6000.5.10f1` strictly, falls back to
+any `6000.5.x` and then any `6000.x` **with a warning**. Runs
 `CatchIfYouCanBuildMenu.BuildIOSBatch` in batch mode, logs to
-`Builds/Logs/ios_build_<timestamp>.log`, and zips the export.
+`Builds/Logs/ios_build_<timestamp>.log`, zips the export.
 
 **Manual:** **File → Build Settings → iOS → Switch Platform**, then
 **Catch If You Can → Build iOS**.
 
-Either path applies `ConfigureIOSPlayerSettings()`: IL2CPP, ARM64, iOS 15.0
-minimum, landscape, bundle id `com.catchifyoucan.game`.
+Either applies `ConfigureIOSPlayerSettings()`: IL2CPP, ARM64, iOS 15.0 minimum,
+landscape, `com.catchifyoucan.game`.
 
-Output: an `.xcodeproj` under `Builds/iOS/` (Unity names it `Unity-iPhone.xcodeproj`;
-`BuildIOS.sh` locates it by glob and fails with exit 2 if none is produced).
+Output: an `.xcodeproj` under `Builds/iOS/` (Unity names it
+`Unity-iPhone.xcodeproj`; the script locates it by glob and exits 2 if none).
 
 In Xcode: **Signing & Capabilities → Team**, then **Product → Run** on a device.
-Capture the device console (Xcode **Window → Devices and Simulators**, or
-Console.app filtered on the device).
 
 ---
 
 ## 8. Verify deterministic hashes across Editor, Android and iOS
 
-This is T4 — the one claim the engine-free core argues for but does not measure.
+This is T4 — the claim the engine-free core argues for but does not measure.
 
 ### How the hash is observable
 
-Every successful generation logs, at info level, via `Debug.Log` (present in
-release builds too):
+Every successful generation logs, via `Debug.Log` (present in release builds too):
 
 ```
 [CIYC] House generated: seed <SEED>, <N> rooms, attempt <A>, hash <16-HEX>
 ```
 
-On a validation failure it additionally logs the full `LayoutHash.ToReport()`
-block with all seven section hashes.
+On a validation failure it also logs the full `LayoutHash.ToReport()` block with
+all seven section hashes.
 
-### Blocker: there is currently no runtime fixed-seed entry point
+### Blocker: no runtime fixed-seed entry point
 
 `MissionManager.StartInvestigation` accepts a `seedOverride`, but nothing on the
-live path passes one, so every run draws a fresh seed from
+live path passes one — every run draws a fresh seed from
 `SessionSeedSource.Next()`. `TrainingBootstrap` writes a `ciyc_training_seed`
-PlayerPref that **nothing reads**. Two platforms will therefore never generate the
-same seed by chance.
+PlayerPref that **nothing reads**. Two platforms will never draw the same seed by
+chance.
 
-Comparing hashes across platforms consequently requires a **temporary** seed pin.
-Make it, validate, then revert it — do not commit it.
+Cross-platform comparison therefore needs a **temporary** seed pin. Make it,
+validate, revert. Do not commit it.
 
 In `Assets/CatchIfYouCan/Scripts/Missions/MissionManager.cs`, in
 `StartInvestigation`, temporarily replace:
@@ -279,63 +295,103 @@ with:
 int seed = 184726392; // TEMPORARY validation pin - REVERT before committing
 ```
 
-Any fixed value works; use the same one on all three platforms.
+Use the same value on all three platforms.
 
 ### Procedure
 
-Build and run the Investigation scene once per platform with the pin in place:
+Run the Investigation scene once per platform with the pin in place:
 
-| Platform | How to capture |
+| Platform | Capture |
 |---|---|
-| **Editor** | Enter Play Mode, reach an investigation, read the Console |
+| **Editor** | Play Mode → reach an investigation → Console |
 | **Android** | `adb logcat \| grep "House generated"` |
 | **iOS** | Xcode device console, filter `House generated` |
 
-Record the full line from each.
+**Pass:** identical 16-hex `hash` on all three for the same seed.
 
-**Pass condition:** identical 16-hex `hash` on all three, for the same seed.
+**On mismatch — capture before changing anything:**
 
-**On mismatch — this is a real finding, capture before changing anything:**
+1. The three log lines (seed, hash, room count).
+2. Editor → **Tools → Catch If You Can → Determinism → Compare Two Layouts**,
+   both seeds set to the pinned value; copy the full output for the per-section
+   breakdown (Rooms / Connections / Doors / Furniture / Props / GameplaySpawns).
+3. Unity version, scripting backend, device model per platform.
 
-1. The three log lines (seed + hash + room count from each platform).
-2. In the Editor: **Tools → Catch If You Can → Determinism → Compare Two Layouts**,
-   both seeds set to the pinned value, and copy the full output — it gives the
-   per-section breakdown (Rooms / Connections / Doors / Furniture / Props /
-   GameplaySpawns) that localises which stage diverged.
-3. Unity version, scripting backend, and device model for each platform.
-
-The section that differs names the failing stage. That is the difference between
-a targeted fix and a bisect.
-
-**Finally: revert the seed pin** and confirm `git diff` is clean.
+**Then revert the seed pin** and confirm `git diff` is clean.
 
 ---
 
-## What to send back if anything fails
+## 9. Package compatibility review
 
-Send the **raw text**, not a screenshot or a summary — the exact error string is
-what identifies the cause.
+`Packages/manifest.json` was **deliberately not edited** by the migration. Unity
+resolves editor-locked packages itself on first import; hand-pinning versions for
+an Editor nobody has run would be guessing.
+
+| Package | Pinned | Assessment |
+|---|---|---|
+| `com.unity.render-pipelines.universal` | `17.1.0` | **Will be auto-upgraded.** SRP packages are locked to the Editor version; 17.1.x belongs to Unity 6.0/6.1. Let Unity resolve it, then commit the result. Do not hand-edit |
+| `com.unity.textmeshpro` | `3.0.9` | **Migration concern — verify first.** From Unity 6, TextMeshPro ships inside `com.unity.ugui` 2.0.0; the standalone package is legacy. Listing both can produce a resolution conflict or a silent drop. If Unity reports a conflict, removing this entry is the fix — TMP still comes from uGUI. **This predates the migration** (it was already listed alongside uGUI 2.0.0 on the 6000.3 baseline) |
+| `com.unity.ugui` | `2.0.0` | Unity 6 line; expected to carry TMP |
+| `com.unity.addressables` | `2.4.3` | Independently versioned. Not upgraded blindly |
+| `com.unity.ai.navigation` | `2.0.7` | Independently versioned. Used by `NavMeshRuntimeBuilder` via reflection (`Unity.AI.Navigation.NavMeshSurface`) — if the type moved, the builder falls back to `NavMeshBuilder`. Worth watching in the Console |
+| `com.unity.inputsystem` | `1.14.0` | Independently versioned |
+| `com.unity.test-framework` | `1.4.5` | Required by §4. If Unity forces a newer one, that is fine — confirm the EditMode tests still appear |
+| `com.unity.modules.*` | `1.0.0` | Built-in modules; always `1.0.0`, editor-locked. No action |
+
+**After first import, diff `Packages/manifest.json`** and report what Unity
+changed. That diff is the real compatibility answer; the table above is the
+prediction to check it against.
+
+---
+
+## 10. First-open checklist
+
+- [ ] 1. Install Unity **6000.5.10f1** + Android Build Support (OpenJDK, SDK/NDK) + iOS Build Support (macOS)
+- [ ] 2. Hub → Add → repo root → open with **6000.5.10f1**
+- [ ] 3. Let the first import finish completely (packages + compile)
+- [ ] 4. `git status` — review every modified file against §1's expected list
+- [ ] 5. `git diff Packages/manifest.json` — record what Unity changed (§9)
+- [ ] 6. Confirm `Packages/packages-lock.json` was created
+- [ ] 7. Confirm `ProjectSettings/ProjectVersion.txt` gained a **real** revision
+- [ ] 8. **Commit** `ProjectVersion.txt`, `packages-lock.json`, `manifest.json` — that is the migration's real completion
+- [ ] 9. Force a full recompile (§2); confirm all four assemblies
+- [ ] 10. Console clean of `error CS` (§3)
+- [ ] 11. Test Runner → EditMode → **27/27 green** (§4)
+- [ ] 12. **Validate Golden Seeds → 24/24 reproduce** (§5)
+- [ ] 13. Confirm **no** unexpected diff under `Assets/CatchIfYouCan/Scripts/`
+- [ ] 14. Only then: Android (§6), iOS (§7), cross-platform hashes (§8)
+
+Steps 10–12 are the migration gate. Until all three pass, the migration is
+**NOT** complete.
+
+---
+
+## 11. What to send back if anything fails
+
+Send **raw text**, not screenshots — the exact string identifies the cause.
 
 | Step | Send |
 |---|---|
-| **0** Wrong/missing version | The Hub version list, and the exact dialog text |
+| **0** Hub lacks 6000.5.10f1 | The Hub version list and the exact dialog text |
+| **1** Unexpected file changes | Full `git status` and `git diff --stat` |
 | **2** Assemblies missing | `ls Library/ScriptAssemblies/` |
-| **3** Compile errors | Every `error CS…` line **with file, line and column**, plus `grep -nE "error CS" <Editor.log>`. Send all of them — the first error often causes the rest |
-| **4** Tests fail | Failing test names, the NUnit assertion message and stack trace (right-click → Copy in Test Runner), or `editmode-results.xml` |
-| **4** Test assembly missing | Console text about `com.unity.test-framework`, plus `Packages/manifest.json` |
-| **5** Golden mismatch | Every `seed <N> (<MAP>): expected …, got …` line. **Do not regenerate the table** |
-| **6** Android build fails | The `[Android Development] Build failed` line plus ~50 lines of preceding Console/Editor.log context |
-| **7** iOS build fails | `Builds/Logs/ios_build_<timestamp>.log` (the script prints the last 60 lines on failure) |
-| **8** Hash mismatch | The three `House generated` lines, the *Compare Two Layouts* output, and platform/backend/device for each |
-| **Runtime error in play** | The full `[CIYC]` block — a generation failure prints the whole `LayoutHash.ToReport()` |
+| **3** Compile errors | Every `error CS…` line **with file, line, column**, plus `grep -nE "error CS" <Editor.log>`. Send **all** — the first often causes the rest |
+| **4** Tests fail | Failing test names + NUnit assertion message and stack trace (right-click → Copy), or `editmode-results.xml` |
+| **4** Test assembly missing | Console text about `com.unity.test-framework`, plus `Packages/manifest.json` and `packages-lock.json` |
+| **5** Golden mismatch | Every `seed <N> (<MAP>): expected …, got …` line. **Do not regenerate. Do not bump GenerationVersion.** Treat as a regression |
+| **9** Package conflict | The Package Manager error text plus `manifest.json` and `packages-lock.json` |
+| **6** Android build fails | The `[Android Development] Build failed` line + ~50 lines of preceding context |
+| **7** iOS build fails | `Builds/Logs/ios_build_<timestamp>.log` |
+| **8** Hash mismatch | The three `House generated` lines, *Compare Two Layouts* output, platform/backend/device each |
+| **Runtime error** | The full `[CIYC]` block — a generation failure prints the whole `LayoutHash.ToReport()` |
 
-Always include: Unity version as shown in **Help → About Unity**, OS and version,
-and `git rev-parse HEAD`.
+Always include: **Help → About Unity** version string, OS and version, and
+`git rev-parse HEAD`.
 
 ---
 
 ## Scope
 
-This procedure validates the existing determinism work only. It introduces no
-multiplayer, no NGO, and no gameplay changes. The only edit it asks for is the
-temporary seed pin in §8, which must be reverted.
+This validates the existing determinism work on the new Editor baseline. It adds
+no multiplayer, no NGO, no gameplay. The only edit it asks for is the temporary
+seed pin in §8, which must be reverted.
