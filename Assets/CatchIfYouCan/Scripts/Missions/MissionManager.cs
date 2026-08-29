@@ -135,9 +135,20 @@ namespace CatchIfYouCan.Missions
             runtime.AssignedGhost.Speed *= runtime.Difficulty.GhostSpeedMultiplier;
         }
 
+        /// <summary>
+        /// Rolls the session seed.
+        ///
+        /// A seed only has to be AGREED between clients, not reproducible, so this is the
+        /// one place that legitimately wants unpredictability. It no longer draws from
+        /// UnityEngine.Random: that stream is shared with every cosmetic system, so seed
+        /// selection both perturbed and was perturbed by them.
+        ///
+        /// In multiplayer this becomes host-only and the result is replicated with
+        /// MissionStart; clients must never roll their own (Docs/NETWORKING.md §3).
+        /// </summary>
         public int RollMissionSeed(MissionDefinition mission)
         {
-            SeedManager.SetSeed(UnityEngine.Random.Range(1, int.MaxValue));
+            SeedManager.SetSeed(SessionSeedSource.Next());
             return SeedManager.CurrentSeed;
         }
     }

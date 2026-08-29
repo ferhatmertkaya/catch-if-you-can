@@ -1,109 +1,86 @@
 using System.Collections.Generic;
+using CatchIfYouCan.Procedural.Deterministic;
 using UnityEngine;
 
 namespace CatchIfYouCan.Procedural
 {
+    /// <summary>
+    /// STAGE B - prop instantiation.
+    ///
+    /// This class no longer decides anything. It receives placements that Stage A already
+    /// resolved and builds the GameObjects for them.
+    ///
+    /// It previously gated every spawn on Physics.OverlapBox. That read the live PhysX
+    /// scene, whose contents depend on frame timing, on deferred Object.Destroy, and on
+    /// whether Physics.SyncTransforms had run (m_AutoSyncTransforms is 0 in this project).
+    /// Worse, the RNG draws happened BEFORE the overlap test, so a client whose query
+    /// disagreed kept a perfectly in-sync RNG stream while its layout silently diverged -
+    /// no check short of a full layout hash could have caught it.
+    ///
+    /// Overlap is now resolved analytically in OccupancyGrid during Stage A. Colliders are
+    /// an output of generation and never feed back into it.
+    /// </summary>
     public class PropSpawner
     {
-        private readonly LayerMask _overlapMask;
         private readonly Transform _propRoot;
 
-        public PropSpawner(Transform propRoot, LayerMask overlapMask)
+        public PropSpawner(Transform propRoot)
         {
             _propRoot = propRoot;
-            _overlapMask = overlapMask.value == 0 ? ~0 : overlapMask;
         }
 
-        public int SpawnProps(
-            IEnumerable<GeneratedRoomInstance> rooms,
-            PropDefinition[] propLibrary,
-            System.Random rng,
-            float spawnChancePerSocket = 0.65f)
+        /// <summary>Instantiates every planned placement. Returns how many were built.</summary>
+        public int SpawnPlacements(
+            IReadOnlyList<LayoutProp> placements,
+            PropDefinition[] library,
+            IReadOnlyDictionary<int, GeneratedRoomInstance> roomsById)
         {
-            if (rooms == null || propLibrary == null || propLibrary.Length == 0)
+            if (placements == null || placements.Count == 0)
                 return 0;
 
             int spawned = 0;
-            foreach (var room in rooms)
+            for (int i = 0; i < placements.Count; i++)
             {
-                if (room?.Module == null)
-                    continue;
-
-                var sockets = room.Module.GetSockets(SocketType.Prop);
-                for (int i = 0; i < sockets.Count; i++)
-                {
-                    if (rng.NextDouble() > spawnChancePerSocket)
-                        continue;
-
-                    var candidates = FilterProps(propLibrary, room.Category);
-                    if (candidates.Count == 0)
-                        continue;
-
-                    var definition = PickWeighted(candidates, rng);
-                    if (TrySpawnAtSocket(definition, sockets[i], room))
-                        spawned++;
-                }
+                if (TrySpawn(placements[i], library, roomsById))
+                    spawned++;
             }
 
             return spawned;
         }
 
-        private List<PropDefinition> FilterProps(PropDefinition[] library, RoomCategory category)
+        private bool TrySpawn(
+            LayoutProp placement,
+            PropDefinition[] library,
+            IReadOnlyDictionary<int, GeneratedRoomInstance> roomsById)
         {
-            var list = new List<PropDefinition>();
-            for (int i = 0; i < library.Length; i++)
-            {
-                var def = library[i];
-                if (def != null && def.MatchesRoom(category))
-                    list.Add(def);
-            }
+            var definition = ContentSnapshotFactory.FindProp(library, placement.PropDefinitionId);
 
-            return list;
-        }
+            Vector3 position = new Vector3(
+                Quantize.Metres(placement.PositionMm.X),
+                Quantize.Metres(placement.PositionMm.Y),
+                Quantize.Metres(placement.PositionMm.Z));
 
-        private PropDefinition PickWeighted(List<PropDefinition> candidates, System.Random rng)
-        {
-            float total = 0f;
-            for (int i = 0; i < candidates.Count; i++)
-                total += Mathf.Max(0.01f, candidates[i].Weight);
-
-            float roll = SeedManager.NextFloat(rng, 0f, total);
-            float cumulative = 0f;
-            for (int i = 0; i < candidates.Count; i++)
-            {
-                cumulative += Mathf.Max(0.01f, candidates[i].Weight);
-                if (roll <= cumulative)
-                    return candidates[i];
-            }
-
-            return candidates[candidates.Count - 1];
-        }
-
-        private bool TrySpawnAtSocket(PropDefinition definition, RoomSocket socket, GeneratedRoomInstance room)
-        {
-            if (definition == null || socket == null)
-                return false;
-
-            Vector3 position = socket.transform.position;
-            Vector3 halfExtents = definition.BoundsSize * 0.5f;
-            Quaternion rotation = Quaternion.LookRotation(-socket.GetWorldDirection(), Vector3.up);
-
-            if (Physics.OverlapBox(position + Vector3.up * halfExtents.y, halfExtents * 0.9f, rotation, _overlapMask, QueryTriggerInteraction.Ignore).Length > 0)
-                return false;
+            Quaternion rotation = Quaternion.Euler(0f, placement.RotationIndex * 90f, 0f);
 
             GameObject instance;
-            if (definition.Prefab != null)
+            if (definition != null && definition.Prefab != null)
             {
                 instance = Object.Instantiate(definition.Prefab, position, rotation, _propRoot);
             }
             else
             {
-                instance = PrimitiveRoomFactory.CreateFallbackProp(definition.PropName, definition.BoundsSize, null);
+                Vector3 size = definition != null ? definition.BoundsSize : Vector3.one;
+                string propName = definition != null ? definition.PropName : placement.PropDefinitionId;
+                instance = PrimitiveRoomFactory.CreateFallbackProp(propName, size, null);
                 instance.transform.SetParent(_propRoot, false);
                 instance.transform.SetPositionAndRotation(position, rotation);
             }
 
-            instance.name = $"{definition.PropName}_{room.Category}_{room.NodeId}";
+            var category = roomsById != null && roomsById.TryGetValue(placement.RoomId, out var room)
+                ? room.Category.ToString()
+                : "Room";
+
+            instance.name = $"{placement.PropDefinitionId}_{category}_{placement.RoomId}_{placement.PropInstanceId}";
             return true;
         }
     }

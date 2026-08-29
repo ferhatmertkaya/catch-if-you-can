@@ -19,12 +19,14 @@ The project has **no networking of any kind** at `aa8c431`:
   "Relay" grep; it is an audio component and unrelated.)
 - `GameManager`, `MissionManager`, `EvidenceManager`, `EquipmentManager` and
   `SeedManager` are process-global singletons with no notion of ownership.
-- `SeedManager` in particular holds **static mutable state**
-  (`SeedManager.cs:11-12`) — a per-process seed. That is a direct obstacle to
-  running host and client logic in one process, which is how every practical
-  determinism test and CI run will want to work.
+- `SeedManager` still holds **static mutable state** — a per-process seed. It no
+  longer holds an RNG (streams are created on demand and owned by the caller),
+  but the seed itself is still process-global, which blocks running host and
+  client logic in one process. De-static it when netcode starts; the determinism
+  suites already avoid it by passing seeds explicitly.
 
-So this is greenfield, and the ordering advice in §8 is not optional.
+So the networking half is greenfield. The determinism half it depends on is
+built — see §8.
 
 ---
 
@@ -51,7 +53,7 @@ outside the deterministic set.
 Everything *after* generation is ordinary authoritative netcode. We do not
 attempt deterministic lockstep for gameplay: PhysX is not cross-platform
 bit-reproducible, and iOS/Android/Editor float and libm behaviour differ
-(`DETERMINISM.md` R10).
+(`DETERMINISM.md` R10 and §7).
 
 ---
 
@@ -156,7 +158,7 @@ contentHash mismatch  → "This session is running a different game version."
 
 layoutHash mismatch   → "Could not sync the house layout."
                         Abort after generating. Upload diagnostics
-                        (DETERMINISM.md §7) including the per-section hash
+                        (DETERMINISM.md §9) including the per-section hash
                         breakdown. This is a bug in our generator, not a
                         network fault, and must be reported as one.
 ```
@@ -203,20 +205,26 @@ Target: **≤ 8 KB/s per client steady state**, mobile-first, assume cellular.
 
 ## 8. Build order
 
-Netcode must not start until `DETERMINISM.md` §10 steps 1–8 are done and
-green — including the cross-platform CI hash job (T4).
+**The determinism foundation is done.** V1–V8 are fixed, Stage A is engine-free
+and pure, the canonical layout hash with per-section breakdown exists, and both
+test suites are green (`Docs/DETERMINISM.md` §10, §11).
 
-The reason is concrete rather than procedural. Every determinism bug in the
-current audit (V1–V5) presents identically through a replication layer: "the
-other player's house is subtly wrong." Diagnosing V5 — where the Editor and a
-device build already disagree with each other in single player — through a
-relay, a lobby and two devices costs several times what it costs against a
-local unit test. The determinism work is single-player work; do it in single
-player.
+One prerequisite is still outstanding: **T4, the cross-platform hash job**, needs
+Unity build agents CI does not have, so identical hashing across IL2CPP
+iOS-arm64 and Android-arm64 is currently argued from the code's structure rather
+than measured. Run the EditMode suite on a physical build of each platform before
+netcode work starts — a divergence found there is single-player-cheap, and the
+same divergence found through a relay and two devices is not.
 
-Suggested slice ordering:
+That ordering held for a concrete reason, and it paid off: every violation in
+the audit presented identically through a replication layer ("the other player's
+house is subtly wrong"), and V5 — where the editor and a device build disagreed
+with each other in single player — would have cost several times as much to
+diagnose through a lobby.
 
-1. `DETERMINISM.md` §10 steps 1–8 — single player, no netcode
+Remaining slice ordering:
+
+1. T4 on real devices — single player, no netcode
 2. NGO + UTP packages; host/client bootstrap; `SeedManager` de-staticked
 3. Handshake (§3) and mismatch protocol (§5) with **no gameplay replication** —
    two clients generate the same house, agree, and spawn nothing

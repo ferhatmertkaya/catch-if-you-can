@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using CatchIfYouCan.Interaction;
+using CatchIfYouCan.Procedural.Deterministic;
 using UnityEngine;
 
 namespace CatchIfYouCan.Procedural
@@ -16,55 +17,46 @@ namespace CatchIfYouCan.Procedural
         private static Material _ceilingMaterial;
         private static Material _trimMaterial;
 
-        public static GameObject CreateRoom(
-            RoomCategory category,
-            Vector3 worldPosition,
-            IEnumerable<SocketDirection> doorDirections,
-            IEnumerable<SocketDirection> openDirections,
-            int nodeId,
-            Transform parent)
+        /// <summary>
+        /// Builds a room for an authoritative <see cref="LayoutRoom"/>.
+        ///
+        /// Wall, door and socket decisions all come from the layout's door/open masks in a
+        /// frozen cardinal order. The previous version walked a HashSet to decide which
+        /// walls to seal - unspecified enumeration order deciding geometry.
+        /// </summary>
+        public static GameObject CreateRoom(LayoutRoom room, Vector3 worldPosition, Transform parent)
         {
             EnsureMaterials();
 
-            var roomRoot = new GameObject($"Room_{category}_{nodeId}");
+            var roomRoot = new GameObject($"Room_{room.Category}_{room.RoomId}");
             roomRoot.transform.SetParent(parent, false);
             roomRoot.transform.position = worldPosition;
 
-            var size = DefaultRoomSize;
+            var size = new Vector3(
+                Quantize.Metres(room.SizeMm.X),
+                Quantize.Metres(room.SizeMm.Y),
+                Quantize.Metres(room.SizeMm.Z));
+
             BuildFloor(roomRoot.transform, size);
             BuildCeiling(roomRoot.transform, size);
 
-            var doorSet = new HashSet<SocketDirection>();
-            if (doorDirections != null)
+            for (int d = 0; d < Directions.Cardinal.Length; d++)
             {
-                foreach (var dir in doorDirections)
-                    doorSet.Add(dir);
+                var dir = Directions.Cardinal[d];
+                BuildWall(roomRoot.transform, size, dir, room.HasDoor(dir));
             }
 
-            var openSet = new HashSet<SocketDirection>();
-            if (openDirections != null)
+            for (int d = 0; d < Directions.Cardinal.Length; d++)
             {
-                foreach (var dir in openDirections)
-                    openSet.Add(dir);
-            }
-
-            BuildWall(roomRoot.transform, size, SocketDirection.North, doorSet.Contains(SocketDirection.North));
-            BuildWall(roomRoot.transform, size, SocketDirection.South, doorSet.Contains(SocketDirection.South));
-            BuildWall(roomRoot.transform, size, SocketDirection.East, doorSet.Contains(SocketDirection.East));
-            BuildWall(roomRoot.transform, size, SocketDirection.West, doorSet.Contains(SocketDirection.West));
-
-            foreach (var openDir in openSet)
-            {
-                if (!doorSet.Contains(openDir))
-                    SealOpenWall(roomRoot.transform, size, openDir);
+                var dir = Directions.Cardinal[d];
+                if (room.IsOpen(dir) && !room.HasDoor(dir))
+                    SealOpenWall(roomRoot.transform, size, dir);
             }
 
             var module = roomRoot.AddComponent<RoomModule>();
-            module.Configure(category, new Bounds(Vector3.up * (size.y * 0.5f), size), nodeId);
+            module.Configure(room.Category, new Bounds(Vector3.up * (size.y * 0.5f), size), room.RoomId);
 
-            CreateLightSocket(roomRoot.transform, size);
-            CreateDoorSockets(roomRoot.transform, size, doorSet);
-            CreateInteriorSockets(roomRoot.transform, size, category);
+            CreateSocketsFromLayout(roomRoot.transform, module, room);
 
             module.CollectSockets();
             return roomRoot;
@@ -215,59 +207,88 @@ namespace CatchIfYouCan.Procedural
             }
         }
 
-        private static void CreateDoorSockets(Transform parent, Vector3 size, HashSet<SocketDirection> doorDirections)
+        /// <summary>
+        /// Creates every socket the layout says this room owns, at the positions
+        /// RoomSocketLayout defines. That type is the single source of truth: Stage A used
+        /// the same offsets to plan prop placement, so the built scene and the logical
+        /// layout agree by construction rather than by two copies of the same constants.
+        /// </summary>
+        private static void CreateSocketsFromLayout(Transform parent, RoomModule module, LayoutRoom room)
         {
-            foreach (var direction in doorDirections)
-            {
-                var socketGo = new GameObject($"Socket_Door_{direction}");
-                socketGo.transform.SetParent(parent, false);
-                socketGo.transform.localPosition = GetWallCenter(size, direction) + Vector3.up * (DoorHeight * 0.5f);
-                socketGo.transform.localRotation = Quaternion.LookRotation(RoomSocket.DirectionToLocalVector(direction), Vector3.up);
+            var slots = new List<SocketSlot>(10);
+            RoomSocketLayout.CollectSlots(room.Category, room.DoorMask, slots);
 
-                var socket = socketGo.AddComponent<RoomSocket>();
-                socket.Initialize(parent.GetComponent<RoomModule>(), SocketType.Door, direction);
+            for (int i = 0; i < slots.Count; i++)
+            {
+                var slot = slots[i];
+                var offset = RoomSocketLayout.LocalSocketOffset(slot, room.SizeMm);
+                var localPos = new Vector3(
+                    Quantize.Metres(offset.X),
+                    Quantize.Metres(offset.Y),
+                    Quantize.Metres(offset.Z));
+
+                if (slot == SocketSlot.Light)
+                {
+                    CreateRoomLight(parent, module, localPos, room.Category);
+                    continue;
+                }
+
+                var type = SocketSlots.TypeOf(slot);
+                var direction = DirectionForSlot(slot);
+                var socketGo = CreateSocket(parent, module, type, direction, localPos);
+
+                if (slot == SocketSlot.Hide)
+                    socketGo.AddComponent<HideSpot>();
             }
         }
 
-        private static void CreateLightSocket(Transform parent, Vector3 size)
+        private static SocketDirection DirectionForSlot(SocketSlot slot)
+        {
+            switch (slot)
+            {
+                case SocketSlot.DoorNorth: return SocketDirection.North;
+                case SocketSlot.DoorEast: return SocketDirection.East;
+                case SocketSlot.DoorSouth: return SocketDirection.South;
+                case SocketSlot.DoorWest: return SocketDirection.West;
+                case SocketSlot.PropA: return SocketDirection.North;
+                case SocketSlot.PropB: return SocketDirection.South;
+                case SocketSlot.Evidence: return SocketDirection.East;
+                case SocketSlot.GhostInteract: return SocketDirection.West;
+                case SocketSlot.Hide: return SocketDirection.South;
+                default: return SocketDirection.North;
+            }
+        }
+
+        private static void CreateRoomLight(Transform parent, RoomModule module, Vector3 localPos, RoomCategory category)
         {
             var lightGo = new GameObject("RoomLight");
             lightGo.transform.SetParent(parent, false);
-            lightGo.transform.localPosition = new Vector3(0f, size.y - 0.25f, 0f);
+            lightGo.transform.localPosition = localPos;
 
             var light = lightGo.AddComponent<Light>();
             light.type = LightType.Point;
             light.range = 8f;
-            light.intensity = categoryLightIntensity(parent.name);
+            light.intensity = CategoryLightIntensity(category);
             light.color = new Color(1f, 0.95f, 0.85f);
 
             var socketGo = new GameObject("Socket_Light");
             socketGo.transform.SetParent(lightGo.transform, false);
             var socket = socketGo.AddComponent<RoomSocket>();
-            socket.Initialize(parent.GetComponent<RoomModule>(), SocketType.Light, SocketDirection.Up);
+            socket.Initialize(module, SocketType.Light, SocketDirection.Up);
         }
 
-        private static float categoryLightIntensity(string roomName)
+        private static float CategoryLightIntensity(RoomCategory category)
         {
-            if (roomName.Contains("Bathroom") || roomName.Contains("Kitchen"))
-                return 1.35f;
-            if (roomName.Contains("Basement") || roomName.Contains("Attic"))
-                return 0.75f;
-            return 1.1f;
-        }
-
-        private static void CreateInteriorSockets(Transform parent, Vector3 size, RoomCategory category)
-        {
-            var module = parent.GetComponent<RoomModule>();
-            CreateSocket(parent, module, SocketType.Prop, SocketDirection.North, new Vector3(0f, 0f, size.z * 0.2f));
-            CreateSocket(parent, module, SocketType.Prop, SocketDirection.South, new Vector3(0.8f, 0f, -size.z * 0.25f));
-            CreateSocket(parent, module, SocketType.Evidence, SocketDirection.East, new Vector3(size.x * 0.15f, 1f, 0.4f));
-            CreateSocket(parent, module, SocketType.GhostInteract, SocketDirection.West, new Vector3(-size.x * 0.1f, 0f, 0f));
-
-            if (ShouldHaveHideSpot(category))
+            switch (category)
             {
-                var hideGo = CreateSocket(parent, module, SocketType.Hide, SocketDirection.South, new Vector3(-1.5f, 0f, -1.5f));
-                hideGo.AddComponent<HideSpot>();
+                case RoomCategory.Bathroom:
+                case RoomCategory.Kitchen:
+                    return 1.35f;
+                case RoomCategory.Basement:
+                case RoomCategory.Attic:
+                    return 0.75f;
+                default:
+                    return 1.1f;
             }
         }
 
@@ -279,22 +300,6 @@ namespace CatchIfYouCan.Procedural
             var socket = socketGo.AddComponent<RoomSocket>();
             socket.Initialize(module, type, direction);
             return socketGo;
-        }
-
-        private static bool ShouldHaveHideSpot(RoomCategory category)
-        {
-            switch (category)
-            {
-                case RoomCategory.Bedroom:
-                case RoomCategory.KidsRoom:
-                case RoomCategory.Office:
-                case RoomCategory.Storage:
-                case RoomCategory.Garage:
-                case RoomCategory.Basement:
-                    return true;
-                default:
-                    return false;
-            }
         }
 
         private static Vector3 GetWallCenter(Vector3 size, SocketDirection direction)

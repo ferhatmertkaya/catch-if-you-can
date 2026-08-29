@@ -152,310 +152,397 @@ handshake as the seed.
 
 ## 4. The PRNG contract
 
-`CiycRandom` is a PCG32 (`pcg_oneseq_32`). It is pure 64-bit integer arithmetic:
-identical on Mono, IL2CPP, ARM64 and x64, with no dependence on compiler
-settings, and it is not a security primitive and does not need to be.
+`CiycRandom` (`Scripts/Procedural/Deterministic/CiycRandom.cs`) is a PCG32
+(`pcg_oneseq_32`). It is pure 64-bit integer arithmetic: identical on Mono,
+IL2CPP, ARM64 and x64, with no dependence on compiler settings. It is not a
+security primitive and does not need to be.
+
+The implementation is verified against the published PCG32 reference vectors
+(seed 42, sequence 54) by both test suites. That check matters more than it
+looks: without it, "deterministic" would only mean "consistently whatever this
+code happens to do", and a future rewrite could silently change every stored
+seed.
 
 ```csharp
-// Assets/CatchIfYouCan/Scripts/Procedural/CiycRandom.cs
-using System.Collections.Generic;
-
 public struct CiycRandom
 {
-    private const ulong Mult = 6364136223846793005UL;
+    public CiycRandom(ulong seed, ulong stream);
 
-    private ulong _state;
-    private readonly ulong _inc;
+    public static CiycRandom ForStream(int seed, CiycStream stream);
+    public static CiycRandom ForStream(int seed, CiycStream stream, int attempt);
 
-    public CiycRandom(ulong seed, ulong stream)
-    {
-        _state = 0UL;
-        _inc = (stream << 1) | 1UL;   // must be odd
-        NextUInt();
-        unchecked { _state += seed; }
-        NextUInt();
-    }
-
-    public uint NextUInt()
-    {
-        unchecked
-        {
-            ulong old = _state;
-            _state = old * Mult + _inc;
-            uint xorshifted = (uint)(((old >> 18) ^ old) >> 27);
-            int rot = (int)(old >> 59);
-            return (xorshifted >> rot) | (xorshifted << ((-rot) & 31));
-        }
-    }
-
-    /// Unbiased [0, bound). Rejection sampling — deterministic draw count
-    /// for a given stream position, which modulo folding would not be.
-    public uint NextUInt(uint bound)
-    {
-        uint threshold = (uint)((0x1_0000_0000UL - bound) % bound);
-        while (true)
-        {
-            uint r = NextUInt();
-            if (r >= threshold) return r % bound;
-        }
-    }
-
-    public int NextInt(int minInclusive, int maxExclusive) =>
-        minInclusive + (int)NextUInt((uint)(maxExclusive - minInclusive));
-
-    /// [0,1) with an exact 24-bit mantissa — one multiply, no rounding ambiguity.
-    public float NextFloat() => (NextUInt() >> 8) * (1.0f / 16777216.0f);
-
-    public float NextFloat(float min, float max) => min + (max - min) * NextFloat();
-
-    public void Shuffle<T>(IList<T> items)
-    {
-        for (int i = items.Count - 1; i > 0; i--)
-        {
-            int j = (int)NextUInt((uint)(i + 1));
-            (items[i], items[j]) = (items[j], items[i]);
-        }
-    }
+    public uint  NextUInt();
+    public uint  NextUInt(uint bound);          // rejection sampling, unbiased
+    public int   NextInt(int min, int maxExcl);
+    public bool  NextBool();
+    public float NextFloat();                   // [0,1), exact 24-bit mantissa
+    public float NextFloat(float min, float max);
+    public void  Shuffle<T>(IList<T> items);    // Fisher-Yates
+    public int   PickWeightedIndex(IReadOnlyList<float> weights);
 }
 ```
 
-Constants are frozen. Changing `Mult`, the seeding sequence, or `NextFloat`'s
-scale invalidates every stored seed and every golden test — treat it as a
-content revision bump ([§6.2](#62-the-content-hash)).
+Notes on the choices that are easy to get wrong:
+
+- `NextUInt(bound)` uses **rejection sampling**, not `% bound`. Modulo folding
+  biases the low values, and the bias changes with `bound`.
+- `NextFloat` is `(NextUInt() >> 8) * (1f / 16777216f)`: one shift and one
+  multiply by a power of two, so there is no rounding ambiguity anywhere.
+- Retry attempts vary the **seed**, never the stream, so streams stay isolated
+  across attempts:
+  `seed + attempt * 0x9E3779B97F4A7C15`. A small linear step (the old
+  `seed + attempt * 7919`) collides between nearby seeds.
+
+Constants and the seeding sequence are frozen and are part of
+[`GenerationVersion`](#8-generation-version).
 
 ---
 
 ## 5. Stream separation
 
 A single shared stream makes every subsystem's draw count a global dependency:
-adding one `NextFloat()` to prop placement silently relocates the ghost room.
-Each subsystem therefore gets its own stream from the same session seed.
+adding one `NextFloat()` to prop placement would silently relocate the ghost
+room. Each subsystem draws from its own stream, derived from the same session
+seed.
 
 ```csharp
 public enum CiycStream : ulong
 {
-    Layout       = 1,
-    Rooms        = 2,
-    Doors        = 3,
-    Props        = 4,
-    Interactables= 5,
-    GhostRoom    = 6,
-    HideSpots    = 7,
-    Weather      = 8,
-    GhostIdentity= 9,
-    Objectives   = 10,
+    Layout              = 1,   // room graph expansion
+    Rooms               = 2,   // room archetype selection
+    Corridors           = 3,   // hallway bridging for forced rooms
+    Doors               = 4,   // reserved
+    Furniture           = 5,   // furniture selection and placement
+    Props               = 6,   // small prop selection and placement
+    EvidenceSpawns      = 7,   // reserved
+    GhostRoomCandidates = 8,   // ghost room scoring jitter
+    HidingSpots         = 9,   // reserved
+    EquipmentSpawns     = 10,  // reserved
+    Weather             = 11,  // weather selection
+    RoomVariants        = 12,  // prefab variant selection
 }
-
-var rng = new CiycRandom((ulong)sessionSeed, (ulong)CiycStream.Props);
 ```
+
+Streams marked **reserved** are declared but not yet drawn from: doors, hide
+spots, evidence points and equipment spawns are currently fully determined by
+the room graph and need no randomness. They are numbered now so that adding
+randomness to them later cannot renumber anything else.
 
 Rules:
 
 - Stream ids are append-only. Never renumber, never reuse a retired id.
-- Retry attempts vary the **seed**, not the stream:
-  `new CiycRandom((ulong)seed + (ulong)attempt * 0x9E3779B97F4A7C15UL, stream)`.
-  The current `seed + attempt * 7919` (`ProceduralHouseGenerator.cs:63`) works but
-  collides across nearby seeds; the golden-ratio constant does not.
 - A subsystem must not read another subsystem's stream.
+- `SeedManager.CreateRandom(stream)` is the entry point; there is no unnamed
+  stream to fall into by accident.
 
 ---
 
 ## 6. The layout hash
 
-### 6.1 What is hashed
+### 6.1 Structure
 
-FNV-1a 64-bit over a **canonically ordered** byte stream. The order is fixed by
-this spec, not by whatever order the generator happens to produce.
+`LayoutHasher.Compute` returns a `LayoutHash` carrying seven section hashes plus
+the final composite. All are FNV-1a 64-bit.
 
 ```
-seed                              : int32
-contentHash                       : uint64      (§6.2)
-roomCount                         : int32
-for each room, ordered by NodeId ascending:
-    nodeId                        : int32
-    category                      : int32
-    gridCell.x, gridCell.y        : int32, int32
-    moduleId                      : int32       (stable id, NOT prefab name)
-    doorMask                      : uint8       (N/E/S/W bitfield)
-edgeCount                         : int32
-for each edge, ordered by (min(NodeAId,NodeBId), max(...)) ascending:
-    nodeAId, nodeBId              : int32, int32
-    directionFromA                : int32
-propCount                         : int32
-for each prop, ordered by (nodeId, socketIndex) ascending:
-    nodeId, socketIndex           : int32, int32
-    propDefinitionId              : int32       (stable id, NOT array index)
-    qx, qy, qz                    : int32       (position, R11 quantization)
-    cardinalRotation              : int32       (0..3)
-ghostRoomNodeId                   : int32
-hideSpotCount                     : int32
-for each hide spot, ordered by (nodeId, qx, qy, qz):
-    nodeId, qx, qy, qz            : int32 x4
-weatherType                       : int32
+Identity        generationVersion, seed, mapDefinitionId, contentHash, algorithmId
+Rooms           roomId, archetypeId, category, gridCell, rotationIndex,
+                positionMm, sizeMm, variantIndex, doorMask, openMask
+Connections     connectionId, roomAId, roomBId, directionFromA
+Doors           doorId, roomAId, roomBId, socketASlot, socketBSlot,
+                positionMm, rotationIndex
+Furniture       propInstanceId, propDefinitionId, kind, roomId, slot,
+                positionMm, rotationIndex
+Props           (same shape as Furniture)
+GameplaySpawns  entranceRoomId, ghostRoomId, weatherIndex,
+                hideSpots[], equipmentSpawns[], evidencePoints[],
+                ghostRoomCandidates[] (roomId, scoreFixed)
+
+FINAL           FNV-1a over the seven section hashes, in the order above
 ```
 
-`moduleId` and `propDefinitionId` must be **stable authored ids** on the
-definition assets. Array indices and prefab names are not stable across content
-edits and will produce false mismatches on every reorder.
+`LayoutHash.ToReport()` renders this as the diagnostic block a mismatch carries,
+and `DescribeDifference` names the first differing section.
 
-### 6.2 The content hash
+### 6.2 Canonical ordering
 
-Computed once at build time and baked into a generated `ContentRevision.cs`:
-FNV-1a over, in sorted order, every `(stableId, propName, weight, boundsSize
-quantized, roomTags)` tuple in the prop and room definition sets, plus a
-`FORMAT_VERSION` constant that is bumped by hand whenever this spec's hash
-layout or the PRNG constants change.
+The hasher **re-sorts every collection into a local buffer before writing it**
+rather than trusting the order the builder produced. Trusting the caller would
+make the hash silently sensitive to a refactor nobody would think to re-test.
+This is what test G asserts: reversing or rotating every collection must not
+change the hash.
 
-A content-hash mismatch is a *different error* from a layout-hash mismatch and
-must be reported as such: it means the clients are running different builds, and
-no amount of seed agreement will help.
+Sort keys: rooms by `roomId`; connections by `(roomAId, roomBId, direction)`;
+doors by `(roomAId, roomBId, socketASlot)`; props by
+`(roomId, slot, propDefinitionId, positionMm)`; anchors by
+`(roomId, slot, positionMm)`; ghost candidates by `(score desc, roomId)`.
 
-### 6.3 When it is computed
+Connections are additionally stored with the lower room id always as A, so the
+same adjacency hashes identically regardless of which side discovered it.
 
-Immediately after `GenerateInternal` returns and `HouseValidator.Validate`
-passes, before any player, ghost or equipment is spawned.
+### 6.3 Identity, not indices
+
+`ArchetypeId` and `PropDefinitionId` are **stable authored strings**
+(`RoomDefinition.ResolveStableId`, `PropDefinition.ResolveStableId`), never array
+indices or prefab names. The generator's `propDefinitions` array is
+inspector-ordered: an index would renumber on every reorder and change layouts
+for stored seeds.
+
+### 6.4 The content hash
+
+`ContentSnapshot.ContentHash` covers, in stable-id order, every room archetype
+(`id, category, sizeMm, variantCount, weightFixed`) and prop archetype
+(`id, kind, boundsMm, weightFixed, allowedCategories`), plus the algorithm id
+and generation version.
+
+A content-hash mismatch is a **different error** from a layout-hash mismatch: it
+means the clients are running different builds, and no amount of seed agreement
+will help. Report it as such.
+
+### 6.5 Hashing implementation
+
+`Fnv1a64`, explicitly implemented in the repo. `string.GetHashCode()` and
+`object.GetHashCode()` are banned from the hash path: .NET randomises string
+hashing per process by default, so neither is a persistence or network contract.
+Multi-byte values are written little-endian explicitly rather than through
+`BitConverter`, whose byte order follows the host architecture. Strings are
+length-prefixed UTF-8, so `"ab"+"c"` cannot collide with `"a"+"bc"`.
 
 ---
 
-## 7. The mismatch protocol
+## 7. Quantization
+
+`Quantize` is the single conversion contract; do not duplicate these rules
+anywhere else.
+
+| Quantity | Representation |
+|---|---|
+| Positions, sizes | integer millimetres (`Vec3i`), scale 1000 |
+| Grid coordinates | integer `GridCell` (X, Y=floor, Z) |
+| Rotations | cardinal index 0..3 (N, E, S, W) |
+| Weights | fixed point, scale 1000 |
+
+In practice Stage A goes further than the rule requires: it does **all** position
+math in integer millimetres end to end, so there is no float in the geometry path
+to quantize. `Quantize.Millimetres` exists for the two boundaries — authored
+content coming in, and Unity world space going out.
+
+Distance scoring uses `IntMath.Sqrt`, an exact integer square root, rather than
+`Mathf.Sqrt`, keeping the whole ghost-room scoring path in integers.
+
+---
+
+## 8. Generation version
+
+`GenerationVersion.Current` (currently **1**, algorithm id
+`ciyc-house-gen-v1-pcg32`). A layout's identity is
+`(generationVersion, mapDefinitionId, seed)`.
+
+Increment it whenever any of these change:
+
+- `CiycRandom` constants or the seeding sequence
+- the order or count of draws in any stream
+- stream id assignments
+- the canonical hash layout in `LayoutHasher`
+- `Quantize` scales
+- any rule that alters which layout a seed produces
+
+Bumping it invalidates the golden seed table; regenerate it **in the same
+commit**, deliberately. Regenerating goldens to make a failing test pass erases
+the only evidence that layouts changed for every stored seed.
+
+`MapDefinition` carries the map identity and its tunables (`HOUSE_DEFAULT_A`,
+`HOUSE_TRAINING_A`).
+
+---
+
+## 9. The mismatch protocol
 
 1. Host generates, hashes, and broadcasts `(seed, contentHash, layoutHash)`.
 2. Each client generates from the received seed and computes its own hashes.
-3. Client compares. On any difference it must **abort the session, not repair it.**
-   There is no partial-resync path: the divergent client cannot be patched into
-   agreement because it does not know which of its thousands of decisions differed.
-4. The aborting client uploads a diagnostic bundle:
-   - `seed`, both content hashes, both layout hashes
-   - platform, Unity version, IL2CPP/Mono, device model
-   - a per-section hash breakdown (rooms / edges / props / ghostRoom / hideSpots)
-     so the failing *stage* is identifiable without a repro
+3. Client compares. On any difference it must **abort the session, not repair
+   it.** There is no partial-resync path: the divergent client cannot be patched
+   into agreement because it does not know which of its thousands of decisions
+   differed.
+4. The aborting client reports `LayoutHash.ToReport()` — seed, both content
+   hashes, and the per-section breakdown that names the failing stage — plus
+   platform, Unity version, scripting backend and device model.
 
-Per-section hashes are cheap and are the difference between a five-minute fix and
-a week of bisecting. Emit them always, not just on failure.
+Section hashes are always computed, not only on failure: they are the difference
+between a five-minute fix and a week of bisecting.
 
-Development builds additionally dump both full layout descriptors to disk for
-diffing. Release builds send hashes only.
+`ProceduralHouseGenerator` implements the local half of this today. On a Stage A
+validation failure it logs an error with the full hash report and raises
+`ProceduralHouseGenerator.GenerationFailed`; it does **not** silently substitute
+a different seed. The previous code fell back to `KnownGoodSeed`, which is
+exactly the silent repair that would desync a session — one client would quietly
+have built a different house from everyone else.
 
----
-
-## 8. Required tests
-
-These gate the vertical slice. A phase is not complete without them.
-
-- **T1 — Repeat.** 1000 seeds, generate twice in the same process, hashes equal.
-  Catches shared-mutable-state bugs.
-- **T2 — Interleave.** Generate seed A, then B, then A again; the two A hashes
-  must match. Catches leftover-state bugs (V5) — T1 alone will not.
-- **T3 — Golden.** 100 fixed seeds with committed expected hashes. Any change to
-  generation must either leave these untouched or bump `FORMAT_VERSION`
-  deliberately in the same commit.
-- **T4 — Cross-platform.** T3 executed in CI on an IL2CPP iOS-arm64 build, an
-  IL2CPP Android-arm64 build, and the Mono Editor. Same hashes, or the build
-  fails. This is the only test that would have caught V1/V2, and it must run
-  before Phase 15, not after.
-- **T5 — Stream isolation.** Adding a draw to one stream must not change any
-  other stream's output. Assert per-subsystem sub-hashes.
-- **T6 — Frame-rate independence.** Generate under a forced 5 fps and a forced
-  200 fps; hashes equal. Directly targets V4/V5.
-- **T7 — Static analysis.** A CI grep failing the build on
-  `UnityEngine.Random`, `System.Random`, `OrderBy(`, `Physics.`, `DateTime.Now`,
-  or `Time.` inside `Scripts/Procedural/**`. Cheap, and it holds the line after
-  everyone has forgotten this document.
+Networking is not implemented; see `Docs/NETWORKING.md`.
 
 ---
 
-## 9. Current violations
+## 10. Tests
 
-Audited at `aa8c431`. Every item below is live in the tree today. Ordered by how
-quietly it breaks.
+Two suites assert the same properties.
 
-### 9.1 V1 — Layout PRNG is `System.Random`
-`SeedManager.cs:12,27`; used by `HouseLayoutGraph.Build`, `ProceduralHouseGenerator`,
-`PropSpawner`, `RoomDefinition.PickPrefab`. Violates **R1**.
+| | |
+|---|---|
+| `Assets/CatchIfYouCan/Tests/EditMode/DeterminismTests.cs` | Unity EditMode, via Test Runner |
+| `Tools/DeterminismHarness` | plain .NET, no Unity licence — what CI runs |
 
-### 9.2 V2 — `UnityEngine.Random` is seeded alongside it
-`SeedManager.cs:20`. 103 cosmetic call sites share that global stream —
-`GhostEventDirector` and `PsychologicalAudioDirector` draw from it on `Time.time`
-schedules, so its position depends on frame rate. `WeatherSystem.cs:52` and
-`GhostController` then make *gameplay* decisions from it. Violates **R2**.
+Both exist on purpose: the harness runs in CI, while the EditMode tests
+additionally prove that `UnityEngine.Random` cannot perturb generation inside the
+real engine, and that Unity's own toolchain produces the same hashes.
 
-### 9.3 V3 — Random-key sort
-`HouseLayoutGraph.cs:256`: `Nodes.OrderBy(_ => rng.Next()).ToList()`. Violates **R4**.
+| Test | Asserts |
+|---|---|
+| PCG32 vectors | the RNG matches the published reference stream |
+| **A** | same seed, 100 generations, one hash (3 seeds) |
+| **B** | interleaving unrelated generation changes nothing |
+| **C** | variable elapsed time and work between runs changes nothing |
+| **D** | retry attempts are reproducible and uncontaminated by earlier attempts; consecutive attempts do explore different layouts |
+| **E** | heavy `UnityEngine.Random` use cannot perturb generation, **and** generation does not advance `UnityEngine.Random` |
+| **F** | 24 golden seeds (12 seeds × 2 maps) reproduce their recorded hashes |
+| **G** | reversing or rotating every collection does not change the hash |
+| Stream isolation | draining one stream does not move the layout; two streams from one seed are uncorrelated |
+| Validity | 200 sampled seeds all produce valid layouts |
+| Doorways | no prop is ever placed outside its room or in a door approach zone |
+| Section hashes | moving one prop changes only the Props section |
+| Quantization | symmetric, exact, rotation wrapping |
+| FNV-1a | stable, and length-prefixed against boundary collisions |
 
-### 9.4 V4 — Prop placement reads the live physics scene
-`PropSpawner.cs:91`: `Physics.OverlapBox(...)` gates every prop spawn. Violates **R5**.
+### The static guard
 
-This is the highest-severity item in the audit, for a reason that is easy to miss:
-the RNG draws (`rng.NextDouble()`, `PickWeighted`) happen *before* the overlap
-test, so a client whose overlap test disagrees still has an identically-positioned
-RNG stream. **The layout diverges while every RNG-based consistency check passes.**
-Nothing downstream can detect it. This is precisely the failure mode a layout hash
-exists to catch, and precisely the one that will not be caught by any check
-weaker than a full hash.
+`Scripts/check_determinism.sh` fails the build on a reintroduced
+`UnityEngine.Random`, `System.Random`, `Physics.*`, `OrderBy(`, `DateTime.Now`,
+`Time.*`, `using UnityEngine`, or a `GetHashCode()` used for hashing anywhere in
+the deterministic core, and on RNG or physics queries in the Stage B files. It
+comments-strips first so it does not fire on the comments that explain the rules.
+It then runs the full suite.
 
-Compounding it: with `m_AutoSyncTransforms: 0` and generation running
-synchronously inside one frame, freshly `Instantiate`d rooms and props are never
-written into the PhysX broadphase during generation. The overlap test therefore
-queries a scene containing only *pre-existing* colliders — which is not what the
-code reads as intended, and which brings us to V5.
+`.github/workflows/determinism.yml` runs it on every push and pull request.
 
-### 9.5 V5 — Generation retries observe the previous attempt's leftovers
-`ProceduralHouseGenerator.cs:61-75` retries up to `MaxGenerationAttempts`, each
-attempt calling `ClearExisting()` (`:555`) → `DestroyImmediateSafe` (`:573`).
-At runtime that branch is `Object.Destroy`, which is **deferred to end of frame**;
-all attempts run inside one frame. So attempt *N*'s `Physics.OverlapBox` sees the
-colliders of attempts *0..N-1*, still in the scene. Violates **R9** (and R5).
+This is the part that holds the line after everyone has forgotten the design
+discussion: a reviewer will not catch a reintroduced `Random.Range` in a
+400-line diff, but the guard will.
 
-Consequences, all of which are real today:
-- Attempt 1 does not produce the same house as a fresh generation with the same
-  `attemptSeed`.
-- The Editor takes the `DestroyImmediate` branch and *does* get a clean scene, so
-  **the Editor and a player build generate different houses from the same seed.**
-  Every Editor-side golden hash would be wrong on device.
-- Regenerating within a session differs from generating after a scene load.
+### Still outstanding
 
-### 9.6 V6 — Session seed comes from `UnityEngine.Random`
-`MissionManager.cs:140` and `MissionSelectUI.cs:187`. Not a determinism bug on its
-own — a seed only has to be *agreed*, not reproducible — but the seed must become
-host-authoritative and replicated before multiplayer. See `Docs/NETWORKING.md` §3.
-
-### 9.7 V7 — Wall clock in the generation path
-`InvestigationBootstrap.cs:308`: `System.DateTime.Now`. Currently feeds UI text
-only, so it is not yet a hash input. Fence it off before it becomes one. **R7**.
-
-### 9.8 V8 — Prop identity is an array index
-`ProceduralHouseGenerator.cs:20` `[SerializeField] private PropDefinition[] propDefinitions`,
-consumed in order by `PropSpawner.FilterProps`/`PickWeighted`. Inspector order is
-layout-affecting content. Needs stable ids per **R12** before the hash in §6.1 can
-be trusted.
-
-### 9.9 Not a violation
-
-`PropDefinitionFactory.AppendFromFolder` (`:37-38`) enumerates the filesystem, but
-`Array.Sort(files, StringComparer.OrdinalIgnoreCase)` canonicalizes the order, and
-the only callers are in `Assets/CatchIfYouCan/Editor/ExternalAssetIntegrator.cs`
-— it runs at author time, not on device. Correct as written; keep it that way.
+**T4 cross-platform hashing is not yet automated.** Proving that an IL2CPP
+iOS-arm64 build and an IL2CPP Android-arm64 build produce identical hashes needs
+Unity build agents, which CI does not have. The core is engine-free integer
+arithmetic, which is the strongest structural argument available, and the
+`noEngineReferences` assembly flag enforces it at compile time — but that is an
+argument, not a measurement. Until a device job exists, run the EditMode suite on
+a physical iOS and Android build before shipping a generation change.
 
 ---
 
-## 10. Migration order
+## 11. Resolved violations
 
-Each step is independently shippable and testable. Do not reorder: the hash is
-worthless before the physics dependency is gone, and the tests are worthless
-before the hash exists.
+All eight violations from the original audit are fixed.
 
-| # | Work | Clears |
+| | Was | Now |
 |---|---|---|
-| 1 | Add `CiycRandom` + `CiycStream`; unit-test against PCG32 reference vectors | — |
-| 2 | Port the generator to `CiycRandom`; drop `InitState`; Fisher–Yates | V1, V2, V3 |
-| 3 | Replace `Physics.OverlapBox` with an analytic occupancy grid | V4 |
-| 4 | Generate into a fresh root and swap; make retries observe a clean slate | V5 |
-| 5 | Stable ids on prop/room definitions; build-time `ContentRevision` | V8, R12 |
-| 6 | Implement the layout hash (§6) with per-section breakdown | — |
-| 7 | Tests T1–T3, T5–T7 | — |
-| 8 | CI cross-platform hash job (T4) | — |
-| 9 | Seed replication + handshake — `Docs/NETWORKING.md` | V6 |
+| **V1** | Layout PRNG was `System.Random` (`SeedManager.cs:12,27`) | `CiycRandom` (PCG32), verified against reference vectors |
+| **V2** | `SeedManager.SetSeed` also seeded `UnityEngine.Random`, a global shared with ~100 cosmetic call sites | `InitState` removed entirely; `SeedManager` hands out named streams only. Test E asserts the isolation in both directions |
+| **V3** | `Nodes.OrderBy(_ => rng.Next())` (`HouseLayoutGraph.cs:256`) | Removed outright. Candidates are built in canonical order and picked uniformly — the shuffle never affected the distribution, so it needed deleting, not replacing |
+| **V4** | `Physics.OverlapBox` gated every prop spawn (`PropSpawner.cs:91`) | `OccupancyGrid`: integer AABB occupancy over data the layout already owns, including reserved door approach zones |
+| **V5** | Retries instantiated, destroyed and re-instantiated inside one frame with deferred `Object.Destroy`, so attempt N saw attempts 0..N-1 — and the editor and a player build disagreed | Stage A retries on pure data; nothing is instantiated until a layout validates. Stage B builds into a fresh root and swaps |
+| **V6** | Session seed from `UnityEngine.Random` (`MissionManager.cs:140`, `MissionSelectUI.cs:187`) | `SessionSeedSource.Next()`, a cryptographic source, host-authoritative in multiplayer |
+| **V7** | `DateTime.Now` in the generation path | Fenced to presentation-only case text, with an invariant culture |
+| **V8** | Prop identity was an array index into an inspector-ordered array | Stable authored ids; `ContentSnapshot` sorts by id so inspector order cannot influence generation |
 
-Steps 1–8 are single-player work and carry no networking dependency. They should
-land **before** any netcode goes in: debugging a determinism bug through a
-replication layer costs several times what it costs here.
+Two further fixes fell out of the work:
+
+- `HouseLayoutGraph.cs` referenced `UnityEngine.Vector2Int` without importing
+  `UnityEngine` and with no local definition — **the file did not compile**. It
+  is now a projection over `HouseLayout` using the pure `GridCell`.
+- `PrimitiveRoomFactory` walked a `HashSet<SocketDirection>` to decide which
+  walls to seal: unspecified enumeration order deciding geometry. It now
+  iterates the frozen cardinal order from the layout's masks.
+
+---
+
+## 12. Architecture
+
+```
+seed + generationVersion + mapDefinitionId + ContentSnapshot
+                      |
+                      v
+        STAGE A   HouseLayoutBuilder          (engine-free, pure)
+                      |
+                      +--> LayoutValidator --> retry on failure (pure data)
+                      |
+                      v
+                  HouseLayout                 (immutable, authoritative)
+                      |
+                      +--> LayoutHasher ----> LayoutHash (7 sections + final)
+                      |                             |
+                      |                             +--> multiplayer handshake
+                      |                             +--> golden seed tests
+                      |                             +--> LayoutDiff / compare window
+                      v
+        STAGE B   ProceduralHouseGenerator.Instantiate
+                      |
+                      +--> rooms, doors, props, lights, hide spots
+                      +--> colliders            (an OUTPUT, never an input)
+                      +--> NavMesh bake         (host-authoritative, not hashed)
+```
+
+Stage A makes every decision. Stage B makes none: it has no RNG, performs no
+physics queries, and reads nothing from the scene. That split is what makes the
+determinism testable — the whole of Stage A runs in a plain .NET console app.
+
+### Where the code lives
+
+| Path | Role |
+|---|---|
+| `Scripts/Procedural/Deterministic/` | the pure core; own assembly, `noEngineReferences: true` |
+| `Scripts/Procedural/ProceduralHouseGenerator.cs` | Stage B instantiation |
+| `Scripts/Procedural/ContentSnapshotFactory.cs` | the one boundary where authored floats become generation input |
+| `Scripts/Procedural/SeedManager.cs` | session seed and named streams |
+| `Tests/EditMode/DeterminismTests.cs` | Unity suite |
+| `Tools/DeterminismHarness/` | standalone suite, golden generation |
+| `Editor/DeterminismTools.cs` | Tools > Catch If You Can > Determinism |
+| `Scripts/check_determinism.sh` | static guard + suite |
+
+### Editor tooling
+
+**Tools > Catch If You Can > Determinism**
+
+- *Generate Golden Seeds* — rewrites the committed table, behind a confirmation
+  that explains when it is legitimate
+- *Validate Golden Seeds* — checks every entry, reports failures to the Console
+- *Compare Two Layouts* — generates two layouts and reports the **first**
+  authoritative difference (`room 8: grid (4,0,8) vs (5,0,8)`) plus both section
+  breakdowns
+- *Print Layout Report* — hash report for the current session seed
+
+---
+
+## 13. Remaining risks
+
+Honest list of what is still not proven.
+
+1. **Cross-platform hashing is argued, not measured.** See T4 above.
+2. **Unity's `float` behaviour is avoided rather than trusted.** Stage A uses
+   integers for geometry, but weighted selection still accumulates `float`
+   weights in a fixed order. IEEE-754 addition is exact given fixed order, and
+   the ordering is canonical, so this is sound — but it is the one remaining
+   float in a decision path. Moving weights to fixed-point integers would close
+   it completely.
+3. **`ContentSnapshot` is built at runtime from ScriptableObjects.** If two
+   builds ship different assets, the content hash catches it at the handshake —
+   but only at the handshake. A build-time baked content revision would catch it
+   earlier.
+4. **The NavMesh is not hashed.** Deliberate: a runtime bake carries no
+   cross-platform bit-identity guarantee. Ghost pathing must therefore stay
+   host-authoritative; if it were ever made client-predicted, this would become a
+   divergence source.
+5. **Room prefab variants are content.** `GetPrefabVariant` indexes
+   `PrefabVariants` by the layout's variant index, so reordering that array
+   changes which prefab a seed produces. `VariantCount` is in the content hash,
+   but the array *order* is not. Reordering variants without changing the count
+   would not be detected.

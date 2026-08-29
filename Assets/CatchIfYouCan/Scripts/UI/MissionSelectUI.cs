@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using CatchIfYouCan.Core;
 using CatchIfYouCan.Equipment;
 using CatchIfYouCan.Missions;
+using CatchIfYouCan.Procedural;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -184,7 +185,7 @@ namespace CatchIfYouCan.UI
             if (MissionManager.Instance != null)
                 runtime = MissionManager.Instance.StartInvestigation(_selected);
             else if (GameManager.Instance != null)
-                GameManager.Instance.BeginMission(MissionRuntime.Create(_selected, 1001, Random.Range(1, int.MaxValue), null));
+                GameManager.Instance.BeginMission(MissionRuntime.Create(_selected, 1001, SessionSeedSource.Next(), null));
 
             LoadRecommendedEquipment();
 

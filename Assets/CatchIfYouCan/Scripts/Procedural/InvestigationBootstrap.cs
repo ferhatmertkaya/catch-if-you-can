@@ -292,7 +292,13 @@ namespace CatchIfYouCan.Procedural
                     ? _generatedHouse.Entrance.Root.transform.position
                     : Vector3.zero;
                 WeatherSystem.Instance.EnsureOutdoorParticles(weatherPos);
-                WeatherSystem.Instance.SetRandomWeather();
+
+                // Weather is gameplay-affecting and therefore part of the layout, not a
+                // cosmetic roll: every client derives the same value from the seed.
+                if (_generatedHouse?.Layout != null)
+                    WeatherSystem.Instance.ApplyLayoutWeather(_generatedHouse.Layout.WeatherIndex);
+                else
+                    WeatherSystem.Instance.SetSeededWeather();
             }
         }
 
@@ -305,7 +311,9 @@ namespace CatchIfYouCan.Procedural
             }
             else
             {
-                string timeText = System.DateTime.Now.ToString("HH:mm");
+                // Wall clock, deliberately kept out of anything generation reads: this is
+                // presentation-only flavour text on the case card.
+                string timeText = System.DateTime.Now.ToString("HH:mm", System.Globalization.CultureInfo.InvariantCulture);
                 string intro = $"CASE #{mission.CaseNumber}\n{mission.LocationName}\n{timeText}";
                 GameEvents.TipRequested(intro);
             }

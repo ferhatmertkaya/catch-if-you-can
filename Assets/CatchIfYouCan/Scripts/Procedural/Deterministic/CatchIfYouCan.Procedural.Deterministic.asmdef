@@ -1,0 +1,14 @@
+{
+    "name": "CatchIfYouCan.Procedural.Deterministic",
+    "rootNamespace": "CatchIfYouCan.Procedural.Deterministic",
+    "references": [],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": true
+}
