@@ -66,6 +66,8 @@ namespace CatchIfYouCan.Procedural.Deterministic
     ///
     /// Entries are sorted by stable id at construction, so authoring order (for example the
     /// order of a [SerializeField] array in the inspector) can never change generation.
+    /// Duplicate stable ids are REJECTED at construction rather than tie-broken - see
+    /// <see cref="DuplicateStableIdException"/> for why hiding them would be worse.
     /// </summary>
     public sealed class ContentSnapshot
     {
@@ -73,17 +75,92 @@ namespace CatchIfYouCan.Procedural.Deterministic
         public IReadOnlyList<PropArchetype> PropArchetypes { get; }
         public ulong ContentHash { get; }
 
+        /// <exception cref="DuplicateStableIdException">
+        /// If two entries resolve to the same stable id. Rejected rather than tie-broken:
+        /// see <see cref="DuplicateStableIdException"/>.
+        /// </exception>
         public ContentSnapshot(IEnumerable<RoomArchetype> roomArchetypes, IEnumerable<PropArchetype> propArchetypes)
         {
             var rooms = new List<RoomArchetype>(roomArchetypes ?? Array.Empty<RoomArchetype>());
             var props = new List<PropArchetype>(propArchetypes ?? Array.Empty<PropArchetype>());
 
+            // Sort FIRST, then check adjacent pairs. Sorting makes duplicate detection a
+            // single linear pass and needs no hash container, whose enumeration order could
+            // otherwise leak into the error message.
             rooms.Sort((a, b) => string.CompareOrdinal(a.ArchetypeId, b.ArchetypeId));
             props.Sort((a, b) => string.CompareOrdinal(a.PropDefinitionId, b.PropDefinitionId));
+
+            // The sort key must be TOTAL for the ordering to be deterministic: List.Sort is
+            // an unstable introsort, so equal keys leave the relative order dependent on the
+            // input order. Rejecting duplicates is what makes the single-key sort total -
+            // rather than adding a tie-break that would hide the bad content.
+            ThrowIfDuplicateRoomIds(rooms);
+            ThrowIfDuplicatePropIds(props);
 
             RoomArchetypes = rooms;
             PropArchetypes = props;
             ContentHash = ComputeContentHash(rooms, props);
+        }
+
+        private static void ThrowIfDuplicateRoomIds(List<RoomArchetype> sortedRooms)
+        {
+            List<string> duplicates = null;
+            for (int i = 1; i < sortedRooms.Count; i++)
+            {
+                if (!string.Equals(sortedRooms[i].ArchetypeId, sortedRooms[i - 1].ArchetypeId, StringComparison.Ordinal))
+                    continue;
+
+                duplicates ??= new List<string>();
+                if (duplicates.Count == 0 ||
+                    !string.Equals(duplicates[duplicates.Count - 1], sortedRooms[i].ArchetypeId, StringComparison.Ordinal))
+                    duplicates.Add(sortedRooms[i].ArchetypeId);
+            }
+
+            if (duplicates != null)
+                throw new DuplicateStableIdException("room archetype", duplicates);
+        }
+
+        private static void ThrowIfDuplicatePropIds(List<PropArchetype> sortedProps)
+        {
+            List<string> duplicates = null;
+            for (int i = 1; i < sortedProps.Count; i++)
+            {
+                if (!string.Equals(sortedProps[i].PropDefinitionId, sortedProps[i - 1].PropDefinitionId, StringComparison.Ordinal))
+                    continue;
+
+                duplicates ??= new List<string>();
+                if (duplicates.Count == 0 ||
+                    !string.Equals(duplicates[duplicates.Count - 1], sortedProps[i].PropDefinitionId, StringComparison.Ordinal))
+                    duplicates.Add(sortedProps[i].PropDefinitionId);
+            }
+
+            if (duplicates != null)
+                throw new DuplicateStableIdException("prop definition", duplicates);
+        }
+
+        /// <summary>
+        /// Non-throwing duplicate check for tooling that wants to REPORT bad content rather
+        /// than refuse to run - the editor content validator, for example. Returns every
+        /// duplicated id in canonical order; empty means the ids are a valid total ordering.
+        /// </summary>
+        public static IReadOnlyList<string> FindDuplicateIds(
+            IEnumerable<string> resolvedIds)
+        {
+            var ids = new List<string>(resolvedIds ?? Array.Empty<string>());
+            ids.Sort(StringComparer.Ordinal);
+
+            var duplicates = new List<string>();
+            for (int i = 1; i < ids.Count; i++)
+            {
+                if (!string.Equals(ids[i], ids[i - 1], StringComparison.Ordinal))
+                    continue;
+
+                if (duplicates.Count == 0 ||
+                    !string.Equals(duplicates[duplicates.Count - 1], ids[i], StringComparison.Ordinal))
+                    duplicates.Add(ids[i]);
+            }
+
+            return duplicates;
         }
 
         private static ulong ComputeContentHash(List<RoomArchetype> rooms, List<PropArchetype> props)

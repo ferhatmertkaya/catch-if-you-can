@@ -102,6 +102,12 @@ namespace CatchIfYouCan.Procedural
         /// Runs Stage A only. Pure: allocates no GameObjects and touches no scene state, so
         /// it is safe to call for hashing, for a multiplayer pre-flight check, or from a test.
         /// </summary>
+        /// <exception cref="DuplicateStableIdException">
+        /// If authored content contains two definitions resolving to the same stable id.
+        /// Deliberately NOT caught: duplicate identity makes content ordering - and therefore
+        /// the layout a seed produces - dependent on authoring order, so continuing would
+        /// mean shipping a silent cross-client divergence. Fail loudly instead.
+        /// </exception>
         public HouseLayout BuildLayout(int seed, out LayoutValidationResult validation)
         {
             var content = ContentSnapshotFactory.Create(roomDefinitions, propDefinitions);

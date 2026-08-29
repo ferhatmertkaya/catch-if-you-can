@@ -50,6 +50,7 @@ namespace CatchIfYouCan.Tools
             TestF_GoldenSeeds();
             TestG_OrderPerturbation();
             TestStreamIsolation();
+            TestDuplicateStableIdsRejected();
             TestValidationHolds();
             TestQuantizationContract();
 
@@ -375,6 +376,102 @@ namespace CatchIfYouCan.Tools
             }
 
             Check("stream isolation: two streams from one seed produce different sequences", !identical);
+        }
+
+        /// <summary>
+        /// Duplicate stable ids must be REJECTED, not tie-broken.
+        ///
+        /// Two entries sharing an id make the sort comparator non-total, and List.Sort is an
+        /// unstable introsort - so their relative order would depend on the authoring order,
+        /// and two clients with the same assets ordered differently would silently generate
+        /// different houses from the same seed.
+        /// </summary>
+        private static void TestDuplicateStableIdsRejected()
+        {
+            var goodRooms = new List<RoomArchetype>
+            {
+                new RoomArchetype("ARCH_A", RoomCategory.Entrance, new Vec3i(6000, 3000, 6000), 1, Quantize.Weight(1f)),
+                new RoomArchetype("ARCH_B", RoomCategory.Hallway, new Vec3i(6000, 3000, 6000), 1, Quantize.Weight(1f)),
+            };
+            var goodProps = new List<PropArchetype>
+            {
+                new PropArchetype("PROP_A", PropKind.Prop, new Vec3i(500, 500, 500), Quantize.Weight(1f), null),
+                new PropArchetype("PROP_B", PropKind.Prop, new Vec3i(500, 500, 500), Quantize.Weight(1f), null),
+            };
+
+            // Baseline: unique ids must still construct.
+            bool baselineOk = true;
+            try { var _ = new ContentSnapshot(goodRooms, goodProps); }
+            catch (Exception) { baselineOk = false; }
+            Check("duplicate ids: unique content still constructs", baselineOk);
+
+            // Duplicate PROP id -> reject.
+            var dupProps = new List<PropArchetype>(goodProps)
+            {
+                new PropArchetype("PROP_A", PropKind.Furniture, new Vec3i(900, 900, 900), Quantize.Weight(2f), null)
+            };
+            Check("duplicate ids: duplicate prop id is rejected",
+                ThrowsDuplicate(() => new ContentSnapshot(goodRooms, dupProps), out string propMsg),
+                propMsg);
+            Check("duplicate ids: prop error names the offending id",
+                propMsg != null && propMsg.Contains("PROP_A"), propMsg);
+
+            // Duplicate ROOM id -> reject.
+            var dupRooms = new List<RoomArchetype>(goodRooms)
+            {
+                new RoomArchetype("ARCH_B", RoomCategory.Bedroom, new Vec3i(6000, 3000, 6000), 1, Quantize.Weight(1f))
+            };
+            Check("duplicate ids: duplicate room id is rejected",
+                ThrowsDuplicate(() => new ContentSnapshot(dupRooms, goodProps), out string roomMsg),
+                roomMsg);
+            Check("duplicate ids: room error names the offending id",
+                roomMsg != null && roomMsg.Contains("ARCH_B"), roomMsg);
+
+            // The rejection must not depend on WHERE in the input the duplicate sits,
+            // which is precisely the input-order sensitivity being defended against.
+            var dupFirst = new List<PropArchetype>
+            {
+                new PropArchetype("PROP_A", PropKind.Furniture, new Vec3i(900, 900, 900), Quantize.Weight(2f), null),
+                goodProps[0],
+                goodProps[1],
+            };
+            Check("duplicate ids: rejected regardless of input position",
+                ThrowsDuplicate(() => new ContentSnapshot(goodRooms, dupFirst), out _));
+
+            // Non-throwing helper used by editor tooling.
+            var found = ContentSnapshot.FindDuplicateIds(new[] { "b", "a", "b", "c", "a", "b" });
+            bool helperOk = found.Count == 2 && found[0] == "a" && found[1] == "b";
+            Check("duplicate ids: FindDuplicateIds reports each duplicate once, in order",
+                helperOk, helperOk ? null : string.Join(",", found));
+
+            Check("duplicate ids: FindDuplicateIds returns empty for unique input",
+                ContentSnapshot.FindDuplicateIds(new[] { "a", "b", "c" }).Count == 0);
+
+            // The real content set must itself be clean, or generation is already broken.
+            bool fallbackOk = true;
+            try { var _ = ContentSnapshot.CreateFallback(); }
+            catch (DuplicateStableIdException) { fallbackOk = false; }
+            Check("duplicate ids: the shipped fallback content set has unique ids", fallbackOk);
+        }
+
+        private static bool ThrowsDuplicate(Func<ContentSnapshot> act, out string message)
+        {
+            message = null;
+            try
+            {
+                var _ = act();
+                return false;
+            }
+            catch (DuplicateStableIdException ex)
+            {
+                message = ex.Message;
+                return true;
+            }
+            catch (Exception ex)
+            {
+                message = "wrong exception type: " + ex.GetType().Name;
+                return false;
+            }
         }
 
         private static void TestValidationHolds()

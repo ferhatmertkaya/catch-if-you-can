@@ -60,7 +60,70 @@ namespace CatchIfYouCan.Procedural
             if (rooms.Count == 0 && props.Count == 0)
                 return ContentSnapshot.CreateFallback();
 
+            // Detect duplicates HERE as well as in ContentSnapshot, because only this side
+            // knows the asset names. "PropDefinition 'Chair (1)' and 'Chair (2)' both resolve
+            // to 'Chair'" is actionable; the id alone is not. ContentSnapshot keeps its own
+            // check as the backstop for callers that bypass this factory.
+            ReportDuplicateAssets(roomDefinitions, propDefinitions);
+
             return new ContentSnapshot(rooms, props);
+        }
+
+        /// <summary>
+        /// Logs which ASSETS collide before letting the snapshot reject them, so the fix is
+        /// obvious from the Console without hunting for the offending definition.
+        /// </summary>
+        private static void ReportDuplicateAssets(RoomDefinition[] roomDefinitions, PropDefinition[] propDefinitions)
+        {
+            LogCollisions("RoomDefinition", CollectIds(roomDefinitions,
+                d => d == null ? null : d.ResolveStableId(),
+                d => d == null ? "<null>" : d.name));
+
+            LogCollisions("PropDefinition", CollectIds(propDefinitions,
+                d => d == null ? null : d.ResolveStableId(),
+                d => d == null ? "<null>" : d.name));
+        }
+
+        private static List<KeyValuePair<string, string>> CollectIds<T>(
+            T[] definitions, Func<T, string> idOf, Func<T, string> nameOf)
+        {
+            var pairs = new List<KeyValuePair<string, string>>();
+            if (definitions == null)
+                return pairs;
+
+            for (int i = 0; i < definitions.Length; i++)
+            {
+                string id = idOf(definitions[i]);
+                if (!string.IsNullOrEmpty(id))
+                    pairs.Add(new KeyValuePair<string, string>(id, nameOf(definitions[i])));
+            }
+
+            return pairs;
+        }
+
+        private static void LogCollisions(string kind, List<KeyValuePair<string, string>> pairs)
+        {
+            var ids = new List<string>(pairs.Count);
+            for (int i = 0; i < pairs.Count; i++)
+                ids.Add(pairs[i].Key);
+
+            var duplicates = ContentSnapshot.FindDuplicateIds(ids);
+            for (int d = 0; d < duplicates.Count; d++)
+            {
+                var owners = new List<string>();
+                for (int i = 0; i < pairs.Count; i++)
+                {
+                    if (string.Equals(pairs[i].Key, duplicates[d], StringComparison.Ordinal))
+                        owners.Add("'" + pairs[i].Value + "'");
+                }
+
+                Debug.LogError(
+                    $"[Determinism] Duplicate {kind} stable id '{duplicates[d]}' shared by " +
+                    $"{string.Join(", ", owners)}. A stable id is content identity - it selects " +
+                    "which asset a seed produces and it feeds the content hash - so two assets " +
+                    "cannot share one. Set a unique StableId on each. Generation is refused " +
+                    "until they are distinct.");
+            }
         }
 
         /// <summary>

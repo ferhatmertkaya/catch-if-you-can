@@ -302,6 +302,101 @@ namespace CatchIfYouCan.Tests
             Assert.IsTrue(anyDifference, "Two streams produced the same sequence.");
         }
 
+        // ------------------------------------------------------------------ content identity
+
+        [Test]
+        public void DuplicatePropStableId_IsRejected()
+        {
+            // Two entries sharing an id make the sort comparator non-total, and List.Sort is
+            // an unstable introsort - so their relative order would follow the authoring
+            // order, and two clients with the same assets ordered differently would silently
+            // generate different houses from the same seed.
+            var rooms = UniqueRooms();
+            var props = UniqueProps();
+            props.Add(new PropArchetype("PROP_A", PropKind.Furniture,
+                new Vec3i(900, 900, 900), Quantize.Weight(2f), null));
+
+            var ex = Assert.Throws<DuplicateStableIdException>(() => new ContentSnapshot(rooms, props));
+            StringAssert.Contains("PROP_A", ex.Message);
+            CollectionAssert.Contains(ex.DuplicateIds, "PROP_A");
+        }
+
+        [Test]
+        public void DuplicateRoomStableId_IsRejected()
+        {
+            var rooms = UniqueRooms();
+            rooms.Add(new RoomArchetype("ARCH_B", RoomCategory.Bedroom,
+                new Vec3i(6000, 3000, 6000), 1, Quantize.Weight(1f)));
+
+            var ex = Assert.Throws<DuplicateStableIdException>(() => new ContentSnapshot(rooms, UniqueProps()));
+            StringAssert.Contains("ARCH_B", ex.Message);
+        }
+
+        [Test]
+        public void DuplicateIsRejected_RegardlessOfInputPosition()
+        {
+            // The whole point: rejection must not itself depend on input order.
+            var duplicate = new PropArchetype("PROP_A", PropKind.Furniture,
+                new Vec3i(900, 900, 900), Quantize.Weight(2f), null);
+
+            var first = new List<PropArchetype> { duplicate };
+            first.AddRange(UniqueProps());
+
+            var last = UniqueProps();
+            last.Add(duplicate);
+
+            Assert.Throws<DuplicateStableIdException>(() => new ContentSnapshot(UniqueRooms(), first));
+            Assert.Throws<DuplicateStableIdException>(() => new ContentSnapshot(UniqueRooms(), last));
+        }
+
+        [Test]
+        public void UniqueStableIds_StillConstruct()
+        {
+            Assert.DoesNotThrow(() => new ContentSnapshot(UniqueRooms(), UniqueProps()));
+            Assert.DoesNotThrow(() => ContentSnapshot.CreateFallback());
+        }
+
+        [Test]
+        public void FindDuplicateIds_ReportsEachDuplicateOnceInOrder()
+        {
+            var found = ContentSnapshot.FindDuplicateIds(new[] { "b", "a", "b", "c", "a", "b" });
+            Assert.AreEqual(2, found.Count);
+            Assert.AreEqual("a", found[0]);
+            Assert.AreEqual("b", found[1]);
+
+            Assert.IsEmpty(ContentSnapshot.FindDuplicateIds(new[] { "a", "b", "c" }));
+            Assert.IsEmpty(ContentSnapshot.FindDuplicateIds(new string[0]));
+        }
+
+        [Test]
+        public void ContentHash_IsIndependentOfAuthoringOrder()
+        {
+            // With duplicates rejected the sort key is total, so shuffling the input must
+            // leave the content hash - and therefore every layout - untouched.
+            var forward = new ContentSnapshot(UniqueRooms(), UniqueProps());
+
+            var reversedRooms = UniqueRooms();
+            reversedRooms.Reverse();
+            var reversedProps = UniqueProps();
+            reversedProps.Reverse();
+            var backward = new ContentSnapshot(reversedRooms, reversedProps);
+
+            Assert.AreEqual(forward.ContentHash, backward.ContentHash,
+                "Content hash depends on authoring order; the id ordering is not total.");
+        }
+
+        private static List<RoomArchetype> UniqueRooms() => new List<RoomArchetype>
+        {
+            new RoomArchetype("ARCH_A", RoomCategory.Entrance, new Vec3i(6000, 3000, 6000), 1, Quantize.Weight(1f)),
+            new RoomArchetype("ARCH_B", RoomCategory.Hallway, new Vec3i(6000, 3000, 6000), 1, Quantize.Weight(1f)),
+        };
+
+        private static List<PropArchetype> UniqueProps() => new List<PropArchetype>
+        {
+            new PropArchetype("PROP_A", PropKind.Prop, new Vec3i(500, 500, 500), Quantize.Weight(1f), null),
+            new PropArchetype("PROP_B", PropKind.Prop, new Vec3i(500, 500, 500), Quantize.Weight(1f), null),
+        };
+
         // ------------------------------------------------------------------ layout sanity
 
         [Test]
