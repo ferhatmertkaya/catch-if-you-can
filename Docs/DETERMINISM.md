@@ -23,8 +23,11 @@ Two properties follow, and both matter:
   spots and evidence positions refer to geometry other players do not have.
 - **Detectability.** A divergence that leaves the RNG stream in sync is far
   more dangerous than one that desyncs it, because nothing downstream notices.
-  See [violation V4](#94-v4-prop-placement-reads-the-live-physics-scene) — the
-  bug currently in the tree is exactly this shape.
+  The original V4 defect had exactly this shape — a physics query decided whether
+  a prop spawned, while the RNG draws happened before the test, so the layout
+  diverged with the RNG stream still perfectly in step. It is fixed
+  ([§11](#11-resolved-violations)); the shape is worth remembering because only a
+  full layout hash catches it.
 
 ---
 
@@ -32,20 +35,62 @@ Two properties follow, and both matter:
 
 Determinism is expensive. Buy it only where it is load-bearing.
 
-### 2.1 Must be deterministic (generation-time, hashed)
+### 2.1 Deterministic / seed-derived (hashed)
 
-| System | Entry point |
+Everything below is decided in Stage A from `(generationVersion, mapDefinitionId,
+seed)` and contributes to the layout hash. All of it lives in
+`HouseLayoutBuilder`; Stage B only instantiates the result.
+
+| System | Where it is decided |
 |---|---|
-| Room graph | `HouseLayoutGraph.Build` |
-| Room instancing and placement | `ProceduralHouseGenerator.GenerateInternal` |
-| Door / opening resolution | `ConnectDoors`, `SealUnusedOpenings` |
-| Prop selection and placement | `PropSpawner.SpawnProps` |
-| Ghost room assignment | `AssignGhostRoom` |
-| Hide-spot set | `CollectHideSpots`, `EnsureMinimumHideSpot` |
-| Interactable installation | `InstallRoomInteractables` |
-| Ghost type, traits and tier | mission roll (host) |
-| Objective set and evidence assignment | mission roll (host) |
-| Weather selection | `WeatherSystem` |
+| House topology (room graph) | `HouseLayoutBuilder.Build` → `TryExpand`, `ForceRequiredRoom` |
+| Room archetype and variant selection | `HouseLayoutBuilder.Assemble` (`Rooms`, `RoomVariants` streams) |
+| Room placement | `HouseLayoutBuilder.Assemble` (grid cell → `PositionMm`) |
+| Door / opening resolution | `BuildConnections`, `BuildDoors`; `OpenMask` per room |
+| Socket layout | `RoomSocketLayout` (shared by Stage A planning and Stage B building) |
+| Prop and furniture selection and placement | `PlaceProps` → `PlacePass` + `OccupancyGrid` |
+| Ghost **room** assignment | `BuildGhostCandidates` (`GhostRoomCandidates` stream) |
+| Hide-spot set | `BuildHideSpots` |
+| Evidence **interaction points** (geometry) | `BuildEvidencePoints` |
+| Equipment spawn anchors | `BuildEquipmentSpawns` |
+| Weather selection | `HouseLayoutBuilder.Assemble` (`Weather` stream) |
+| Generation-time content ordering | `ContentSnapshot` (sorted by stable id) |
+
+If it feeds `LayoutHash`, it is in this table. If it is in this table, it must
+obey every rule in [§3](#3-hard-rules).
+
+### 2.1b Host-authoritative / replicated — NOT seed-derived
+
+These are hidden round-answer and gameplay state. They are rolled by the
+authoritative host, replicated to clients, and **never independently rolled by a
+client**. They are deliberately **not** derivable from the session seed and are
+**not** in the layout or content hash.
+
+| System | Where it is decided |
+|---|---|
+| Ghost type | `MissionManager.PickGhost` |
+| Ghost traits and tier | `MissionManager.ApplyDifficultyModifiers`, ghost definition |
+| Mission selection | `MissionManager.SelectRandomMission` |
+| Objective set | `ObjectiveManager` |
+| Evidence **assignment** (which evidence this ghost yields) | mission / ghost definition |
+
+The reason is not convenience. The session seed is public to every client at join
+time: anything derived from it can be computed by a client before the round
+starts. Deriving ghost identity from the seed would hand every player the answer
+to the round. So these stay host-rolled and replicated, and may keep using
+`UnityEngine.Random` on the host under [§2.2](#22-must-not-be-forced-deterministic-cosmetic-client-local)'s
+constraint that they never feed a hashed value.
+
+Note the split within "evidence": the *geometry* of evidence interaction points is
+seed-derived (§2.1, hashed — every client must agree where they are), while *which
+evidence a ghost yields* is host state (§2.1b, replicated — it is the answer).
+
+Ghost **room** is likewise seed-derived and hashed: it is geometry every client
+must agree on, and it is not by itself the round's answer.
+
+This boundary is normative and matches `Docs/NETWORKING.md` §3 and §4. Should a
+future protocol need any §2.1b item hashed, that requires an explicit protocol
+change, not an implementation drift.
 
 ### 2.2 Must NOT be forced deterministic (cosmetic, client-local)
 
@@ -124,7 +169,9 @@ explicit sub-stream), never by "spread over N frames".
 **R9 — Cleanup must be immediate.**
 Generation must not depend on `Object.Destroy`'s deferred teardown. Either
 destroy immediately or, better, generate into a fresh root and swap. Retry
-attempts must observe a clean slate; see [V5](#95-v5-generation-retries-observe-the-previous-attempts-leftovers).
+attempts must observe a clean slate — the V5 defect
+([§11](#11-resolved-violations)) was exactly this, and it made the editor and a
+player build disagree from the same seed.
 
 **R10 — No transcendental math in hashed values.**
 IEEE-754 makes `+ - * / sqrt` bit-exact given a fixed evaluation order, but
@@ -141,12 +188,14 @@ indices). This keeps the hash robust against last-bit float noise while still
 catching every difference that a player could perceive.
 
 **R12 — Content parity is part of determinism.**
-A seed is meaningless without the asset set it indexes. `propDefinitions` is a
-`[SerializeField]` array (`ProceduralHouseGenerator.cs:20`) — its *inspector
-order* selects which prop `PickWeighted` returns. Reordering it, or shipping a
-client with a different `Assets/External` payload, changes layouts. The content
-hash ([§6.2](#62-the-content-hash)) covers this and is compared in the same
-handshake as the seed.
+A seed is meaningless without the asset set it indexes. The generator's
+`propDefinitions` and `roomDefinitions` are `[SerializeField]` arrays, so their
+*inspector order* is authored data. `ContentSnapshot` therefore sorts by stable
+id, making authoring order irrelevant, and **rejects duplicate stable ids** —
+duplicates would make that sort non-total and hand the ordering back to the input
+order (see [§6.4](#64-the-content-hash)). Shipping a client with a different
+`Assets/External` payload also changes layouts; the content hash covers that and
+is compared in the same handshake as the seed.
 
 ---
 
@@ -295,6 +344,16 @@ for stored seeds.
 (`id, kind, boundsMm, weightFixed, allowedCategories`), plus the algorithm id
 and generation version.
 
+Stable ids must be **unique**. `ContentSnapshot` rejects duplicates with
+`DuplicateStableIdException` rather than tie-breaking them: the id sort is
+single-key, and `List<T>.Sort` is an unstable introsort, so two entries sharing an
+id would take their relative order from the authoring order — reintroducing
+exactly the inspector-order dependence R12 exists to remove. A tie-break key would
+produce a stable ordering while leaving two assets claiming one identity in the
+project, hidden; rejection is the honest fix. `ContentSnapshotFactory` performs the
+same check on the Unity side, where it can name the colliding *assets* rather than
+just the id.
+
 A content-hash mismatch is a **different error** from a layout-hash mismatch: it
 means the clients are running different builds, and no amount of seed agreement
 will help. Report it as such.
@@ -431,7 +490,18 @@ discussion: a reviewer will not catch a reintroduced `Random.Range` in a
 
 **T4 cross-platform hashing is not yet automated.** Proving that an IL2CPP
 iOS-arm64 build and an IL2CPP Android-arm64 build produce identical hashes needs
-Unity build agents, which CI does not have. The core is engine-free integer
+Unity build agents, which CI does not have.
+
+A second, smaller blocker sits in front of T4: `ProjectSettings/ProjectVersion.txt`
+records `m_EditorVersionWithRevision: 6000.3.0f1 (catchifyoucan)`. The revision
+field holds the literal string `catchifyoucan`, not a Unity revision hash. The
+Editor tolerates this, but any CI that provisions Unity by revision — which is how
+most Unity build actions pin a version — cannot resolve it. The true revision is
+not recoverable from anything in this repository and **must not be guessed**:
+substituting a plausible-looking hash would produce a CI job that silently builds
+on the wrong Unity patch, which is precisely the kind of environment drift a
+cross-platform determinism test exists to detect. Recover it from whoever created
+the project, or pin by version string if the chosen CI action supports it. The core is engine-free integer
 arithmetic, which is the strongest structural argument available, and the
 `noEngineReferences` assembly flag enforces it at compile time — but that is an
 argument, not a measurement. Until a device job exists, run the EditMode suite on
@@ -443,6 +513,11 @@ a physical iOS and Android build before shipping a generation change.
 
 All eight violations from the original audit are fixed.
 
+File and line references in the **Was** column below describe the code *as
+audited at commit `aa8c431`*. They are a historical record and will not resolve
+against the current tree — that is intentional, so the audit stays readable as
+what it was. Every other reference in this document names current code.
+
 | | Was | Now |
 |---|---|---|
 | **V1** | Layout PRNG was `System.Random` (`SeedManager.cs:12,27`) | `CiycRandom` (PCG32), verified against reference vectors |
@@ -450,7 +525,7 @@ All eight violations from the original audit are fixed.
 | **V3** | `Nodes.OrderBy(_ => rng.Next())` (`HouseLayoutGraph.cs:256`) | Removed outright. Candidates are built in canonical order and picked uniformly — the shuffle never affected the distribution, so it needed deleting, not replacing |
 | **V4** | `Physics.OverlapBox` gated every prop spawn (`PropSpawner.cs:91`) | `OccupancyGrid`: integer AABB occupancy over data the layout already owns, including reserved door approach zones |
 | **V5** | Retries instantiated, destroyed and re-instantiated inside one frame with deferred `Object.Destroy`, so attempt N saw attempts 0..N-1 — and the editor and a player build disagreed | Stage A retries on pure data; nothing is instantiated until a layout validates. Stage B builds into a fresh root and swaps |
-| **V6** | Session seed from `UnityEngine.Random` (`MissionManager.cs:140`, `MissionSelectUI.cs:187`) | `SessionSeedSource.Next()`, a cryptographic source, host-authoritative in multiplayer |
+| **V6** | Session seed from `UnityEngine.Random` | `SessionSeedSource.Next()`, a cryptographic source, host-authoritative in multiplayer. **Corrected in a later pass:** the first fix landed on `RollMissionSeed`, which had zero callers, while the live path (`MissionManager.StartInvestigation`) still used `UnityEngine.Random`. The live path now uses `SessionSeedSource` and the dead method is deleted, so there is one authoritative seed-selection path |
 | **V7** | `DateTime.Now` in the generation path | Fenced to presentation-only case text, with an invariant culture |
 | **V8** | Prop identity was an array index into an inspector-ordered array | Stable authored ids; `ContentSnapshot` sorts by id so inspector order cannot influence generation |
 

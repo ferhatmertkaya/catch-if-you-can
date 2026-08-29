@@ -83,13 +83,21 @@ Host                                     Client
 Rules:
 
 - **The seed is host-authoritative and replicated.** It is never rolled
-  client-side. `MissionManager.RollMissionSeed` (`MissionManager.cs:140`) and
-  `MissionSelectUI.cs:187` currently roll from `UnityEngine.Random` locally —
-  both become host-only paths (`DETERMINISM.md` V6).
+  client-side. There is now exactly one authoritative selection path,
+  `SessionSeedSource.Next()`, reached from `MissionManager.StartInvestigation`;
+  that call becomes host-only, with the result replicated in `MissionStart`.
 - **Ghost identity is rolled by the host and replicated, not derived from the
   seed.** Deriving it from the seed means any client can compute the answer to
-  the round from data it is given at join time. The ghost type, traits and tier
-  are host state, revealed only through evidence.
+  the round from data it is given at join time — the seed is public to every
+  client at join. The ghost type, traits and tier are host state, revealed only
+  through evidence. The same applies to the objective set and to which evidence
+  the ghost yields.
+
+  This boundary is normative and is specified in `DETERMINISM.md` §2.1b. Note the
+  split within "evidence": the *geometry* of evidence interaction points is
+  seed-derived and hashed (every client must agree where they are), while *which
+  evidence a ghost yields* is host state. Ghost **room** is seed-derived and
+  hashed — it is geometry, not the answer.
 - No player, ghost, evidence, or equipment object is spawned before step 7
   passes for every client. A client that joins the house at the same moment it
   might be told to abort is a source of half-torn-down-session bugs.
