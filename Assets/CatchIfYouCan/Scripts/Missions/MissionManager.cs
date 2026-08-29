@@ -60,7 +60,15 @@ namespace CatchIfYouCan.Missions
                 return null;
             }
 
-            int seed = seedOverride ?? UnityEngine.Random.Range(1, int.MaxValue);
+            // THE authoritative session seed. This is the live path - MissionSelectUI and
+            // InvestigationBootstrap both arrive here - so it is the one that has to be right.
+            //
+            // It previously drew from UnityEngine.Random, a process-global stream shared with
+            // roughly a hundred cosmetic call sites, which made seed selection depend on how
+            // many cosmetic draws happened to precede it. SessionSeedSource is the single
+            // authoritative source; in multiplayer this call becomes host-only and the result
+            // is replicated with MissionStart (Docs/NETWORKING.md §3).
+            int seed = seedOverride ?? SessionSeedSource.Next();
             var ghost = PickGhost();
             var runtime = MissionRuntime.Create(mission, _nextCaseNumber++, seed, ghost);
             ActiveMission = runtime;
@@ -133,23 +141,6 @@ namespace CatchIfYouCan.Missions
                 return;
 
             runtime.AssignedGhost.Speed *= runtime.Difficulty.GhostSpeedMultiplier;
-        }
-
-        /// <summary>
-        /// Rolls the session seed.
-        ///
-        /// A seed only has to be AGREED between clients, not reproducible, so this is the
-        /// one place that legitimately wants unpredictability. It no longer draws from
-        /// UnityEngine.Random: that stream is shared with every cosmetic system, so seed
-        /// selection both perturbed and was perturbed by them.
-        ///
-        /// In multiplayer this becomes host-only and the result is replicated with
-        /// MissionStart; clients must never roll their own (Docs/NETWORKING.md §3).
-        /// </summary>
-        public int RollMissionSeed(MissionDefinition mission)
-        {
-            SeedManager.SetSeed(SessionSeedSource.Next());
-            return SeedManager.CurrentSeed;
         }
     }
 }
