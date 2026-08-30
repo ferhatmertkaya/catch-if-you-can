@@ -86,20 +86,22 @@ namespace CatchIfYouCan.EditorTools
         private static ParticleSystem BuildBase(Transform parent)
         {
             // Primary soft mass: most of the visible fog.
-            var ps = FindOrCreateSystem(parent, "DoorFog_Base", new Vector3(0f, -0.06f, -0.04f));
-            ConfigureCommon(ps, lifetimeMin: 0.9f, lifetimeMax: 1.6f,
+            var ps = FindOrCreateSystem(parent, "DoorFog_Base", new Vector3(0f, -0.10f, -0.03f));
+            ConfigureCommon(ps, lifetimeMin: 0.8f, lifetimeMax: 1.3f,
                 speedMin: 0.06f, speedMax: 0.16f,
-                sizeMin: 0.12f, sizeMax: 0.30f,
-                rate: 9f, maxParticles: 30,
-                tint: new Color(0.55f, 0.62f, 0.57f));
+                sizeMin: 0.07f, sizeMax: 0.17f,
+                rate: 3.5f, maxParticles: 12,
+                tint: new Color(0.34f, 0.40f, 0.36f));
 
+            // Lower third of the opening only: fog that spawns high climbs into the upper
+            // corridor, which is exactly what has to stay black.
             var shape = ps.shape;
-            shape.scale = new Vector3(DoorWidth * 0.74f, DoorHeight * 0.54f, 0.04f);
+            shape.scale = new Vector3(DoorWidth * 0.72f, DoorHeight * 0.34f, 0.04f);
 
-            SetAlphaEnvelope(ps, peak: 0.26f);
-            SetSizeGrowth(ps, birth: 0.80f, death: 1.22f);
-            SetDrift(ps, outward: 0.10f, rise: 0.03f, lateral: 0.030f);
-            SetNoise(ps, strength: 0.035f, frequency: 0.45f);
+            SetAlphaEnvelope(ps, peak: 0.14f);
+            SetSizeGrowth(ps, birth: 0.82f, death: 1.22f);
+            SetDrift(ps, outward: 0.24f, rise: 0.04f, lateral: 0.025f);
+            SetNoise(ps, strength: 0.030f, frequency: 0.45f);
             AssignMaterial(ps, "Assets/CatchIfYouCan/Art/Particles/MAT_Fog_Soft.mat",
                 ParticleSystemRenderMode.Billboard, sortOffset: 0);
             return ps;
@@ -108,20 +110,20 @@ namespace CatchIfYouCan.EditorTools
         private static ParticleSystem BuildStretch(Transform parent)
         {
             // Elongated shapes that break up the round silhouettes of the base layer.
-            var ps = FindOrCreateSystem(parent, "DoorFog_Stretch", new Vector3(0f, -0.03f, 0.04f));
-            ConfigureCommon(ps, lifetimeMin: 0.8f, lifetimeMax: 1.4f,
-                speedMin: 0.10f, speedMax: 0.24f,
-                sizeMin: 0.14f, sizeMax: 0.34f,
-                rate: 4f, maxParticles: 14,
-                tint: new Color(0.52f, 0.60f, 0.55f));
+            var ps = FindOrCreateSystem(parent, "DoorFog_Stretch", new Vector3(0f, -0.07f, 0.03f));
+            ConfigureCommon(ps, lifetimeMin: 0.7f, lifetimeMax: 1.1f,
+                speedMin: 0.08f, speedMax: 0.18f,
+                sizeMin: 0.09f, sizeMax: 0.20f,
+                rate: 1.6f, maxParticles: 6,
+                tint: new Color(0.32f, 0.38f, 0.34f));
 
             var shape = ps.shape;
-            shape.scale = new Vector3(DoorWidth * 0.66f, DoorHeight * 0.40f, 0.03f);
+            shape.scale = new Vector3(DoorWidth * 0.62f, DoorHeight * 0.26f, 0.03f);
 
-            SetAlphaEnvelope(ps, peak: 0.20f);
-            SetSizeGrowth(ps, birth: 0.85f, death: 1.28f);
-            SetDrift(ps, outward: 0.15f, rise: 0.02f, lateral: 0.040f);
-            SetNoise(ps, strength: 0.045f, frequency: 0.55f);
+            SetAlphaEnvelope(ps, peak: 0.09f);
+            SetSizeGrowth(ps, birth: 0.86f, death: 1.26f);
+            SetDrift(ps, outward: 0.26f, rise: 0.03f, lateral: 0.032f);
+            SetNoise(ps, strength: 0.038f, frequency: 0.55f);
             AssignMaterial(ps, "Assets/CatchIfYouCan/Art/Particles/MAT_Fog_Stretch.mat",
                 ParticleSystemRenderMode.Billboard, sortOffset: 1);
             return ps;
@@ -130,20 +132,20 @@ namespace CatchIfYouCan.EditorTools
         private static ParticleSystem BuildTendrils(Transform parent)
         {
             // Rare smoke fingers. Sparse on purpose: the viewer should catch them occasionally.
-            var ps = FindOrCreateSystem(parent, "DoorFog_Tendrils", new Vector3(0f, -0.05f, -0.01f));
-            ConfigureCommon(ps, lifetimeMin: 0.8f, lifetimeMax: 1.6f,
-                speedMin: 0.08f, speedMax: 0.20f,
-                sizeMin: 0.08f, sizeMax: 0.20f,
-                rate: 1.5f, maxParticles: 8,
-                tint: new Color(0.48f, 0.62f, 0.52f));
+            var ps = FindOrCreateSystem(parent, "DoorFog_Tendrils", new Vector3(0f, -0.08f, -0.01f));
+            ConfigureCommon(ps, lifetimeMin: 0.7f, lifetimeMax: 1.2f,
+                speedMin: 0.07f, speedMax: 0.16f,
+                sizeMin: 0.05f, sizeMax: 0.12f,
+                rate: 0.6f, maxParticles: 4,
+                tint: new Color(0.30f, 0.39f, 0.33f));
 
             var shape = ps.shape;
-            shape.scale = new Vector3(DoorWidth * 0.52f, DoorHeight * 0.46f, 0.03f);
+            shape.scale = new Vector3(DoorWidth * 0.48f, DoorHeight * 0.30f, 0.03f);
 
-            SetAlphaEnvelope(ps, peak: 0.16f);
-            SetSizeGrowth(ps, birth: 0.75f, death: 1.30f);
-            SetDrift(ps, outward: 0.12f, rise: 0.05f, lateral: 0.050f);
-            SetNoise(ps, strength: 0.070f, frequency: 0.75f);
+            SetAlphaEnvelope(ps, peak: 0.07f);
+            SetSizeGrowth(ps, birth: 0.78f, death: 1.28f);
+            SetDrift(ps, outward: 0.22f, rise: 0.05f, lateral: 0.040f);
+            SetNoise(ps, strength: 0.055f, frequency: 0.75f);
             AssignMaterial(ps, "Assets/CatchIfYouCan/Art/Particles/MAT_Fog_Tendrils.mat",
                 ParticleSystemRenderMode.Billboard, sortOffset: 2);
             return ps;
@@ -152,20 +154,20 @@ namespace CatchIfYouCan.EditorTools
         private static ParticleSystem BuildWisps(Transform parent)
         {
             // Small floating detail: life without noise.
-            var ps = FindOrCreateSystem(parent, "DoorFog_Wisps", new Vector3(0f, -0.02f, 0.06f));
-            ConfigureCommon(ps, lifetimeMin: 0.7f, lifetimeMax: 1.2f,
-                speedMin: 0.07f, speedMax: 0.18f,
-                sizeMin: 0.05f, sizeMax: 0.12f,
-                rate: 3f, maxParticles: 12,
-                tint: new Color(0.54f, 0.64f, 0.58f));
+            var ps = FindOrCreateSystem(parent, "DoorFog_Wisps", new Vector3(0f, -0.06f, 0.05f));
+            ConfigureCommon(ps, lifetimeMin: 0.6f, lifetimeMax: 1.0f,
+                speedMin: 0.06f, speedMax: 0.15f,
+                sizeMin: 0.035f, sizeMax: 0.075f,
+                rate: 1.2f, maxParticles: 5,
+                tint: new Color(0.33f, 0.40f, 0.35f));
 
             var shape = ps.shape;
-            shape.scale = new Vector3(DoorWidth * 0.74f, DoorHeight * 0.54f, 0.03f);
+            shape.scale = new Vector3(DoorWidth * 0.66f, DoorHeight * 0.32f, 0.03f);
 
-            SetAlphaEnvelope(ps, peak: 0.18f);
-            SetSizeGrowth(ps, birth: 0.70f, death: 1.15f);
-            SetDrift(ps, outward: 0.09f, rise: 0.06f, lateral: 0.055f);
-            SetNoise(ps, strength: 0.060f, frequency: 0.85f);
+            SetAlphaEnvelope(ps, peak: 0.08f);
+            SetSizeGrowth(ps, birth: 0.74f, death: 1.16f);
+            SetDrift(ps, outward: 0.20f, rise: 0.05f, lateral: 0.042f);
+            SetNoise(ps, strength: 0.048f, frequency: 0.85f);
             AssignMaterial(ps, "Assets/CatchIfYouCan/Art/Particles/MAT_Fog_Wisp.mat",
                 ParticleSystemRenderMode.Billboard, sortOffset: 3);
             return ps;
