@@ -1,1 +1,1 @@
-*.fbx filter=lfs diff=lfs merge=lfs -text
+Assets/CatchIfYouCan/Art/Environment/MainMenuCorridor/Models/CIYC_MainMenu_Corridor.fbx filter=lfs diff=lfs merge=lfs -text
