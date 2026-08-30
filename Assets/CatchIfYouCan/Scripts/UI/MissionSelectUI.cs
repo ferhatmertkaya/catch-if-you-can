@@ -177,15 +177,39 @@ namespace CatchIfYouCan.UI
             UITheme.StyleBody(detailBody);
         }
 
+        /// <summary>
+        /// Returns the mission authority, creating it if the menu scene has none.
+        /// InvestigationBootstrap.EnsureManagers already does exactly this for the
+        /// investigation scene; the menu needs it too so that starting a mission from here
+        /// goes through the same authority rather than around it.
+        /// </summary>
+        private static MissionManager EnsureMissionManager()
+        {
+            if (MissionManager.Instance != null)
+                return MissionManager.Instance;
+
+            var go = new GameObject("MissionManager");
+            go.AddComponent<MissionManager>();
+            return MissionManager.Instance;
+        }
+
         private void StartInvestigation()
         {
             if (_selected == null) return;
 
-            MissionRuntime runtime = null;
-            if (MissionManager.Instance != null)
-                runtime = MissionManager.Instance.StartInvestigation(_selected);
-            else if (GameManager.Instance != null)
-                GameManager.Instance.BeginMission(MissionRuntime.Create(_selected, 1001, SessionSeedSource.Next(), null));
+            // The session seed is host-authoritative and must be rolled in exactly one place
+            // (Docs/NETWORKING.md §3). This branch used to call SessionSeedSource.Next()
+            // itself, which made the menu a second, client-side seed source — and since
+            // SceneAutoSetup does not put a MissionManager in the menu scene, it was usually
+            // the live one. Ensuring the manager routes the start through the single
+            // authoritative path, which also picks the ghost that the old fallback left null.
+            var missions = EnsureMissionManager();
+            MissionRuntime runtime = missions != null
+                ? missions.StartInvestigation(_selected)
+                : null;
+
+            if (runtime == null)
+                CIYCLog.Warn("MissionSelectUI: could not start an investigation - no MissionManager.");
 
             LoadRecommendedEquipment();
 
