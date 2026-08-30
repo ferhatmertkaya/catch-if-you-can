@@ -314,6 +314,39 @@ namespace CatchIfYouCan.UI
             return result;
         }
 
+        private const string BrandingLogoResourcePath = "UI/Branding/CatchIfYouCan_Logo";
+
+        /// <summary>
+        /// Loads the branding logo from Resources so it ships in Player builds.
+        /// Resources.Load&lt;Sprite&gt; only succeeds while the PNG is imported as Sprite
+        /// (2D and UI); if that import setting is ever changed the sprite sub-asset
+        /// disappears and the load returns null, so fall back to the Texture2D and build an
+        /// equivalent sprite at runtime rather than losing the logo on device.
+        /// </summary>
+        private static Sprite LoadBrandingLogo()
+        {
+            var sprite = Resources.Load<Sprite>(BrandingLogoResourcePath);
+            if (sprite != null)
+                return sprite;
+
+            var texture = Resources.Load<Texture2D>(BrandingLogoResourcePath);
+            if (texture == null)
+            {
+                Debug.LogError(
+                    $"[CIYC UI] Branding logo missing from Resources/{BrandingLogoResourcePath}. " +
+                    "The menu will render without a logo.");
+                return null;
+            }
+
+            return Sprite.Create(
+                texture,
+                new Rect(0f, 0f, texture.width, texture.height),
+                new Vector2(0.5f, 0.5f),
+                100f,
+                0,
+                SpriteMeshType.FullRect);
+        }
+
         private static void WireMainMenu(MainMenuController ctrl, Transform root)
         {
             var left = CreatePanel(root, "LeftColumn", false);
@@ -338,10 +371,13 @@ namespace CatchIfYouCan.UI
             gameLogo.transform.SetParent(root, false);
 
             var gameLogoImage = gameLogo.GetComponent<Image>();
-            gameLogoImage.sprite = Resources.Load<Sprite>("UI/Branding/CatchIfYouCan_Logo");
+            gameLogoImage.sprite = LoadBrandingLogo();
             gameLogoImage.color = Color.white;
             gameLogoImage.preserveAspect = true;
             gameLogoImage.raycastTarget = false;
+            // An Image with no sprite still draws a solid white quad, which reads as a broken
+            // panel over the menu. Nothing is better than that.
+            gameLogoImage.enabled = gameLogoImage.sprite != null;
 
             Position(gameLogo, -0.15f, 0.16f, 0.45f, 0.88f);
 

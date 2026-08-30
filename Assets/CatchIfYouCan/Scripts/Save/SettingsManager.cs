@@ -15,7 +15,9 @@ namespace CatchIfYouCan.Save
         public bool HoldToInteract { get; set; } = true;
         public bool CameraShake { get; set; } = true;
         public bool Haptics { get; set; } = true;
-        public int QualityLevel { get; set; } = 2;
+        // Replaced in LoadFromPrefs by the stored value, or by the project's per-platform
+        // default quality level when the player has never chosen one.
+        public int QualityLevel { get; set; } = 1;
         public float ResolutionScale { get; set; } = 1f;
         public int TargetFps { get; set; } = 60;
         public bool Shadows { get; set; } = true;
@@ -51,7 +53,11 @@ namespace CatchIfYouCan.Save
             HoldToInteract = PlayerPrefs.GetInt(Prefix + "hold_interact", 1) == 1;
             CameraShake = PlayerPrefs.GetInt(Prefix + "camera_shake", 1) == 1;
             Haptics = PlayerPrefs.GetInt(Prefix + "haptics", 1) == 1;
-            QualityLevel = PlayerPrefs.GetInt(Prefix + "quality", 2);
+            // Default to whatever quality level the project selected for this platform
+            // (ProjectSettings > Quality > per-platform default). A hard-coded default here
+            // would silently override that, so a device configured for "Mobile" would run the
+            // Editor's "High Fidelity" tier and light the scene differently.
+            QualityLevel = PlayerPrefs.GetInt(Prefix + "quality", QualitySettings.GetQualityLevel());
             ResolutionScale = PlayerPrefs.GetFloat(Prefix + "res_scale", 1f);
             TargetFps = PlayerPrefs.GetInt(Prefix + "fps", 60);
             Shadows = PlayerPrefs.GetInt(Prefix + "shadows", 1) == 1;

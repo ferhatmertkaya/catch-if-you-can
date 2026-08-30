@@ -1,1 +1,5 @@
-*.fbx filter=lfs diff=lfs merge=lfs -text
+# Git LFS is scoped to the individual oversized binaries that need it, not to *.fbx as a
+# class. The Kenney kits under Assets/External are ~20-50 KB each and are already stored as
+# ordinary blobs; a blanket "*.fbx filter=lfs" rule makes git want to rewrite all 141 of them
+# and fills `git status` with phantom modifications.
+Assets/CatchIfYouCan/Art/Environment/MainMenuCorridor/Models/CIYC_MainMenu_Corridor.fbx filter=lfs diff=lfs merge=lfs -text

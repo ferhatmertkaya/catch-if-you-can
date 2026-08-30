@@ -22,11 +22,51 @@ namespace CatchIfYouCan.Graphics
 
         public GraphicsProfile CurrentProfile { get; private set; }
 
+        private UniversalRenderPipelineAsset _runtimePipeline;
+
         protected override void Awake()
         {
             persist = true;
             base.Awake();
             CurrentProfile = defaultProfile;
+        }
+
+        protected override void OnDestroy()
+        {
+            base.OnDestroy();
+            if (_runtimePipeline != null)
+            {
+                QualitySettings.renderPipeline = null;
+                Destroy(_runtimePipeline);
+                _runtimePipeline = null;
+            }
+        }
+
+        /// <summary>
+        /// Returns the pipeline asset this manager is allowed to write to.
+        /// Never the project asset from GraphicsSettings: that is authored content, and
+        /// writing to it from Play Mode edits the .asset on disk in the Editor and makes the
+        /// authored look drift away from what a device renders. A per-profile asset assigned
+        /// in the inspector is owned by this component; otherwise we tune a runtime clone of
+        /// the project asset, which is discarded when the manager goes away.
+        /// </summary>
+        private UniversalRenderPipelineAsset GetWritablePipeline(GraphicsProfile profile)
+        {
+            var dedicated = GetUrpAsset(profile);
+            if (dedicated != null)
+                return dedicated;
+
+            if (_runtimePipeline == null)
+            {
+                var source = GraphicsSettings.currentRenderPipeline as UniversalRenderPipelineAsset;
+                if (source == null)
+                    return null;
+
+                _runtimePipeline = Instantiate(source);
+                _runtimePipeline.name = source.name + " (Runtime)";
+            }
+
+            return _runtimePipeline;
         }
 
         public void ApplyFromSettings(SettingsManager settings)
@@ -43,7 +83,7 @@ namespace CatchIfYouCan.Graphics
             int qualityIndex = ProfileToQualityIndex(profile);
             QualitySettings.SetQualityLevel(qualityIndex, true);
 
-            var urp = GetUrpAsset(profile) ?? GraphicsSettings.currentRenderPipeline as UniversalRenderPipelineAsset;
+            var urp = GetWritablePipeline(profile);
             if (urp != null)
             {
                 QualitySettings.renderPipeline = urp;
@@ -61,12 +101,6 @@ namespace CatchIfYouCan.Graphics
             else
             {
                 QualitySettings.shadows = shadows ? UnityEngine.ShadowQuality.All : UnityEngine.ShadowQuality.Disable;
-                QualitySettings.pixelLightCount = profile switch
-                {
-                    GraphicsProfile.Low => 1,
-                    GraphicsProfile.Medium => 2,
-                    _ => 4
-                };
                 QualitySettings.particleRaycastBudget = profile switch
                 {
                     GraphicsProfile.Low => 64,
@@ -86,10 +120,12 @@ namespace CatchIfYouCan.Graphics
 
         public void SetRenderScale(float scale)
         {
-            scale = Mathf.Clamp(scale, 0.5f, 1.5f);
-            var urp = GraphicsSettings.currentRenderPipeline as UniversalRenderPipelineAsset;
-            if (urp != null)
-                urp.renderScale = scale;
+            var urp = GetWritablePipeline(CurrentProfile);
+            if (urp == null)
+                return;
+
+            QualitySettings.renderPipeline = urp;
+            urp.renderScale = Mathf.Clamp(scale, 0.5f, 1.5f);
         }
 
         private void ApplyCameraSettings(bool postProcessing, float renderScale)
