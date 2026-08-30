@@ -21,7 +21,7 @@ namespace CatchIfYouCan.Save
         public bool Shadows { get; set; } = true;
         public bool PostProcessing { get; set; } = true;
         public float MasterVolume { get; set; } = 1f;
-        public float MusicVolume { get; set; } = 0.8f;
+        public float MusicVolume { get; set; } = 0.5f;
         public float AmbientVolume { get; set; } = 1f;
         public float EffectsVolume { get; set; } = 1f;
         public float VoiceVolume { get; set; } = 1f;
@@ -57,7 +57,7 @@ namespace CatchIfYouCan.Save
             Shadows = PlayerPrefs.GetInt(Prefix + "shadows", 1) == 1;
             PostProcessing = PlayerPrefs.GetInt(Prefix + "post", 1) == 1;
             MasterVolume = PlayerPrefs.GetFloat(Prefix + "vol_master", 1f);
-            MusicVolume = PlayerPrefs.GetFloat(Prefix + "vol_music", 0.8f);
+            MusicVolume = PlayerPrefs.GetFloat(Prefix + "vol_music", 0.5f);
             AmbientVolume = PlayerPrefs.GetFloat(Prefix + "vol_ambient", 1f);
             EffectsVolume = PlayerPrefs.GetFloat(Prefix + "vol_effects", 1f);
             VoiceVolume = PlayerPrefs.GetFloat(Prefix + "vol_voice", 1f);

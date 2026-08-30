@@ -216,6 +216,12 @@ namespace CatchIfYouCan.UI
             var result = new RuntimeUIBuildResult { Canvas = canvas };
 
             result.MainMenuRoot = CreatePanel(canvas.transform, "MainMenu");
+            var mainMenuBackground = result.MainMenuRoot.GetComponent<Image>();
+            if (mainMenuBackground != null)
+            {
+                mainMenuBackground.color = Color.clear;
+                mainMenuBackground.raycastTarget = false;
+            }
             var mainMenu = result.MainMenuRoot.AddComponent<MainMenuController>();
             WireMainMenu(mainMenu, result.MainMenuRoot.transform);
 
@@ -316,17 +322,28 @@ namespace CatchIfYouCan.UI
             leftRect.anchorMax = new Vector2(0.35f, 0.85f);
             leftRect.offsetMin = leftRect.offsetMax = Vector2.zero;
 
-            var logoCatch = CreateText(root, "LogoCatch", "CATCH", 96, TextAnchor.UpperLeft, true);
-            Position(logoCatch.gameObject, 0.05f, 0.72f, 0.4f, 0.95f);
-            UITheme.StyleTitle(logoCatch);
+            var leftBackground = left.GetComponent<Image>();
+            if (leftBackground != null)
+            {
+                leftBackground.color = Color.clear;
+                leftBackground.raycastTarget = false;
+            }
 
-            var logoIfYou = CreateText(root, "LogoIfYou", "IF YOU", 72, TextAnchor.UpperLeft, true);
-            Position(logoIfYou.gameObject, 0.05f, 0.58f, 0.4f, 0.74f);
-            UITheme.StyleTitle(logoIfYou);
+            var gameLogo = new GameObject(
+                "GameLogo",
+                typeof(RectTransform),
+                typeof(CanvasRenderer),
+                typeof(Image));
 
-            var logoCan = CreateText(root, "LogoCan", "CAN", 96, TextAnchor.UpperLeft, true);
-            Position(logoCan.gameObject, 0.05f, 0.42f, 0.4f, 0.6f);
-            UITheme.SetTextColor(logoCan, UITheme.Secondary);
+            gameLogo.transform.SetParent(root, false);
+
+            var gameLogoImage = gameLogo.GetComponent<Image>();
+            gameLogoImage.sprite = Resources.Load<Sprite>("UI/Branding/CatchIfYouCan_Logo");
+            gameLogoImage.color = Color.white;
+            gameLogoImage.preserveAspect = true;
+            gameLogoImage.raycastTarget = false;
+
+            Position(gameLogo, -0.15f, 0.16f, 0.45f, 0.88f);
 
             var layout = left.AddComponent<VerticalLayoutGroup>();
             layout.spacing = 12;

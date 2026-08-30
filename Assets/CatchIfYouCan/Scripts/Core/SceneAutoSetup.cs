@@ -79,12 +79,17 @@ namespace CatchIfYouCan.Core
             EnsureMainCamera();
             EnsureDirectionalLight(0.15f);
 
+            if (UIManager.Instance == null)
+            {
+                var uiManagerGo = new GameObject("UIManager");
+                uiManagerGo.AddComponent<UIManager>();
+            }
+
             if (GameObject.Find("RuntimeUI") == null)
                 RuntimeUIFactory.BuildCompleteUI();
 
-            var menuRoot = FindOrCreate("MAIN_MENU_ROOT");
-            if (menuRoot.GetComponent<MainMenuController>() == null)
-                menuRoot.AddComponent<MainMenuController>();
+            if (UIManager.Instance != null)
+                UIManager.Instance.Show(UIScreen.MainMenu, true);
 
             EnsureHallwayPlaceholders();
         }
