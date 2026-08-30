@@ -53,6 +53,7 @@ namespace CatchIfYouCan.Tools
             TestDuplicateStableIdsRejected();
             TestValidationHolds();
             TestQuantizationContract();
+            TestSessionHandshake();
 
             Console.WriteLine();
             Console.WriteLine($"passed: {_passed}   failed: {_failed}");
@@ -64,6 +65,86 @@ namespace CatchIfYouCan.Tools
             }
 
             return _failed == 0;
+        }
+
+        /// <summary>
+        /// The join handshake and mismatch protocol of Docs/NETWORKING.md §3 and §5.
+        /// Transport-neutral, so it is testable here without Unity or a netcode package —
+        /// which is the point of keeping it that way.
+        /// </summary>
+        private static void TestSessionHandshake()
+        {
+            var map = Map();
+            var content = Content();
+            var host = MatchConfig.CreateAuthoritative(424242, map, content);
+
+            Check("handshake: capacity has one source and it is 4",
+                MultiplayerProtocol.MaxPlayers == 4);
+
+            Check("handshake: identical configs admit",
+                SessionCompatibility.CheckJoin(host, host, 1) == JoinVerdict.Admit);
+
+            Check("handshake: a full lobby is refused before anything else is inspected",
+                SessionCompatibility.CheckJoin(host, host, MultiplayerProtocol.MaxPlayers) == JoinVerdict.LobbyFull);
+
+            Check("handshake: capacity admits up to but not beyond MaxPlayers",
+                MultiplayerProtocol.HasCapacityFor(MultiplayerProtocol.MaxPlayers - 1) &&
+                !MultiplayerProtocol.HasCapacityFor(MultiplayerProtocol.MaxPlayers));
+
+            var otherProtocol = new MatchConfig(host.ProtocolVersion + 1, host.GenerationVersion,
+                host.Seed, host.MapDefinitionId, host.ContentHash);
+            Check("handshake: protocol mismatch is refused",
+                SessionCompatibility.CheckJoin(host, otherProtocol, 1) == JoinVerdict.ProtocolMismatch);
+
+            var otherGeneration = new MatchConfig(host.ProtocolVersion, host.GenerationVersion + 1,
+                host.Seed, host.MapDefinitionId, host.ContentHash);
+            Check("handshake: generation version mismatch is refused",
+                SessionCompatibility.CheckJoin(host, otherGeneration, 1) == JoinVerdict.GenerationVersionMismatch);
+
+            var otherContent = new MatchConfig(host.ProtocolVersion, host.GenerationVersion,
+                host.Seed, host.MapDefinitionId, host.ContentHash ^ 0xFFUL);
+            Check("handshake: content mismatch is refused",
+                SessionCompatibility.CheckJoin(host, otherContent, 1) == JoinVerdict.ContentMismatch);
+
+            var otherMap = new MatchConfig(host.ProtocolVersion, host.GenerationVersion,
+                host.Seed, host.MapDefinitionId + "_x", host.ContentHash);
+            Check("handshake: map mismatch is refused",
+                SessionCompatibility.CheckJoin(host, otherMap, 1) == JoinVerdict.MapMismatch);
+
+            var noSeed = new MatchConfig(host.ProtocolVersion, host.GenerationVersion,
+                0, host.MapDefinitionId, host.ContentHash);
+            Check("handshake: a config with no host-rolled seed is refused",
+                SessionCompatibility.CheckJoin(host, noSeed, 1) == JoinVerdict.SeedMissing);
+
+            // §5: protocol is checked before content, so a peer that disagrees about the
+            // handshake layout is not reported as a content problem.
+            var bothWrong = new MatchConfig(host.ProtocolVersion + 1, host.GenerationVersion,
+                host.Seed, host.MapDefinitionId, host.ContentHash ^ 0xFFUL);
+            Check("handshake: protocol outranks content when both differ",
+                SessionCompatibility.CheckJoin(host, bothWrong, 1) == JoinVerdict.ProtocolMismatch);
+
+            Check("handshake: every refusal aborts before generation",
+                SessionCompatibility.AbortsBeforeGeneration(JoinVerdict.ContentMismatch) &&
+                SessionCompatibility.AbortsBeforeGeneration(JoinVerdict.LobbyFull) &&
+                !SessionCompatibility.AbortsBeforeGeneration(JoinVerdict.Admit));
+
+            // Stage two: two peers that generated from the same admitted config must agree.
+            var hostHash = HashFor(host.Seed);
+            var peerHash = HashFor(host.Seed);
+            Check("handshake: same config generates an agreeing layout",
+                SessionCompatibility.CheckLayout(hostHash, peerHash, out _) == LayoutVerdict.Match);
+
+            var divergent = HashFor(host.Seed + 1);
+            var verdict = SessionCompatibility.CheckLayout(hostHash, divergent, out string diagnostic);
+            Check("handshake: a divergent layout is caught",
+                verdict == LayoutVerdict.Mismatch);
+            Check("handshake: a divergent layout names the differing section",
+                !string.IsNullOrEmpty(diagnostic), diagnostic);
+
+            Check("handshake: config hash is stable across equal configs",
+                host.ConfigHash() == MatchConfig.CreateAuthoritative(424242, map, content).ConfigHash());
+            Check("handshake: config hash separates different seeds",
+                host.ConfigHash() != MatchConfig.CreateAuthoritative(424243, map, content).ConfigHash());
         }
 
         // ------------------------------------------------------------------ helpers
