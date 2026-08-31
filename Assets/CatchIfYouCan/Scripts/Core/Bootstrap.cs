@@ -9,13 +9,27 @@ namespace CatchIfYouCan.Core
 {
     public class Bootstrap : MonoBehaviour
     {
-        [SerializeField] private float splashDuration = 1.8f;
-        [SerializeField] private CanvasGroup splashGroup;
-
         private void Start()
         {
+            // Created first and before anything else so the screen is black from the very first
+            // frame: EnsureManagers builds the runtime UI canvas, and none of that may be
+            // visible even for a frame before the intro.
+            var intro = StartupIntroVideo.Create();
+
             EnsureManagers();
-            StartCoroutine(SplashThenMenu());
+
+            // Started on the intro object, not on this one. Bootstrap is destroyed with 00_Boot
+            // when the menu loads, which would strand the coroutine and leave the screen black.
+            intro.StartCoroutine(intro.Sequence("01_MainMenu", ShowHeadphonesTip));
+        }
+
+        private static void ShowHeadphonesTip()
+        {
+            if (PlayerPrefs.GetInt("ciyc_headphones_tip", 0) == 1)
+                return;
+
+            PlayerPrefs.SetInt("ciyc_headphones_tip", 1);
+            GameEvents.TipRequested("BEST EXPERIENCED WITH HEADPHONES");
         }
 
         private void EnsureManagers()
@@ -73,32 +87,6 @@ namespace CatchIfYouCan.Core
             }
             if (GameObject.Find("RuntimeUI") == null)
                 RuntimeUIFactory.BuildCompleteUI();
-        }
-
-        private System.Collections.IEnumerator SplashThenMenu()
-        {
-            if (splashGroup != null) splashGroup.alpha = 1f;
-            yield return new WaitForSecondsRealtime(splashDuration);
-            if (splashGroup != null)
-            {
-                float t = 1f;
-                while (t > 0f)
-                {
-                    t -= Time.unscaledDeltaTime;
-                    splashGroup.alpha = Mathf.Clamp01(t);
-                    yield return null;
-                }
-            }
-            bool headphonesShown = PlayerPrefs.GetInt("ciyc_headphones_tip", 0) == 1;
-            if (!headphonesShown)
-            {
-                PlayerPrefs.SetInt("ciyc_headphones_tip", 1);
-                GameEvents.TipRequested("BEST EXPERIENCED WITH HEADPHONES");
-            }
-            if (SceneLoader.Instance != null)
-                SceneLoader.Instance.LoadMainMenu();
-            else
-                UnityEngine.SceneManagement.SceneManager.LoadScene("01_MainMenu");
         }
     }
 }

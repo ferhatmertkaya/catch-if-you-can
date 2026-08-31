@@ -39,38 +39,10 @@ namespace CatchIfYouCan.Core
             if (bootstrapGo.GetComponent<Bootstrap>() == null)
                 bootstrapGo.AddComponent<Bootstrap>();
 
-            var splash = FindOrCreate("SplashCanvas");
-            if (splash.GetComponent<Canvas>() == null)
-            {
-                var canvas = splash.AddComponent<Canvas>();
-                canvas.renderMode = RenderMode.ScreenSpaceOverlay;
-                canvas.sortingOrder = 200;
-                splash.AddComponent<CanvasScaler>();
-                splash.AddComponent<GraphicRaycaster>();
-            }
-
-            if (splash.GetComponent<CanvasGroup>() == null)
-                splash.AddComponent<CanvasGroup>();
-
-            var title = GameObject.Find("SplashTitle");
-            if (title == null)
-            {
-                title = new GameObject("SplashTitle");
-                title.transform.SetParent(splash.transform, false);
-                var rect = title.AddComponent<RectTransform>();
-                rect.anchorMin = Vector2.zero;
-                rect.anchorMax = VectorOne;
-                rect.offsetMin = Vector2.zero;
-                rect.offsetMax = Vector2.zero;
-                RuntimeUIFactory.CreateText(title.transform, "Title", "CATCH IF YOU CAN", 48);
-            }
-
-            var bootstrap = bootstrapGo.GetComponent<Bootstrap>();
-            var splashGroup = splash.GetComponent<CanvasGroup>();
-            var field = typeof(Bootstrap).GetField("splashGroup",
-                System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-            if (field != null && field.GetValue(bootstrap) == null)
-                field.SetValue(bootstrap, splashGroup);
+            // The old text splash ("SplashCanvas" + a "CATCH IF YOU CAN" title) used to be built
+            // here. It is replaced by StartupIntroVideo, which Bootstrap raises itself so the
+            // screen is black before any of this runs. The menu's own logo is a separate thing
+            // and is still built by RuntimeUIFactory.WireMainMenu.
         }
 
         private static void EnsureMainMenu()
