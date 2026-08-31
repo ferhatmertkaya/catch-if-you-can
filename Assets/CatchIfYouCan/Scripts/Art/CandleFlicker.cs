@@ -61,11 +61,40 @@ namespace CatchIfYouCan.Art
         private float _fastOffset;
         private bool _ready;
 
+        // Set by a horror event while one is running; 1 means "behave normally". These are
+        // assigned, never accumulated, so an event that is interrupted cannot leave the
+        // candle permanently dimmed.
+        private float _eventIntensityScale = 1f;
+        private float _eventTurbulenceScale = 1f;
+
         /// <summary>
         /// Current intensity as a fraction of the authored value. Exposed so flame visuals can
         /// borrow the same curve instead of running a second, unrelated noise source.
         /// </summary>
         public float CurrentFactor { get; private set; } = 1f;
+
+        /// <summary>The authored intensity this component modulates around.</summary>
+        public float AuthoredIntensity => _authoredIntensity;
+
+        /// <summary>
+        /// Lets a horror event disturb the candle without a second script writing
+        /// Light.intensity behind this one's back. Two writers on one property is how the
+        /// last regression happened, so events go through here instead.
+        /// <paramref name="intensityScale"/> multiplies the result; <paramref name="turbulenceScale"/>
+        /// widens the flicker envelope. Both are set, never accumulated.
+        /// </summary>
+        public void ApplyEventModulation(float intensityScale, float turbulenceScale)
+        {
+            _eventIntensityScale = Mathf.Clamp(intensityScale, 0.05f, 2f);
+            _eventTurbulenceScale = Mathf.Clamp(turbulenceScale, 0f, 6f);
+        }
+
+        /// <summary>Returns the candle to its authored behaviour.</summary>
+        public void ClearEventModulation()
+        {
+            _eventIntensityScale = 1f;
+            _eventTurbulenceScale = 1f;
+        }
 
         private void Awake()
         {
@@ -94,6 +123,7 @@ namespace CatchIfYouCan.Art
 
         private void OnDisable()
         {
+            ClearEventModulation();
             if (_ready && targetLight != null)
                 targetLight.intensity = _authoredIntensity;
         }
@@ -120,16 +150,29 @@ namespace CatchIfYouCan.Art
 
             // Perlin is 0..1 centred near 0.5; recentre so the mean sits on the authored value.
             float factor = 1f
-                           + (slow - 0.5f) * 2f * slowAmount
-                           + (fast - 0.5f) * 2f * fastAmount;
+                           + (slow - 0.5f) * 2f * slowAmount * _eventTurbulenceScale
+                           + (fast - 0.5f) * 2f * fastAmount * _eventTurbulenceScale;
 
-            factor = Mathf.Clamp(factor, minimumFactor, maximumFactor);
+            // The normal envelope is deliberately narrow. A horror event needs room to swing,
+            // so the bounds open up in step with the turbulence it asked for; at turbulence 1
+            // the clamp is exactly the authored one.
+            float minF = minimumFactor;
+            float maxF = maximumFactor;
+            if (_eventTurbulenceScale > 1f)
+            {
+                float k = Mathf.InverseLerp(1f, 4f, _eventTurbulenceScale);
+                minF = Mathf.Lerp(minimumFactor, 0.35f, k);
+                maxF = Mathf.Lerp(maximumFactor, 1.35f, k);
+            }
+
+            factor = Mathf.Clamp(factor, minF, maxF);
 
             CurrentFactor = factor;
 
             // Always the authored baseline times the factor, never the running value, so the
-            // intensity cannot compound downwards frame after frame.
-            targetLight.intensity = _authoredIntensity * factor;
+            // intensity cannot compound downwards frame after frame. The event scale is a
+            // separate multiplier for the same reason.
+            targetLight.intensity = _authoredIntensity * factor * _eventIntensityScale;
         }
 
 #if UNITY_EDITOR
