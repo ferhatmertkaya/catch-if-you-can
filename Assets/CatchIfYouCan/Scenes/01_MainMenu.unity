@@ -41169,33 +41169,7 @@ MonoBehaviour:
   m_ShadowLayerMask: 1
   m_RenderingLayers: 1
   m_ShadowRenderingLayers: 1
---- !u!1660057539 &9223372036854775807
-SceneRoots:
-  m_ObjectHideFlags: 0
-  m_Roots:
-  - {fileID: 7311220200000011}
-  - {fileID: 200002}
-  - {fileID: 200012}
-  - {fileID: 200022}
-  - {fileID: 200032}
-  - {fileID: 946920073}
-  - {fileID: 200042}
-  - {fileID: 2004878623}
-  - {fileID: 24644817}
-  - {fileID: 655823767}
-  - {fileID: 1054892509}
-  - {fileID: 1951451982}
-  - {fileID: 1912818317}
-  - {fileID: 331290260}
-  - {fileID: 945267606}
-  - {fileID: 1826956511}
-  - {fileID: 263662904}
-  - {fileID: 631210979}
-  - {fileID: 914632491}
-  - {fileID: 664058700}
-  - {fileID: 1773951289}
 --- !u!1 &7311220200000010
-
 GameObject:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
@@ -41213,7 +41187,6 @@ GameObject:
   m_StaticEditorFlags: 0
   m_IsActive: 1
 --- !u!4 &7311220200000011
-
 Transform:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
@@ -41230,8 +41203,44 @@ Transform:
   - {fileID: 7311220200000031}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &7311220200000012
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 7311220200000010}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 822e576891074fda9000fc76ab5a1b27, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  dimmedLights:
+  - {fileID: 24644816}
+  - {fileID: 655823766}
+  - {fileID: 1054892508}
+  - {fileID: 1949104168}
+  - {fileID: 595639481}
+  redLights:
+  - {fileID: 7311220200000022}
+  - {fileID: 7311220200000032}
+  candleFlicker: {fileID: 7311220100000013}
+  phoneAudio: {fileID: 1274160868}
+  eventProbability: 1
+  onsetDelay: {x: 0.4, y: 0.8}
+  destabiliseDuration: {x: 0.4, y: 1}
+  redEmergeDuration: {x: 0.35, y: 0.7}
+  mainPhaseDuration: {x: 1.3, y: 3.5}
+  dropoutDuration: {x: 0.12, y: 0.3}
+  recoveryDuration: {x: 0.6, y: 1.2}
+  dimEventFactor: {x: 0.1, y: 0.25}
+  redPeakScale: 1
+  candleEventIntensity: {x: 0.3, y: 0.6}
+  candleTurbulence: 3.4
+  impulseInterval: 0.45
+  noiseSpeed: 2.3
+  logEvents: 1
 --- !u!1 &7311220200000020
-
 GameObject:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
@@ -41249,7 +41258,6 @@ GameObject:
   m_StaticEditorFlags: 0
   m_IsActive: 1
 --- !u!4 &7311220200000021
-
 Transform:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
@@ -41265,7 +41273,6 @@ Transform:
   m_Father: {fileID: 7311220200000011}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!108 &7311220200000022
-
 Light:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
@@ -41276,7 +41283,7 @@ Light:
   serializedVersion: 13
   m_Type: 2
   m_Color: {r: 0.6446, g: 0.00915, b: 0.01371, a: 1}
-  m_Intensity: 6.0
+  m_Intensity: 6
   m_Range: 2.2
   m_SpotAngle: 30
   m_InnerSpotAngle: 21.802082
@@ -41331,7 +41338,6 @@ Light:
   m_LuxAtDistance: 1
   m_EnableSpotReflector: 1
 --- !u!1 &7311220200000030
-
 GameObject:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
@@ -41349,7 +41355,6 @@ GameObject:
   m_StaticEditorFlags: 0
   m_IsActive: 1
 --- !u!4 &7311220200000031
-
 Transform:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
@@ -41365,7 +41370,6 @@ Transform:
   m_Father: {fileID: 7311220200000011}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!108 &7311220200000032
-
 Light:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
@@ -41430,40 +41434,28 @@ Light:
   m_LightUnit: 1
   m_LuxAtDistance: 1
   m_EnableSpotReflector: 1
---- !u!114 &7311220200000012
-MonoBehaviour:
+--- !u!1660057539 &9223372036854775807
+SceneRoots:
   m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 7311220200000010}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 822e576891074fda9000fc76ab5a1b27, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  dimmedLights:
-  - {fileID: 24644816}
-  - {fileID: 655823766}
-  - {fileID: 1054892508}
-  - {fileID: 1949104168}
-  - {fileID: 595639481}
-  redLights:
-  - {fileID: 7311220200000022}
-  - {fileID: 7311220200000032}
-  candleFlicker: {fileID: 7311220100000013}
-  phoneAudio: {fileID: 1274160868}
-  eventProbability: 1
-  onsetDelay: {x: 0.4, y: 0.8}
-  destabiliseDuration: {x: 0.4, y: 1}
-  redEmergeDuration: {x: 0.35, y: 0.7}
-  mainPhaseDuration: {x: 1.3, y: 3.5}
-  dropoutDuration: {x: 0.12, y: 0.3}
-  recoveryDuration: {x: 0.6, y: 1.2}
-  dimEventFactor: {x: 0.1, y: 0.25}
-  redPeakScale: 1
-  candleEventIntensity: {x: 0.3, y: 0.6}
-  candleTurbulence: 3.4
-  impulseInterval: 0.45
-  noiseSpeed: 2.3
-  logEvents: 1
+  m_Roots:
+  - {fileID: 7311220200000011}
+  - {fileID: 200002}
+  - {fileID: 200012}
+  - {fileID: 200022}
+  - {fileID: 200032}
+  - {fileID: 946920073}
+  - {fileID: 200042}
+  - {fileID: 2004878623}
+  - {fileID: 24644817}
+  - {fileID: 655823767}
+  - {fileID: 1054892509}
+  - {fileID: 1951451982}
+  - {fileID: 1912818317}
+  - {fileID: 331290260}
+  - {fileID: 945267606}
+  - {fileID: 1826956511}
+  - {fileID: 263662904}
+  - {fileID: 631210979}
+  - {fileID: 914632491}
+  - {fileID: 664058700}
+  - {fileID: 1773951289}
