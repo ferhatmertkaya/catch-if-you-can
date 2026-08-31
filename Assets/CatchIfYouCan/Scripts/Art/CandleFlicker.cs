@@ -49,6 +49,18 @@ namespace CatchIfYouCan.Art
         [Tooltip("Change per candle so several flames do not flicker in sync.")]
         [SerializeField] private int seed;
 
+        [Header("Range")]
+        [Tooltip("Fit the light range to how far apart the lit objects actually are. " +
+                 "Light range is in world units and ignores parent scale, so a hand-set value " +
+                 "is only correct for one particular prop scale.")]
+        [SerializeField] private bool autoFitRange = true;
+
+        [Tooltip("Transforms the light is meant to cover, typically the flames.")]
+        [SerializeField] private Transform[] fitTargets;
+
+        [Tooltip("Range as a multiple of the spread of those targets.")]
+        [SerializeField, Range(1f, 12f)] private float rangeFactor = 5f;
+
         private float _authoredIntensity;
         private float _slowOffset;
         private float _fastOffset;
@@ -74,7 +86,47 @@ namespace CatchIfYouCan.Art
 
             _authoredIntensity = targetLight.intensity;
             ApplySeed();
+            FitRange();
             _ready = true;
+        }
+
+        /// <summary>
+        /// Sizes the light to the spread of <see cref="fitTargets"/> in world space.
+        /// A candle holder is a nested, scaled prop, and Light.range is world-space and
+        /// unaffected by parent scale, so measuring the real positions is the only way to get
+        /// a range that is right at whatever scale the prop is placed at.
+        /// </summary>
+        private void FitRange()
+        {
+            if (!autoFitRange || fitTargets == null || fitTargets.Length == 0)
+                return;
+
+            Vector3 centre = Vector3.zero;
+            int count = 0;
+            for (int i = 0; i < fitTargets.Length; i++)
+            {
+                if (fitTargets[i] == null) continue;
+                centre += fitTargets[i].position;
+                count++;
+            }
+
+            if (count == 0)
+                return;
+
+            centre /= count;
+
+            float spread = 0f;
+            for (int i = 0; i < fitTargets.Length; i++)
+            {
+                if (fitTargets[i] == null) continue;
+                float d = Vector3.Distance(fitTargets[i].position, centre);
+                if (d > spread) spread = d;
+            }
+
+            // A single flame has no spread; fall back to the authored range rather than
+            // collapsing the light to nothing.
+            if (spread > 0.0001f)
+                targetLight.range = spread * rangeFactor;
         }
 
         private void OnEnable()
