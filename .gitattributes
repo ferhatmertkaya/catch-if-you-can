@@ -1,1 +1,7 @@
 Assets/CatchIfYouCan/Art/Environment/MainMenuCorridor/Models/CIYC_MainMenu_Corridor.fbx filter=lfs diff=lfs merge=lfs -text
+Assets/CatchIfYouCan/Art/Characters/Ghosts/FloatingFemaleGhost/Models/CIYC_FloatingFemaleGhost.fbx filter=lfs diff=lfs merge=lfs -text
+Assets/CatchIfYouCan/Art/Environment/Props/HauntedCandleHolder/Models/CIYC_HauntedCandleHolder.fbx filter=lfs diff=lfs merge=lfs -text
+Assets/CatchIfYouCan/Art/Environment/Props/HauntedGrandfatherClock/Models/CIYC_HauntedGrandfatherClock.fbx filter=lfs diff=lfs merge=lfs -text
+Assets/CatchIfYouCan/Art/Environment/Props/HauntedRotaryPhone/Models/CIYC_HauntedRotaryPhone.fbx filter=lfs diff=lfs merge=lfs -text
+Assets/CatchIfYouCan/Art/Environment/Props/HauntedTable/Models/CIYC_HauntedTable.fbx filter=lfs diff=lfs merge=lfs -text
+Assets/CatchIfYouCan/Art/Environment/Props/HauntedCandleHolder/Textures/CIYC_HauntedCandleHolder_BaseColor.png filter=lfs diff=lfs merge=lfs -text

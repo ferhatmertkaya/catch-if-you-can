@@ -362,7 +362,10 @@ namespace CatchIfYouCan.UI
                 leftBackground.raycastTarget = false;
             }
 
-            var gameLogo = new GameObject(
+            var bakedLogo = GameObject.Find("GameLogo_Baked");
+            if (bakedLogo == null)
+            {
+                var gameLogo = new GameObject(
                 "GameLogo",
                 typeof(RectTransform),
                 typeof(CanvasRenderer),
@@ -380,6 +383,7 @@ namespace CatchIfYouCan.UI
             gameLogoImage.enabled = gameLogoImage.sprite != null;
 
             Position(gameLogo, -0.15f, 0.16f, 0.45f, 0.88f);
+            }
 
             var layout = left.AddComponent<VerticalLayoutGroup>();
             layout.spacing = 12;
