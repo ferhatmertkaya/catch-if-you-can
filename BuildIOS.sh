@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # CATCH IF YOU CAN — macOS iOS / Xcode export (v2)
-# Works with any installed Unity 6.x (prefers 6000.3 LTS).
+# Works with any installed Unity 6.x (requires 6000.5.10f1; prefers it strictly).
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -49,9 +49,16 @@ pick_unity() {
     return 1
   fi
 
-  # Prefer Unity 6.3 LTS (6000.3.x)
+  # Required baseline: Unity 6.5 == 6000.5.10f1 (exact).
   local preferred
-  preferred="$(printf '%s\n' "$all" | grep '/6000\.3\.' | sort -V | tail -n 1 || true)"
+  preferred="$(printf '%s\n' "$all" | grep '/6000\.5\.10f1/' | sort -V | tail -n 1 || true)"
+  if [[ -n "$preferred" ]]; then
+    echo "$preferred"
+    return 0
+  fi
+
+  # Then any 6000.5.x - tolerated with a warning below, not endorsed.
+  preferred="$(printf '%s\n' "$all" | grep '/6000\.5\.' | sort -V | tail -n 1 || true)"
   if [[ -n "$preferred" ]]; then
     echo "$preferred"
     return 0
@@ -83,7 +90,7 @@ Unity wurde nicht gefunden.
    open -a "Unity Hub"
 
 2) Installieren:
-   - Unity 6.3 LTS (oder Unity 6.x)
+   - Unity 6.5 (6000.5.10f1) - exakt diese Version
    - Module: iOS Build Support
    - (empfohlen) Android Build Support nur falls nötig
 
@@ -125,8 +132,10 @@ echo "Project:     $PROJECT_DIR"
 echo "Output:      $OUT_DIR"
 
 # Warn if not 6.3
-if [[ "$UNITY_VERSION_DIR" != 6000.3.* ]]; then
-  echo "WARNUNG: Empfohlen ist Unity 6000.3.x LTS. Gefunden: $UNITY_VERSION_DIR"
+if [[ "$UNITY_VERSION_DIR" != "6000.5.10f1" ]]; then
+  echo "WARNUNG: Erforderlich ist Unity 6000.5.10f1. Gefunden: $UNITY_VERSION_DIR"
+  echo "         Eine andere Version schreibt ProjectVersion.txt um und veraendert"
+  echo "         die Toolchain unter der Determinismus-Baseline."
   echo "         Build wird trotzdem versucht."
 fi
 

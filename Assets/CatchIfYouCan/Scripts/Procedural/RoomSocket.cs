@@ -1,28 +1,10 @@
+using CatchIfYouCan.Procedural.Deterministic;
 using UnityEngine;
 
 namespace CatchIfYouCan.Procedural
 {
-    public enum SocketType
-    {
-        Door,
-        Wall,
-        Window,
-        Prop,
-        Evidence,
-        Hide,
-        GhostInteract,
-        Light
-    }
-
-    public enum SocketDirection
-    {
-        North,
-        East,
-        South,
-        West,
-        Up,
-        Down
-    }
+    // SocketType and SocketDirection now live in SocketEnums.cs so the deterministic
+    // generation core can use them without referencing UnityEngine.
 
     public class RoomSocket : MonoBehaviour
     {
@@ -92,30 +74,14 @@ namespace CatchIfYouCan.Procedural
             }
         }
 
-        public static SocketDirection Opposite(SocketDirection dir)
-        {
-            switch (dir)
-            {
-                case SocketDirection.North: return SocketDirection.South;
-                case SocketDirection.South: return SocketDirection.North;
-                case SocketDirection.East: return SocketDirection.West;
-                case SocketDirection.West: return SocketDirection.East;
-                case SocketDirection.Up: return SocketDirection.Down;
-                case SocketDirection.Down: return SocketDirection.Up;
-                default: return SocketDirection.South;
-            }
-        }
+        // Single implementation lives in the deterministic core; these stay as the
+        // Unity-side entry points so existing call sites are unaffected.
+        public static SocketDirection Opposite(SocketDirection dir) => Directions.Opposite(dir);
 
         public static Vector2Int DirectionToGridOffset(SocketDirection dir)
         {
-            switch (dir)
-            {
-                case SocketDirection.North: return new Vector2Int(0, 1);
-                case SocketDirection.South: return new Vector2Int(0, -1);
-                case SocketDirection.East: return new Vector2Int(1, 0);
-                case SocketDirection.West: return new Vector2Int(-1, 0);
-                default: return Vector2Int.zero;
-            }
+            var cell = Directions.ToGridOffset(dir);
+            return new Vector2Int(cell.X, cell.Z);
         }
 
         private void OnDrawGizmosSelected()

@@ -122,7 +122,13 @@ namespace CatchIfYouCan.UI
                     break;
                 case SettingsTab.Audio:
                     AddSlider("Master Volume", 0f, 1f, _settings.MasterVolume, v => _settings.MasterVolume = v);
-                    AddSlider("Music Volume", 0f, 1f, _settings.MusicVolume, v => _settings.MusicVolume = v);
+                    AddSlider("Music Volume", 0f, 1f, _settings.MusicVolume, v =>
+                    {
+                        _settings.MusicVolume = v;
+
+                        if (AudioManager.Instance != null)
+                            AudioManager.Instance.SetMusicVolume(v);
+                    });
                     AddSlider("Ambient Volume", 0f, 1f, _settings.AmbientVolume, v => _settings.AmbientVolume = v);
                     AddSlider("Effects Volume", 0f, 1f, _settings.EffectsVolume, v => _settings.EffectsVolume = v);
                     AddSlider("Voice Volume", 0f, 1f, _settings.VoiceVolume, v => _settings.VoiceVolume = v);

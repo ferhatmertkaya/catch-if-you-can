@@ -1,13 +1,13 @@
 CATCH IF YOU CAN — iOS Deploy Paket v2
 ======================================
 
-Dein Fehler "Unity 6.3 LTS nicht gefunden" bedeutet:
+Der Fehler "Unity 6000.5.10f1 nicht gefunden" bedeutet:
 Unity ist auf dem Mac noch nicht installiert (oder nicht unter
 /Applications/Unity/Hub/Editor/).
 
 SCHNELLSTART
 ------------
-1) Unity Hub + Unity 6.3 LTS + Modul "iOS Build Support" installieren
+1) Unity Hub + Unity 6.5 (6000.5.10f1) + Modul "iOS Build Support" installieren
    https://unity.com/download
 
 2) Im Finder Doppelklick:

@@ -44,7 +44,7 @@ namespace CatchIfYouCan.UI
 
         private void Update()
         {
-            if (Input.GetKeyDown(KeyCode.BackQuote))
+            if (UnityEngine.Input.GetKeyDown(KeyCode.BackQuote))
                 ToggleVisible();
 
             if (!_visible) return;

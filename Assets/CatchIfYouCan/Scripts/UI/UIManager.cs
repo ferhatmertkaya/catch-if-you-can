@@ -85,7 +85,12 @@ namespace CatchIfYouCan.UI
 
         public void Show(UIScreen screen, bool hideOthers = true)
         {
-            if (screen == _current) return;
+            if (screen == _current)
+            {
+                if (_screens.TryGetValue(screen, out var currentRoot) && currentRoot != null)
+                    currentRoot.SetActive(true);
+                return;
+            }
 
             _previous = _current;
             if (hideOthers)

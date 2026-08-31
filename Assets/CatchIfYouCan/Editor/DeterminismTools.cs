@@ -1,0 +1,260 @@
+using System.Collections.Generic;
+using System.IO;
+using System.Text;
+using CatchIfYouCan.Procedural.Deterministic;
+using UnityEditor;
+using UnityEngine;
+
+namespace CatchIfYouCan.EditorTools
+{
+    /// <summary>
+    /// Editor tooling for the deterministic generator.
+    ///
+    /// The compare window exists so nobody has to diff two thousand-line dumps by hand:
+    /// it reports the first authoritative difference, in the same canonical order the hash
+    /// uses, and names the exact room, door or prop.
+    /// </summary>
+    public static class DeterminismTools
+    {
+        private const string MenuRoot = "Tools/Catch If You Can/Determinism/";
+
+        private const string GoldenTablePath =
+            "Assets/CatchIfYouCan/Scripts/Procedural/Deterministic/GoldenSeedTable.cs";
+
+        [MenuItem(MenuRoot + "Generate Golden Seeds")]
+        public static void GenerateGoldenSeeds()
+        {
+            bool proceed = EditorUtility.DisplayDialog(
+                "Regenerate golden seeds?",
+                "This overwrites the committed golden seed table.\n\n" +
+                "Only do this when you have DELIBERATELY changed generation and bumped " +
+                $"GenerationVersion (currently {GenerationVersion.Current}). Never regenerate " +
+                "to make a failing determinism test pass - that erases the evidence that " +
+                "layouts changed for every stored seed.",
+                "Regenerate", "Cancel");
+
+            if (!proceed)
+                return;
+
+            File.WriteAllText(GoldenTablePath, BuildGoldenTableSource());
+            AssetDatabase.Refresh();
+            Debug.Log($"[Determinism] Golden seed table regenerated at generation version " +
+                      $"{GenerationVersion.Current}: {GoldenTablePath}");
+        }
+
+        [MenuItem(MenuRoot + "Validate Golden Seeds")]
+        public static void ValidateGoldenSeeds()
+        {
+            var content = ContentSnapshot.CreateFallback();
+            var failures = new List<string>();
+
+            if (GoldenSeedTable.Entries.Length == 0)
+            {
+                EditorUtility.DisplayDialog("Golden seeds",
+                    "The golden seed table is empty. Run Generate Golden Seeds.", "OK");
+                return;
+            }
+
+            foreach (var entry in GoldenSeedTable.Entries)
+            {
+                if (entry.GenerationVersion != GenerationVersion.Current)
+                {
+                    failures.Add($"seed {entry.Seed} ({entry.MapDefinitionId}): recorded at generation " +
+                                 $"version {entry.GenerationVersion}, current is {GenerationVersion.Current}");
+                    continue;
+                }
+
+                var map = MapDefinition.ById(entry.MapDefinitionId);
+                var layout = HouseLayoutBuilder.Generate(entry.Seed, map, content, out _);
+                var hash = LayoutHasher.Compute(layout);
+
+                if (hash.Final != entry.ExpectedHash)
+                    failures.Add($"seed {entry.Seed} ({entry.MapDefinitionId}): expected {entry.ExpectedHash}, got {hash.Final}");
+            }
+
+            if (failures.Count == 0)
+            {
+                Debug.Log($"[Determinism] All {GoldenSeedTable.Entries.Length} golden seeds reproduce their recorded hashes.");
+                EditorUtility.DisplayDialog("Golden seeds",
+                    $"All {GoldenSeedTable.Entries.Length} golden seeds reproduce.", "OK");
+                return;
+            }
+
+            foreach (var failure in failures)
+                Debug.LogError("[Determinism] " + failure);
+
+            EditorUtility.DisplayDialog("Golden seeds",
+                $"{failures.Count} of {GoldenSeedTable.Entries.Length} golden seeds FAILED.\n\n" +
+                "See the Console. Generation has changed; either revert the change or bump " +
+                "GenerationVersion and regenerate the table deliberately.", "OK");
+        }
+
+        [MenuItem(MenuRoot + "Compare Two Layouts")]
+        public static void OpenCompareWindow() => LayoutCompareWindow.Open();
+
+        [MenuItem(MenuRoot + "Print Layout Report")]
+        public static void PrintLayoutReport()
+        {
+            var layout = HouseLayoutBuilder.Generate(
+                SeedManagerSeed(), MapDefinition.HouseDefault, ContentSnapshot.CreateFallback(), out var validation);
+            var hash = LayoutHasher.Compute(layout);
+            Debug.Log(hash.ToReport() + (validation.IsValid ? "" : "\nVALIDATION FAILED: " + validation));
+        }
+
+        private static int SeedManagerSeed() => CatchIfYouCan.Procedural.SeedManager.CurrentSeed;
+
+        internal static string BuildGoldenTableSource()
+        {
+            int[] seeds = { 1, 7, 42, 1337, 184726392, 424242, 999983, -1, int.MinValue, int.MaxValue, 65536, 123456789 };
+            var content = ContentSnapshot.CreateFallback();
+
+            var sb = new StringBuilder();
+            sb.AppendLine("// AUTO-GENERATED by Tools > Catch If You Can > Determinism > Generate Golden Seeds");
+            sb.AppendLine("// (or: dotnet run --project Tools/DeterminismHarness golden)");
+            sb.AppendLine("// Do not edit by hand. Regenerate only after a deliberate GenerationVersion bump.");
+            sb.AppendLine();
+            sb.AppendLine("namespace CatchIfYouCan.Procedural.Deterministic");
+            sb.AppendLine("{");
+            sb.AppendLine("    public static class GoldenSeedTable");
+            sb.AppendLine("    {");
+            sb.AppendLine("        public readonly struct Entry");
+            sb.AppendLine("        {");
+            sb.AppendLine("            public readonly int GenerationVersion;");
+            sb.AppendLine("            public readonly string MapDefinitionId;");
+            sb.AppendLine("            public readonly int Seed;");
+            sb.AppendLine("            public readonly string ExpectedHash;");
+            sb.AppendLine();
+            sb.AppendLine("            public Entry(int generationVersion, string mapDefinitionId, int seed, string expectedHash)");
+            sb.AppendLine("            {");
+            sb.AppendLine("                GenerationVersion = generationVersion;");
+            sb.AppendLine("                MapDefinitionId = mapDefinitionId;");
+            sb.AppendLine("                Seed = seed;");
+            sb.AppendLine("                ExpectedHash = expectedHash;");
+            sb.AppendLine("            }");
+            sb.AppendLine("        }");
+            sb.AppendLine();
+            sb.AppendLine("        public static readonly Entry[] Entries =");
+            sb.AppendLine("        {");
+
+            foreach (var map in new[] { MapDefinition.HouseDefault, MapDefinition.HouseTraining })
+            {
+                foreach (int seed in seeds)
+                {
+                    var layout = HouseLayoutBuilder.Generate(seed, map, content, out _);
+                    var hash = LayoutHasher.Compute(layout);
+                    string literal = seed == int.MinValue ? "-2147483648" : seed.ToString();
+                    sb.AppendLine($"            new Entry({GenerationVersion.Current}, \"{map.MapDefinitionId}\", {literal}, \"{hash.Final}\"),");
+                }
+            }
+
+            sb.AppendLine("        };");
+            sb.AppendLine("    }");
+            sb.AppendLine("}");
+            return sb.ToString();
+        }
+    }
+
+    /// <summary>
+    /// Generates two layouts and reports the FIRST authoritative difference between them,
+    /// plus the per-section hash breakdown that localises it.
+    /// </summary>
+    public class LayoutCompareWindow : EditorWindow
+    {
+        private int _seedA = 42;
+        private int _seedB = 42;
+        private string _mapA = MapDefinition.HouseDefault.MapDefinitionId;
+        private string _mapB = MapDefinition.HouseDefault.MapDefinitionId;
+        private int _attemptA;
+        private int _attemptB;
+
+        private string _result = "Set two layouts and press Compare.";
+        private Vector2 _scroll;
+
+        public static void Open()
+        {
+            var window = GetWindow<LayoutCompareWindow>(false, "Layout Compare", true);
+            window.minSize = new Vector2(560f, 420f);
+            window.Show();
+        }
+
+        private void OnGUI()
+        {
+            EditorGUILayout.LabelField("Compare two generated layouts", EditorStyles.boldLabel);
+            EditorGUILayout.HelpBox(
+                "Reports the first difference in canonical order, so you get 'room 8 moved from " +
+                "(4,0,8) to (5,0,8)' instead of two large dumps to eyeball.",
+                MessageType.Info);
+
+            EditorGUILayout.Space();
+            using (new EditorGUILayout.HorizontalScope())
+            {
+                using (new EditorGUILayout.VerticalScope(EditorStyles.helpBox))
+                {
+                    EditorGUILayout.LabelField("Layout A", EditorStyles.boldLabel);
+                    _seedA = EditorGUILayout.IntField("Seed", _seedA);
+                    _mapA = EditorGUILayout.TextField("Map", _mapA);
+                    _attemptA = EditorGUILayout.IntField("Attempt", _attemptA);
+                }
+
+                using (new EditorGUILayout.VerticalScope(EditorStyles.helpBox))
+                {
+                    EditorGUILayout.LabelField("Layout B", EditorStyles.boldLabel);
+                    _seedB = EditorGUILayout.IntField("Seed", _seedB);
+                    _mapB = EditorGUILayout.TextField("Map", _mapB);
+                    _attemptB = EditorGUILayout.IntField("Attempt", _attemptB);
+                }
+            }
+
+            EditorGUILayout.Space();
+            if (GUILayout.Button("Compare", GUILayout.Height(28f)))
+                Compare();
+
+            EditorGUILayout.Space();
+            _scroll = EditorGUILayout.BeginScrollView(_scroll);
+            EditorGUILayout.TextArea(_result, GUILayout.ExpandHeight(true));
+            EditorGUILayout.EndScrollView();
+        }
+
+        private void Compare()
+        {
+            var content = ContentSnapshot.CreateFallback();
+            var layoutA = HouseLayoutBuilder.Build(_seedA, MapDefinition.ById(_mapA), content, Mathf.Max(0, _attemptA));
+            var layoutB = HouseLayoutBuilder.Build(_seedB, MapDefinition.ById(_mapB), content, Mathf.Max(0, _attemptB));
+
+            var hashA = LayoutHasher.Compute(layoutA);
+            var hashB = LayoutHasher.Compute(layoutB);
+
+            var sb = new StringBuilder();
+
+            if (hashA.FinalHash == hashB.FinalHash)
+            {
+                sb.AppendLine("IDENTICAL");
+                sb.AppendLine();
+                sb.Append(hashA.ToReport());
+                _result = sb.ToString();
+                return;
+            }
+
+            sb.AppendLine("DIFFERENT");
+            sb.AppendLine();
+            sb.AppendLine("Section triage: " + hashA.DescribeDifference(hashB));
+            sb.AppendLine();
+
+            if (LayoutDiff.TryDescribeFirstDifference(layoutA, layoutB, out string description))
+            {
+                sb.AppendLine("First authoritative difference:");
+                sb.AppendLine();
+                sb.AppendLine(description);
+            }
+
+            sb.AppendLine();
+            sb.AppendLine("---- A ----");
+            sb.Append(hashA.ToReport());
+            sb.AppendLine();
+            sb.AppendLine("---- B ----");
+            sb.Append(hashB.ToReport());
+
+            _result = sb.ToString();
+        }
+    }
+}

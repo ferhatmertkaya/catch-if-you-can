@@ -31,7 +31,7 @@ namespace CatchIfYouCan.Audio
             if (ClipVariants == null || ClipVariants.Length == 0)
                 return null;
 
-            _shuffleBag ??= new AudioClipShuffleBag(EventId?.GetHashCode() ?? GetInstanceID());
+            _shuffleBag ??= new AudioClipShuffleBag((EventId ?? name)?.GetHashCode() ?? 0);
             return _shuffleBag.Pick(ClipVariants);
         }
 

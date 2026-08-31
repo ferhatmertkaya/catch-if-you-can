@@ -36,3 +36,9 @@ ExportedObj/
 .consulo/
 *.AppSettings
 .DS_Store
+
+# Tools/DeterminismHarness: build output is generated, but the project file is
+# hand-written and must be tracked (Unity's *.csproj rule above would hide it).
+Tools/**/bin/
+Tools/**/obj/
+!Tools/DeterminismHarness/DeterminismHarness.csproj

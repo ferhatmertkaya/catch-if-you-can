@@ -2,11 +2,11 @@
 
 First-person ghost investigation horror for mobile (Android / iOS).
 
-Built for **Unity 6.3 LTS** with **URP**, C#, landscape orientation, and touch-first controls.
+Built for **Unity 6.5 (6000.5.10f1)** with **URP**, C#, landscape orientation, and touch-first controls.
 
 ## Requirements
 
-- Unity **6000.3.x** (6.3 LTS)
+- Unity **6000.5.10f1** (Unity 6.5) - exact version required, see `Docs/UNITY_VALIDATION.md`
 - Android SDK / NDK (for Android builds)
 - Xcode 15+ on macOS (for iOS builds)
 - Modules: Android Build Support, iOS Build Support, Universal RP
@@ -15,8 +15,8 @@ Built for **Unity 6.3 LTS** with **URP**, C#, landscape orientation, and touch-f
 
 1. Clone or copy the `CatchIfYouCan` folder.
 2. Open Unity Hub → **Add** → select `CatchIfYouCan`.
-3. Open with Unity 6.3 LTS.
-4. Wait for package resolve (URP, Input System, AI Navigation, Addressables, TextMeshPro).
+3. Open with Unity 6000.5.10f1.
+4. Wait for package resolve (URP, Input System, AI Navigation; TextMeshPro now ships inside uGUI).
 5. Menu: **Catch If You Can → Setup Project** (includes CC0 asset integration)
 6. Optional: **Catch If You Can → Integrate External Assets** (rebuild prefabs from bundled Kenney/Quaternius models)
 7. Open scene `Assets/CatchIfYouCan/Scenes/00_Boot.unity` and press Play.

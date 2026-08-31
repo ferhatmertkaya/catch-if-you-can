@@ -211,11 +211,17 @@ namespace CatchIfYouCan.UI
         public static RuntimeUIBuildResult BuildCompleteUI()
         {
             var canvas = BuildRootCanvas("RuntimeUI", out _);
-            Object.DontDestroyOnLoad(canvas.gameObject);
+            UnityEngine.Object.DontDestroyOnLoad(canvas.gameObject);
 
             var result = new RuntimeUIBuildResult { Canvas = canvas };
 
             result.MainMenuRoot = CreatePanel(canvas.transform, "MainMenu");
+            var mainMenuBackground = result.MainMenuRoot.GetComponent<Image>();
+            if (mainMenuBackground != null)
+            {
+                mainMenuBackground.color = Color.clear;
+                mainMenuBackground.raycastTarget = false;
+            }
             var mainMenu = result.MainMenuRoot.AddComponent<MainMenuController>();
             WireMainMenu(mainMenu, result.MainMenuRoot.transform);
 
@@ -308,6 +314,39 @@ namespace CatchIfYouCan.UI
             return result;
         }
 
+        private const string BrandingLogoResourcePath = "UI/Branding/CatchIfYouCan_Logo";
+
+        /// <summary>
+        /// Loads the branding logo from Resources so it ships in Player builds.
+        /// Resources.Load&lt;Sprite&gt; only succeeds while the PNG is imported as Sprite
+        /// (2D and UI); if that import setting is ever changed the sprite sub-asset
+        /// disappears and the load returns null, so fall back to the Texture2D and build an
+        /// equivalent sprite at runtime rather than losing the logo on device.
+        /// </summary>
+        private static Sprite LoadBrandingLogo()
+        {
+            var sprite = Resources.Load<Sprite>(BrandingLogoResourcePath);
+            if (sprite != null)
+                return sprite;
+
+            var texture = Resources.Load<Texture2D>(BrandingLogoResourcePath);
+            if (texture == null)
+            {
+                Debug.LogError(
+                    $"[CIYC UI] Branding logo missing from Resources/{BrandingLogoResourcePath}. " +
+                    "The menu will render without a logo.");
+                return null;
+            }
+
+            return Sprite.Create(
+                texture,
+                new Rect(0f, 0f, texture.width, texture.height),
+                new Vector2(0.5f, 0.5f),
+                100f,
+                0,
+                SpriteMeshType.FullRect);
+        }
+
         private static void WireMainMenu(MainMenuController ctrl, Transform root)
         {
             var left = CreatePanel(root, "LeftColumn", false);
@@ -316,17 +355,35 @@ namespace CatchIfYouCan.UI
             leftRect.anchorMax = new Vector2(0.35f, 0.85f);
             leftRect.offsetMin = leftRect.offsetMax = Vector2.zero;
 
-            var logoCatch = CreateText(root, "LogoCatch", "CATCH", 96, TextAnchor.UpperLeft, true);
-            Position(logoCatch.gameObject, 0.05f, 0.72f, 0.4f, 0.95f);
-            UITheme.StyleTitle(logoCatch);
+            var leftBackground = left.GetComponent<Image>();
+            if (leftBackground != null)
+            {
+                leftBackground.color = Color.clear;
+                leftBackground.raycastTarget = false;
+            }
 
-            var logoIfYou = CreateText(root, "LogoIfYou", "IF YOU", 72, TextAnchor.UpperLeft, true);
-            Position(logoIfYou.gameObject, 0.05f, 0.58f, 0.4f, 0.74f);
-            UITheme.StyleTitle(logoIfYou);
+            var bakedLogo = GameObject.Find("GameLogo_Baked");
+            if (bakedLogo == null)
+            {
+                var gameLogo = new GameObject(
+                "GameLogo",
+                typeof(RectTransform),
+                typeof(CanvasRenderer),
+                typeof(Image));
 
-            var logoCan = CreateText(root, "LogoCan", "CAN", 96, TextAnchor.UpperLeft, true);
-            Position(logoCan.gameObject, 0.05f, 0.42f, 0.4f, 0.6f);
-            UITheme.SetTextColor(logoCan, UITheme.Secondary);
+            gameLogo.transform.SetParent(root, false);
+
+            var gameLogoImage = gameLogo.GetComponent<Image>();
+            gameLogoImage.sprite = LoadBrandingLogo();
+            gameLogoImage.color = Color.white;
+            gameLogoImage.preserveAspect = true;
+            gameLogoImage.raycastTarget = false;
+            // An Image with no sprite still draws a solid white quad, which reads as a broken
+            // panel over the menu. Nothing is better than that.
+            gameLogoImage.enabled = gameLogoImage.sprite != null;
+
+            Position(gameLogo, -0.15f, 0.16f, 0.45f, 0.88f);
+            }
 
             var layout = left.AddComponent<VerticalLayoutGroup>();
             layout.spacing = 12;
@@ -415,7 +472,7 @@ namespace CatchIfYouCan.UI
                 return;
 
             var inputGo = new GameObject("MobileInputController");
-            Object.DontDestroyOnLoad(inputGo);
+            UnityEngine.Object.DontDestroyOnLoad(inputGo);
             var input = inputGo.AddComponent<MobileInputController>();
 
             var joystickGo = new GameObject("MoveJoystick", typeof(RectTransform));
@@ -485,6 +542,8 @@ namespace CatchIfYouCan.UI
             var contentRect = content.GetComponent<RectTransform>();
             contentRect.offsetMax = new Vector2(0, -80);
 
+            var closeButton = CreateButton(panel.transform, "CLOSE", null, false, 44);
+
             journal.BindRuntime(
                 slidePanel: panel.GetComponent<RectTransform>(),
                 tabButtons: new[]
@@ -496,12 +555,12 @@ namespace CatchIfYouCan.UI
                     CreateButton(tabs.transform, "OBJECTIVES", null, false, 40)
                 },
                 contentParent: content.transform,
-                closeButton: CreateButton(panel.transform, "CLOSE", null, false, 44));
+                closeButton: closeButton);
 
             if (journal.GetComponent<JournalAudio>() == null)
                 journal.gameObject.AddComponent<JournalAudio>();
 
-            Position(journal.CloseButton.gameObject, 0.02f, 0.02f, 0.2f, 0.08f);
+            Position(closeButton.gameObject, 0.02f, 0.02f, 0.2f, 0.08f);
         }
 
         private static void WirePause(PauseMenuUI pause, Transform root)
@@ -547,15 +606,17 @@ namespace CatchIfYouCan.UI
             scroll.content = inner.GetComponent<RectTransform>();
             scroll.horizontal = false;
 
+            var closeButton = CreateButton(root, "CLOSE", null, false, 48);
+
             settings.BindRuntime(
                 gameplayTab: CreateButton(tabs.transform, "GAMEPLAY", null, false, 40),
                 graphicsTab: CreateButton(tabs.transform, "GRAPHICS", null, false, 40),
                 audioTab: CreateButton(tabs.transform, "AUDIO", null, false, 40),
                 accessibilityTab: CreateButton(tabs.transform, "ACCESSIBILITY", null, false, 40),
                 contentParent: inner.transform,
-                closeButton: CreateButton(root, "CLOSE", null, false, 48));
+                closeButton: closeButton);
 
-            Position(settings.CloseButton.gameObject, 0.4f, 0.02f, 0.6f, 0.1f);
+            Position(closeButton.gameObject, 0.4f, 0.02f, 0.6f, 0.1f);
         }
 
         private static void WireMissionResult(MissionResultUI ui, Transform root)
@@ -659,7 +720,7 @@ namespace CatchIfYouCan.UI
         private static void WireDebugMenu(DebugMenuUI ui, Transform root)
         {
             Position(root.gameObject, 0.02f, 0.02f, 0.35f, 0.55f);
-            var layout = root.AddComponent<VerticalLayoutGroup>();
+            var layout = root.gameObject.AddComponent<VerticalLayoutGroup>();
             layout.spacing = 4;
             layout.padding = new RectOffset(8, 8, 8, 8);
             ui.BindRuntime(

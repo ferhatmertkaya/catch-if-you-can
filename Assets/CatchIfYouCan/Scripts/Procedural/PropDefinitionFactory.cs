@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using CatchIfYouCan.Content;
+using CatchIfYouCan.Procedural.Deterministic;
 using UnityEngine;
 
 namespace CatchIfYouCan.Procedural
@@ -58,12 +59,44 @@ namespace CatchIfYouCan.Procedural
         public static PropDefinition CreateDefinition(PropBlueprint blueprint, GameObject prefab)
         {
             var def = ScriptableObject.CreateInstance<PropDefinition>();
+            def.StableId = BuildStableId(blueprint);
             def.PropName = blueprint.PropName;
+            def.Kind = ClassifyKind(blueprint.BoundsSize);
             def.Prefab = prefab;
             def.CategoryTags = blueprint.RoomTags;
             def.BoundsSize = blueprint.BoundsSize;
             def.Weight = blueprint.Weight;
             return def;
+        }
+
+        /// <summary>
+        /// Content identity, derived from the source MODEL file rather than the display
+        /// name. Display names are regenerated from filenames and are not guaranteed unique;
+        /// a stable id has to survive a rename without silently changing which prop a stored
+        /// seed produces.
+        /// </summary>
+        private static string BuildStableId(PropBlueprint blueprint)
+        {
+            string source = !string.IsNullOrEmpty(blueprint.ModelFileName)
+                ? blueprint.ModelFileName
+                : blueprint.PropName;
+            return "PROP_" + source;
+        }
+
+        /// <summary>
+        /// Splits authored props into furniture and small props by footprint.
+        ///
+        /// Generation places the two from separate RNG streams into separate sockets, so
+        /// without this every authored prop would land in the small-prop pass and no
+        /// furniture would ever spawn. The threshold is a footprint a person would have to
+        /// walk around rather than step over.
+        /// </summary>
+        private static PropKind ClassifyKind(Vector3 boundsSize)
+        {
+            const float FurnitureFootprintMetres = 0.9f;
+            return boundsSize.x >= FurnitureFootprintMetres || boundsSize.z >= FurnitureFootprintMetres
+                ? PropKind.Furniture
+                : PropKind.Prop;
         }
 
         private static bool ShouldSkipModel(string fileName)

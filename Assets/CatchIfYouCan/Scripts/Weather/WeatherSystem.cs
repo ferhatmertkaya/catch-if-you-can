@@ -1,3 +1,5 @@
+using CatchIfYouCan.Procedural;
+using CatchIfYouCan.Procedural.Deterministic;
 using CatchIfYouCan.Utilities;
 using UnityEngine;
 
@@ -46,10 +48,38 @@ namespace CatchIfYouCan.Weather
             ApplyWeatherImmediate(weather);
         }
 
-        public void SetRandomWeather()
+        /// <summary>
+        /// Applies the weather the LAYOUT chose.
+        ///
+        /// Weather is gameplay-affecting - it changes visibility and audio masking - so it
+        /// cannot come from UnityEngine.Random, which is a process-global stream shared with
+        /// roughly a hundred cosmetic call sites whose draw count depends on frame rate.
+        /// Two clients on the same seed would have disagreed about the weather. Stage A now
+        /// picks it from the dedicated Weather stream and it is covered by the layout hash.
+        /// </summary>
+        public void ApplyLayoutWeather(int weatherIndex)
         {
             var values = (WeatherType[])System.Enum.GetValues(typeof(WeatherType));
-            SetWeather(values[Random.Range(0, values.Length)]);
+            if (values.Length == 0)
+                return;
+
+            int index = weatherIndex % values.Length;
+            if (index < 0)
+                index += values.Length;
+
+            SetWeather(values[index]);
+        }
+
+        /// <summary>
+        /// Derives weather from the current session seed. Use only where no layout is
+        /// available (menus, standalone scenes); gameplay should call
+        /// <see cref="ApplyLayoutWeather"/> with the generated layout's value.
+        /// </summary>
+        public void SetSeededWeather()
+        {
+            var rng = SeedManager.CreateRandom(CiycStream.Weather);
+            var values = (WeatherType[])System.Enum.GetValues(typeof(WeatherType));
+            SetWeather(values[rng.NextInt(0, values.Length)]);
         }
 
         private void ApplyWeatherImmediate(WeatherType weather)

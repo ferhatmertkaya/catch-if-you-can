@@ -1,0 +1,27 @@
+name: Determinism
+
+# Runs the deterministic generation suite. Needs no Unity licence: the generation core is
+# engine-free by construction, which is exactly the property that makes it deterministic,
+# so plain .NET can compile and run it.
+#
+# This does NOT yet cover the cross-platform half of T4 in Docs/DETERMINISM.md - proving
+# that an IL2CPP iOS-arm64 build and an IL2CPP Android-arm64 build produce the same hashes
+# needs Unity build agents.
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+
+jobs:
+  determinism:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Static guard and determinism suite
+        run: Scripts/check_determinism.sh

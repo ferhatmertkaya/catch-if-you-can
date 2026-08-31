@@ -79,14 +79,17 @@ namespace CatchIfYouCan.Core
             EnsureMainCamera();
             EnsureDirectionalLight(0.15f);
 
+            if (UIManager.Instance == null)
+            {
+                var uiManagerGo = new GameObject("UIManager");
+                uiManagerGo.AddComponent<UIManager>();
+            }
+
             if (GameObject.Find("RuntimeUI") == null)
                 RuntimeUIFactory.BuildCompleteUI();
 
-            var menuRoot = FindOrCreate("MAIN_MENU_ROOT");
-            if (menuRoot.GetComponent<MainMenuController>() == null)
-                menuRoot.AddComponent<MainMenuController>();
-
-            EnsureHallwayPlaceholders();
+            if (UIManager.Instance != null)
+                UIManager.Instance.Show(UIScreen.MainMenu, true);
         }
 
         private static void EnsureTraining()
@@ -167,25 +170,6 @@ namespace CatchIfYouCan.Core
             light.intensity = intensity;
             light.color = new Color(0.55f, 0.65f, 0.58f);
             lightGo.transform.rotation = Quaternion.Euler(50f, -30f, 0f);
-        }
-
-        private static void EnsureHallwayPlaceholders()
-        {
-            var root = FindOrCreate("HallwayPlaceholders");
-            if (root.transform.childCount > 0)
-                return;
-
-            for (int i = 0; i < 6; i++)
-            {
-                var cube = GameObject.CreatePrimitive(PrimitiveType.Cube);
-                cube.name = $"Wall_{i}";
-                cube.transform.SetParent(root.transform, false);
-                cube.transform.localScale = new Vector3(0.2f, 2.5f, Random.Range(1.5f, 3f));
-                cube.transform.localPosition = new Vector3((i - 2.5f) * 1.2f, 1.25f, -4f - i * 0.3f);
-                var renderer = cube.GetComponent<Renderer>();
-                if (renderer != null)
-                    renderer.sharedMaterial = Art.RuntimeMaterialFactory.GetDarkWall();
-            }
         }
 
         private static GameObject FindOrCreate(string name)
