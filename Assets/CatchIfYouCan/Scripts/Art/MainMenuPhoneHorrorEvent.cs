@@ -32,8 +32,9 @@ namespace CatchIfYouCan.Art
     public sealed class MainMenuPhoneHorrorEvent : MonoBehaviour, IMainMenuHorrorEvent
     {
         [Header("Scene lights (authored values are captured, never overwritten)")]
-        [Tooltip("The corridor's existing green lights. Their intensity is scaled down and restored.")]
-        [SerializeField] private Light[] greenLights = new Light[0];
+        [Tooltip("Existing scene lights dimmed during the event — the green door lights and " +
+                 "the corridor's ambient/directional light. Intensity is scaled and restored.")]
+        [SerializeField] private Light[] dimmedLights = new Light[0];
 
         [Tooltip("Red event lights. Start disabled; this component owns them entirely.")]
         [SerializeField] private Light[] redLights = new Light[0];
@@ -49,16 +50,16 @@ namespace CatchIfYouCan.Art
         [SerializeField, Range(0f, 1f)] private float eventProbability = 0.35f;
 
         [Header("Timing (seconds, min..max — rolled per event)")]
-        [SerializeField] private Vector2 onsetDelay = new Vector2(0.15f, 0.40f);
+        [SerializeField] private Vector2 onsetDelay = new Vector2(0.40f, 0.80f);
         [SerializeField] private Vector2 destabiliseDuration = new Vector2(0.40f, 1.00f);
         [SerializeField] private Vector2 redEmergeDuration = new Vector2(0.35f, 0.70f);
         [SerializeField] private Vector2 mainPhaseDuration = new Vector2(1.30f, 3.50f);
-        [SerializeField] private Vector2 dropoutDuration = new Vector2(0.05f, 0.20f);
+        [SerializeField] private Vector2 dropoutDuration = new Vector2(0.12f, 0.30f);
         [SerializeField] private Vector2 recoveryDuration = new Vector2(0.60f, 1.20f);
 
         [Header("Intensity targets (fractions of the authored value)")]
         [Tooltip("How far the green light falls at the height of the event.")]
-        [SerializeField] private Vector2 greenEventFactor = new Vector2(0.10f, 0.30f);
+        [SerializeField] private Vector2 dimEventFactor = new Vector2(0.10f, 0.30f);
 
         [Tooltip("Peak multiplier applied to each red light's authored intensity.")]
         [SerializeField, Range(0f, 4f)] private float redPeakScale = 1f;
@@ -74,23 +75,34 @@ namespace CatchIfYouCan.Art
         [SerializeField, Range(0.1f, 2f)] private float impulseInterval = 0.45f;
         [SerializeField, Range(0.5f, 6f)] private float noiseSpeed = 2.3f;
 
+        [Header("Debug")]
+        [Tooltip("One line at event start and one at restore. No per-frame logging.")]
+        [SerializeField] private bool logEvents;
+
         // ---- captured once, never written back ------------------------------------------
-        private float[] _greenBaseline;
+        private float[] _dimBaseline;
         private float[] _redPeak;
 
         private Coroutine _routine;
-        private float _noiseOffsetGreen;
+        private float _noiseOffsetDim;
         private float _noiseOffsetRed;
         private bool _ready;
 
         public bool IsPlaying => _routine != null;
 
+        /// <summary>
+        /// True from the start of the event until the climax, where the phone is cut off.
+        /// The ring scheduler polls this so it stops issuing new rings at the right moment
+        /// instead of ringing over the blackout and the recovery.
+        /// </summary>
+        public bool PhoneShouldKeepRinging { get; private set; }
+
         private void Awake()
         {
-            _greenBaseline = new float[greenLights.Length];
-            for (int i = 0; i < greenLights.Length; i++)
-                if (greenLights[i] != null)
-                    _greenBaseline[i] = greenLights[i].intensity;
+            _dimBaseline = new float[dimmedLights.Length];
+            for (int i = 0; i < dimmedLights.Length; i++)
+                if (dimmedLights[i] != null)
+                    _dimBaseline[i] = dimmedLights[i].intensity;
 
             // The red lights exist only for this event, so their resting state is off and the
             // authored intensity is read as the peak to aim for, not a value to restore to.
@@ -104,7 +116,7 @@ namespace CatchIfYouCan.Art
                 redLights[i].enabled = false;
             }
 
-            _noiseOffsetGreen = Random.value * 128f + 0.31f;
+            _noiseOffsetDim = Random.value * 128f + 0.31f;
             _noiseOffsetRed = Random.value * 128f + 0.77f;
             _ready = true;
         }
@@ -155,12 +167,14 @@ namespace CatchIfYouCan.Art
 
         private void RestoreBaselines()
         {
+            PhoneShouldKeepRinging = false;
+
             if (!_ready)
                 return;
 
-            for (int i = 0; i < greenLights.Length; i++)
-                if (greenLights[i] != null)
-                    greenLights[i].intensity = _greenBaseline[i];
+            for (int i = 0; i < dimmedLights.Length; i++)
+                if (dimmedLights[i] != null)
+                    dimmedLights[i].intensity = _dimBaseline[i];
 
             for (int i = 0; i < redLights.Length; i++)
             {
@@ -178,7 +192,11 @@ namespace CatchIfYouCan.Art
 
         private IEnumerator RunEvent()
         {
-            float greenFloor = Random.Range(greenEventFactor.x, greenEventFactor.y);
+            PhoneShouldKeepRinging = true;
+            if (logEvents)
+                Debug.Log("[CIYC] Phone horror event: begin", this);
+
+            float dimFloor = Random.Range(dimEventFactor.x, dimEventFactor.y);
             float candleFloor = Random.Range(candleEventIntensity.x, candleEventIntensity.y);
 
             SetRedEnabled(true);
@@ -191,7 +209,7 @@ namespace CatchIfYouCan.Art
             for (float e = 0f; e < d; e += Time.deltaTime)
             {
                 float k = e / d;
-                ApplyGreen(Mathf.Lerp(1f, greenFloor, k), k);
+                ApplyDimmed(Mathf.Lerp(1f, dimFloor, k), k);
                 ApplyCandle(Mathf.Lerp(1f, candleFloor, k), Mathf.Lerp(1f, candleTurbulence, k));
                 yield return null;
             }
@@ -201,7 +219,7 @@ namespace CatchIfYouCan.Art
             for (float e = 0f; e < d; e += Time.deltaTime)
             {
                 float k = e / d;
-                ApplyGreen(greenFloor, 1f);
+                ApplyDimmed(dimFloor, 1f);
                 ApplyRed(k, 1f);
                 ApplyCandle(candleFloor, candleTurbulence);
                 yield return null;
@@ -222,21 +240,22 @@ namespace CatchIfYouCan.Art
                 impulseDecay = Mathf.Max(0f, impulseDecay - Time.deltaTime * 4.5f);
 
                 float dip = 1f - impulseDecay * 0.75f;
-                ApplyGreen(greenFloor * dip, 1f);
+                ApplyDimmed(dimFloor * dip, 1f);
                 ApplyRed(1f, dip);
                 ApplyCandle(candleFloor * Mathf.Lerp(1f, 0.45f, impulseDecay), candleTurbulence);
                 yield return null;
             }
 
             // 5. The phone stops mid-ring. The silence is the point.
-            if (phoneAudio != null && phoneAudio.isPlaying)
+            PhoneShouldKeepRinging = false;
+            if (phoneAudio != null)
                 phoneAudio.Stop();
 
             // 6. Everything drops away for an instant.
             d = Random.Range(dropoutDuration.x, dropoutDuration.y);
             for (float e = 0f; e < d; e += Time.deltaTime)
             {
-                ApplyGreen(0.04f, 0f);
+                ApplyDimmed(0.04f, 0f);
                 ApplyRed(0.08f, 0f);
                 ApplyCandle(0.25f, 1f);
                 yield return null;
@@ -248,7 +267,7 @@ namespace CatchIfYouCan.Art
             {
                 float k = e / d;
                 float eased = k * k * (3f - 2f * k);
-                ApplyGreen(Mathf.Lerp(0.04f, 1f, eased), 1f - eased);
+                ApplyDimmed(Mathf.Lerp(0.04f, 1f, eased), 1f - eased);
                 ApplyRed(Mathf.Lerp(0.08f, 0f, eased), 0f);
                 ApplyCandle(Mathf.Lerp(0.25f, 1f, eased), Mathf.Lerp(1f, candleTurbulence, 1f - eased));
                 yield return null;
@@ -258,6 +277,8 @@ namespace CatchIfYouCan.Art
             SetRedEnabled(false);
             RestoreBaselines();
             _routine = null;
+            if (logEvents)
+                Debug.Log("[CIYC] Phone horror event: restored", this);
         }
 
         // ---- helpers --------------------------------------------------------------------
@@ -280,13 +301,13 @@ namespace CatchIfYouCan.Art
                    + Mathf.PerlinNoise(0.5f, offset + t * speed * 3.7f) * 0.28f;
         }
 
-        private void ApplyGreen(float factor, float wobble)
+        private void ApplyDimmed(float factor, float wobble)
         {
-            float n = wobble > 0f ? 1f + (Noise(_noiseOffsetGreen, noiseSpeed) - 0.5f) * 0.5f * wobble : 1f;
+            float n = wobble > 0f ? 1f + (Noise(_noiseOffsetDim, noiseSpeed) - 0.5f) * 0.5f * wobble : 1f;
             float f = Mathf.Max(0f, factor * n);
-            for (int i = 0; i < greenLights.Length; i++)
-                if (greenLights[i] != null)
-                    greenLights[i].intensity = _greenBaseline[i] * f;
+            for (int i = 0; i < dimmedLights.Length; i++)
+                if (dimmedLights[i] != null)
+                    dimmedLights[i].intensity = _dimBaseline[i] * f;
         }
 
         private void ApplyRed(float factor, float wobble)

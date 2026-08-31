@@ -1,4 +1,5 @@
 using System.Collections;
+using CatchIfYouCan.Art;
 using UnityEngine;
 
 public class RotaryPhoneRandomRing : MonoBehaviour
@@ -6,9 +7,20 @@ public class RotaryPhoneRandomRing : MonoBehaviour
     [Header("References")]
     [SerializeField] private AudioSource audioSource;
 
+    [Tooltip("Optional. When set, each ring sequence offers this event a chance to escalate " +
+             "into the red horror sequence. Leave empty and the phone just rings.")]
+    [SerializeField] private MainMenuPhoneHorrorEvent horrorEvent;
+
     [Header("Random delay")]
     [SerializeField] private float minDelay = 15f;
     [SerializeField] private float maxDelay = 40f;
+
+    [Header("Testing")]
+    [Tooltip("Shortens the wait between rings so the event can be seen without waiting. " +
+             "Editor convenience only; leave off for the real cadence.")]
+    [SerializeField] private bool debugFastEvents;
+    [SerializeField] private float debugMinDelay = 5f;
+    [SerializeField] private float debugMaxDelay = 10f;
 
     [Header("Ring sequence")]
     [SerializeField] private int minRings = 2;
@@ -56,7 +68,9 @@ public class RotaryPhoneRandomRing : MonoBehaviour
     {
         while (true)
         {
-            float delay = Random.Range(minDelay, maxDelay);
+            float delay = debugFastEvents
+                ? Random.Range(debugMinDelay, debugMaxDelay)
+                : Random.Range(minDelay, maxDelay);
             yield return new WaitForSeconds(delay);
 
             if (audioSource == null || audioSource.clip == null)
@@ -64,8 +78,17 @@ public class RotaryPhoneRandomRing : MonoBehaviour
 
             int ringCount = Random.Range(minRings, maxRings + 1);
 
+            // Offer the visual event a chance to escalate this ring. It answers false most of
+            // the time, and the phone rings exactly as it always has. When it answers true it
+            // takes over the ending: it cuts the audio at its climax, and the loop below stops
+            // issuing rings at that moment rather than ringing through the blackout.
+            bool escalated = horrorEvent != null && horrorEvent.TryBegin();
+
             for (int i = 0; i < ringCount; i++)
             {
+                if (escalated && !horrorEvent.PhoneShouldKeepRinging)
+                    break;
+
                 audioSource.pitch = Random.Range(minPitch, maxPitch);
                 audioSource.volume = Random.Range(minVolume, maxVolume);
 
@@ -73,6 +96,11 @@ public class RotaryPhoneRandomRing : MonoBehaviour
 
                 yield return new WaitForSeconds(audioSource.clip.length + pauseBetweenRings);
             }
+
+            // One scheduler owns the cadence: don't queue the next ring until the visual
+            // event has finished restoring the scene.
+            while (escalated && horrorEvent.IsPlaying)
+                yield return null;
         }
     }
 }
