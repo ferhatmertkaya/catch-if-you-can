@@ -68,6 +68,14 @@ public class RotaryPhoneRandomRing : MonoBehaviour
     {
         while (true)
         {
+            // The startup intro owns the screen, and a ring behind it would be heard over the
+            // video with nothing to see. Waiting here rather than stopping and restarting the
+            // loop keeps this the one and only scheduler. Because the wait comes before the
+            // delay roll, the full delay is counted from the moment the menu is actually
+            // visible, so a ring cannot land on the last frame of the reveal.
+            while (CatchIfYouCan.UI.StartupIntroVideo.IsIntroPlaying)
+                yield return null;
+
             float delay = debugFastEvents
                 ? Random.Range(debugMinDelay, debugMaxDelay)
                 : Random.Range(minDelay, maxDelay);

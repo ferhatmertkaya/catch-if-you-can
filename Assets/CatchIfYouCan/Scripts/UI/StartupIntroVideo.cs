@@ -44,6 +44,23 @@ namespace CatchIfYouCan.UI
         /// <summary>Resources-relative path, no extension. See <c>Assets/CatchIfYouCan/Resources/Video/Intro</c>.</summary>
         public const string VideoResourcePath = "Video/Intro/CIYC_StartupIntro";
 
+        /// <summary>
+        /// True from the moment the black cover goes up until the menu has finished fading in.
+        /// </summary>
+        /// <remarks>
+        /// The menu's random beats — the phone ring and, through it, the horror event — must not
+        /// fire while the intro owns the screen. They are polled against this rather than being
+        /// stopped and restarted, so the phone keeps its own single scheduler and there is no
+        /// second one to go out of sync. Static because the phone lives in a scene that does not
+        /// exist yet when the intro starts, so there is nothing to hold a reference to.
+        ///
+        /// <para>
+        /// It is cleared only after the reveal fade completes, which closes the race where the
+        /// menu scene has loaded behind the cover and a ring lands on the last frame of the fade.
+        /// </para>
+        /// </remarks>
+        public static bool IsIntroPlaying { get; private set; }
+
         [Header("Fades (seconds, unscaled)")]
         [SerializeField, Range(0f, 3f)] private float fadeToVideo = 0.35f;
         [SerializeField, Range(0f, 3f)] private float fadeToBlack = 0.6f;
@@ -75,6 +92,7 @@ namespace CatchIfYouCan.UI
         /// </summary>
         public static StartupIntroVideo Create()
         {
+            IsIntroPlaying = true;
             var go = new GameObject("StartupIntro");
             DontDestroyOnLoad(go);
             var intro = go.AddComponent<StartupIntroVideo>();
@@ -266,6 +284,11 @@ namespace CatchIfYouCan.UI
 
             yield return Reveal();
 
+            // Only now is the menu actually on screen, so this is the moment the phone and the
+            // horror event become eligible. Released before the callback so anything it starts
+            // sees an open gate.
+            IsIntroPlaying = false;
+
             onMenuVisible?.Invoke();
 
             Dispose();
@@ -324,6 +347,10 @@ namespace CatchIfYouCan.UI
         /// <summary>Removes the overlay. Safe to call more than once.</summary>
         public void Dispose()
         {
+            // Belt and braces: whatever path got us here, the menu must never be left with its
+            // phone permanently gated because the intro ended unexpectedly.
+            IsIntroPlaying = false;
+
             TearDownVideo();
 
             bool hadClip = _clip != null;
@@ -378,6 +405,8 @@ namespace CatchIfYouCan.UI
         private void OnDestroy()
         {
             // Covers a scene reload or an editor stop landing mid-intro.
+            IsIntroPlaying = false;
+
             if (_player != null)
             {
                 _player.errorReceived -= OnVideoError;

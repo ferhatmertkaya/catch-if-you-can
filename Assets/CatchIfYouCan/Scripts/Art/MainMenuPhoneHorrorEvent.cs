@@ -42,6 +42,24 @@ namespace CatchIfYouCan.Art
         [Tooltip("The candle light's flicker component. Modulated through its own API.")]
         [SerializeField] private CandleFlicker candleFlicker;
 
+        [Tooltip("The doorway atmosphere owner. The fog is unsettled through its API rather " +
+                 "than by writing particle systems directly. Optional.")]
+        [SerializeField] private CatchIfYouCan.UI.MainMenuAtmosphereController atmosphere;
+
+        [Header("Fog (multipliers on the authored atmosphere)")]
+        [Tooltip("How much thicker the mist gets at the height of the event.")]
+        [SerializeField] private Vector2 fogEventEmission = new Vector2(1.5f, 2.1f);
+
+        [Tooltip("How much faster the fog churns at the height of the event.")]
+        [SerializeField] private Vector2 fogEventTurbulence = new Vector2(1.8f, 2.6f);
+
+        [Tooltip("Multiplied into the fog's authored colour at the peak. Deliberately a warm " +
+                 "nudge, not a repaint: the fog is lit, so the red lights already colour it.")]
+        [SerializeField] private Color fogEventTint = new Color(1f, 0.82f, 0.80f, 1f);
+
+        [Tooltip("How far the fog thins out during the blackout.")]
+        [SerializeField, Range(0f, 1f)] private float fogBlackoutEmission = 0.35f;
+
         [Header("Phone")]
         [Tooltip("The phone's AudioSource. Stopped abruptly at the climax. Optional.")]
         [SerializeField] private AudioSource phoneAudio;
@@ -186,6 +204,9 @@ namespace CatchIfYouCan.Art
 
             if (candleFlicker != null)
                 candleFlicker.ClearEventModulation();
+
+            if (atmosphere != null)
+                atmosphere.ClearEventAtmosphere();
         }
 
         // ---- the event ------------------------------------------------------------------
@@ -198,6 +219,8 @@ namespace CatchIfYouCan.Art
 
             float dimFloor = Random.Range(dimEventFactor.x, dimEventFactor.y);
             float candleFloor = Random.Range(candleEventIntensity.x, candleEventIntensity.y);
+            float fogEmission = Random.Range(fogEventEmission.x, fogEventEmission.y);
+            float fogChurn = Random.Range(fogEventTurbulence.x, fogEventTurbulence.y);
 
             SetRedEnabled(true);
 
@@ -211,6 +234,8 @@ namespace CatchIfYouCan.Art
                 float k = e / d;
                 ApplyDimmed(Mathf.Lerp(1f, dimFloor, k), k);
                 ApplyCandle(Mathf.Lerp(1f, candleFloor, k), Mathf.Lerp(1f, candleTurbulence, k));
+                // Only part way: the mist stirs before the red arrives, it does not peak yet.
+                ApplyFog(k * 0.55f, fogEmission, fogChurn);
                 yield return null;
             }
 
@@ -222,6 +247,7 @@ namespace CatchIfYouCan.Art
                 ApplyDimmed(dimFloor, 1f);
                 ApplyRed(k, 1f);
                 ApplyCandle(candleFloor, candleTurbulence);
+                ApplyFog(Mathf.Lerp(0.55f, 1f, k), fogEmission, fogChurn);
                 yield return null;
             }
 
@@ -243,6 +269,8 @@ namespace CatchIfYouCan.Art
                 ApplyDimmed(dimFloor * dip, 1f);
                 ApplyRed(1f, dip);
                 ApplyCandle(candleFloor * Mathf.Lerp(1f, 0.45f, impulseDecay), candleTurbulence);
+                // Surges with each impulse rather than sitting at a constant thickness.
+                ApplyFog(1f + impulseDecay * 0.25f, fogEmission, fogChurn);
                 yield return null;
             }
 
@@ -258,6 +286,8 @@ namespace CatchIfYouCan.Art
                 ApplyDimmed(0.04f, 0f);
                 ApplyRed(0.08f, 0f);
                 ApplyCandle(0.25f, 1f);
+                if (atmosphere != null)
+                    atmosphere.ApplyEventAtmosphere(fogBlackoutEmission, 1f, fogEventTint);
                 yield return null;
             }
 
@@ -270,6 +300,7 @@ namespace CatchIfYouCan.Art
                 ApplyDimmed(Mathf.Lerp(0.04f, 1f, eased), 1f - eased);
                 ApplyRed(Mathf.Lerp(0.08f, 0f, eased), 0f);
                 ApplyCandle(Mathf.Lerp(0.25f, 1f, eased), Mathf.Lerp(1f, candleTurbulence, 1f - eased));
+                ApplyFog(1f - eased, fogEmission, fogChurn);
                 yield return null;
             }
 
@@ -323,6 +354,23 @@ namespace CatchIfYouCan.Art
         {
             if (candleFlicker != null)
                 candleFlicker.ApplyEventModulation(intensityScale, turbulence);
+        }
+
+        /// <summary>
+        /// Unsettles the fog. <paramref name="k"/> is how far into the event we are, 0 at rest
+        /// and 1 at the peak; the emission, churn and tint all ride that one value so the mist
+        /// escalates with the lights instead of on a schedule of its own.
+        /// </summary>
+        private void ApplyFog(float k, float emissionPeak, float turbulencePeak)
+        {
+            if (atmosphere == null)
+                return;
+
+            k = Mathf.Clamp01(k);
+            atmosphere.ApplyEventAtmosphere(
+                Mathf.Lerp(1f, emissionPeak, k),
+                Mathf.Lerp(1f, turbulencePeak, k),
+                Color.Lerp(Color.white, fogEventTint, k));
         }
 
         private void SetRedEnabled(bool on)
