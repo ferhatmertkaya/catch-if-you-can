@@ -20844,7 +20844,7 @@ ParticleSystem:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 896582977}
   serializedVersion: 8
-  lengthInSec: 2
+  lengthInSec: 5
   simulationSpeed: 1
   stopAction: 0
   cullingMode: 0
@@ -21777,7 +21777,47 @@ ParticleSystem:
         m_PostInfinity: 2
         m_RotationOrder: 4
     m_BurstCount: 0
-    m_Bursts: []
+    m_Bursts:
+    - serializedVersion: 2
+      time: 0
+      countCurve:
+        serializedVersion: 2
+        minMaxState: 0
+        scalar: 1
+        minScalar: 1
+        maxCurve:
+          serializedVersion: 2
+          m_Curve:
+          - serializedVersion: 3
+            time: 0
+            value: 1
+            inSlope: 0
+            outSlope: 0
+            tangentMode: 0
+            weightedMode: 0
+            inWeight: 0.33333334
+            outWeight: 0.33333334
+          m_PreInfinity: 2
+          m_PostInfinity: 2
+          m_RotationOrder: 4
+        minCurve:
+          serializedVersion: 2
+          m_Curve:
+          - serializedVersion: 3
+            time: 0
+            value: 1
+            inSlope: 0
+            outSlope: 0
+            tangentMode: 0
+            weightedMode: 0
+            inWeight: 0.33333334
+            outWeight: 0.33333334
+          m_PreInfinity: 2
+          m_PostInfinity: 2
+          m_RotationOrder: 4
+      cycleCount: 1
+      repeatInterval: 0.01
+      probability: 1
   SizeModule:
     enabled: 0
     curve:
@@ -26001,7 +26041,7 @@ ParticleSystem:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1072534171}
   serializedVersion: 8
-  lengthInSec: 2
+  lengthInSec: 5
   simulationSpeed: 1
   stopAction: 0
   cullingMode: 0
@@ -26934,7 +26974,47 @@ ParticleSystem:
         m_PostInfinity: 2
         m_RotationOrder: 4
     m_BurstCount: 0
-    m_Bursts: []
+    m_Bursts:
+    - serializedVersion: 2
+      time: 0
+      countCurve:
+        serializedVersion: 2
+        minMaxState: 0
+        scalar: 1
+        minScalar: 1
+        maxCurve:
+          serializedVersion: 2
+          m_Curve:
+          - serializedVersion: 3
+            time: 0
+            value: 1
+            inSlope: 0
+            outSlope: 0
+            tangentMode: 0
+            weightedMode: 0
+            inWeight: 0.33333334
+            outWeight: 0.33333334
+          m_PreInfinity: 2
+          m_PostInfinity: 2
+          m_RotationOrder: 4
+        minCurve:
+          serializedVersion: 2
+          m_Curve:
+          - serializedVersion: 3
+            time: 0
+            value: 1
+            inSlope: 0
+            outSlope: 0
+            tangentMode: 0
+            weightedMode: 0
+            inWeight: 0.33333334
+            outWeight: 0.33333334
+          m_PreInfinity: 2
+          m_PostInfinity: 2
+          m_RotationOrder: 4
+      cycleCount: 1
+      repeatInterval: 0.01
+      probability: 1
   SizeModule:
     enabled: 0
     curve:
@@ -36980,7 +37060,7 @@ ParticleSystem:
         serializedVersion: 2
         minMaxState: 0
         scalar: 1
-        minScalar: 30
+        minScalar: 1
         maxCurve:
           serializedVersion: 2
           m_Curve:
@@ -36991,17 +37071,8 @@ ParticleSystem:
             outSlope: 0
             tangentMode: 0
             weightedMode: 0
-            inWeight: 0
-            outWeight: 0
-          - serializedVersion: 3
-            time: 1
-            value: 1
-            inSlope: 0
-            outSlope: 0
-            tangentMode: 0
-            weightedMode: 0
-            inWeight: 0
-            outWeight: 0
+            inWeight: 0.33333334
+            outWeight: 0.33333334
           m_PreInfinity: 2
           m_PostInfinity: 2
           m_RotationOrder: 4
@@ -37015,17 +37086,8 @@ ParticleSystem:
             outSlope: 0
             tangentMode: 0
             weightedMode: 0
-            inWeight: 0
-            outWeight: 0
-          - serializedVersion: 3
-            time: 1
-            value: 1
-            inSlope: 0
-            outSlope: 0
-            tangentMode: 0
-            weightedMode: 0
-            inWeight: 0
-            outWeight: 0
+            inWeight: 0.33333334
+            outWeight: 0.33333334
           m_PreInfinity: 2
           m_PostInfinity: 2
           m_RotationOrder: 4
@@ -40850,9 +40912,10 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 33f69173d7044a249e547e3a9ecf479d, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  scaleAmount: 0.055
+  scaleAmountX: 0.03
+  scaleAmountY: 0.05
   scaleSpeed: 1.35
-  rollDegrees: 2.2
+  rollDegrees: 2.0
   rollSpeed: 0.95
   seed: 11
 --- !u!114 &7311220100000002
@@ -40867,9 +40930,10 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 33f69173d7044a249e547e3a9ecf479d, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  scaleAmount: 0.049
+  scaleAmountX: 0.026
+  scaleAmountY: 0.044
   scaleSpeed: 1.62
-  rollDegrees: 1.9
+  rollDegrees: 1.7
   rollSpeed: 1.18
   seed: 27
 --- !u!114 &7311220100000003
@@ -40884,9 +40948,10 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 33f69173d7044a249e547e3a9ecf479d, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  scaleAmount: 0.061
+  scaleAmountX: 0.033
+  scaleAmountY: 0.056
   scaleSpeed: 1.12
-  rollDegrees: 2.5
+  rollDegrees: 2.3
   rollSpeed: 0.81
   seed: 43
 --- !u!1 &7311220100000010
@@ -41000,15 +41065,10 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   targetLight: {fileID: 7311220100000012}
-  slowAmount: 0.16
-  slowSpeed: 0.85
-  fastAmount: 0.06
-  fastSpeed: 4.5
-  minimumFactor: 0.7
+  slowAmount: 0.06
+  slowSpeed: 0.7
+  fastAmount: 0.025
+  fastSpeed: 3.6
+  minimumFactor: 0.88
+  maximumFactor: 1.08
   seed: 5
-  autoFitRange: 1
-  fitTargets:
-  - {fileID: 2143377574}
-  - {fileID: 896582978}
-  - {fileID: 1072534172}
-  rangeFactor: 5

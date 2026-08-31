@@ -29,14 +29,18 @@ namespace CatchIfYouCan.Art
     [AddComponentMenu("Catch If You Can/Candle Flame Flicker")]
     public sealed class CandleFlameFlicker : MonoBehaviour
     {
-        [Header("Breathing (uniform scale)")]
-        [Tooltip("Peak scale deviation. 0.06 gives roughly 0.94 - 1.06.")]
-        [SerializeField, Range(0f, 0.25f)] private float scaleAmount = 0.055f;
+        [Header("Breathing (scale)")]
+        [Tooltip("Peak horizontal scale deviation. A flame widens far less than it stretches.")]
+        [SerializeField, Range(0f, 0.15f)] private float scaleAmountX = 0.03f;
+
+        [Tooltip("Peak vertical scale deviation.")]
+        [SerializeField, Range(0f, 0.2f)] private float scaleAmountY = 0.05f;
+
         [SerializeField, Range(0.1f, 6f)] private float scaleSpeed = 1.35f;
 
         [Header("Roll (degrees about local Z)")]
         [Tooltip("Peak roll. Keep small: a candle flame leans, it does not spin.")]
-        [SerializeField, Range(0f, 10f)] private float rollDegrees = 2.2f;
+        [SerializeField, Range(0f, 6f)] private float rollDegrees = 2f;
         [SerializeField, Range(0.1f, 6f)] private float rollSpeed = 0.95f;
 
         [Header("Identity")]
@@ -45,7 +49,8 @@ namespace CatchIfYouCan.Art
 
         private Vector3 _baseScale;
         private Quaternion _baseRotation;
-        private float _scaleOffset;
+        private float _scaleOffsetX;
+        private float _scaleOffsetY;
         private float _rollOffset;
         private float _scaleSpeed2;
         private float _rollSpeed2;
@@ -67,7 +72,8 @@ namespace CatchIfYouCan.Art
         private void ApplySeed()
         {
             var rng = new System.Random(seed);
-            _scaleOffset = (float)rng.NextDouble() * 96f + 0.211f;
+            _scaleOffsetX = (float)rng.NextDouble() * 96f + 0.211f;
+            _scaleOffsetY = (float)rng.NextDouble() * 96f + 0.443f;
             _rollOffset = (float)rng.NextDouble() * 96f + 0.607f;
 
             // Second layer runs at an irrational-ish multiple of the first so the pair never
@@ -80,15 +86,24 @@ namespace CatchIfYouCan.Art
         {
             float t = Time.time;
 
-            float s = Mathf.PerlinNoise(_scaleOffset + t * scaleSpeed, 0.5f) - 0.5f
-                      + (Mathf.PerlinNoise(_scaleOffset + t * _scaleSpeed2, 2.5f) - 0.5f) * 0.4f;
+            float sx = Mathf.PerlinNoise(_scaleOffsetX + t * scaleSpeed, 0.5f) - 0.5f
+                       + (Mathf.PerlinNoise(_scaleOffsetX + t * _scaleSpeed2, 2.5f) - 0.5f) * 0.4f;
+            float sy = Mathf.PerlinNoise(_scaleOffsetY + t * scaleSpeed, 1.5f) - 0.5f
+                       + (Mathf.PerlinNoise(_scaleOffsetY + t * _scaleSpeed2, 3.5f) - 0.5f) * 0.4f;
             float r = Mathf.PerlinNoise(0.5f, _rollOffset + t * rollSpeed) - 0.5f
                       + (Mathf.PerlinNoise(2.5f, _rollOffset + t * _rollSpeed2) - 0.5f) * 0.35f;
 
-            // The two layers sum to at most +-0.7, so normalise back to +-1 before scaling.
-            transform.localScale = _baseScale * (1f + s * (2f / 1.4f) * scaleAmount);
+            // Each pair of layers sums to at most +-0.7, so normalise back to +-1.
+            const float ScaleNorm = 2f / 1.4f;
+            const float RollNorm = 2f / 1.35f;
+
+            // Position is never written: that is what keeps the base welded to the wick.
+            transform.localScale = new Vector3(
+                _baseScale.x * (1f + sx * ScaleNorm * scaleAmountX),
+                _baseScale.y * (1f + sy * ScaleNorm * scaleAmountY),
+                _baseScale.z);
             transform.localRotation = _baseRotation *
-                                      Quaternion.Euler(0f, 0f, r * (2f / 1.35f) * rollDegrees);
+                                      Quaternion.Euler(0f, 0f, r * RollNorm * rollDegrees);
         }
 
 #if UNITY_EDITOR

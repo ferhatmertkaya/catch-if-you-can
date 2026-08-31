@@ -9,20 +9,26 @@ namespace CatchIfYouCan.Art
     /// Two layers of Perlin noise — a slow breathing wander plus a smaller, faster tremor —
     /// scale the intensity the light was authored with. Perlin is used rather than a
     /// per-frame random value on purpose: white noise reads as electrical buzz or a failing
-    /// bulb, not as a flame, because consecutive frames are uncorrelated. The light is also
-    /// floored well above zero, since a candle that blinks out and returns looks like a bug.
+    /// bulb, not as a flame, because consecutive frames are uncorrelated.
     /// </para>
     ///
     /// <para>
-    /// The authored intensity is captured once in Awake and treated as the baseline, so the
-    /// value set in the scene stays the artistic source of truth and this component only
-    /// modulates it. Give each candle a different <see cref="seed"/> and they will drift
-    /// independently rather than pulsing in unison.
+    /// <b>Intensity is the only thing this component writes.</b> Range, colour, position and
+    /// the enabled flag all stay exactly as authored in the scene. An earlier version fitted
+    /// the range to the spread of the flames at Awake; because the holder is a child of a
+    /// prefab instance scaled 2.6, the flames are about 1.6 cm apart in world space, so the
+    /// fit replaced an authored range of 0.5 with 0.078 and the candle went dark the moment
+    /// Play began. The scene is the source of truth for range.
+    /// </para>
+    ///
+    /// <para>
+    /// The baseline is captured once in Awake and every frame multiplies <em>that</em>, never
+    /// the current value, so the intensity cannot drift or decay over time.
     /// </para>
     ///
     /// <para>
     /// Frame cost is two <c>Mathf.PerlinNoise</c> calls and one property write. No
-    /// allocations, no lookups in Update, nothing that scales with scene size.
+    /// allocations, no lookups in Update.
     /// </para>
     /// </summary>
     [DisallowMultipleComponent]
@@ -34,32 +40,21 @@ namespace CatchIfYouCan.Art
 
         [Header("Slow breathing")]
         [Tooltip("Peak deviation of the slow layer, as a fraction of the authored intensity.")]
-        [SerializeField, Range(0f, 0.6f)] private float slowAmount = 0.16f;
-        [SerializeField, Range(0.05f, 4f)] private float slowSpeed = 0.85f;
+        [SerializeField, Range(0f, 0.2f)] private float slowAmount = 0.06f;
+        [SerializeField, Range(0.05f, 4f)] private float slowSpeed = 0.7f;
 
         [Header("Fast tremor")]
         [Tooltip("Peak deviation of the fast layer. Keep well below the slow layer.")]
-        [SerializeField, Range(0f, 0.3f)] private float fastAmount = 0.06f;
-        [SerializeField, Range(1f, 12f)] private float fastSpeed = 4.5f;
+        [SerializeField, Range(0f, 0.1f)] private float fastAmount = 0.025f;
+        [SerializeField, Range(1f, 12f)] private float fastSpeed = 3.6f;
 
-        [Header("Safety")]
-        [Tooltip("Lowest fraction of the authored intensity. A candle never gutters out.")]
-        [SerializeField, Range(0.2f, 1f)] private float minimumFactor = 0.7f;
+        [Header("Bounds (fractions of the authored intensity)")]
+        [Tooltip("The candle must stay visibly lit at all times.")]
+        [SerializeField, Range(0.5f, 1f)] private float minimumFactor = 0.88f;
+        [SerializeField, Range(1f, 1.5f)] private float maximumFactor = 1.08f;
 
         [Tooltip("Change per candle so several flames do not flicker in sync.")]
         [SerializeField] private int seed;
-
-        [Header("Range")]
-        [Tooltip("Fit the light range to how far apart the lit objects actually are. " +
-                 "Light range is in world units and ignores parent scale, so a hand-set value " +
-                 "is only correct for one particular prop scale.")]
-        [SerializeField] private bool autoFitRange = true;
-
-        [Tooltip("Transforms the light is meant to cover, typically the flames.")]
-        [SerializeField] private Transform[] fitTargets;
-
-        [Tooltip("Range as a multiple of the spread of those targets.")]
-        [SerializeField, Range(1f, 12f)] private float rangeFactor = 5f;
 
         private float _authoredIntensity;
         private float _slowOffset;
@@ -86,47 +81,7 @@ namespace CatchIfYouCan.Art
 
             _authoredIntensity = targetLight.intensity;
             ApplySeed();
-            FitRange();
             _ready = true;
-        }
-
-        /// <summary>
-        /// Sizes the light to the spread of <see cref="fitTargets"/> in world space.
-        /// A candle holder is a nested, scaled prop, and Light.range is world-space and
-        /// unaffected by parent scale, so measuring the real positions is the only way to get
-        /// a range that is right at whatever scale the prop is placed at.
-        /// </summary>
-        private void FitRange()
-        {
-            if (!autoFitRange || fitTargets == null || fitTargets.Length == 0)
-                return;
-
-            Vector3 centre = Vector3.zero;
-            int count = 0;
-            for (int i = 0; i < fitTargets.Length; i++)
-            {
-                if (fitTargets[i] == null) continue;
-                centre += fitTargets[i].position;
-                count++;
-            }
-
-            if (count == 0)
-                return;
-
-            centre /= count;
-
-            float spread = 0f;
-            for (int i = 0; i < fitTargets.Length; i++)
-            {
-                if (fitTargets[i] == null) continue;
-                float d = Vector3.Distance(fitTargets[i].position, centre);
-                if (d > spread) spread = d;
-            }
-
-            // A single flame has no spread; fall back to the authored range rather than
-            // collapsing the light to nothing.
-            if (spread > 0.0001f)
-                targetLight.range = spread * rangeFactor;
         }
 
         private void OnEnable()
@@ -168,16 +123,21 @@ namespace CatchIfYouCan.Art
                            + (slow - 0.5f) * 2f * slowAmount
                            + (fast - 0.5f) * 2f * fastAmount;
 
-            if (factor < minimumFactor)
-                factor = minimumFactor;
+            factor = Mathf.Clamp(factor, minimumFactor, maximumFactor);
 
             CurrentFactor = factor;
+
+            // Always the authored baseline times the factor, never the running value, so the
+            // intensity cannot compound downwards frame after frame.
             targetLight.intensity = _authoredIntensity * factor;
         }
 
 #if UNITY_EDITOR
         private void OnValidate()
         {
+            if (maximumFactor < minimumFactor)
+                maximumFactor = minimumFactor;
+
             if (Application.isPlaying && _ready)
                 ApplySeed();
         }
