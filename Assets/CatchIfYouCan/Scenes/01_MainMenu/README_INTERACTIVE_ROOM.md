@@ -231,3 +231,133 @@ Nothing about the shared prefab, mesh or skeleton changes; it is a runtime scale
 a remote player's copy simply never enables the component and draws in full, head included. The cost
 is that the local shadow is headless. `ShadowsOnlyBody` is kept for anyone who would rather have the
 complete silhouette and no visible body.
+
+### Why none of that was visible on the device
+
+Everything in the paragraphs above was true of the code and false of the running game, and the
+reason is worth writing down because the symptom pointed somewhere else entirely.
+
+`PlayerFactory.AttachCharacterVisual` loads `Resources/Characters/Player_CharacterVisual`. That
+prefab **does not exist in the repository** — `Assets/CatchIfYouCan/Resources/Characters/` holds a
+folder `.meta` and nothing else, because the prefab is *generated* by the editor step
+`Catch If You Can > Characters > Build Nathan Player Visual`, and generated assets are not checked
+in. `Resources.Load` returned null, the method returned null, and it did so **silently**. Nothing
+downstream complained either: `PlayerVisualAnimator` was never added, `LocalPlayerBodyVisibility`
+was never added, and the player was a camera on a capsule — which is precisely what a screenshot of
+a floor and a HUD with no body looks like.
+
+So the body was not being hidden by a render mode. It was never instantiated. `ShadowsOnlyBody` is
+*not* the default and was not the cause: `LocalPlayerBodyVisibility.mode` defaults to
+`FirstPersonBody`, which keeps every renderer on and only collapses the head bone. That component
+never ran at all.
+
+Two changes close this:
+
+- The null branch in `AttachCharacterVisual` is now a `Debug.LogError` naming the missing path and
+  the menu item that builds it. A missing character is not a normal state and must not be quiet.
+- `NathanAutoSetup` (`[InitializeOnLoad]`, editor-only) runs the build step on first editor load if
+  the prefab is absent, so a fresh clone produces a body without anyone having to know which menu
+  item to click. It is guarded against batch mode, play mode, and repeat attempts within a session
+  via `SessionState`, so it costs one check per editor session and nothing at runtime.
+
+The build step is still the only thing that creates the prefab; the auto-setup just makes sure it
+has been run.
+
+## Auto-run
+
+Holding the stick forward breaks into a run on its own, the way it does in Fortnite and PUBG
+Mobile. Walking starts on the first frame the stick moves — the timer only decides when the *run*
+takes over, so nothing is ever standing still waiting for a hold to complete.
+
+| | value |
+|---|---|
+| `autoRunHoldDuration` | 0.7 s |
+| `autoRunStickMagnitude` | 0.85 |
+| `autoRunForwardDot` | 0.8, about a 37° cone |
+| `speedBlendTime` | 0.15 s |
+
+The direction test is a cone, not an axis check: forward-left and forward-right still count, a hard
+strafe does not, and anything backward does not. The hold resets the instant the stick leaves the
+cone, which is what makes releasing or pulling back cancel the run immediately rather than after a
+delay. Crouching cancels it too.
+
+Speed is `SmoothDamp`ed between walk and run rather than switched, so breaking into a run reads as
+picking up pace instead of the world suddenly moving faster.
+
+The manual sprint button is untouched and coexists — `IsSprinting` is the OR of the button, the
+optional stick threshold, and auto-run. `MovementEnabled = false` and `SetHidden(true)` both call
+`CancelAutoRun()`, so control is never handed back to the player already sprinting.
+
+None of this touches look. Auto-run reads `MoveInput` only, which comes from the left-hand joystick
+widget; the right-hand `TouchLookArea` is a separate UI element and the EventSystem routes each
+finger to exactly one of them. Running with the left thumb and looking with the right is the case
+this was built for.
+
+## The window
+
+The east wall has a real opening in it, 1.4 m wide × 1.6 m tall, sill at 0.95 m. It is a hole in
+the geometry, not a texture: the old single `Wall_East` was replaced by five pieces —
+`Wall_East_South`, `Wall_East_North`, `Wall_East_Sill` and `Wall_East_Header` around the gap, plus
+`Window_Blocker`, a collider-only box (renderer off) that seals the opening so the player cannot
+walk out through it. Colliders on room geometry are unit cubes scaled by their transform, so the
+four wall pieces collide exactly as they draw.
+
+`Window_Glass` is a thin box, 4 cm deep, in `MAT_Room_Glass`: URP Lit on the transparent surface
+path (`_Surface: 1`, src `SrcAlpha` / dst `OneMinusSrcAlpha`, `ZWrite` off, queue 3000), base
+alpha 0.17 and smoothness 0.88. That is one transparent quad, one draw call, no refraction, no
+grab pass and no second camera — deliberately, because a mobile GPU pays for overdraw and this is
+the whole cost of the effect. Jambs, head, sill and mullions are separate boxes in the room's trim
+material, which is what makes the opening read as Victorian joinery rather than a cut rectangle.
+
+## What is outside
+
+**The sky is a per-camera skybox, not geometry.** The scene runs exp² fog at density 0.025, which
+means anything beyond roughly 40 m is fog-coloured; a sky dome placed outside the window would be
+erased before it was ever seen. Skyboxes are not fogged, so the sky survives and the near silhouettes
+— which *are* geometry, and *are* fogged — sit in front of it with depth for free.
+
+It is attached with a `Skybox` component **on the player camera only**, not the scene's lighting
+settings, so the cinematic menu camera inherits nothing and the main menu before TAP TO START is
+untouched. There is no `SkyCamera` and no `WindowCamera`; one shared `PlayerCamera` does the whole
+job, with `clearFlags` set to `Skybox`.
+
+The panoramas are generated, not downloaded: `CIYC_NightSky_Clear.png` and
+`CIYC_NightSky_Cloudy.png`, 2048×1024 latlong, mean luminance 18/255, wrap repeat horizontally and
+clamp vertically. The skybox *materials* are built by the editor step
+`Catch If You Can > Characters > Build Interactive Room Sky` rather than checked in as hand-written
+YAML, for a specific reason: `Skybox/Panoramic` is a built-in shader and built-in shaders are
+referenced by a numeric file ID inside Unity's own resource bundle. Guessing that number is exactly
+how you get a magenta sky with no way to tell why. Asking Unity for the shader by name and letting
+it write the reference cannot be wrong. The materials land in `Resources/Sky`, which also guarantees
+the shader survives shader stripping in a mobile player — a runtime `Shader.Find` with nothing
+referencing the shader is the classic way to get a sky that works in the editor and is pink on the
+device.
+
+In front of the sky: `Exterior_Ridge` (3 boxes, always on) and two variant groups,
+`Exterior_Trees` (5) and `Exterior_Ruins` (5), all in `MAT_Exterior_Silhouette` — an almost-black
+matte base at (0.020, 0.026, 0.038) that reads as shape against the sky and does not ask the
+lighting for anything. `WindowMoonlight` is a cold point light at (24.2, 1.9, 0), colour
+(0.34, 0.47, 0.72) as stored, which is linear, range 5, shadows off, which spills onto the sill and floor so the window is a
+light source in the room rather than a picture on the wall.
+
+## Exterior randomisation
+
+Cosmetic only, and deliberately unable to reach anything that matters. `InteractiveRoomExterior`
+carries its own `System.Random`, seeded from `DateTime.UtcNow.Ticks` mixed with the instance's hash
+— it does not touch `SeedManager`, the procedural house RNG, the deterministic map RNG, or any
+network seed, and nothing it decides is ever read back by gameplay. Multiplayer and procedural
+determinism are untouched by this change.
+
+Per session it picks one of the two skies, a sky rotation in 0–360°, an exposure in 0.45–0.7, a
+moonlight intensity in 0.25–0.75, and one of the two scenery variants. The sky material is
+instantiated at runtime before rotation and exposure are written, so the asset on disk is never
+mutated — without that copy the randomisation would dirty the material and persist into the next
+session.
+
+## Cost
+
+One transparent quad, one skybox draw, one extra point light (which casts no shadows — the URP
+asset has additional-light shadows off), and at most 8 silhouette boxes sharing one material (Lit, but metallic 0 and
+smoothness 0.02, so it costs the shader and not the lighting).
+The wall split adds four box renderers where there was one. Nothing here allocates per frame and
+nothing here adds a camera.

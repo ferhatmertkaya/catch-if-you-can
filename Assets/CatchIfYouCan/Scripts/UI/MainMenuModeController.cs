@@ -67,6 +67,10 @@ namespace CatchIfYouCan.UI
                  "plays so it costs nothing and cannot be seen from the menu camera.")]
         [SerializeField] private GameObject[] interactiveRoomRoots = new GameObject[0];
 
+        [Tooltip("Chooses the night outside the window and puts it on the player's camera. The " +
+                 "sky is per-camera on purpose, so the cinematic menu never inherits one.")]
+        [SerializeField] private CatchIfYouCan.Art.InteractiveRoomExterior roomExterior;
+
         [Header("Transition")]
         [Tooltip("Seconds to fade down to black before the swap.")]
         [SerializeField, Min(0f)] private float fadeOutDuration = 0.25f;
@@ -187,6 +191,13 @@ namespace CatchIfYouCan.UI
                 cinematicAudioListener.enabled = false;
 
             SpawnPlayer();
+
+            // The sky goes onto the player's camera, never onto RenderSettings: a global one
+            // would start feeding ambient into a room lit without it, and would still be there
+            // if the player ever came back to the menu. Applied before the reveal, so the first
+            // frame seen through the window is already the right night.
+            if (roomExterior != null && _player != null)
+                roomExterior.ApplyTo(_player.ViewCamera);
 
             // 8. Only now does the menu camera stop rendering — the player camera already exists,
             //    so no frame is drawn with no camera at all.
