@@ -1,10 +1,9 @@
 using UnityEngine;
-using UnityEngine.EventSystems;
 
 namespace CatchIfYouCan.Input
 {
     /// <summary>
-    /// Hold-to-run button, sitting beside the movement thumb.
+    /// Hold-to-run, on the right of the screen under the look thumb.
     ///
     /// <para>
     /// Held rather than toggled, because a toggle that survives letting go of the joystick is the
@@ -15,39 +14,19 @@ namespace CatchIfYouCan.Input
     /// </para>
     ///
     /// <para>
-    /// Releasing on pointer-up <em>and</em> on disable matters: if the HUD is hidden mid-sprint,
-    /// the button would otherwise never report the release and the player would run forever.
+    /// It sits on the right because that is the hand that is free — the left thumb is on the
+    /// movement stick and cannot leave it while running — and it inherits
+    /// <see cref="TouchHoldButton"/> so being there costs nothing: the same thumb that holds it
+    /// still turns the camera by sliding, which is what makes running and looking one gesture
+    /// rather than two fingers competing for one corner of the screen.
     /// </para>
     /// </summary>
-    public sealed class SprintButton : MonoBehaviour, IPointerDownHandler, IPointerUpHandler
+    public sealed class SprintButton : TouchHoldButton
     {
-        private int _activePointer = int.MinValue;
+        protected override void OnPressed() => MobileInputController.Instance?.SetSprint(true);
 
-        public void OnPointerDown(PointerEventData eventData)
-        {
-            if (_activePointer != int.MinValue)
-                return;
+        protected override void OnReleased(bool dragged) => MobileInputController.Instance?.SetSprint(false);
 
-            _activePointer = eventData.pointerId;
-            MobileInputController.Instance?.SetSprint(true);
-        }
-
-        public void OnPointerUp(PointerEventData eventData)
-        {
-            if (eventData.pointerId != _activePointer)
-                return;
-
-            _activePointer = int.MinValue;
-            MobileInputController.Instance?.SetSprint(false);
-        }
-
-        private void OnDisable()
-        {
-            if (_activePointer == int.MinValue)
-                return;
-
-            _activePointer = int.MinValue;
-            MobileInputController.Instance?.SetSprint(false);
-        }
+        protected override void OnCancelled() => MobileInputController.Instance?.SetSprint(false);
     }
 }

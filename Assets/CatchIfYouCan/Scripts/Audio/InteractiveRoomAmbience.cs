@@ -127,10 +127,41 @@ namespace CatchIfYouCan.Audio
                  "This is the minimum turn between them.")]
         [SerializeField, Range(0f, 120f)] private float exteriorMinBearingChange = 45f;
 
-        [Tooltip("Rolloff of the exterior voices. The far end has to clear the furthest kind's " +
-                 "distance or the most distant events would be silent rather than distant.")]
-        [SerializeField] private float exteriorRolloffNear = 8f;
-        [SerializeField] private float exteriorRolloffFar = 75f;
+        [Tooltip("Rolloff of the exterior voices, in metres. These are room distances, not " +
+                 "outdoor ones: once an event is heard through the window it is the window that " +
+                 "is the source, so what this governs is how much quieter it gets as the player " +
+                 "walks away from the glass. How far outside the event actually was is applied " +
+                 "separately, as a volume scale.")]
+        [SerializeField] private float exteriorRolloffNear = 1.5f;
+        [SerializeField] private float exteriorRolloffFar = 20f;
+
+        [Header("Through the window")]
+        [Tooltip("How far each exterior event is pulled back to the window before it is heard. " +
+                 "1 puts every one of them at the glass; 0 leaves them out in the field where " +
+                 "they happened, radiating through whatever wall is in the way. High, because a " +
+                 "shut room only has one opening and everything outside arrives through it - but " +
+                 "not 1, so a fox to the left still reaches the ear from slightly left of the " +
+                 "window rather than from a single point.")]
+        [SerializeField, Range(0f, 1f)] private float exteriorWindowPortal = 0.88f;
+
+        [Tooltip("How far outside the glass the portalled source sits. Far enough that it is " +
+                 "outside rather than in the room, close enough to still be the window.")]
+        [SerializeField, Min(0.05f)] private float exteriorPortalStandoff = 0.9f;
+
+        [Tooltip("Distance outside at which an exterior event plays at its authored volume. " +
+                 "Beyond it loudness falls off as reference/distance, which is what turns the " +
+                 "rolled distance band into something the ear can actually hear as near or far " +
+                 "now that the source itself sits at the window.")]
+        [SerializeField, Min(1f)] private float exteriorReferenceDistance = 11f;
+
+        [Tooltip("Floor on that scale, so the most distant church bell is faint rather than " +
+                 "inaudible.")]
+        [SerializeField, Range(0f, 1f)] private float exteriorMinDistanceScale = 0.16f;
+
+        [Tooltip("Extra damping on one-shots relative to the night bed, as a fraction of the " +
+                 "cutoff. A hoot has more high end to lose to a pane of glass than a wash of " +
+                 "wind and distant traffic does.")]
+        [SerializeField, Range(0.2f, 1f)] private float exteriorGlassExtraDamping = 0.72f;
 
         // ---- building ----------------------------------------------------------------------
 
@@ -176,8 +207,10 @@ namespace CatchIfYouCan.Audio
         private AudioSource _behind;
         private Transform _behindTransform;
         private AudioSource[] _exteriorVoices;
+        private AudioLowPassFilter[] _exteriorFilters;
         private AudioSource[] _buildingVoices;
         private AudioLowPassFilter[] _buildingFilters;
+        private float _glassCutoff;
 
         private float _exteriorTimer;
         private float _buildingTimer;
@@ -246,7 +279,8 @@ namespace CatchIfYouCan.Audio
 
             BuildNight();
             BuildBehind();
-            _exteriorVoices = BuildPool("Exterior", 2, exteriorRolloffNear, exteriorRolloffFar, false, out _);
+            _exteriorVoices = BuildPool("Exterior", 2, exteriorRolloffNear, exteriorRolloffFar,
+                                        true, out _exteriorFilters);
             _buildingVoices = BuildPool("Building", 2, buildingMinDistance, buildingMaxDistance, true, out _buildingFilters);
 
             // Deliberately soon. A layer whose first event is half a minute away is
@@ -397,7 +431,7 @@ namespace CatchIfYouCan.Audio
         /// </summary>
         private void UpdateGlassFilter(float dt)
         {
-            if (_nightFilter == null || _player == null)
+            if (_player == null)
                 return;
 
             _filterTimer -= dt;
@@ -407,8 +441,24 @@ namespace CatchIfYouCan.Audio
 
             float d = Vector3.Distance(_player.position, windowPosition);
             float k = Mathf.InverseLerp(glassFarDistance, glassNearDistance, d);
-            _nightFilter.cutoffFrequency =
-                Mathf.Lerp(_nightFilter.cutoffFrequency, Mathf.Lerp(glassCutoffFar, glassCutoffNear, k), 0.35f);
+            _glassCutoff = Mathf.Lerp(_glassCutoff <= 0f ? glassCutoffFar : _glassCutoff,
+                                      Mathf.Lerp(glassCutoffFar, glassCutoffNear, k), 0.35f);
+
+            if (_nightFilter != null)
+                _nightFilter.cutoffFrequency = _glassCutoff;
+
+            // The one-shots are behind the same pane as the bed they sit on. This used to be the
+            // one layer with no filter at all, which is why an owl arrived crisp and close while
+            // the night behind it was correctly muffled - the owl sounded like it was in the
+            // room. Damped a little harder than the bed, because a call has high end to lose and
+            // a wash of distant weather has already lost its.
+            if (_exteriorFilters == null)
+                return;
+
+            float oneShot = _glassCutoff * exteriorGlassExtraDamping;
+            for (int i = 0; i < _exteriorFilters.Length; i++)
+                if (_exteriorFilters[i] != null)
+                    _exteriorFilters[i].cutoffFrequency = oneShot;
         }
 
         // ---- behind the player ----------------------------------------------------------------
@@ -513,12 +563,42 @@ namespace CatchIfYouCan.Audio
             var voice = _exteriorVoices[_exteriorCursor];
             _exteriorCursor = (_exteriorCursor + 1) % _exteriorVoices.Length;
 
-            voice.transform.position = pos;
+            // Where it happened, and where it is heard from, are two different places. A shut
+            // room has one opening, so everything outside arrives through it: the audible source
+            // is pulled most of the way back to the window, keeping only enough of the original
+            // bearing that left is still left. The distance it was actually at is not thrown
+            // away - it becomes the volume, below - so a bell four hundred metres off is still
+            // four hundred metres off, it is simply four hundred metres off *through the window*
+            // rather than through the wall behind the player's head.
+            float outsideDistance = Vector3.Distance(pos, windowPosition);
+            voice.transform.position = PortalThroughWindow(pos);
+
+            float distanceScale = Mathf.Clamp(
+                exteriorReferenceDistance / Mathf.Max(outsideDistance, exteriorReferenceDistance),
+                exteriorMinDistanceScale, 1f);
+
             voice.clip = clip;
             voice.volume = Mathf.Clamp01(Range(Mathf.Min(kind.volumeRange.x, kind.volumeRange.y),
-                                               Mathf.Max(kind.volumeRange.x, kind.volumeRange.y)));
+                                               Mathf.Max(kind.volumeRange.x, kind.volumeRange.y))
+                                         * distanceScale);
             voice.pitch = Range(0.94f, 1.06f);
             voice.Play();
+        }
+
+        /// <summary>
+        /// Moves a point outside the house back towards the window it will be heard through,
+        /// keeping its bearing. At a portal of 1 everything sits on a small sphere just outside
+        /// the glass; below 1 the original direction survives in proportion, which is what stops
+        /// a whole night of events collapsing onto one indistinguishable point.
+        /// </summary>
+        private Vector3 PortalThroughWindow(Vector3 outside)
+        {
+            Vector3 offset = outside - windowPosition;
+            if (offset.sqrMagnitude < 0.0001f)
+                return windowPosition + Vector3.right * exteriorPortalStandoff;
+
+            Vector3 seat = windowPosition + offset.normalized * exteriorPortalStandoff;
+            return Vector3.Lerp(outside, seat, Mathf.Clamp01(exteriorWindowPortal));
         }
 
         /// <summary>A bearing inside the outward arc, far enough from the last one to read as new.</summary>

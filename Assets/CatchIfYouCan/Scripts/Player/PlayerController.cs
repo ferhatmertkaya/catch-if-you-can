@@ -43,8 +43,20 @@ namespace CatchIfYouCan.Player
         // Matches PlayerFactory.CapsuleHeight. Raised with the character so the capsule, the
         // camera and the visible body stay in proportion rather than one drifting from the rest.
         [SerializeField] private float standingHeight = 1.86f;
-        [SerializeField] private float crouchHeight = 1.03f;
+
+        [Tooltip("Capsule height while crouched. Normally overwritten at spawn by " +
+                 "PlayerBodyMotion.SetCrouchDepth with what the character's legs can actually " +
+                 "fold to, so what the player can duck under and what the body looks like doing " +
+                 "it are the same crouch.")]
+        [SerializeField] private float crouchHeight = 1.27f;
         [SerializeField] private float crouchTransitionSpeed = 8f;
+
+        [Tooltip("How far the camera drops when crouching, in metres. Left at the difference " +
+                 "between the two capsule heights, so the eyes keep exactly the same distance " +
+                 "below the top of the capsule as they do standing - a camera that drops less " +
+                 "than the collider ends up looking out through a ceiling the player can walk " +
+                 "under, and one that drops more puts the view in the character's own chest.")]
+        [SerializeField, Min(0f)] private float cameraCrouchDrop = 0.59f;
 
         [Header("References")]
         [SerializeField] private Transform cameraRoot;
@@ -60,8 +72,24 @@ namespace CatchIfYouCan.Player
         private bool _autoRunning;
         private float _blendedSpeed;
         private float _speedBlendVelocity;
+        private float _standingCameraHeight;
+        private bool _hasCameraRoot;
 
         public bool IsSprinting { get; private set; }
+
+        /// <summary>
+        /// How far into the crouch the player is, 0 standing and 1 fully down. Follows the same
+        /// smoothing as the capsule, so anything driven from it - the camera, the visible body -
+        /// arrives with the collider rather than snapping ahead of it.
+        /// </summary>
+        public float CrouchAmount01 { get; private set; }
+
+        /// <summary>
+        /// The movement stick in the player's own axes: x strafe, y forward. Handed out for
+        /// animation, which needs to know that a sideways walk is sideways; the controller itself
+        /// has already turned it into world movement by the time anyone asks.
+        /// </summary>
+        public Vector2 LocalMoveInput { get; private set; }
 
         /// <summary>True while the run was started by holding forward rather than by the button.</summary>
         public bool IsAutoRunning => _autoRunning;
@@ -91,6 +119,13 @@ namespace CatchIfYouCan.Player
                 noiseEmitter = GetComponent<PlayerNoiseEmitter>();
             if (playerLook == null && cameraRoot != null)
                 playerLook = cameraRoot.GetComponent<PlayerLook>();
+
+            // Read rather than assumed. PlayerFactory owns where the eyes are and has already
+            // placed them by now; hard-coding the standing height here would mean two files that
+            // have to be changed together and one that nobody remembers.
+            _hasCameraRoot = cameraRoot != null;
+            if (_hasCameraRoot)
+                _standingCameraHeight = cameraRoot.localPosition.y;
         }
 
         private void Start()
@@ -116,6 +151,17 @@ namespace CatchIfYouCan.Player
                 _velocity.y = -2f;
         }
 
+        /// <summary>
+        /// Shrinks the capsule and drops the camera with it.
+        ///
+        /// <para>
+        /// The camera used to be left where it was, and that is the whole of "crouching does
+        /// nothing you can see": the collider halved, the character could pass under things, and
+        /// the view stayed at standing height the entire time. The eyes move on the same smoothed
+        /// value as the capsule rather than on a second timer, so the view and the collider are
+        /// never briefly disagreeing about how tall the player is.
+        /// </para>
+        /// </summary>
         private void UpdateCrouch()
         {
             bool wantsCrouch = _input.CrouchHeld;
@@ -124,11 +170,25 @@ namespace CatchIfYouCan.Player
             _currentHeight = Mathf.Lerp(_currentHeight, targetHeight, crouchTransitionSpeed * Time.deltaTime);
             _controller.height = _currentHeight;
             _controller.center = new Vector3(0f, _currentHeight * 0.5f, 0f);
+
+            CrouchAmount01 = standingHeight > crouchHeight
+                ? Mathf.Clamp01((standingHeight - _currentHeight) / (standingHeight - crouchHeight))
+                : 0f;
+
+            if (!_hasCameraRoot)
+                return;
+
+            // Only Y. The forward offset that puts the camera in front of the character's own
+            // neck is not a crouch concern and must survive it untouched.
+            Vector3 local = cameraRoot.localPosition;
+            local.y = _standingCameraHeight - cameraCrouchDrop * CrouchAmount01;
+            cameraRoot.localPosition = local;
         }
 
         private void Move()
         {
             Vector2 moveInput = _input.MoveInput;
+            LocalMoveInput = moveInput;
             Vector3 move = transform.right * moveInput.x + transform.forward * moveInput.y;
 
             UpdateAutoRun(moveInput);
@@ -226,6 +286,31 @@ namespace CatchIfYouCan.Player
                 CurrentSpeed = 0f;
                 CancelAutoRun();
             }
+        }
+
+        /// <summary>
+        /// Sets how deep a crouch is, in metres, from what the visible character can actually
+        /// fold to.
+        ///
+        /// <para>
+        /// Called once at spawn by <see cref="PlayerBodyMotion"/>, which measures the rig's own
+        /// leg lengths. Before this existed the three heights that make up a crouch - the
+        /// capsule, the camera and the folded body - were three numbers in two files, and there
+        /// was nothing keeping them in agreement: the capsule ducked to 1.03 m while the legs
+        /// could only fold about 0.19 m, so the collider crouched and the character barely
+        /// dipped, and the camera went somewhere in between.
+        /// </para>
+        /// </summary>
+        public void SetCrouchDepth(float metres)
+        {
+            if (metres <= 0.01f)
+                return;
+
+            cameraCrouchDrop = metres;
+            // Leaves the eyes the same distance below the top of the capsule as they are
+            // standing, which is what stops a crouched player looking out through a ceiling
+            // they can walk under.
+            crouchHeight = Mathf.Max(0.5f, standingHeight - metres);
         }
 
         /// <summary>

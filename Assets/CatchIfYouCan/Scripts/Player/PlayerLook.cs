@@ -28,7 +28,7 @@ namespace CatchIfYouCan.Player
         [SerializeField] private float sensitivityX = 0.28f;
 
         [Tooltip("Degrees of pitch per reference pixel. Held at about 0.8 of the yaw figure: " +
-                 "the pitch range is only 160 degrees end to end, so matching horizontal would " +
+                 "the pitch range is only 155 degrees end to end, so matching horizontal would " +
                  "make the whole range too easy to cross by accident.")]
         [SerializeField] private float sensitivityY = 0.22f;
 
@@ -41,7 +41,12 @@ namespace CatchIfYouCan.Player
         [SerializeField, Range(0f, 0.12f)] private float lookSmoothing = 0.02f;
 
         [Header("Limits")]
-        [SerializeField] private float minPitch = -80f;
+        [Tooltip("How far up the view may tilt, in degrees below zero. 75 is steep - the ceiling " +
+                 "and the top corners of a room are all comfortably inside it - and stops short " +
+                 "of the last few degrees before vertical, where the horizon leaves the screen " +
+                 "entirely and a yaw turn reads as the world spinning about the player's nose.")]
+        [SerializeField] private float minPitch = -75f;
+
         [SerializeField] private float maxPitch = 80f;
 
         [SerializeField] private bool allowLook = true;

@@ -6,8 +6,17 @@ using UnityEngine.UI;
 namespace CatchIfYouCan.UI
 {
     /// <summary>
-    /// Builds the on-screen controls: a movement stick bottom-left, a run button beside it, and
-    /// an invisible look area filling the right of the screen.
+    /// Builds the on-screen controls: a movement stick bottom-left, an invisible look area
+    /// filling the right of the screen, and the run and crouch buttons stacked at the right edge
+    /// on top of it.
+    ///
+    /// <para>
+    /// The action buttons are on the right, with the look. That looks like a conflict and is not:
+    /// they are <see cref="TouchHoldButton"/>s, which forward their own drag to the look, so the
+    /// thumb that holds run also turns the camera by sliding. The left thumb never leaves the
+    /// movement stick, so the right is the only one free to press anything, and putting the
+    /// buttons anywhere else would mean letting go of moving in order to run.
+    /// </para>
     ///
     /// <para>
     /// Built in code rather than authored as a prefab, for the same reason the player is: it has
@@ -34,6 +43,8 @@ namespace CatchIfYouCan.UI
         private static readonly Color StickHandle = new Color(0.55f, 0.78f, 0.66f, 0.42f);
         private static readonly Color ButtonIdle = new Color(0.08f, 0.12f, 0.10f, 0.34f);
         private static readonly Color ButtonAccent = new Color(0.55f, 0.78f, 0.66f, 0.55f);
+        private static readonly Color CrouchIdle = new Color(0.55f, 0.78f, 0.66f, 0.22f);
+        private static readonly Color CrouchActive = new Color(0.66f, 0.88f, 0.74f, 0.85f);
 
         /// <summary>
         /// Creates the HUD and hands back its root. The caller owns when it is shown; nothing
@@ -63,10 +74,12 @@ namespace CatchIfYouCan.UI
             CreateLookArea(safe);
             var joystick = CreateJoystick(safe);
             CreateSprintButton(safe);
+            CreateCrouchButton(safe);
 
-            // The look area is created first so it sits behind the stick and the button in the
-            // hierarchy; the raycaster walks front to back, so a thumb on either of those never
-            // reaches the look area underneath.
+            // The look area is created first so it sits behind the stick and the buttons in the
+            // hierarchy; the raycaster walks front to back, so a thumb on any of those never
+            // reaches the look area underneath. That is exactly why the buttons have to forward
+            // their own drag - the area beneath them is unreachable while they are pressed.
             MobileInputController.Instance?.BindJoystick(joystick);
 
             return root;
@@ -130,33 +143,65 @@ namespace CatchIfYouCan.UI
             return joystick;
         }
 
+        // Right edge, stacked. Sized and spaced for a thumb that also has to reach the whole
+        // look area around them: 160 px at the 1080-high reference is about 11 mm on a phone.
+        private const float ButtonSize = 160f;
+        private const float ButtonEdgeInset = -130f;
+
         private static void CreateSprintButton(RectTransform parent)
         {
-            // Up and to the right of the stick, where the left thumb can reach without letting
-            // go of it, and clear of the stick's own touch square.
-            var rect = CreateRect("SprintButton", parent, Vector2.zero, Vector2.zero);
-            rect.pivot = new Vector2(0f, 0f);
-            rect.anchoredPosition = new Vector2(470f, 150f);
-            rect.sizeDelta = new Vector2(150f, 150f);
+            var rect = CreateRightEdgeButton("SprintButton", parent, 320f);
+
+            // Two chevrons, the upper one solid: reads as "faster" without a word of text.
+            AddBar(rect, new Vector2(66f, 9f), new Vector2(0f, 10f), ButtonAccent);
+            AddBar(rect, new Vector2(44f, 9f), new Vector2(0f, -10f),
+                   new Color(ButtonAccent.r, ButtonAccent.g, ButtonAccent.b, 0.3f));
+
+            rect.gameObject.AddComponent<SprintButton>();
+        }
+
+        private static void CreateCrouchButton(RectTransform parent)
+        {
+            var rect = CreateRightEdgeButton("CrouchButton", parent, 130f);
+
+            // A lid over a floor. The lid brightens while crouched, so the latch is readable at
+            // a glance - a toggle with no visible state is a toggle nobody trusts.
+            var lid = AddBar(rect, new Vector2(62f, 9f), new Vector2(0f, 12f), CrouchIdle);
+            AddBar(rect, new Vector2(62f, 5f), new Vector2(0f, -20f),
+                   new Color(ButtonAccent.r, ButtonAccent.g, ButtonAccent.b, 0.28f));
+
+            var crouch = rect.gameObject.AddComponent<CrouchButton>();
+            SetPrivateField(crouch, "activeIndicator", lid);
+            SetPrivateField(crouch, "idleColor", CrouchIdle);
+            SetPrivateField(crouch, "activeColor", CrouchActive);
+        }
+
+        private static RectTransform CreateRightEdgeButton(string name, RectTransform parent, float y)
+        {
+            // Anchored to the bottom-right corner rather than positioned from the left, so the
+            // buttons stay under the thumb on any aspect ratio instead of drifting inward as the
+            // screen gets wider.
+            var rect = CreateRect(name, parent, new Vector2(1f, 0f), new Vector2(1f, 0f));
+            rect.pivot = new Vector2(1f, 0f);
+            rect.anchoredPosition = new Vector2(ButtonEdgeInset, y);
+            rect.sizeDelta = new Vector2(ButtonSize, ButtonSize);
 
             var image = rect.gameObject.AddComponent<Image>();
             image.color = ButtonIdle;
             image.raycastTarget = true;
+            return rect;
+        }
 
-            var chevron = CreateRect("Accent", rect, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f));
-            chevron.sizeDelta = new Vector2(64f, 8f);
-            var chevronImage = chevron.gameObject.AddComponent<Image>();
-            chevronImage.color = ButtonAccent;
-            chevronImage.raycastTarget = false;
+        private static Image AddBar(RectTransform parent, Vector2 size, Vector2 offset, Color color)
+        {
+            var bar = CreateRect("Accent", parent, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f));
+            bar.sizeDelta = size;
+            bar.anchoredPosition = offset;
 
-            var chevron2 = CreateRect("Accent2", rect, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f));
-            chevron2.sizeDelta = new Vector2(44f, 8f);
-            chevron2.anchoredPosition = new Vector2(0f, -18f);
-            var chevron2Image = chevron2.gameObject.AddComponent<Image>();
-            chevron2Image.color = new Color(ButtonAccent.r, ButtonAccent.g, ButtonAccent.b, 0.3f);
-            chevron2Image.raycastTarget = false;
-
-            rect.gameObject.AddComponent<SprintButton>();
+            var image = bar.gameObject.AddComponent<Image>();
+            image.color = color;
+            image.raycastTarget = false;
+            return image;
         }
 
         private static RectTransform CreateRect(string name, Transform parent, Vector2 anchorMin, Vector2 anchorMax)

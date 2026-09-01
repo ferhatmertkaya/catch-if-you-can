@@ -3,9 +3,14 @@ guid: 473417e161874b92bd1d95eb7d015d4a
 ModelImporter:
   serializedVersion: 24501
   internalIDToNameTable: []
-  externalObjects: {}
+  externalObjects:
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: rp_nathan_animated_003_mat
+    second: {fileID: 2100000, guid: 97291f0f10544b49bba3cdd1445a9028, type: 2}
   materials:
-    materialImportMode: 0
+    materialImportMode: 2
     materialName: 0
     materialSearch: 1
     materialLocation: 1

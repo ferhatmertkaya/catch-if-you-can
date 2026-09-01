@@ -30981,8 +30981,8 @@ MonoBehaviour:
   audioSource: {fileID: 1274160868}
   minPitch: 0.96
   maxPitch: 1.03
-  minVolume: 0.23
-  maxVolume: 0.33
+  minVolume: 0.18
+  maxVolume: 0.26
   ringVolumeScale: 0.7
 --- !u!82 &1274160868
 AudioSource:
@@ -30997,7 +30997,7 @@ AudioSource:
   m_audioClip: {fileID: 0}
   m_Resource: {fileID: 8300000, guid: 4f0de2393bad64d069ec291ca2249aa2, type: 3}
   m_PlayOnAwake: 0
-  m_Volume: 0.75
+  m_Volume: 0.6
   m_Pitch: 1
   Loop: 0
   Mute: 0
@@ -52151,11 +52151,11 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   nightAmbience: {fileID: 8300000, guid: 2e2c2800765f349e1942424eaa570cbf, type: 3}
   nightPosition: {x: 26.5, y: 1.9, z: 0}
-  nightVolume: 0.34
+  nightVolume: 0.24
   nightMinDistance: 1.5
-  nightMaxDistance: 16
-  glassCutoffFar: 900
-  glassCutoffNear: 4200
+  nightMaxDistance: 17
+  glassCutoffFar: 720
+  glassCutoffNear: 2200
   glassNearDistance: 1.5
   glassFarDistance: 9
   windowPosition: {x: 25.06, y: 1.75, z: 0}
@@ -52166,7 +52166,7 @@ MonoBehaviour:
     - {fileID: 8300000, guid: 94d419c9b5183417ca9924f423327a40, type: 3}
     weight: 6
     distanceRange: {x: 11, y: 24}
-    volumeRange: {x: 0.45, y: 0.72}
+    volumeRange: {x: 0.36, y: 0.58}
     heightRange: {x: 1, y: 7}
   - label: WolfHowl
     clips:
@@ -52174,29 +52174,34 @@ MonoBehaviour:
     - {fileID: 8300000, guid: f7a507ec7179040d5a2f839894eef414, type: 3}
     weight: 3
     distanceRange: {x: 26, y: 48}
-    volumeRange: {x: 0.62, y: 0.95}
+    volumeRange: {x: 0.5, y: 0.76}
     heightRange: {x: -4, y: 3}
   - label: ChurchBells
     clips:
     - {fileID: 8300000, guid: 2ec8a0d98ed43456d819d0828344a520, type: 3}
     weight: 1
     distanceRange: {x: 40, y: 58}
-    volumeRange: {x: 0.40, y: 0.62}
+    volumeRange: {x: 0.32, y: 0.5}
     heightRange: {x: 2, y: 12}
     useFixedPosition: 1
     fixedPosition: {x: 67.7, y: 15.8, z: -29.8}
   exteriorInterval: {x: 16, y: 46}
   exteriorSpreadDegrees: 72
   exteriorMinBearingChange: 45
-  exteriorRolloffNear: 8
-  exteriorRolloffFar: 90
+  exteriorRolloffNear: 1.5
+  exteriorRolloffFar: 20
+  exteriorWindowPortal: 0.88
+  exteriorPortalStandoff: 0.9
+  exteriorReferenceDistance: 11
+  exteriorMinDistanceScale: 0.16
+  exteriorGlassExtraDamping: 0.72
   buildingClips:
   - {fileID: 8300000, guid: 65b1a11b470984c4caa4e40b212d44b1, type: 3}
   - {fileID: 8300000, guid: b8905cbdbbb71477ea9db62d0ccfe555, type: 3}
   - {fileID: 8300000, guid: 6cdcd9694303e4366bfed1eca7fcace3, type: 3}
   - {fileID: 8300000, guid: e8d02230d6e1145a0b5cb7d02cd3fd10, type: 3}
   buildingInterval: {x: 16, y: 52}
-  buildingVolume: 0.62
+  buildingVolume: 0.5
   buildingMinDistance: 2.5
   buildingMaxDistance: 26
   buildingZones:
@@ -52227,7 +52232,7 @@ MonoBehaviour:
   behindPlayerClip: {fileID: 8300000, guid: 13987d6d44bb3459184a6842f81c4904, type: 3}
   behindFirstDelay: {x: 50, y: 110}
   behindInterval: {x: 60, y: 150}
-  behindVolume: 0.5
+  behindVolume: 0.4
   behindRadius: 1.1
   behindArc: {x: 118, y: 242}
   behindHeightOffset: -0.08

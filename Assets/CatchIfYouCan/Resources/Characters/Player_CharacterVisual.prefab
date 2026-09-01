@@ -10,6 +10,7 @@ GameObject:
   m_Component:
   - component: {fileID: 2871587543838193155}
   - component: {fileID: 4162309672707748843}
+  - component: {fileID: 4162309672707748844}
   m_Layer: 0
   m_Name: Player_CharacterVisual
   m_TagString: Untagged
@@ -50,6 +51,20 @@ MonoBehaviour:
   headBoneSuffix: _head
   collapsedScale: 0.0001
   keepShadow: 1
+--- !u!114 &4162309672707748844
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 707747227356716143}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 8c05e93b7a1d4f62b8e04c7d9a2f6153, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::CatchIfYouCan.Player.CharacterMaterialGuard
+  bodyMaterial: {fileID: 2100000, guid: 97291f0f10544b49bba3cdd1445a9028, type: 2}
+  warnWhenApplied: 1
 --- !u!1001 &2682635255137114312
 PrefabInstance:
   m_ObjectHideFlags: 0

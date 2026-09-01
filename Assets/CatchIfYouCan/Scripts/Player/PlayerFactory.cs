@@ -64,9 +64,19 @@ namespace CatchIfYouCan.Player
             handAnchor.transform.SetParent(cameraRoot.transform, false);
             handAnchor.transform.localPosition = new Vector3(0.12f, -0.08f, 0.35f);
 
+            // A transform of its own between the pitch pivot and the camera, purely so the idle
+            // breathing has somewhere to live. Three systems already write to the two transforms
+            // around it - PlayerLook the pivot's rotation, PlayerController the pivot's height
+            // while crouching, FearSystem the camera's own local position - and adding a fourth
+            // writer to either would mean one of them silently cancelling another. A spare node
+            // costs nothing and means every one of them owns its transform outright.
+            var cameraBreath = new GameObject("CameraBreath");
+            cameraBreath.transform.SetParent(cameraRoot.transform, false);
+            var cameraIdle = cameraBreath.AddComponent<CameraIdleMotion>();
+
             var cameraGo = new GameObject("MainCamera");
             cameraGo.tag = "MainCamera";
-            cameraGo.transform.SetParent(cameraRoot.transform, false);
+            cameraGo.transform.SetParent(cameraBreath.transform, false);
             var viewCamera = cameraGo.AddComponent<Camera>();
             // 5 cm, re-checked against the moved camera and left alone. From the eye position
             // the nearest body geometry is the shoulder line, about 25 cm below and behind, and
@@ -93,6 +103,12 @@ namespace CatchIfYouCan.Player
             SetPrivateField(playerController, "cameraRoot", cameraRoot.transform);
             SetPrivateField(playerController, "playerLook", playerLook);
 
+            // Wired here rather than found in Awake: the camera hierarchy is built before the
+            // controller exists, so the component's own GetComponentInParent runs too early and
+            // comes back empty. Without this the breathing works and the "is the player doing
+            // anything" test only ever sees the look, never the movement stick.
+            SetPrivateField(cameraIdle, "playerController", playerController);
+
             player.AddComponent<PlayerInventory>();
             player.AddComponent<PlayerNoiseEmitter>();
             player.AddComponent<FearSystem>();
@@ -107,6 +123,8 @@ namespace CatchIfYouCan.Player
             SetPrivateField(fear, "targetCamera", viewCamera);
 
             var characterVisual = AttachCharacterVisual(player, visualRoot.transform);
+            AttachBodyMotion(player, visualRoot.transform, cameraRoot.transform, characterVisual);
+            AttachFlashlight(player, handAnchor.transform, characterVisual);
             AttachFootsteps(player);
 
             // Built here because this is the only moment a player exists to drive; the caller
@@ -271,6 +289,53 @@ namespace CatchIfYouCan.Player
                 visual.AddComponent<LocalPlayerBodyVisibility>();
 
             return visual;
+        }
+
+        /// <summary>
+        /// Adds the layer that crouches, sidesteps, breathes and blinks.
+        ///
+        /// <para>
+        /// On the player root rather than the model, like the rest of the animation: the model is
+        /// loaded on demand and can be missing entirely, and a component that lives on it would
+        /// take the whole feature with it. This one binds to whatever character turned up, or to
+        /// nothing.
+        /// </para>
+        /// </summary>
+        private static void AttachBodyMotion(GameObject player, Transform visualRoot,
+                                             Transform cameraRoot, GameObject characterVisual)
+        {
+            var motion = player.GetComponent<PlayerBodyMotion>();
+            if (motion == null)
+                motion = player.AddComponent<PlayerBodyMotion>();
+
+            SetPrivateField(motion, "visualRoot", visualRoot);
+            SetPrivateField(motion, "playerBody", player.transform);
+            SetPrivateField(motion, "cameraRoot", cameraRoot);
+            SetPrivateField(motion, "playerController", player.GetComponent<PlayerController>());
+
+            if (characterVisual != null)
+                motion.BindAnimator(characterVisual.GetComponentInChildren<Animator>());
+        }
+
+        /// <summary>
+        /// Puts the placeholder torch in the character's hand, or on the viewmodel anchor when
+        /// there is no character to hold it.
+        /// </summary>
+        private static void AttachFlashlight(GameObject player, Transform handAnchor,
+                                             GameObject characterVisual)
+        {
+            var flashlight = player.GetComponent<HandFlashlight>();
+            if (flashlight == null)
+                flashlight = player.AddComponent<HandFlashlight>();
+
+            SetPrivateField(flashlight, "fallbackAnchor", handAnchor);
+            SetPrivateField(flashlight, "playerBody", player.transform);
+            SetPrivateField(flashlight, "playerController", player.GetComponent<PlayerController>());
+
+            // Called even with no character: the component resolved its anchor in Awake, before
+            // the fallback had been handed to it, so without this the torch would sit at the
+            // player's feet whenever the model failed to load.
+            flashlight.BindCharacter(characterVisual != null ? characterVisual.transform : null);
         }
 
         public static MobileInputController EnsureMobileInput()
