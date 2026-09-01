@@ -108,6 +108,7 @@ namespace CatchIfYouCan.Player
         private Vector3 _rootBindPosition;
         private Quaternion _rootBindRotation;
         private bool _hasRootBone;
+        private bool _warnedAboutLoop;
 
         private int _speedHash;
         private int _isWalkingHash;
@@ -265,6 +266,49 @@ namespace CatchIfYouCan.Player
                     ? Mathf.Clamp(_smoothedSpeed / clipAuthoredSpeed, minAnimationSpeed, maxAnimationSpeed)
                     : 1f;
             }
+
+            KeepWalkCycleRunning();
+        }
+
+        /// <summary>
+        /// Restarts the walk if it has run off the end of a clip that does not loop.
+        ///
+        /// <para>
+        /// The walk is split out of the FBX with Loop Time on, but that is an import setting on a
+        /// generated asset, and this project has already been bitten twice by an import setting
+        /// that was believed to be set and was not. A clip that does not loop plays once and then
+        /// holds its last frame, which is a character that takes a few steps and stops dead while
+        /// everything else carries on — and nothing anywhere reports it.
+        /// </para>
+        ///
+        /// <para>
+        /// This costs one state query per frame while walking and disables itself completely when
+        /// the clip does loop: a looping state's normalised time wraps and never reaches 1, so the
+        /// branch is never taken. It is a net, not a mechanism.
+        /// </para>
+        /// </summary>
+        private void KeepWalkCycleRunning()
+        {
+            if (!IsWalking || animator.runtimeAnimatorController == null)
+                return;
+
+            if (animator.IsInTransition(0))
+                return;
+
+            var state = animator.GetCurrentAnimatorStateInfo(0);
+            if (state.loop || state.normalizedTime < 1f)
+                return;
+
+            if (!_warnedAboutLoop)
+            {
+                _warnedAboutLoop = true;
+                Debug.LogWarning("[CIYC] The walk state is not looping, so it would stop after " +
+                                 "one cycle. Restarting it each cycle as a stopgap; the real fix " +
+                                 "is Loop Time on the Nathan_Walk clip in the model importer.",
+                                 this);
+            }
+
+            animator.Play(state.fullPathHash, 0, state.normalizedTime % 1f);
         }
 
         private void OnDisable()

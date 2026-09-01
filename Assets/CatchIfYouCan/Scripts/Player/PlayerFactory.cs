@@ -241,6 +241,29 @@ namespace CatchIfYouCan.Player
                 visualAnimator = player.AddComponent<PlayerVisualAnimator>();
             visualAnimator.BindAnimator(visual.GetComponentInChildren<Animator>());
 
+            // The model imports with no material of its own, so the character build is the only
+            // thing that ever puts one on the mesh. When that step fails the renderer keeps an
+            // empty slot and Unity draws the default grey, which reads as the character having
+            // lost its texture and gives no clue why. Say why.
+            var visualRenderers = visual.GetComponentsInChildren<Renderer>(true);
+            for (int i = 0; i < visualRenderers.Length; i++)
+            {
+                var mats = visualRenderers[i].sharedMaterials;
+                bool missing = mats == null || mats.Length == 0;
+                for (int m = 0; !missing && m < mats.Length; m++)
+                    if (mats[m] == null) missing = true;
+
+                if (missing)
+                {
+                    Debug.LogError("[CIYC] " + visualRenderers[i].name + " has no material, so " +
+                                   "the character renders untextured. Rebuild it with " +
+                                   "Catch If You Can > Characters > Build Nathan Player Visual; " +
+                                   "that step is what assigns Nathan_Body.mat.",
+                                   visualRenderers[i]);
+                    break;
+                }
+            }
+
             // The local player must not see their own head from the inside; the model itself is
             // left whole so a remote copy can still be drawn in full.
             var bodyVisibility = visual.GetComponent<LocalPlayerBodyVisibility>();

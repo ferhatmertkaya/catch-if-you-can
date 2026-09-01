@@ -497,6 +497,17 @@ namespace CatchIfYouCan.EditorTools
                 animator.cullingMode = AnimatorCullingMode.AlwaysAnimate;
 
                 var material = AssetDatabase.LoadAssetAtPath<Material>(MaterialPath);
+
+                // Loudly, because the quiet version of this is a character with no texture.
+                // The model imports with materialImportMode None and carries no material of its
+                // own, so this assignment is the only thing that ever puts one on the mesh. If it
+                // is skipped the renderer keeps an empty slot and Unity draws the default grey,
+                // which is exactly what "the character lost its texture" looks like.
+                if (material == null)
+                    Debug.LogError("[CIYC] No material at " + MaterialPath + ". The character " +
+                                   "will be built with an empty material slot and render " +
+                                   "untextured.");
+
                 var renderers = instance.GetComponentsInChildren<Renderer>(true);
                 for (int i = 0; i < renderers.Length; i++)
                 {
@@ -514,6 +525,24 @@ namespace CatchIfYouCan.EditorTools
                     // Starts visible. LocalPlayerBodyVisibility switches this to ShadowsOnly at
                     // runtime for the local player, and leaves a remote copy alone.
                     renderers[i].shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.On;
+                }
+
+                // Read it back rather than trusting the write. The prefab this produced last time
+                // carries overrides for the Animator and none at all for the materials, so the
+                // assignment above did not reach the asset and nothing said so.
+                for (int i = 0; i < renderers.Length; i++)
+                {
+                    var mats = renderers[i].sharedMaterials;
+                    bool missing = mats == null || mats.Length == 0;
+                    for (int m = 0; !missing && m < mats.Length; m++)
+                        if (mats[m] == null) missing = true;
+
+                    if (missing)
+                        Debug.LogError("[CIYC] " + renderers[i].name + " still has no material " +
+                                       "after the build. It will render untextured.");
+                    else
+                        log.AppendLine("  material on " + renderers[i].name + ": " +
+                                       mats[0].name);
                 }
 
                 // A character is moved by its CharacterController; a collider on the body would
