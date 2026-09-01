@@ -42,8 +42,18 @@ namespace CatchIfYouCan.Player
     /// </para>
     ///
     /// <para>
-    /// The one thing it costs is the head in the shadow. With the bone shrunk the silhouette on
-    /// the floor has a small head. That is the accepted trade in every true-first-person game that does
+    /// It also keeps the shadow honest. Skinned meshes are only re-deformed when their renderer
+    /// passes visibility culling, so a first-person body — culled about as often as not, since
+    /// the camera is inside its bounds looking away from it — would otherwise cast a shadow
+    /// frozen in whatever pose it was last skinned in. <c>updateWhenOffscreen</c> is set here
+    /// rather than in the character build so it applies to every instance without the generated
+    /// prefab having to be rebuilt for it.
+    /// </para>
+    ///
+    /// <para>
+    /// The one thing it costs is the head in the shadow. Bone scale is skeleton state and the
+    /// skeleton is shared, so shrinking the head bone shrinks it for the shadow too: the
+    /// silhouette on the floor has a small head. That is the accepted trade in every true-first-person game that does
     /// this; <see cref="BodyMode.ShadowsOnlyBody"/> is kept for anyone who would rather have a
     /// complete shadow and no visible body.
     /// </para>
@@ -166,7 +176,29 @@ namespace CatchIfYouCan.Player
 
             _originalModes = new UnityEngine.Rendering.ShadowCastingMode[_renderers.Length];
             for (int i = 0; i < _renderers.Length; i++)
+            {
                 _originalModes[i] = _renderers[i].shadowCastingMode;
+
+                // The other half of a problem that was only half fixed. The character build sets
+                // Animator.cullingMode to AlwaysAnimate so the bones keep moving while the body
+                // is culled — but moving the bones and deforming the mesh to match are two
+                // different stages, and the second one is gated on the renderer being visible.
+                // When it is skipped the skinned vertex buffer keeps last frame's pose, and the
+                // shadow pass draws exactly that: a walking skeleton casting a standing shadow.
+                //
+                // A first-person body is the worst case for it. The bounds used for that
+                // visibility test are the mesh's bind-pose bounds, and this bind pose is a
+                // T-pose, so they are a 1.9 m box the camera is sitting inside and mostly
+                // looking away from. Whether the body counts as visible from in there flips
+                // about, which is why the shadow freezes rather than never animating at all.
+                //
+                // Cost: skinning and a bounds recompute every frame instead of only when
+                // visible. This mesh is 10,828 vertices with at most four influences each, one
+                // character, once per frame — small, and the only way to keep a shadow correct
+                // while the thing casting it is culled.
+                if (_renderers[i] is SkinnedMeshRenderer skinned)
+                    skinned.updateWhenOffscreen = true;
+            }
 
             _headBone = FindHeadBone(root);
             if (_headBone != null)
