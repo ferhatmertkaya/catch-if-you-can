@@ -48,10 +48,9 @@ namespace CatchIfYouCan.Player
 
             var cameraRoot = new GameObject("CameraRoot");
             cameraRoot.transform.SetParent(player.transform, false);
-            // Eye height, not head height. Nathan's eye bones sit at 1.719 m in the bind pose, so
-            // the camera goes where his eyes are; that is what makes looking down at his own
-            // chest and legs read as a body rather than a prop hanging below a floating camera.
-            cameraRoot.transform.localPosition = new Vector3(0f, EyeHeight, 0f);
+            // Where the eyes are, in both axes that matter. The height was already right; the
+            // forward offset was missing, and that is what put the camera inside the neck.
+            cameraRoot.transform.localPosition = new Vector3(0f, EyeHeight, EyeForward);
 
             var visualRoot = new GameObject("VisualRoot");
             visualRoot.transform.SetParent(player.transform, false);
@@ -68,9 +67,10 @@ namespace CatchIfYouCan.Player
             cameraGo.tag = "MainCamera";
             cameraGo.transform.SetParent(cameraRoot.transform, false);
             var viewCamera = cameraGo.AddComponent<Camera>();
-            // 5 cm. The nearest thing the camera can see of its own body is the shoulder, about
-            // 25 cm away when looking straight down, so this clears it comfortably without
-            // squeezing the depth buffer the way a millimetre near plane would.
+            // 5 cm, re-checked against the moved camera and left alone. From the eye position
+            // the nearest body geometry is the shoulder line, about 25 cm below and behind, and
+            // the collapsed head sits about 18 cm away; 5 cm clears both without squeezing the
+            // depth buffer the way a millimetre near plane would.
             viewCamera.nearClipPlane = 0.05f;
             cameraGo.AddComponent<AudioListener>();
 
@@ -126,6 +126,29 @@ namespace CatchIfYouCan.Player
         /// <see cref="VisualScale"/>, which lands at about 1.79 m.
         /// </summary>
         public const float EyeHeight = 1.78f;
+
+        /// <summary>
+        /// How far forward of the spine the camera sits.
+        ///
+        /// <para>
+        /// This was 0, and that is the whole of the "camera is inside the neck" problem. Eyes are
+        /// not on the axis of the neck; they are at the front of the face. Nathan's eye bones are
+        /// measured at z = +8.8 cm in model space, which at <see cref="VisualScale"/> is 9.2 cm,
+        /// so a camera at x = z = 0 sat 9 cm behind his own eyes — inside the head, looking out
+        /// through the throat and the collar. Looking down from there shows the underside of the
+        /// jaw and the top of the chest at point-blank range, which is exactly what was reported.
+        /// </para>
+        ///
+        /// <para>
+        /// It goes on the CameraRoot rather than on the camera under it. CameraRoot is the pitch
+        /// pivot, so an offset placed below it would swing on an arc as the player looks down and
+        /// end up back over the neck at the very moment the view needs to clear it. On the pivot
+        /// itself the offset stays fixed in body space: the player always looks down the front of
+        /// their own chest rather than through it. It is well inside the 0.35 m capsule radius, so
+        /// the camera cannot be pushed through a wall the controller has already stopped at.
+        /// </para>
+        /// </summary>
+        public const float EyeForward = 0.09f;
 
         /// <summary>
         /// Character scale. 1.04 takes the measured 1.86 m model to about 1.93 m — the small

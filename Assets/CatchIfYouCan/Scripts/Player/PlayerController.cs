@@ -147,13 +147,20 @@ namespace CatchIfYouCan.Player
 
             float speed = _blendedSpeed;
 
-            _controller.Move(move * speed * Time.deltaTime);
-
             if (jumpHeight > 0f && IsGrounded && UnityEngine.Input.GetButtonDown("Jump"))
                 _velocity.y = Mathf.Sqrt(jumpHeight * -2f * gravity);
 
             _velocity.y += gravity * Time.deltaTime;
-            _controller.Move(_velocity * Time.deltaTime);
+
+            // One Move per frame, horizontal and vertical together, and that is not a tidy-up.
+            // CharacterController.velocity reports the displacement of the *last* Move call
+            // divided by delta time. Moving horizontally and then calling Move again with only
+            // gravity left every reader of that property seeing a purely vertical velocity of
+            // about (0, -2, 0): strip the Y, as an animator or a footstep controller must, and
+            // the planar speed is zero no matter how fast the player is actually walking. That
+            // is why the walk animation never started and the footsteps never fired. Combining
+            // them also gives the controller a single collision sweep to resolve instead of two.
+            _controller.Move((move * speed + _velocity) * Time.deltaTime);
 
             CurrentSpeed = move.magnitude * speed;
         }

@@ -97,6 +97,27 @@ namespace CatchIfYouCan.Player
             Restore();
         }
 
+        /// <summary>
+        /// Holds the head collapsed against the Animator.
+        ///
+        /// <para>
+        /// Applying it once in Awake was enough only while the character was standing still. The
+        /// Animator writes bone transforms every frame, in its own pass after Update, and a clip
+        /// exported from Maya routinely carries a scale curve for every joint it touches. If the
+        /// walk clip carries one for the head, the first frame of animation puts the face back
+        /// directly in front of the camera. Re-asserting it in LateUpdate is a comparison per
+        /// frame and a write only when something else has moved it.
+        /// </para>
+        /// </summary>
+        private void LateUpdate()
+        {
+            if (mode != BodyMode.FirstPersonBody || _headBone == null)
+                return;
+
+            if (_headBone.localScale.x != collapsedScale)
+                _headBone.localScale = Vector3.one * collapsedScale;
+        }
+
         private void Capture()
         {
             if (_captured)

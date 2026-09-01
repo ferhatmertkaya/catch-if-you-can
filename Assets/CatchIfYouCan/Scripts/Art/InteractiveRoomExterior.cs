@@ -151,6 +151,17 @@ namespace CatchIfYouCan.Art
                     if (sceneryVariants[i] != null)
                         sceneryVariants[i].SetActive(i == keep);
             }
+
+            // Says on the device which exterior actually came up. The silhouette boxes sit 6-14 m
+            // beyond the wall and stand 9-15 m tall, so with them on they fill the window and the
+            // view reads as a hillside immediately outside; this line is how you tell that state
+            // apart from the sky itself at a glance, without attaching a profiler.
+            Debug.Log("[CIYC] Exterior: sky=" +
+                      (_skyInstance != null ? _skyInstance.name : "NONE") +
+                      " rotation=" + (_skyInstance != null && _skyInstance.HasProperty("_Rotation")
+                          ? _skyInstance.GetFloat("_Rotation").ToString("0.0")
+                          : "n/a") +
+                      " foregroundSilhouettes=" + (useForegroundSilhouettes ? "ON" : "off"));
         }
 
         /// <summary>
