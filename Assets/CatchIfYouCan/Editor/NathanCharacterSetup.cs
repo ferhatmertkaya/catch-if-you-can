@@ -68,11 +68,37 @@ namespace CatchIfYouCan.EditorTools
 
         private const string MenuRoot = "Catch If You Can/Characters/";
 
+        /// <summary>Creates an asset folder and any missing parents. No-op if it already exists.</summary>
+        private static void EnsureFolder(string path)
+        {
+            if (AssetDatabase.IsValidFolder(path))
+                return;
+
+            int slash = path.LastIndexOf('/');
+            if (slash <= 0)
+                return;
+
+            string parent = path.Substring(0, slash);
+            EnsureFolder(parent);
+            AssetDatabase.CreateFolder(parent, path.Substring(slash + 1));
+        }
+
         [MenuItem(MenuRoot + "Build Nathan Player Visual", false, 10)]
         public static void Build()
         {
             var log = new StringBuilder();
             log.AppendLine("[CIYC] Nathan character setup");
+
+            // Git does not track empty directories, so on a fresh clone the Animations and
+            // Prefabs folders arrive as orphaned .meta files that Unity deletes on import.
+            // Creating them here is what stops the first run failing on a missing folder.
+            EnsureFolder("Assets/CatchIfYouCan/Art/Characters/Nathan/Animations");
+            EnsureFolder("Assets/CatchIfYouCan/Art/Characters/Nathan/Prefabs");
+            EnsureFolder("Assets/CatchIfYouCan/Resources/Characters");
+
+            // The character textures are the only ones in the project with a platform override,
+            // and an override left on Automatic is what asks iOS for the retired PVRTC format.
+            NathanTextureImportSettings.Apply(log);
 
             var model = ConfigureImporter(log);
             if (model == null)
@@ -373,6 +399,12 @@ namespace CatchIfYouCan.EditorTools
 
         private static AnimatorController BuildController(AnimationClip walk, AnimationClip idle, StringBuilder log)
         {
+            // Rebuild from scratch rather than editing in place: a re-run would otherwise add a
+            // second Speed parameter and a second pair of states to the controller that is
+            // already there.
+            if (AssetDatabase.LoadAssetAtPath<AnimatorController>(ControllerPath) != null)
+                AssetDatabase.DeleteAsset(ControllerPath);
+
             var controller = AnimatorController.CreateAnimatorControllerAtPath(ControllerPath);
 
             // Speed is the metres per second the player is actually covering; IsWalking is the
@@ -420,7 +452,18 @@ namespace CatchIfYouCan.EditorTools
                 // are relative to it. Moving it anywhere else silently unbinds every bone.
                 var animator = instance.GetComponent<Animator>();
                 if (animator == null)
+                {
                     animator = instance.AddComponent<Animator>();
+
+                    // An Animator added by hand has no Avatar, and a Generic rig without one
+                    // plays nothing. The importer already built one; take that.
+                    var modelAnimator = model.GetComponent<Animator>();
+                    if (modelAnimator != null)
+                        animator.avatar = modelAnimator.avatar;
+                }
+
+                if (animator.avatar == null)
+                    log.AppendLine("  WARNING: the Animator has no Avatar; check the model's Rig tab");
 
                 animator.runtimeAnimatorController = controller;
 
@@ -440,8 +483,12 @@ namespace CatchIfYouCan.EditorTools
                 {
                     if (material != null)
                     {
-                        var slots = new Material[renderers[i].sharedMaterials.Length];
-                        for (int s = 0; s < slots.Length; s++) slots[s] = material;
+                        // Material import is off on the model, so a renderer can arrive with an
+                        // empty slot array rather than one null slot. Falling back to a single
+                        // slot is what stops the body rendering magenta in that case.
+                        int slotCount = Mathf.Max(1, renderers[i].sharedMaterials.Length);
+                        var slots = new Material[slotCount];
+                        for (int s = 0; s < slotCount; s++) slots[s] = material;
                         renderers[i].sharedMaterials = slots;
                     }
 
@@ -528,7 +575,10 @@ namespace CatchIfYouCan.EditorTools
                 var body = (GameObject)PrefabUtility.InstantiatePrefab(visualPrefab);
                 body.transform.SetParent(root.transform, false);
                 body.transform.localPosition = Vector3.zero;
-                body.transform.localRotation = Quaternion.identity;
+
+                // The body's own rotation is left exactly as the prefab authored it. Forcing it to
+                // identity here would quietly undo the facing correction measured during the
+                // build, which is the one thing about this transform that is not arbitrary.
 
                 // PlayerFactory only adds this if the prefab root does not already carry one, so
                 // putting it here keeps the settings visible and editable in the Inspector rather

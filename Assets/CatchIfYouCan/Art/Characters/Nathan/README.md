@@ -110,14 +110,38 @@ mapping a glossiness map onto metallic would make the character look like foil),
 `_Smoothness` multiplies that alpha and is set to 0.75, which puts skin near 0.49 and denim near
 0.30; at 1.0 the skin reads wet under point lights. That one float is the dial to turn.
 
-Import sizes — no 8K reaches a device:
+### Platform settings, and the PVRTC warning
 
-| texture | editor / PC | Android / iOS |
-|---|---|---|
-| `dif` | 2048 | 1024 |
-| `norm` | 2048 | 1024 |
-| `metallicsmoothness` | 1024 | 512 |
-| `gloss`, `mask01`, `mask02` (source only) | 512 | 512 |
+These six were the only textures in the project carrying an Android or iPhone platform entry, and
+they were the only six Unity 6.5 warned about. Three of them — `gloss`, `mask01`, `mask02` — were
+not even marked *overridden*, and warned anyway, which is what pins the cause down: it is the
+presence of a stored iOS entry with the format left on **Automatic**, not the override flag. Unity
+resolves that entry against the platform's own legacy default, and for iOS that is PVRTC, which 6.5
+has retired. Every other texture in the project has no iOS entry at all, never goes down that path,
+and is quiet.
+
+So the committed .meta files now carry no mobile entry, structurally identical to the rest of the
+project. The mobile budget is not lost — it is put back by a tool, with the format **named** rather
+than automatic, which is the only version of a mobile entry that is safe to have.
+
+`NathanTextureImportSettings` owns this. It names the formats as `TextureImporterFormat` constants
+rather than writing enum integers into the .meta, and Unity writes the result back where it can be
+inspected in the Inspector and committed. It runs from **Catch If You Can → Characters → Fix Nathan
+Texture Import Settings**, and the character build calls it first so the textures can never be left
+in the state that warned.
+
+Sizes are per map rather than one number for the character — no 8K reaches a device:
+
+| texture | editor / PC | Android / iOS | mobile format | why this size |
+|---|---|---|---|---|
+| `dif` | 2048 (Automatic → BC) | **2048** | ASTC 6x6 | whole-body atlas; the face is roughly 1/80th of it, so halving this is what makes the head read soft |
+| `norm` | 2048 (Automatic → BC) | 1024 | ASTC 5x5 | cloth folds, not identity; a tighter block because normals show blocking before colour does |
+| `metallicsmoothness` | 1024 (Automatic → BC) | 512 | ASTC 6x6 | slowly varying, garment-level signal |
+| `gloss`, `mask01`, `mask02` | 512 | 512 | ASTC 6x6 | source only — referenced by nothing, so they never ship |
+
+Roughly 3.6 MB of GPU memory on mobile for the whole character, mips included. Desktop stays on
+Automatic on purpose: the BC family it picks is current, and letting Unity choose between BC1, BC5
+and BC7 per texture type beats naming one here.
 
 ## Mesh and rig settings
 
@@ -143,8 +167,16 @@ shape varies between Unity versions.
 
 The tool is idempotent and prints what it measured: height, floor alignment, facing, bone count,
 empty material slots, collider count, and the walk clip's length and loop flag. Everything else —
-the rig type, root motion bone, mobile texture budgets and the URP material — is authored as files
-and applies on first import.
+the rig type, root motion bone and the URP material — is authored as files and applies on first
+import.
+
+It also creates the `Animations`, `Prefabs` and `Resources/Characters` folders if they are missing.
+Git does not track empty directories, so on a fresh clone those arrive as orphaned .meta files that
+Unity deletes, and the first run would otherwise fail writing into a folder that is not there.
+
+**Running it changes .meta files**, because the clip split, the material remap and the texture
+platform settings are all written back by Unity. Commit those — they are the production import
+settings, and they are correct in a way hand-written YAML would only be by luck.
 
 It produces:
 
