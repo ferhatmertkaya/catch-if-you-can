@@ -35,11 +35,31 @@ namespace CatchIfYouCan.Audio
     {
         // ---- authored data ------------------------------------------------------------------
 
+        /// <summary>
+        /// One kind of thing that can happen outside: its clips, how far away it is when it
+        /// does, and how loud. Distance is per kind rather than per emitter because an owl and a
+        /// church bell are not the same distance away — a bell that sounds like it is at the
+        /// front door is not a distant bell, it is a doorbell.
+        /// </summary>
         [System.Serializable]
-        public sealed class ExteriorSpot
+        public sealed class ExteriorKind
         {
             public string label;
-            public Vector3 position;
+            public AudioClip[] clips = new AudioClip[0];
+
+            [Tooltip("Relative likelihood of this kind when an exterior event fires.")]
+            [Min(0f)] public float weight = 1f;
+
+            [Tooltip("How far outside it happens, in metres from the window. The lower bound is " +
+                     "a real minimum: nothing is ever allowed closer than this.")]
+            public Vector2 distanceRange = new Vector2(14f, 30f);
+
+            [Tooltip("Loudness band, rolled per event. A wolf carries; a bell at four hundred " +
+                     "metres does not.")]
+            public Vector2 volumeRange = new Vector2(0.5f, 0.8f);
+
+            [Tooltip("Height relative to the window, rolled per event.")]
+            public Vector2 heightRange = new Vector2(-3f, 8f);
         }
 
         [System.Serializable]
@@ -84,24 +104,24 @@ namespace CatchIfYouCan.Audio
         // ---- exterior one-shots ------------------------------------------------------------
 
         [Header("Exterior one-shots")]
-        [SerializeField] private AudioClip[] owlClips = new AudioClip[0];
-        [SerializeField] private AudioClip[] wolfClips = new AudioClip[0];
-        [SerializeField] private AudioClip churchBells;
+        [Tooltip("What can happen outside, each with its own distance band and loudness.")]
+        [SerializeField] private ExteriorKind[] exteriorKinds = new ExteriorKind[0];
 
-        [Tooltip("Relative likelihood when an exterior event fires. Owls are the common one; a " +
-                 "wolf and a distant bell should both feel like they mean something.")]
-        [SerializeField, Min(0f)] private float owlWeight = 6f;
-        [SerializeField, Min(0f)] private float wolfWeight = 2f;
-        [SerializeField, Min(0f)] private float bellWeight = 1f;
+        [SerializeField] private Vector2 exteriorInterval = new Vector2(16f, 46f);
 
-        [SerializeField] private Vector2 exteriorInterval = new Vector2(22f, 75f);
-        [SerializeField, Range(0f, 1f)] private float exteriorVolume = 0.55f;
-        [SerializeField] private float exteriorMinDistance = 6f;
-        [SerializeField] private float exteriorMaxDistance = 70f;
+        [Tooltip("Half-angle of the arc outside the window that events are placed in, measured " +
+                 "from straight out. Wide enough that direction is readable on headphones, " +
+                 "narrow enough that nothing is ever placed back through the room.")]
+        [SerializeField, Range(20f, 85f)] private float exteriorSpreadDegrees = 72f;
 
-        [Tooltip("Where exterior one-shots come from. Real world-space points outside the room, " +
-                 "spread wide enough that direction is readable on headphones.")]
-        [SerializeField] private ExteriorSpot[] exteriorSpots = new ExteriorSpot[0];
+        [Tooltip("Two events in a row from nearly the same bearing read as one repeated sound. " +
+                 "This is the minimum turn between them.")]
+        [SerializeField, Range(0f, 120f)] private float exteriorMinBearingChange = 45f;
+
+        [Tooltip("Rolloff of the exterior voices. The far end has to clear the furthest kind's " +
+                 "distance or the most distant events would be silent rather than distant.")]
+        [SerializeField] private float exteriorRolloffNear = 8f;
+        [SerializeField] private float exteriorRolloffFar = 75f;
 
         // ---- building ----------------------------------------------------------------------
 
@@ -156,8 +176,9 @@ namespace CatchIfYouCan.Audio
         private float _filterTimer;
 
         private AudioClip _lastExteriorClip;
+        private int _lastExteriorKind = -1;
+        private float _lastExteriorBearing = 999f;
         private AudioClip _lastBuildingClip;
-        private int _lastExteriorSpot = -1;
         private int _lastBuildingZone = -1;
         private int _exteriorCursor;
         private int _buildingCursor;
@@ -216,7 +237,7 @@ namespace CatchIfYouCan.Audio
 
             BuildNight();
             BuildBehind();
-            _exteriorVoices = BuildPool("Exterior", 2, exteriorMinDistance, exteriorMaxDistance, false, out _);
+            _exteriorVoices = BuildPool("Exterior", 2, exteriorRolloffNear, exteriorRolloffFar, false, out _);
             _buildingVoices = BuildPool("Building", 2, buildingMinDistance, buildingMaxDistance, true, out _buildingFilters);
 
             // Deliberately soon. A layer whose first event is half a minute away is
@@ -426,47 +447,102 @@ namespace CatchIfYouCan.Audio
 
         // ---- one-shots -------------------------------------------------------------------------
 
+        /// <summary>
+        /// Places one exterior event somewhere outside and plays it.
+        ///
+        /// <para>
+        /// Nothing is placed at a fixed point any more. A kind is drawn by weight, then a bearing,
+        /// a distance inside that kind's band and a height are all rolled independently, so the
+        /// same owl is never twice in the same place. The distance band is what stops everything
+        /// sounding like it is at the front door: an owl is allowed close, a bell never is.
+        /// </para>
+        ///
+        /// <para>
+        /// The bearing is constrained to an arc facing out of the window, so a placement can
+        /// never land behind the player through the room, and it has to differ from the last one
+        /// by <see cref="exteriorMinBearingChange"/> — two events from the same direction in a row
+        /// read as one sound repeating rather than as a world with things in it.
+        /// </para>
+        /// </summary>
         private void PlayExterior()
         {
-            var clip = PickExteriorClip();
-            if (clip == null || exteriorSpots.Length == 0 || _exteriorVoices == null)
+            if (exteriorKinds.Length == 0 || _exteriorVoices == null)
                 return;
 
-            int spot = PickIndex(exteriorSpots.Length, _lastExteriorSpot);
-            _lastExteriorSpot = spot;
+            int k = PickExteriorKind();
+            if (k < 0)
+                return;
+
+            var kind = exteriorKinds[k];
+            var clip = PickFrom(kind.clips, kind.clips.Length > 1 ? _lastExteriorClip : null);
+            if (clip == null)
+                return;
+
+            _lastExteriorKind = k;
             _lastExteriorClip = clip;
+
+            float bearing = PickBearing();
+            float distance = Range(Mathf.Min(kind.distanceRange.x, kind.distanceRange.y),
+                                   Mathf.Max(kind.distanceRange.x, kind.distanceRange.y));
+
+            // Out through the window, then turned by the bearing. Window faces +X.
+            Vector3 dir = Quaternion.AngleAxis(bearing, Vector3.up) * Vector3.right;
+            Vector3 pos = windowPosition + dir * distance;
+            pos.y = windowPosition.y + Range(Mathf.Min(kind.heightRange.x, kind.heightRange.y),
+                                             Mathf.Max(kind.heightRange.x, kind.heightRange.y));
 
             var voice = _exteriorVoices[_exteriorCursor];
             _exteriorCursor = (_exteriorCursor + 1) % _exteriorVoices.Length;
 
-            voice.transform.position = exteriorSpots[spot].position;
+            voice.transform.position = pos;
             voice.clip = clip;
-            voice.volume = exteriorVolume * Range(0.85f, 1f);
-            voice.pitch = Range(0.97f, 1.03f);
+            voice.volume = Mathf.Clamp01(Range(Mathf.Min(kind.volumeRange.x, kind.volumeRange.y),
+                                               Mathf.Max(kind.volumeRange.x, kind.volumeRange.y)));
+            voice.pitch = Range(0.94f, 1.06f);
             voice.Play();
         }
 
-        private AudioClip PickExteriorClip()
+        /// <summary>A bearing inside the outward arc, far enough from the last one to read as new.</summary>
+        private float PickBearing()
+        {
+            float bearing = Range(-exteriorSpreadDegrees, exteriorSpreadDegrees);
+            for (int attempt = 0; attempt < 6; attempt++)
+            {
+                if (Mathf.Abs(Mathf.DeltaAngle(bearing, _lastExteriorBearing)) >= exteriorMinBearingChange)
+                    break;
+                bearing = Range(-exteriorSpreadDegrees, exteriorSpreadDegrees);
+            }
+            _lastExteriorBearing = bearing;
+            return bearing;
+        }
+
+        /// <summary>Weighted draw over the kinds, avoiding the one that just happened.</summary>
+        private int PickExteriorKind()
         {
             float total = 0f;
-            if (owlClips.Length > 0) total += owlWeight;
-            if (wolfClips.Length > 0) total += wolfWeight;
-            if (churchBells != null) total += bellWeight;
-            if (total <= 0f) return null;
+            for (int i = 0; i < exteriorKinds.Length; i++)
+            {
+                if (exteriorKinds[i] == null || exteriorKinds[i].clips.Length == 0) continue;
+                if (i == _lastExteriorKind && exteriorKinds.Length > 1) continue;
+                total += Mathf.Max(0f, exteriorKinds[i].weight);
+            }
+            if (total <= 0f)
+            {
+                // Everything else was excluded; fall back to anything playable at all.
+                for (int i = 0; i < exteriorKinds.Length; i++)
+                    if (exteriorKinds[i] != null && exteriorKinds[i].clips.Length > 0) return i;
+                return -1;
+            }
 
             float roll = Range(0f, total);
-
-            if (owlClips.Length > 0)
+            for (int i = 0; i < exteriorKinds.Length; i++)
             {
-                if (roll < owlWeight) return PickFrom(owlClips);
-                roll -= owlWeight;
+                if (exteriorKinds[i] == null || exteriorKinds[i].clips.Length == 0) continue;
+                if (i == _lastExteriorKind && exteriorKinds.Length > 1) continue;
+                roll -= Mathf.Max(0f, exteriorKinds[i].weight);
+                if (roll <= 0f) return i;
             }
-            if (wolfClips.Length > 0)
-            {
-                if (roll < wolfWeight) return PickFrom(wolfClips);
-                roll -= wolfWeight;
-            }
-            return churchBells;
+            return -1;
         }
 
         private void PlayBuilding()
