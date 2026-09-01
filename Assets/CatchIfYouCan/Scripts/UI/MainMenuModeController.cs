@@ -71,6 +71,9 @@ namespace CatchIfYouCan.UI
                  "sky is per-camera on purpose, so the cinematic menu never inherits one.")]
         [SerializeField] private CatchIfYouCan.Art.InteractiveRoomExterior roomExterior;
 
+        [Tooltip("The interactive room's spatial ambience. Left empty the room is simply silent.")]
+        [SerializeField] private CatchIfYouCan.Audio.InteractiveRoomAmbience roomAmbience;
+
         [Header("Transition")]
         [Tooltip("Seconds to fade down to black before the swap.")]
         [SerializeField, Min(0f)] private float fadeOutDuration = 0.25f;
@@ -198,6 +201,11 @@ namespace CatchIfYouCan.UI
             // frame seen through the window is already the right night.
             if (roomExterior != null && _player != null)
                 roomExterior.ApplyTo(_player.ViewCamera);
+
+            // The room's own soundscape, started with the player it follows. It holds no sources
+            // and schedules nothing until this call, so the cinematic menu never hears it.
+            if (roomAmbience != null && _player != null && _player.Root != null)
+                roomAmbience.Begin(_player.Root.transform);
 
             // 8. Only now does the menu camera stop rendering — the player camera already exists,
             //    so no frame is drawn with no camera at all.

@@ -1,6 +1,7 @@
 using CatchIfYouCan.Input;
 using CatchIfYouCan.Interaction;
 using UnityEngine;
+using UnityEngine.Rendering.Universal;
 
 namespace CatchIfYouCan.Player
 {
@@ -72,6 +73,17 @@ namespace CatchIfYouCan.Player
             // the collapsed head sits about 18 cm away; 5 cm clears both without squeezing the
             // depth buffer the way a millimetre near plane would.
             viewCamera.nearClipPlane = 0.05f;
+
+            // The room's Volume is authored with the grading and vignette that carry its mood,
+            // and none of it was reaching the player: URP leaves renderPostProcessing off by
+            // default, and GraphicsManager only walks the cameras that exist when it runs, which
+            // is before this one is built. GraphicsManager still owns the setting afterwards and
+            // will switch it back off on the Low profile.
+            var cameraData = cameraGo.GetComponent<UniversalAdditionalCameraData>();
+            if (cameraData == null)
+                cameraData = cameraGo.AddComponent<UniversalAdditionalCameraData>();
+            cameraData.renderPostProcessing = true;
+
             cameraGo.AddComponent<AudioListener>();
 
             var playerLook = cameraRoot.AddComponent<PlayerLook>();

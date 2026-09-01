@@ -47166,6 +47166,7 @@ Transform:
   - {fileID: 7311221100000104}
   - {fileID: 7311221100000114}
   - {fileID: 7311221100000204}
+  - {fileID: 7311221200000101}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &7311220700000020
@@ -47489,7 +47490,7 @@ MeshRenderer:
   m_RenderingLayerMask: 1
   m_RendererPriority: 0
   m_Materials:
-  - {fileID: 2100000, guid: bcce389759ba478eb92ba9cd523d9aa8, type: 2}
+  - {fileID: 2100000, guid: c81f4a26d5b74e0e9a37f2b510c6e841, type: 2}
   m_StaticBatchInfo:
     firstSubMesh: 0
     subMeshCount: 0
@@ -47601,7 +47602,7 @@ MeshRenderer:
   m_RenderingLayerMask: 1
   m_RendererPriority: 0
   m_Materials:
-  - {fileID: 2100000, guid: 0da1a39aad5047e4bf2e017634cf47fe, type: 2}
+  - {fileID: 2100000, guid: a19d5c60b3e44f27ae8f0263c9147d38, type: 2}
   m_StaticBatchInfo:
     firstSubMesh: 0
     subMeshCount: 0
@@ -47713,7 +47714,7 @@ MeshRenderer:
   m_RenderingLayerMask: 1
   m_RendererPriority: 0
   m_Materials:
-  - {fileID: 2100000, guid: bcce389759ba478eb92ba9cd523d9aa8, type: 2}
+  - {fileID: 2100000, guid: d3a75e19b40c4f6ea8125cd7396b0f52, type: 2}
   m_StaticBatchInfo:
     firstSubMesh: 0
     subMeshCount: 0
@@ -47825,7 +47826,7 @@ MeshRenderer:
   m_RenderingLayerMask: 1
   m_RendererPriority: 0
   m_Materials:
-  - {fileID: 2100000, guid: 0da1a39aad5047e4bf2e017634cf47fe, type: 2}
+  - {fileID: 2100000, guid: e6b2074cfa8d4b13902e5a7c8df41b63, type: 2}
   m_StaticBatchInfo:
     firstSubMesh: 0
     subMeshCount: 0
@@ -48041,6 +48042,7 @@ MonoBehaviour:
   interactiveRoomRoots:
   - {fileID: 7311220700000010}
   roomExterior: {fileID: 7311221100000205}
+  roomAmbience: {fileID: 7311221200000102}
   fadeOutDuration: 0.25
   fadeInDuration: 0.3
   musicFadeDuration: 0.25
@@ -48103,8 +48105,8 @@ Light:
   m_Enabled: 1
   serializedVersion: 13
   m_Type: 1
-  m_Color: {r: 1, g: 0.767769, b: 0.570482, a: 1}
-  m_Intensity: 0.9
+  m_Color: {r: 0.62, g: 0.6, b: 0.58, a: 1}
+  m_Intensity: 0.08
   m_Range: 10
   m_SpotAngle: 30
   m_InnerSpotAngle: 21.802082
@@ -48231,8 +48233,8 @@ Light:
   serializedVersion: 13
   m_Type: 2
   m_Color: {r: 1, g: 0.603827, b: 0.2957, a: 1}
-  m_Intensity: 7
-  m_Range: 14
+  m_Intensity: 1.5
+  m_Range: 6.0
   m_SpotAngle: 30
   m_InnerSpotAngle: 21.802082
   m_CookieSize2D: {x: 0.5, y: 0.5}
@@ -48358,8 +48360,8 @@ Light:
   serializedVersion: 13
   m_Type: 2
   m_Color: {r: 0.477, g: 0.603827, b: 1, a: 1}
-  m_Intensity: 3.2
-  m_Range: 13
+  m_Intensity: 0.5
+  m_Range: 7.5
   m_SpotAngle: 30
   m_InnerSpotAngle: 21.802082
   m_CookieSize2D: {x: 0.5, y: 0.5}
@@ -48557,7 +48559,7 @@ MeshRenderer:
   m_RenderingLayerMask: 1
   m_RendererPriority: 0
   m_Materials:
-  - {fileID: 2100000, guid: 0da1a39aad5047e4bf2e017634cf47fe, type: 2}
+  - {fileID: 2100000, guid: f4c8319ed72a4c58b0e36194ad2c7e05, type: 2}
   m_StaticBatchInfo:
     firstSubMesh: 0
     subMeshCount: 0
@@ -49627,7 +49629,7 @@ MeshRenderer:
   m_RenderingLayerMask: 1
   m_RendererPriority: 0
   m_Materials:
-  - {fileID: 2100000, guid: 0da1a39aad5047e4bf2e017634cf47fe, type: 2}
+  - {fileID: 2100000, guid: b72e6f81c04d4a93bd5170ea38c692f4, type: 2}
   m_StaticBatchInfo:
     firstSubMesh: 0
     subMeshCount: 0
@@ -50718,8 +50720,8 @@ Light:
   serializedVersion: 13
   m_Type: 2
   m_Color: {r: 0.34, g: 0.47, b: 0.72, a: 1}
-  m_Intensity: 0.5
-  m_Range: 5
+  m_Intensity: 0.6
+  m_Range: 6.5
   m_SpotAngle: 30
   m_InnerSpotAngle: 21.802082
   m_CookieSize2D: {x: 0.5, y: 0.5}
@@ -52101,7 +52103,127 @@ MonoBehaviour:
   sceneryAlways:
   - {fileID: 7311221100000220}
   windowMoonlight: {fileID: 7311221100000212}
-  moonlightRange: {x: 0.25, y: 0.75}
+  moonlightRange: {x: 0.45, y: 0.8}
+--- !u!1 &7311221200000100
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 7311221200000101}
+  - component: {fileID: 7311221200000102}
+  m_Layer: 0
+  m_Name: InteractiveRoom_Ambience
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &7311221200000101
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 7311221200000100}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 7311220700000011}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &7311221200000102
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 7311221200000100}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 9a3f7c21e5b84d06b17c4e29f8d503ba, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  nightAmbience: {fileID: 8300000, guid: 2e2c2800765f349e1942424eaa570cbf, type: 3}
+  nightPosition: {x: 26.5, y: 1.9, z: 0}
+  nightVolume: 0.34
+  nightMinDistance: 1.5
+  nightMaxDistance: 16
+  glassCutoffFar: 900
+  glassCutoffNear: 4200
+  glassNearDistance: 1.5
+  glassFarDistance: 9
+  windowPosition: {x: 25.06, y: 1.75, z: 0}
+  owlClips:
+  - {fileID: 8300000, guid: f1033fbc95ad74262a52a83033129e83, type: 3}
+  - {fileID: 8300000, guid: 94d419c9b5183417ca9924f423327a40, type: 3}
+  wolfClips:
+  - {fileID: 8300000, guid: 284510d0aa5e94920a6e885d9bbfb32e, type: 3}
+  - {fileID: 8300000, guid: f7a507ec7179040d5a2f839894eef414, type: 3}
+  churchBells: {fileID: 8300000, guid: 2ec8a0d98ed43456d819d0828344a520, type: 3}
+  owlWeight: 6
+  wolfWeight: 2
+  bellWeight: 1
+  exteriorInterval: {x: 22, y: 75}
+  exteriorVolume: 0.55
+  exteriorMinDistance: 6
+  exteriorMaxDistance: 70
+  exteriorSpots:
+  - label: ValleyFarLeft
+    position: {x: 38, y: 3, z: -18}
+  - label: ForestFarRight
+    position: {x: 36, y: 2, z: 16}
+  - label: DistantHills
+    position: {x: 52, y: 9, z: 3}
+  - label: LowerTerrace
+    position: {x: 30, y: -5, z: 8}
+  - label: HighRidge
+    position: {x: 44, y: 14, z: -9}
+  buildingClips:
+  - {fileID: 8300000, guid: 65b1a11b470984c4caa4e40b212d44b1, type: 3}
+  - {fileID: 8300000, guid: b8905cbdbbb71477ea9db62d0ccfe555, type: 3}
+  - {fileID: 8300000, guid: 6cdcd9694303e4366bfed1eca7fcace3, type: 3}
+  - {fileID: 8300000, guid: e8d02230d6e1145a0b5cb7d02cd3fd10, type: 3}
+  buildingInterval: {x: 16, y: 52}
+  buildingVolume: 0.62
+  buildingMinDistance: 2.5
+  buildingMaxDistance: 26
+  buildingZones:
+  - label: Upstairs
+    position: {x: 20, y: 5.4, z: 1}
+    cutoffHz: 620
+    volumeScale: 0.95
+  - label: Downstairs
+    position: {x: 20, y: -2.2, z: -1}
+    cutoffHz: 520
+    volumeScale: 0.9
+  - label: Hallway
+    position: {x: 20, y: 1.6, z: 9.5}
+    cutoffHz: 1900
+    volumeScale: 1
+  - label: AdjacentLeft
+    position: {x: 20, y: 1.6, z: -10.5}
+    cutoffHz: 1050
+    volumeScale: 0.95
+  - label: AdjacentRight
+    position: {x: 10, y: 1.6, z: 1.5}
+    cutoffHz: 1100
+    volumeScale: 0.95
+  - label: DistantRoom
+    position: {x: 9, y: 4.8, z: 15}
+    cutoffHz: 780
+    volumeScale: 0.7
+  behindPlayerClip: {fileID: 8300000, guid: 13987d6d44bb3459184a6842f81c4904, type: 3}
+  behindFirstDelay: {x: 50, y: 110}
+  behindInterval: {x: 60, y: 150}
+  behindVolume: 0.5
+  behindRadius: 1.1
+  behindArc: {x: 118, y: 242}
+  behindHeightOffset: -0.08
 --- !u!1660057539 &9223372036854775807
 SceneRoots:
   m_ObjectHideFlags: 0
