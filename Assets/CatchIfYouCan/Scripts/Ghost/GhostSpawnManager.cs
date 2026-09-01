@@ -159,7 +159,7 @@ namespace CatchIfYouCan.Ghost
 
         private static bool IsDarkArea(Vector3 pos)
         {
-            var lights = FindObjectsByType<Light>(FindObjectsSortMode.None);
+            var lights = FindObjectsByType<Light>();
             float brightness = 0f;
             for (int i = 0; i < lights.Length; i++)
             {

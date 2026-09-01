@@ -52,9 +52,9 @@ namespace CatchIfYouCan.Audio
 
         private void TryLateInstall()
         {
-            var houseGen = FindFirstObjectByType<ProceduralHouseGenerator>();
+            var houseGen = FindAnyObjectByType<ProceduralHouseGenerator>();
             var player = GameObject.FindGameObjectWithTag("Player");
-            var ghost = FindFirstObjectByType<GhostController>();
+            var ghost = FindAnyObjectByType<GhostController>();
             VanBuildResult van = null;
             var vanRoot = GameObject.Find("InvestigationVan");
             if (vanRoot != null)
@@ -68,12 +68,12 @@ namespace CatchIfYouCan.Audio
         private void EnsureCoreServices()
         {
             AudioBootstrap.Initialize();
-            if (FindFirstObjectByType<AudioOcclusionController>() == null)
+            if (FindAnyObjectByType<AudioOcclusionController>() == null)
             {
                 var go = new GameObject("AudioOcclusionController");
                 go.AddComponent<AudioOcclusionController>();
             }
-            if (FindFirstObjectByType<UiAudioService>() == null)
+            if (FindAnyObjectByType<UiAudioService>() == null)
             {
                 var go = new GameObject("UiAudioService");
                 go.AddComponent<UiAudioService>();
@@ -88,7 +88,7 @@ namespace CatchIfYouCan.Audio
             if (house != null)
                 installer.Install(house, roomProfile ?? RoomAudioProfile.CreateDefaultRuntime());
 
-            if (FindFirstObjectByType<RoomToneController>() == null)
+            if (FindAnyObjectByType<RoomToneController>() == null)
             {
                 var go = new GameObject("RoomToneController");
                 go.AddComponent<RoomToneController>();
@@ -139,7 +139,7 @@ namespace CatchIfYouCan.Audio
                 return;
             }
 
-            var doors = FindObjectsByType<InteractiveDoor>(FindObjectsSortMode.None);
+            var doors = FindObjectsByType<InteractiveDoor>();
             for (int i = 0; i < doors.Length; i++)
             {
                 if (doors[i].GetComponent<DoorAudioController>() == null)
@@ -149,14 +149,14 @@ namespace CatchIfYouCan.Audio
 
         private void InstallFurniture()
         {
-            var drawers = FindObjectsByType<InteractiveDrawer>(FindObjectsSortMode.None);
+            var drawers = FindObjectsByType<InteractiveDrawer>();
             for (int i = 0; i < drawers.Length; i++)
             {
                 if (drawers[i].GetComponent<FurnitureAudioRelay>() == null)
                     drawers[i].gameObject.AddComponent<FurnitureAudioRelay>();
             }
 
-            var hides = FindObjectsByType<HideSpot>(FindObjectsSortMode.None);
+            var hides = FindObjectsByType<HideSpot>();
             for (int i = 0; i < hides.Length; i++)
             {
                 if (hides[i].GetComponent<HideSpotAudio>() == null)
@@ -166,14 +166,14 @@ namespace CatchIfYouCan.Audio
 
         private void InstallVan(VanBuildResult van)
         {
-            var weather = FindFirstObjectByType<WeatherAudioController>();
+            var weather = FindAnyObjectByType<WeatherAudioController>();
             if (weather == null)
             {
                 var go = new GameObject("WeatherAudioController");
                 weather = go.AddComponent<WeatherAudioController>();
             }
 
-            if (FindFirstObjectByType<VanAudioController>() == null)
+            if (FindAnyObjectByType<VanAudioController>() == null)
             {
                 var go = new GameObject("VanAudioController");
                 var vanAudio = go.AddComponent<VanAudioController>();
@@ -183,17 +183,17 @@ namespace CatchIfYouCan.Audio
 
         private void InstallDirectors()
         {
-            if (FindFirstObjectByType<TensionAudioDirector>() == null)
+            if (FindAnyObjectByType<TensionAudioDirector>() == null)
             {
                 var go = new GameObject("TensionAudioDirector");
                 go.AddComponent<TensionAudioDirector>();
             }
-            if (FindFirstObjectByType<HorrorSilenceSystem>() == null)
+            if (FindAnyObjectByType<HorrorSilenceSystem>() == null)
             {
                 var go = new GameObject("HorrorSilenceSystem");
                 go.AddComponent<HorrorSilenceSystem>();
             }
-            if (FindFirstObjectByType<PsychologicalAudioDirector>() == null)
+            if (FindAnyObjectByType<PsychologicalAudioDirector>() == null)
             {
                 var go = new GameObject("PsychologicalAudioDirector");
                 go.AddComponent<PsychologicalAudioDirector>();
@@ -202,14 +202,14 @@ namespace CatchIfYouCan.Audio
 
         private void WireWeather()
         {
-            var weatherAudio = FindFirstObjectByType<WeatherAudioController>();
+            var weatherAudio = FindAnyObjectByType<WeatherAudioController>();
             if (WeatherSystem.Instance != null && weatherAudio != null)
                 weatherAudio.ApplyFromSystem(WeatherSystem.Instance.CurrentWeather);
         }
 
         private void WireEquipment()
         {
-            if (FindFirstObjectByType<EquipmentAudioController>() == null)
+            if (FindAnyObjectByType<EquipmentAudioController>() == null)
             {
                 var go = new GameObject("EquipmentAudioController");
                 go.AddComponent<EquipmentAudioController>();
@@ -219,7 +219,7 @@ namespace CatchIfYouCan.Audio
 
         private void WireReverbListener()
         {
-            if (FindFirstObjectByType<ReverbZoneController>() != null) return;
+            if (FindAnyObjectByType<ReverbZoneController>() != null) return;
             var cam = Camera.main;
             if (cam == null) return;
             cam.gameObject.AddComponent<ReverbZoneController>();

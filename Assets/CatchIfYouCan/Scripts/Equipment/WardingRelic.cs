@@ -71,7 +71,7 @@ namespace CatchIfYouCan.Equipment
         private void InterruptHunt()
         {
             _charges--;
-            var hunt = FindFirstObjectByType<HuntController>();
+            var hunt = FindAnyObjectByType<HuntController>();
             if (hunt != null)
                 hunt.ForceEndHunt();
             else

@@ -76,7 +76,7 @@ namespace CatchIfYouCan.Audio
 
         public void WireAllEquipment()
         {
-            var all = FindObjectsByType<EquipmentBase>(FindObjectsSortMode.None);
+            var all = FindObjectsByType<EquipmentBase>();
             for (int i = 0; i < all.Length; i++)
                 AttachFeedbackToEquipment(all[i]);
         }
@@ -173,7 +173,6 @@ namespace CatchIfYouCan.Audio
     public class ParabolicAudioProcessor : MonoBehaviour
     {
         [SerializeField] private float coneAngle = 35f;
-        [SerializeField] private float emphasisDb = 4f;
 
         private ParabolicMicrophone _mic;
         private AudioLowPassFilter _listenerFilter;

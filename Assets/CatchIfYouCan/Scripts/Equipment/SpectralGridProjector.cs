@@ -25,7 +25,7 @@ namespace CatchIfYouCan.Equipment
             GameEvents.OnGhostActivityChanged += HandleGhostActivity;
             GameEvents.OnHuntStarted += HandleHuntStarted;
             GameEvents.OnHuntEnded += HandleHuntEnded;
-            _ghost = FindFirstObjectByType<GhostController>();
+            _ghost = FindAnyObjectByType<GhostController>();
             if (_ghost != null)
                 _ghostRoomCenter = _ghost.transform;
         }

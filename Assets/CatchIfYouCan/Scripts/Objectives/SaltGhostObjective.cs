@@ -25,7 +25,7 @@ namespace CatchIfYouCan.Objectives
         {
             if (type == EvidenceType.PhysicalDisturbance || type == EvidenceType.UVTraces)
             {
-                var piles = UnityEngine.Object.FindObjectsByType<SaltPile>(UnityEngine.FindObjectsSortMode.None);
+                var piles = UnityEngine.Object.FindObjectsByType<SaltPile>();
                 for (int i = 0; i < piles.Length; i++)
                 {
                     if (piles[i] != null && piles[i].IsTriggered)

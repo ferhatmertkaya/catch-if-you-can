@@ -39,7 +39,7 @@ namespace CatchIfYouCan.Audio
             if (playerGo != null)
                 _fear = playerGo.GetComponent<FearSystem>();
             _player = playerGo != null ? playerGo.transform : null;
-            _ghost = FindFirstObjectByType<GhostController>();
+            _ghost = FindAnyObjectByType<GhostController>();
             _lastEventTime = Time.time;
         }
 

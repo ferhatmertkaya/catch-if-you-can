@@ -130,7 +130,7 @@ namespace CatchIfYouCan.Graphics
 
         private void ApplyCameraSettings(bool postProcessing, float renderScale)
         {
-            var cameras = Object.FindObjectsByType<Camera>(FindObjectsSortMode.None);
+            var cameras = Object.FindObjectsByType<Camera>();
             foreach (var cam in cameras)
             {
                 if (cam == null) continue;

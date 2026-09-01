@@ -53,7 +53,7 @@ namespace CatchIfYouCan.Ghost
         private void Start()
         {
             if (ghost == null)
-                ghost = FindFirstObjectByType<GhostController>();
+                ghost = FindAnyObjectByType<GhostController>();
 
             if (eventWeights == null || eventWeights.Length == 0)
                 eventWeights = GetDefaultWeights();

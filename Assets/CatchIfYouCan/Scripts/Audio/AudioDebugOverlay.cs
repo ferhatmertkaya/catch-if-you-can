@@ -36,32 +36,32 @@ namespace CatchIfYouCan.Audio
             GUILayout.BeginArea(new Rect(12f, 12f, width, height), _boxStyle);
             GUILayout.Label("CIYC Audio Debug (F9)", _labelStyle);
 
-            var manager = Object.FindFirstObjectByType<AudioManager>();
+            var manager = Object.FindAnyObjectByType<AudioManager>();
             var snapshot = manager?.SnapshotController;
             GUILayout.Label($"Snapshot: {(snapshot != null ? snapshot.CurrentSnapshot.ToString() : "—")}", _labelStyle);
 
             int pooled = AudioEmitterPool.Instance != null ? AudioEmitterPool.Instance.ActiveCount : 0;
             int max = AudioEmitterPool.Instance != null ? AudioEmitterPool.Instance.MaxSimultaneous : 0;
-            int playing = Object.FindObjectsByType<AudioSource>(FindObjectsSortMode.None).Count(s => s != null && s.isPlaying);
+            int playing = Object.FindObjectsByType<AudioSource>().Count(s => s != null && s.isPlaying);
             GUILayout.Label($"Sources: pool {pooled}/{max}, scene {playing}", _labelStyle);
 
-            var ghostAudio = Object.FindFirstObjectByType<GhostAudioController>();
+            var ghostAudio = Object.FindAnyObjectByType<GhostAudioController>();
             var ghost = ghostAudio != null ? ghostAudio.GetComponent<GhostController>() : null;
             GUILayout.Label($"Ghost: {(ghost != null ? ghost.CurrentState.ToString() : "—")} hunt={(ghostAudio != null && ghostAudio.IsHuntActive)}", _labelStyle);
 
-            var tension = Object.FindFirstObjectByType<TensionAudioDirector>();
+            var tension = Object.FindAnyObjectByType<TensionAudioDirector>();
             GUILayout.Label($"Tension: {(tension != null ? tension.Tension.ToString("F1") : "—")}", _labelStyle);
 
-            var reverb = Object.FindFirstObjectByType<ReverbZoneController>();
-            var roomTone = Object.FindFirstObjectByType<RoomToneController>();
+            var reverb = Object.FindAnyObjectByType<ReverbZoneController>();
+            var roomTone = Object.FindAnyObjectByType<RoomToneController>();
             GUILayout.Label($"Reverb: {(reverb != null ? reverb.CurrentProfileId : "—")}", _labelStyle);
             GUILayout.Label($"Room Tone: {(roomTone != null ? roomTone.CurrentToneId : "—")}", _labelStyle);
 
-            var occlusion = Object.FindFirstObjectByType<AudioOcclusionController>();
+            var occlusion = Object.FindAnyObjectByType<AudioOcclusionController>();
             if (occlusion != null)
                 GUILayout.Label($"Occlusion: {occlusion.TrackedSourceCount} tracked, zone={occlusion.ListenerZoneName ?? "None"}", _labelStyle);
 
-            var zones = Object.FindObjectsByType<AmbientZone>(FindObjectsSortMode.None);
+            var zones = Object.FindObjectsByType<AmbientZone>();
             int activeZones = zones.Count(z => z != null && z.IsActive);
             GUILayout.Label($"Ambient zones active: {activeZones}/{zones.Length}", _labelStyle);
 
@@ -100,7 +100,7 @@ namespace CatchIfYouCan.Audio
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
         private static void AutoCreate()
         {
-            if (Object.FindFirstObjectByType<AudioDebugOverlay>() != null)
+            if (Object.FindAnyObjectByType<AudioDebugOverlay>() != null)
                 return;
 
             var go = new GameObject("AudioDebugOverlay");

@@ -56,7 +56,7 @@ namespace CatchIfYouCan.Audio
             if (_listenerFilter != null)
                 return;
 
-            var listener = FindFirstObjectByType<AudioListener>();
+            var listener = FindAnyObjectByType<AudioListener>();
             if (listener == null)
                 return;
 

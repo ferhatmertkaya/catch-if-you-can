@@ -14,7 +14,11 @@ namespace CatchIfYouCan.Evidence
         public string Id;
         public string Title;
         public string Body;
-        public EvidenceType? RelatedEvidence;
+
+        // Unity cannot serialize Nullable<T>, so this field is runtime-only. Journal
+        // entries are never written to a save file or an inspector, so the nullable
+        // reads better here than a sentinel enum value would.
+        [NonSerialized] public EvidenceType? RelatedEvidence;
         public long TimestampUtcTicks;
 
         public JournalEntry()

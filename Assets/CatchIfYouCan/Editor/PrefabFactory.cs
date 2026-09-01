@@ -3,7 +3,6 @@ using CatchIfYouCan.Equipment;
 using CatchIfYouCan.Ghost;
 using CatchIfYouCan.Player;
 using CatchIfYouCan.Interaction;
-using CatchIfYouCan.Player;
 using UnityEditor;
 using UnityEngine;
 

@@ -60,7 +60,7 @@ namespace CatchIfYouCan.EditorTools
         {
             EditorGUILayout.Space(6);
             EditorGUILayout.LabelField("Snapshot", EditorStyles.boldLabel);
-            var manager = Object.FindFirstObjectByType<AudioManager>();
+            var manager = Object.FindAnyObjectByType<AudioManager>();
             var snapshot = manager?.SnapshotController;
             EditorGUILayout.LabelField("Current", snapshot != null ? snapshot.CurrentSnapshot.ToString() : "—");
         }
@@ -71,7 +71,7 @@ namespace CatchIfYouCan.EditorTools
             EditorGUILayout.LabelField("Active Sources", EditorStyles.boldLabel);
             int pooled = AudioEmitterPool.Instance != null ? AudioEmitterPool.Instance.ActiveCount : 0;
             int max = AudioEmitterPool.Instance != null ? AudioEmitterPool.Instance.MaxSimultaneous : 0;
-            int sceneSources = Object.FindObjectsByType<AudioSource>(FindObjectsSortMode.None)
+            int sceneSources = Object.FindObjectsByType<AudioSource>()
                 .Count(s => s != null && s.isPlaying);
             EditorGUILayout.LabelField("Emitter Pool", $"{pooled} / {max}");
             EditorGUILayout.LabelField("Scene AudioSources (playing)", sceneSources.ToString());
@@ -81,7 +81,7 @@ namespace CatchIfYouCan.EditorTools
         {
             EditorGUILayout.Space(6);
             EditorGUILayout.LabelField("Ghost Audio", EditorStyles.boldLabel);
-            var ghostAudio = Object.FindFirstObjectByType<GhostAudioController>();
+            var ghostAudio = Object.FindAnyObjectByType<GhostAudioController>();
             if (ghostAudio == null)
             {
                 EditorGUILayout.LabelField("GhostAudioController", "Not present");
@@ -97,7 +97,7 @@ namespace CatchIfYouCan.EditorTools
         {
             EditorGUILayout.Space(6);
             EditorGUILayout.LabelField("Tension", EditorStyles.boldLabel);
-            var tension = Object.FindFirstObjectByType<TensionAudioDirector>();
+            var tension = Object.FindAnyObjectByType<TensionAudioDirector>();
             EditorGUILayout.LabelField("Score", tension != null ? $"{tension.Tension:F1} / 100" : "—");
         }
 
@@ -105,8 +105,8 @@ namespace CatchIfYouCan.EditorTools
         {
             EditorGUILayout.Space(6);
             EditorGUILayout.LabelField("Room Reverb", EditorStyles.boldLabel);
-            var reverb = Object.FindFirstObjectByType<ReverbZoneController>();
-            var roomTone = Object.FindFirstObjectByType<RoomToneController>();
+            var reverb = Object.FindAnyObjectByType<ReverbZoneController>();
+            var roomTone = Object.FindAnyObjectByType<RoomToneController>();
             EditorGUILayout.LabelField("Profile", reverb != null ? reverb.CurrentProfileId : "—");
             EditorGUILayout.LabelField("Room Tone", roomTone != null ? roomTone.CurrentToneId : "—");
         }
@@ -115,7 +115,7 @@ namespace CatchIfYouCan.EditorTools
         {
             EditorGUILayout.Space(6);
             EditorGUILayout.LabelField("Occlusion", EditorStyles.boldLabel);
-            var occlusion = Object.FindFirstObjectByType<AudioOcclusionController>();
+            var occlusion = Object.FindAnyObjectByType<AudioOcclusionController>();
             if (occlusion == null)
             {
                 EditorGUILayout.LabelField("AudioOcclusionController", "Not present");
@@ -130,7 +130,7 @@ namespace CatchIfYouCan.EditorTools
         {
             EditorGUILayout.Space(6);
             EditorGUILayout.LabelField("Ambient Events", EditorStyles.boldLabel);
-            var zones = Object.FindObjectsByType<AmbientZone>(FindObjectsSortMode.None);
+            var zones = Object.FindObjectsByType<AmbientZone>();
             if (zones.Length == 0)
             {
                 EditorGUILayout.LabelField("No AmbientZone instances");
@@ -152,7 +152,7 @@ namespace CatchIfYouCan.EditorTools
             EditorGUILayout.LabelField("Play Audio Event", EditorStyles.boldLabel);
 
             if (_eventIds.Length == 0 || GUILayout.Button("Refresh Event IDs"))
-                RefreshEventIds(Object.FindFirstObjectByType<AudioManager>()?.EventLibrary);
+                RefreshEventIds(Object.FindAnyObjectByType<AudioManager>()?.EventLibrary);
 
             if (_eventIds.Length == 0)
             {
@@ -164,7 +164,7 @@ namespace CatchIfYouCan.EditorTools
             if (GUILayout.Button("Play Selected Event") && Application.isPlaying)
             {
                 string id = _eventIds[_selectedEventIndex];
-                Object.FindFirstObjectByType<AudioManager>()?.PlayEvent(id);
+                Object.FindAnyObjectByType<AudioManager>()?.PlayEvent(id);
             }
         }
 

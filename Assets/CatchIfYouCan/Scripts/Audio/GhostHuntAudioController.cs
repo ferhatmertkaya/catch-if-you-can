@@ -170,7 +170,7 @@ namespace CatchIfYouCan.Audio
         private bool IsPlayerHidden()
         {
             if (_player == null) return false;
-            var spots = FindObjectsByType<HideSpot>(FindObjectsSortMode.None);
+            var spots = FindObjectsByType<HideSpot>();
             for (int i = 0; i < spots.Length; i++)
             {
                 if (spots[i] != null && spots[i].PlayerHidden)

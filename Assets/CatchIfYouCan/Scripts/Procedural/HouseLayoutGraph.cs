@@ -9,7 +9,12 @@ namespace CatchIfYouCan.Procedural
     {
         public int Id;
         public RoomCategory Category;
-        public GridCell Cell;
+
+        // GridCell is an immutable readonly struct in the deterministic core, which puts
+        // it outside Unity serialization (Unity skips readonly fields). The graph is a
+        // runtime projection of HouseLayout and is never serialized, so mark the field
+        // explicitly rather than loosening the core type.
+        [NonSerialized] public GridCell Cell;
         public List<SocketDirection> OpenDirections = new List<SocketDirection>();
     }
 

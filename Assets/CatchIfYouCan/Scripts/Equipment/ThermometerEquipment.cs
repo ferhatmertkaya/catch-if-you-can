@@ -64,7 +64,7 @@ namespace CatchIfYouCan.Equipment
             Vector3 probe = HandAnchor != null ? HandAnchor.position : transform.position;
             float baseTemp = Random.Range(normalMin, normalMax) - _openDoorCount * openDoorPenalty;
 
-            var ghost = FindFirstObjectByType<GhostController>();
+            var ghost = FindAnyObjectByType<GhostController>();
             if (ghost == null)
                 return baseTemp;
 

@@ -36,7 +36,7 @@ namespace CatchIfYouCan.UI
         private void ResolveInteractionController()
         {
             if (interactionController == null)
-                interactionController = FindFirstObjectByType<InteractionController>();
+                interactionController = FindAnyObjectByType<InteractionController>();
         }
 
         private void Subscribe(bool subscribe)
@@ -77,7 +77,7 @@ namespace CatchIfYouCan.UI
 
         private void NotifyHud(bool available)
         {
-            var hud = FindFirstObjectByType<MobileHUDController>();
+            var hud = FindAnyObjectByType<MobileHUDController>();
             hud?.SetInteractAvailable(available);
         }
     }

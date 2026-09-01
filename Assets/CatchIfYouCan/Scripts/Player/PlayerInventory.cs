@@ -11,7 +11,6 @@ namespace CatchIfYouCan.Player
 
         [SerializeField] private Transform handAnchor;
         [SerializeField] private Transform dropOrigin;
-        [SerializeField] private float dropForce = 2f;
 
         private readonly EquipmentBase[] _slots = new EquipmentBase[SlotCount];
         private int _selectedIndex;

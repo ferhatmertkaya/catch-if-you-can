@@ -6,7 +6,6 @@ namespace CatchIfYouCan.Ghost
 {
     public class GhostActivitySystem : SingletonBehaviour<GhostActivitySystem>
     {
-        [SerializeField] private float riseRate = 8f;
         [SerializeField] private float fallRate = 4f;
         [SerializeField] private float eventBump = 6f;
         [SerializeField] private float huntDrain = 25f;

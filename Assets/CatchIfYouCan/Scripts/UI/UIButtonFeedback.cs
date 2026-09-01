@@ -16,6 +16,9 @@ namespace CatchIfYouCan.UI
         private Vector3 _baseScale = Vector3.one;
         private bool _pressed;
 
+        /// <summary>True while a pointer is held down on this button.</summary>
+        public bool IsPressed => _pressed;
+
         private void Awake()
         {
             _rect = transform as RectTransform;

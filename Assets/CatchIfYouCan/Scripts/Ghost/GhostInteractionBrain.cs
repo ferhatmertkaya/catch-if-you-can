@@ -67,7 +67,7 @@ namespace CatchIfYouCan.Ghost
             var lightSwitch = FindNearestTagged(lightTag);
             if (lightSwitch == null)
             {
-                var lights = FindObjectsByType<Light>(FindObjectsSortMode.None);
+                var lights = FindObjectsByType<Light>();
                 if (lights.Length == 0) return false;
                 var light = lights[Random.Range(0, lights.Length)];
                 light.enabled = !light.enabled;

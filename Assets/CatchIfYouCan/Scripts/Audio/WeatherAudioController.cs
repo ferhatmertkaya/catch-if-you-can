@@ -104,7 +104,7 @@ namespace CatchIfYouCan.Audio
         private void EvaluateIndoor()
         {
             if (listener == null) return;
-            var zones = FindObjectsByType<RoomAudioZone>(FindObjectsSortMode.None);
+            var zones = FindObjectsByType<RoomAudioZone>();
             _indoor = false;
             for (int i = 0; i < zones.Length; i++)
             {

@@ -133,7 +133,7 @@ namespace CatchIfYouCan.Core
 
         private static void EnsureDirectionalLight(float intensity)
         {
-            if (Object.FindFirstObjectByType<Light>() != null)
+            if (Object.FindAnyObjectByType<Light>() != null)
                 return;
 
             var lightGo = new GameObject("Directional Light");

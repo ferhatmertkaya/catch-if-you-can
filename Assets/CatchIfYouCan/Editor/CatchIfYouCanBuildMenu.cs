@@ -1,6 +1,7 @@
 using System.IO;
 using System.Linq;
 using UnityEditor;
+using UnityEditor.Build;
 using UnityEditor.Build.Reporting;
 using UnityEngine;
 
@@ -42,7 +43,7 @@ namespace CatchIfYouCan.EditorTools
                 return;
 
             EnsureOutputDirectory(Path.GetDirectoryName(AndroidReleasePath));
-            PlayerSettings.SetScriptingBackend(BuildTargetGroup.Android, ScriptingImplementation.IL2CPP);
+            PlayerSettings.SetScriptingBackend(NamedBuildTarget.Android, ScriptingImplementation.IL2CPP);
 
             var options = new BuildPlayerOptions
             {
@@ -101,9 +102,9 @@ namespace CatchIfYouCan.EditorTools
             PlayerSettings.productName = "CATCH IF YOU CAN";
             PlayerSettings.bundleVersion = "1.0.0";
             PlayerSettings.iOS.buildNumber = "1";
-            PlayerSettings.SetApplicationIdentifier(BuildTargetGroup.iOS, "com.catchifyoucan.game");
-            PlayerSettings.SetScriptingBackend(BuildTargetGroup.iOS, ScriptingImplementation.IL2CPP);
-            PlayerSettings.SetArchitecture(BuildTargetGroup.iOS, 1); // ARM64
+            PlayerSettings.SetApplicationIdentifier(NamedBuildTarget.iOS, "com.catchifyoucan.game");
+            PlayerSettings.SetScriptingBackend(NamedBuildTarget.iOS, ScriptingImplementation.IL2CPP);
+            PlayerSettings.SetArchitecture(NamedBuildTarget.iOS, 1); // ARM64
             PlayerSettings.iOS.targetDevice = iOSTargetDevice.iPhoneAndiPad;
             PlayerSettings.iOS.targetOSVersionString = "15.0";
             PlayerSettings.iOS.sdkVersion = iOSSdkVersion.DeviceSDK;
@@ -116,7 +117,7 @@ namespace CatchIfYouCan.EditorTools
             PlayerSettings.iOS.requiresFullScreen = true;
             PlayerSettings.iOS.hideHomeButton = false;
             PlayerSettings.iOS.deferSystemGesturesMode = UnityEngine.iOS.SystemGestureDeferMode.None;
-            PlayerSettings.SetManagedStrippingLevel(BuildTargetGroup.iOS, ManagedStrippingLevel.Low);
+            PlayerSettings.SetManagedStrippingLevel(NamedBuildTarget.iOS, ManagedStrippingLevel.Low);
             PlayerSettings.stripEngineCode = true;
 
             // No microphone / location / camera usage strings unless features exist.

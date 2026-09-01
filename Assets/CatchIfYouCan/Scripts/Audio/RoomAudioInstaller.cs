@@ -79,7 +79,7 @@ namespace CatchIfYouCan.Audio
                 float wait = Random.Range(houseRandomMin, houseRandomMax);
                 yield return new WaitForSeconds(wait);
 
-                var zones = FindObjectsByType<RoomAudioZone>(FindObjectsSortMode.None);
+                var zones = FindObjectsByType<RoomAudioZone>();
                 if (zones.Length == 0) continue;
 
                 var zone = zones[Random.Range(0, zones.Length)];

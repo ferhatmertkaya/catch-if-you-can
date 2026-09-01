@@ -281,7 +281,7 @@ namespace CatchIfYouCan.Player
             var inputGo = new GameObject("MobileInputController");
             var input = inputGo.AddComponent<MobileInputController>();
 
-            var joystick = Object.FindFirstObjectByType<VirtualJoystick>();
+            var joystick = Object.FindAnyObjectByType<VirtualJoystick>();
             if (joystick != null)
                 input.BindJoystick(joystick);
 

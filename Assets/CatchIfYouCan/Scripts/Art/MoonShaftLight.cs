@@ -95,7 +95,7 @@ namespace CatchIfYouCan.Art
                 return;
 
             // Once, on entry. Not a per-frame search.
-            var lights = Object.FindObjectsByType<Light>(FindObjectsSortMode.None);
+            var lights = Object.FindObjectsByType<Light>();
             for (int i = 0; i < lights.Length; i++)
             {
                 var l = lights[i];

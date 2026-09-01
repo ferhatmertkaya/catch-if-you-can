@@ -22,7 +22,7 @@ namespace CatchIfYouCan.Audio
                 _fear = go.GetComponent<FearSystem>();
             _timer = Random.Range(minInterval, maxInterval);
             if (silenceSystem == null)
-                silenceSystem = FindFirstObjectByType<HorrorSilenceSystem>();
+                silenceSystem = FindAnyObjectByType<HorrorSilenceSystem>();
         }
 
         private void Update()
@@ -80,7 +80,7 @@ namespace CatchIfYouCan.Audio
 
         private void PlayFalseDoor()
         {
-            var doors = FindObjectsByType<DoorAudioController>(FindObjectsSortMode.None);
+            var doors = FindObjectsByType<DoorAudioController>();
             if (doors.Length == 0)
             {
                 AudioManager.Instance?.PlayEvent("Env.Door.Creak", RandomNearby(2f, 8f), 0.4f);

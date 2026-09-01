@@ -6,7 +6,6 @@ namespace CatchIfYouCan.Equipment
 {
     public class EMFDetector : EquipmentBase
     {
-        [SerializeField] private float detectionRange = 6f;
         [SerializeField] private float evidenceThreshold = 0.65f;
         [SerializeField] private Renderer[] ledRenderers;
         [SerializeField] private Color ledOffColor = Color.black;
@@ -67,7 +66,7 @@ namespace CatchIfYouCan.Equipment
             if (HandAnchor == null)
                 return 0f;
 
-            var spots = FindObjectsByType<EMFSpot>(FindObjectsSortMode.None);
+            var spots = FindObjectsByType<EMFSpot>();
             float max = 0f;
             var probe = HandAnchor.position;
 

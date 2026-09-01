@@ -51,7 +51,7 @@ namespace CatchIfYouCan.Audio
         private void EvaluateZone()
         {
             if (listener == null) return;
-            var zones = FindObjectsByType<RoomAudioZone>(FindObjectsSortMode.None);
+            var zones = FindObjectsByType<RoomAudioZone>();
             RoomAudioZone best = null;
             float bestDist = float.MaxValue;
             for (int i = 0; i < zones.Length; i++)
@@ -68,7 +68,7 @@ namespace CatchIfYouCan.Audio
 
             if (best == null || best == _currentZone) return;
             BeginCrossfade(best.RoomToneEventId, best);
-            var reverb = FindFirstObjectByType<ReverbZoneController>();
+            var reverb = FindAnyObjectByType<ReverbZoneController>();
             reverb?.EvaluateFromRoom(best);
         }
 

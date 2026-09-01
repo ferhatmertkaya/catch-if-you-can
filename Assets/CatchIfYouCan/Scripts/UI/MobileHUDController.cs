@@ -143,7 +143,7 @@ namespace CatchIfYouCan.UI
         {
             if (equipmentSlots == null || equipmentSlots.Length == 0) return;
             var mgr = EquipmentManager.Instance;
-            var inventory = FindFirstObjectByType<PlayerInventory>();
+            var inventory = FindAnyObjectByType<PlayerInventory>();
 
             for (int i = 0; i < equipmentSlots.Length; i++)
             {

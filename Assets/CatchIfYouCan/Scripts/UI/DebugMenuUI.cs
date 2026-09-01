@@ -52,7 +52,7 @@ namespace CatchIfYouCan.UI
             _fpsSmoothed = Mathf.Lerp(_fpsSmoothed, 1f / Mathf.Max(Time.unscaledDeltaTime, 0.0001f), 0.1f);
             UITheme.SetText(fpsText, $"FPS: {_fpsSmoothed:0}");
 
-            var ghost = FindFirstObjectByType<GhostController>();
+            var ghost = FindAnyObjectByType<GhostController>();
             if (ghost != null)
             {
                 Vector3 pos = ghost.transform.position;
@@ -72,7 +72,7 @@ namespace CatchIfYouCan.UI
                 forceEventButton.onClick.RemoveAllListeners();
                 forceEventButton.onClick.AddListener(() =>
                 {
-                    var ghost = FindFirstObjectByType<GhostController>();
+                    var ghost = FindAnyObjectByType<GhostController>();
                     ghost?.RequestInteraction(HorrorEventType.LightFlicker);
                     ghost?.RequestManifestation(2f, true);
                 });
@@ -83,7 +83,7 @@ namespace CatchIfYouCan.UI
                 forceHuntButton.onClick.RemoveAllListeners();
                 forceHuntButton.onClick.AddListener(() =>
                 {
-                    var ghost = FindFirstObjectByType<GhostController>();
+                    var ghost = FindAnyObjectByType<GhostController>();
                     ghost?.GetComponent<HuntController>()?.ForceStartHunt();
                 });
             }
@@ -121,8 +121,8 @@ namespace CatchIfYouCan.UI
 
         private void TeleportPlayerToGhost()
         {
-            var player = FindFirstObjectByType<PlayerController>();
-            var ghost = FindFirstObjectByType<GhostController>();
+            var player = FindAnyObjectByType<PlayerController>();
+            var ghost = FindAnyObjectByType<GhostController>();
             if (player == null || ghost == null) return;
             var cc = player.GetComponent<CharacterController>();
             if (cc != null) cc.enabled = false;

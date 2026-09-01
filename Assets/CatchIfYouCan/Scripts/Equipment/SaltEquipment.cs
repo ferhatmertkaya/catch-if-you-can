@@ -31,7 +31,7 @@ namespace CatchIfYouCan.Equipment
 
         private bool IsTooCloseToExisting(Vector3 position)
         {
-            var piles = FindObjectsByType<SaltPile>(FindObjectsSortMode.None);
+            var piles = FindObjectsByType<SaltPile>();
             foreach (var pile in piles)
             {
                 if (pile != null && Vector3.Distance(pile.transform.position, position) < pileSpacing)
@@ -46,7 +46,7 @@ namespace CatchIfYouCan.Equipment
     {
         public static void NotifyGhostStep(Vector3 from, Vector3 to)
         {
-            var piles = Object.FindObjectsByType<SaltPile>(FindObjectsSortMode.None);
+            var piles = Object.FindObjectsByType<SaltPile>();
             foreach (var pile in piles)
             {
                 if (pile == null || pile.IsTriggered)

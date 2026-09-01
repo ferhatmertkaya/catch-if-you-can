@@ -194,7 +194,7 @@ namespace CatchIfYouCan.Save
 
         private void ApplyPlayerLookSettings()
         {
-            var look = Object.FindFirstObjectByType<Player.PlayerLook>();
+            var look = Object.FindAnyObjectByType<Player.PlayerLook>();
             if (look != null)
             {
                 look.Sensitivity = LookSensitivity;

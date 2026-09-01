@@ -56,7 +56,7 @@ namespace CatchIfYouCan.Audio
         {
             _listenerZone = null;
             if (listener == null) return;
-            var zones = FindObjectsByType<RoomAudioZone>(FindObjectsSortMode.None);
+            var zones = FindObjectsByType<RoomAudioZone>();
             for (int i = 0; i < zones.Length; i++)
             {
                 if (zones[i] != null && zones[i].ContainsPoint(listener.position))
@@ -129,7 +129,7 @@ namespace CatchIfYouCan.Audio
 
         private float? FindPortalAttenuation(RoomAudioZone listenerZone, RoomAudioZone sourceZone)
         {
-            var portals = FindObjectsByType<AudioPortal>(FindObjectsSortMode.None);
+            var portals = FindObjectsByType<AudioPortal>();
             for (int i = 0; i < portals.Length; i++)
             {
                 var p = portals[i];
@@ -146,7 +146,7 @@ namespace CatchIfYouCan.Audio
 
         private float FindPortalCutoff(RoomAudioZone listenerZone, RoomAudioZone sourceZone)
         {
-            var portals = FindObjectsByType<AudioPortal>(FindObjectsSortMode.None);
+            var portals = FindObjectsByType<AudioPortal>();
             for (int i = 0; i < portals.Length; i++)
             {
                 var p = portals[i];
@@ -160,7 +160,7 @@ namespace CatchIfYouCan.Audio
 
         private RoomAudioZone FindZoneForPoint(Vector3 point)
         {
-            var zones = FindObjectsByType<RoomAudioZone>(FindObjectsSortMode.None);
+            var zones = FindObjectsByType<RoomAudioZone>();
             for (int i = 0; i < zones.Length; i++)
             {
                 if (zones[i] != null && zones[i].ContainsPoint(point))
