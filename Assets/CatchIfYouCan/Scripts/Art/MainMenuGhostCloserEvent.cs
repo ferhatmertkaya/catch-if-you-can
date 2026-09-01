@@ -91,10 +91,15 @@ namespace CatchIfYouCan.Art
         [Tooltip("Light level during the blackout, as a fraction of authored. Near zero.")]
         [SerializeField, Range(0f, 0.2f)] private float ghostCloserDarkLevel = 0.02f;
 
-        [Tooltip("Floor the doorway lights never drop below, as a fraction of authored. Raising " +
-                 "this makes the doorway clearer but the ghost's silhouette easier to track " +
-                 "across the blackout, which is the thing the teleport relies on hiding.")]
+        [Tooltip("Floor the doorway lights hold during the VISIBLE part of the event, as a " +
+                 "fraction of authored. This is what keeps a doorway to see and a silhouette " +
+                 "to see against it while the lights stutter.")]
         [SerializeField, Range(0f, 0.6f)] private float doorwayDarkLevel = 0.12f;
+
+        [Tooltip("Doorway level during the teleport frame itself. This one has to be near zero: " +
+                 "the doorway is directly behind the ghost, so any light left here is exactly " +
+                 "the light that would show the ghost jumping.")]
+        [SerializeField, Range(0f, 0.1f)] private float teleportDoorwayLevel = 0.02f;
 
         [Tooltip("Light level the reveal comes back to. 1 is the normal menu. A touch above 1 " +
                  "makes the closer face readable without lighting the corridor up.")]
@@ -109,6 +114,12 @@ namespace CatchIfYouCan.Art
 
         [Tooltip("How much wider the candle's flicker swings during the event.")]
         [SerializeField, Range(1f, 6f)] private float candleTurbulence = 4f;
+
+        [Tooltip("Candle level during the teleport frame only. The candle is the last thing " +
+                 "still lit when everything else is out, so it drops too for that instant and " +
+                 "comes straight back. CandleFlicker still owns the intensity; this is asked " +
+                 "for through its event API, not written directly.")]
+        [SerializeField, Range(0f, 0.1f)] private float candleBlackoutIntensity = 0.03f;
 
         [Header("Debug")]
         [SerializeField] private bool logEvents;
@@ -285,11 +296,11 @@ namespace CatchIfYouCan.Art
         {
             yield return Flicker(flickerDuration);
 
-            // Full black, and the candle drops with everything else.
-            // The candle keeps its reduced level through the blackout rather than dipping
-            // further. It is a table light about a metre from the ghost with a 0.8 range, so it
-            // does not reach the ghost and cannot give the teleport away.
-            SetLightFactor(ghostCloserDarkLevel);
+            // Everything goes, doorway and candle included. The doorway keeps a floor during
+            // the visible stutter so there is a silhouette to read, but that floor is exactly
+            // what would betray the jump, so for this one frame it goes with the rest.
+            SetLightFactor(ghostCloserDarkLevel, teleportDoorwayLevel);
+            ApplyCandle(candleBlackoutIntensity);
 
             // This is the part that has to be right. Waiting for the end of the frame means the
             // dark frame has actually been rendered and presented before anything moves; moving
@@ -302,6 +313,9 @@ namespace CatchIfYouCan.Art
             yield return Wait(ghostCloserDarkDuration);
 
             yield return Reveal();
+
+            // Back to the event's normal candle level for the visible hold.
+            ApplyCandle(_candleFloor);
         }
 
         /// <summary>
@@ -313,12 +327,15 @@ namespace CatchIfYouCan.Art
             float elapsed = 0f;
             while (elapsed < duration)
             {
-                float onTime = Random.Range(0.045f, 0.13f);
-                SetLightFactor(Random.Range(0.55f, 1f));
+                // The bright step is never quite the same twice, and the dark step goes properly
+                // dark rather than merely dim — a stutter between 100% and 20% reads as a fade,
+                // not as failing wiring.
+                float onTime = Random.Range(0.04f, 0.14f);
+                SetLightFactor(Random.Range(0.45f, 1f));
                 yield return Wait(onTime);
 
-                float offTime = Random.Range(0.035f, 0.11f);
-                SetLightFactor(Random.Range(0.03f, 0.20f));
+                float offTime = Random.Range(0.03f, 0.12f);
+                SetLightFactor(Random.Range(0.01f, 0.08f));
                 yield return Wait(offTime);
 
                 elapsed += onTime + offTime;
@@ -350,16 +367,21 @@ namespace CatchIfYouCan.Art
         /// Always the captured baseline times the factor, never the running value, so repeated
         /// flicker segments cannot walk the corridor's brightness down.
         /// </summary>
-        private void SetLightFactor(float factor)
+        private void SetLightFactor(float factor) => SetLightFactor(factor, doorwayDarkLevel);
+
+        /// <summary>
+        /// Drives every controlled light from its captured baseline.
+        /// <paramref name="doorwayFloor"/> is what the doorway lights are not allowed to fall
+        /// below — the visible-phase floor normally, and a near-zero one for the teleport frame.
+        /// </summary>
+        private void SetLightFactor(float factor, float doorwayFloor)
         {
             float f = Mathf.Max(0f, factor);
             for (int i = 0; i < dimmedLights.Length; i++)
                 if (dimmedLights[i] != null)
                     dimmedLights[i].intensity = _dimBaseline[i] * f;
 
-            // The doorway never goes fully dark: it follows the same stutter but is floored, so
-            // there is always a doorway to see and a shape in front of it.
-            float doorway = Mathf.Max(f, doorwayDarkLevel);
+            float doorway = Mathf.Max(f, doorwayFloor);
             for (int i = 0; i < doorwayLights.Length; i++)
                 if (doorwayLights[i] != null)
                     doorwayLights[i].intensity = _doorwayBaseline[i] * doorway;

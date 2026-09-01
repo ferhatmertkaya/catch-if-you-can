@@ -41773,6 +41773,7 @@ MonoBehaviour:
   - {fileID: 655823766}
   - {fileID: 1949104168}
   - {fileID: 595639481}
+  - {fileID: 200013}
   doorwayLights:
   - {fileID: 24644816}
   - {fileID: 1054892508}
@@ -41790,10 +41791,12 @@ MonoBehaviour:
   ghostCloserCooldown: 60
   ghostCloserDarkLevel: 0.02
   doorwayDarkLevel: 0.12
+  teleportDoorwayLevel: 0.02
   ghostCloserRevealLevel: 1
   ghostCloserRevealDuration: 0.12
   candleEventIntensity: {x: 0.35, y: 0.35}
   candleTurbulence: 4
+  candleBlackoutIntensity: 0.03
   logEvents: 1
 --- !u!1 &7311220200000020
 GameObject:

@@ -104,13 +104,24 @@ namespace CatchIfYouCan.Art
             while (CatchIfYouCan.UI.StartupIntroVideo.IsIntroPlaying)
                 yield return null;
 
+            // Counted only once the intro has actually finished, so the menu is visible for the
+            // whole of it.
             yield return new WaitForSeconds(firstEventDelay);
+
+            // The first selection happens at the end of that delay and nothing else. Adding a
+            // random interval on top as well pushed the first beat out to the delay plus a full
+            // interval, which is not what the delay is for.
+            bool firstSelection = true;
 
             while (true)
             {
-                float low = Mathf.Min(minEventInterval, maxEventInterval);
-                float high = Mathf.Max(minEventInterval, maxEventInterval);
-                yield return new WaitForSeconds(low + (float)_rng.NextDouble() * (high - low));
+                if (!firstSelection)
+                {
+                    float low = Mathf.Min(minEventInterval, maxEventInterval);
+                    float high = Mathf.Max(minEventInterval, maxEventInterval);
+                    yield return new WaitForSeconds(low + (float)_rng.NextDouble() * (high - low));
+                }
+                firstSelection = false;
 
                 // A second guard: the intro can only run once, but the menu scene may be
                 // reloaded, and an event must never start while anything is covering the view.
@@ -121,6 +132,15 @@ namespace CatchIfYouCan.Art
                     continue;
 
                 BuildEligible();
+
+                if (logEvents)
+                {
+                    // Which events were actually in the draw, not just which one won. Without
+                    // this an event silently missing from the pool looks exactly like bad luck.
+                    var names = new string[_eligible.Count];
+                    for (int i = 0; i < _eligible.Count; i++) names[i] = _eligible[i].EventName;
+                    Debug.Log($"[CIYC] Eligible: [{string.Join(", ", names)}]", this);
+                }
 
                 // Try the eligible events in a random order until one actually starts. Giving up
                 // on the first refusal is what used to cost a whole interval and quietly drop an
