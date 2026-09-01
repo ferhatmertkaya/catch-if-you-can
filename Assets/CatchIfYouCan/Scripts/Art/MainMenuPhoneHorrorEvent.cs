@@ -4,27 +4,33 @@ using UnityEngine;
 namespace CatchIfYouCan.Art
 {
     /// <summary>
-    /// The main menu's first supernatural beat: the rotary phone rings, the corridor's green
-    /// light falters, red bleeds in, the phone cuts out mid-ring, and everything settles back.
+    /// The telephone beat: the corridor's green light grows unsteady, the candles gutter, the
+    /// rotary phone rings three times, and everything settles back.
     ///
     /// <para>
-    /// This component owns the <em>visuals</em> only. The phone keeps owning its own audio and
-    /// its own random schedule; it just calls <see cref="TryBegin"/> when it rings and carries
-    /// on regardless of the answer. That keeps the ring working on its own and stops this from
-    /// growing into a menu god-object.
+    /// This event no longer touches the red lights. Red is its own event
+    /// (<see cref="MainMenuRedRoomEvent"/>), chosen independently by
+    /// <see cref="MainMenuHorrorEventDirector"/>, so a phone call and a red takeover are two
+    /// different things that happen to the menu rather than one fused sequence.
+    /// </para>
+    ///
+    /// <para>
+    /// The fog stays lit and visible for the whole event. The previous version ended on a
+    /// blackout that pulled every light down to 4%; because the fog particles are lit, that
+    /// read as the fog itself vanishing and popping back. There is no blackout here, and the
+    /// mist only ever gets thicker, never thinner.
     /// </para>
     ///
     /// <para>
     /// Every value it touches is captured once in <c>Awake</c> and driven from that capture:
     /// <c>baseline * factor</c>, never <c>current * factor</c>, so an interrupted event cannot
-    /// leave the corridor permanently dim. Restoration also runs from <c>OnDisable</c>, so
-    /// disabling the object or unloading the scene mid-event still puts the lights back.
+    /// leave the corridor permanently dim. Restoration also runs from <c>OnDisable</c>.
     /// </para>
     ///
     /// <para>
     /// The candle is not written directly. <see cref="CandleFlicker"/> is the single writer of
-    /// its light's intensity, and this asks it for a temporary modulation instead — two scripts
-    /// writing one property is how the last lighting regression happened.
+    /// its light's intensity, and this asks it for a temporary modulation instead. The fog goes
+    /// through the atmosphere owner's API for the same reason.
     /// </para>
     /// </summary>
     [DisallowMultipleComponent]
@@ -32,12 +38,9 @@ namespace CatchIfYouCan.Art
     public sealed class MainMenuPhoneHorrorEvent : MonoBehaviour, IMainMenuHorrorEvent
     {
         [Header("Scene lights (authored values are captured, never overwritten)")]
-        [Tooltip("Existing scene lights dimmed during the event — the green door lights and " +
-                 "the corridor's ambient/directional light. Intensity is scaled and restored.")]
+        [Tooltip("Existing scene lights destabilised during the event — the green door lights " +
+                 "and the corridor's ambient/directional light. Intensity is scaled and restored.")]
         [SerializeField] private Light[] dimmedLights = new Light[0];
-
-        [Tooltip("Red event lights. Start disabled; this component owns them entirely.")]
-        [SerializeField] private Light[] redLights = new Light[0];
 
         [Tooltip("The candle light's flicker component. Modulated through its own API.")]
         [SerializeField] private CandleFlicker candleFlicker;
@@ -46,47 +49,55 @@ namespace CatchIfYouCan.Art
                  "than by writing particle systems directly. Optional.")]
         [SerializeField] private CatchIfYouCan.UI.MainMenuAtmosphereController atmosphere;
 
-        [Header("Fog (multipliers on the authored atmosphere)")]
-        [Tooltip("How much thicker the mist gets at the height of the event.")]
-        [SerializeField] private Vector2 fogEventEmission = new Vector2(1.5f, 2.1f);
-
-        [Tooltip("How much faster the fog churns at the height of the event.")]
-        [SerializeField] private Vector2 fogEventTurbulence = new Vector2(1.8f, 2.6f);
-
-        [Tooltip("Multiplied into the fog's authored colour at the peak. Deliberately a warm " +
-                 "nudge, not a repaint: the fog is lit, so the red lights already colour it.")]
-        [SerializeField] private Color fogEventTint = new Color(1f, 0.82f, 0.80f, 1f);
-
-        [Tooltip("How far the fog thins out during the blackout.")]
-        [SerializeField, Range(0f, 1f)] private float fogBlackoutEmission = 0.35f;
-
         [Header("Phone")]
-        [Tooltip("The phone's AudioSource. Stopped abruptly at the climax. Optional.")]
+        [Tooltip("The phone's AudioSource. Used as a fallback when no ring player is assigned.")]
         [SerializeField] private AudioSource phoneAudio;
 
-        [Tooltip("Chance that a ring escalates into the full event. The rest stay ordinary rings.")]
-        [SerializeField, Range(0f, 1f)] private float eventProbability = 0.35f;
+        [Tooltip("The component that actually plays a ring, with its own pitch and volume " +
+                 "variation. Assigning it keeps all ring audio settings in one place.")]
+        [SerializeField] private RotaryPhoneRandomRing ringPlayer;
 
-        [Header("Timing (seconds, min..max — rolled per event)")]
-        [SerializeField] private Vector2 onsetDelay = new Vector2(0.40f, 0.80f);
+        [Header("Phone sequence")]
+        [Tooltip("How many times the phone rings. The brief calls for three.")]
+        [SerializeField, Min(1)] private int phoneRingCount = 3;
+
+        [Tooltip("Silence between the end of one ring and the start of the next. The clip's own " +
+                 "length is added on top, so a ring is never cut off by the one after it.")]
+        [SerializeField, Min(0f)] private float phoneRingInterval = 0.8f;
+
+        [Tooltip("Quiet beat before the first ring, while the candles begin to gutter.")]
+        [SerializeField, Min(0f)] private float phoneEventLeadIn = 0.6f;
+
+        [Tooltip("Silence held after the last ring, before anything settles.")]
+        [SerializeField, Min(0f)] private float phoneEventHold = 1.2f;
+
+        [Tooltip("How long the lights, candle and fog take to return to their authored state.")]
+        [SerializeField, Min(0f)] private float phoneEventFadeOut = 0.9f;
+
+        [Header("Green light destabilisation")]
+        [Tooltip("How long the green lights take to fall to their event level.")]
         [SerializeField] private Vector2 destabiliseDuration = new Vector2(0.40f, 1.00f);
-        [SerializeField] private Vector2 redEmergeDuration = new Vector2(0.35f, 0.70f);
-        [SerializeField] private Vector2 mainPhaseDuration = new Vector2(1.30f, 3.50f);
-        [SerializeField] private Vector2 dropoutDuration = new Vector2(0.12f, 0.30f);
-        [SerializeField] private Vector2 recoveryDuration = new Vector2(0.60f, 1.20f);
 
-        [Header("Intensity targets (fractions of the authored value)")]
-        [Tooltip("How far the green light falls at the height of the event.")]
-        [SerializeField] private Vector2 dimEventFactor = new Vector2(0.10f, 0.30f);
+        [Tooltip("How far the green light falls during the event, as a fraction of authored.")]
+        [SerializeField] private Vector2 dimEventFactor = new Vector2(0.35f, 0.60f);
 
-        [Tooltip("Peak multiplier applied to each red light's authored intensity.")]
-        [SerializeField, Range(0f, 4f)] private float redPeakScale = 1f;
-
-        [Tooltip("Candle intensity scale at the height of the event.")]
+        [Header("Candle")]
+        [Tooltip("Candle intensity scale during the event.")]
         [SerializeField] private Vector2 candleEventIntensity = new Vector2(0.30f, 0.60f);
 
         [Tooltip("How much wider the candle's flicker swings during the event.")]
         [SerializeField, Range(1f, 6f)] private float candleTurbulence = 3f;
+
+        [Header("Fog (multipliers on the authored atmosphere)")]
+        [Tooltip("How much thicker the mist gets during the event. Never below 1: the fog must " +
+                 "stay visible for the whole sequence.")]
+        [SerializeField] private Vector2 fogEventEmission = new Vector2(1.5f, 2.1f);
+
+        [Tooltip("How much faster the fog churns during the event.")]
+        [SerializeField] private Vector2 fogEventTurbulence = new Vector2(1.4f, 1.9f);
+
+        [Tooltip("Multiplied into the fog's authored colour at the peak. A nudge, not a repaint.")]
+        [SerializeField] private Color fogEventTint = new Color(1f, 0.88f, 0.86f, 1f);
 
         [Header("Irregularity")]
         [Tooltip("Average seconds between sharp dips. Randomised around this.")]
@@ -99,21 +110,15 @@ namespace CatchIfYouCan.Art
 
         // ---- captured once, never written back ------------------------------------------
         private float[] _dimBaseline;
-        private float[] _redPeak;
 
         private Coroutine _routine;
         private float _noiseOffsetDim;
-        private float _noiseOffsetRed;
         private bool _ready;
 
         public bool IsPlaying => _routine != null;
 
-        /// <summary>
-        /// True from the start of the event until the climax, where the phone is cut off.
-        /// The ring scheduler polls this so it stops issuing new rings at the right moment
-        /// instead of ringing over the blackout and the recovery.
-        /// </summary>
-        public bool PhoneShouldKeepRinging { get; private set; }
+        /// <summary>Name shown in the director's log line.</summary>
+        public string EventName => "Phone";
 
         private void Awake()
         {
@@ -122,20 +127,10 @@ namespace CatchIfYouCan.Art
                 if (dimmedLights[i] != null)
                     _dimBaseline[i] = dimmedLights[i].intensity;
 
-            // The red lights exist only for this event, so their resting state is off and the
-            // authored intensity is read as the peak to aim for, not a value to restore to.
-            _redPeak = new float[redLights.Length];
-            for (int i = 0; i < redLights.Length; i++)
-            {
-                if (redLights[i] == null)
-                    continue;
-                _redPeak[i] = redLights[i].intensity;
-                redLights[i].intensity = 0f;
-                redLights[i].enabled = false;
-            }
+            if (ringPlayer == null)
+                ringPlayer = GetComponentInChildren<RotaryPhoneRandomRing>();
 
             _noiseOffsetDim = Random.value * 128f + 0.31f;
-            _noiseOffsetRed = Random.value * 128f + 0.77f;
             _ready = true;
         }
 
@@ -147,30 +142,21 @@ namespace CatchIfYouCan.Art
         }
 
         /// <summary>
-        /// Rolls the probability and starts the event if it wins and nothing is already
-        /// running. Returns false for an ordinary ring, which is the common case.
+        /// Starts the event unless one is already running. The director decides which event
+        /// happens and when, so there is no probability roll here any more.
         /// </summary>
         public bool TryBegin()
         {
             if (!_ready || !isActiveAndEnabled || IsPlaying)
                 return false;
 
-            if (Random.value > eventProbability)
-                return false;
-
             _routine = StartCoroutine(RunEvent());
             return true;
         }
 
-        /// <summary>Starts the event regardless of the probability roll. For testing.</summary>
-        [ContextMenu("Force Event")]
-        public void ForceBegin()
-        {
-            if (!_ready || !isActiveAndEnabled || IsPlaying)
-                return;
-
-            _routine = StartCoroutine(RunEvent());
-        }
+        /// <summary>Starts the event regardless. For testing from the Inspector.</summary>
+        [ContextMenu("Force Phone Event")]
+        public void ForceBegin() => TryBegin();
 
         public void CancelAndRestore()
         {
@@ -180,13 +166,20 @@ namespace CatchIfYouCan.Art
                 _routine = null;
             }
 
+            StopRinging();
             RestoreBaselines();
+        }
+
+        private void StopRinging()
+        {
+            if (ringPlayer != null)
+                ringPlayer.StopRinging();
+            else if (phoneAudio != null)
+                phoneAudio.Stop();
         }
 
         private void RestoreBaselines()
         {
-            PhoneShouldKeepRinging = false;
-
             if (!_ready)
                 return;
 
@@ -194,17 +187,11 @@ namespace CatchIfYouCan.Art
                 if (dimmedLights[i] != null)
                     dimmedLights[i].intensity = _dimBaseline[i];
 
-            for (int i = 0; i < redLights.Length; i++)
-            {
-                if (redLights[i] == null)
-                    continue;
-                redLights[i].intensity = 0f;
-                redLights[i].enabled = false;
-            }
-
             if (candleFlicker != null)
                 candleFlicker.ClearEventModulation();
 
+            // Puts emission, churn and tint back to the authored atmosphere. The fog is never
+            // disabled or emptied by this event, only returned to its normal thickness.
             if (atmosphere != null)
                 atmosphere.ClearEventAtmosphere();
         }
@@ -213,50 +200,86 @@ namespace CatchIfYouCan.Art
 
         private IEnumerator RunEvent()
         {
-            PhoneShouldKeepRinging = true;
             if (logEvents)
-                Debug.Log("[CIYC] Phone horror event: begin", this);
+                Debug.Log("[CIYC] Phone event: begin", this);
 
             float dimFloor = Random.Range(dimEventFactor.x, dimEventFactor.y);
             float candleFloor = Random.Range(candleEventIntensity.x, candleEventIntensity.y);
-            float fogEmission = Random.Range(fogEventEmission.x, fogEventEmission.y);
+            float fogEmission = Mathf.Max(1f, Random.Range(fogEventEmission.x, fogEventEmission.y));
             float fogChurn = Random.Range(fogEventTurbulence.x, fogEventTurbulence.y);
 
-            SetRedEnabled(true);
-
-            // 1. The phone rings alone for a beat before anything visual happens.
-            yield return Wait(Random.Range(onsetDelay.x, onsetDelay.y));
-
-            // 2. Green falters and the candle grows unsettled.
-            float d = Random.Range(destabiliseDuration.x, destabiliseDuration.y);
+            // 1. The candles begin to gutter and the green falters before the first ring.
+            float d = Mathf.Max(0.01f, Random.Range(destabiliseDuration.x, destabiliseDuration.y));
             for (float e = 0f; e < d; e += Time.deltaTime)
             {
                 float k = e / d;
                 ApplyDimmed(Mathf.Lerp(1f, dimFloor, k), k);
                 ApplyCandle(Mathf.Lerp(1f, candleFloor, k), Mathf.Lerp(1f, candleTurbulence, k));
-                // Only part way: the mist stirs before the red arrives, it does not peak yet.
-                ApplyFog(k * 0.55f, fogEmission, fogChurn);
+                ApplyFog(k, fogEmission, fogChurn);
                 yield return null;
             }
 
-            // 3. Red bleeds in.
-            d = Random.Range(redEmergeDuration.x, redEmergeDuration.y);
+            yield return HoldSteady(phoneEventLeadIn, dimFloor, candleFloor, fogEmission, fogChurn);
+
+            // 2. Exactly phoneRingCount rings, spaced so one never cuts off the last.
+            float clip = ringPlayer != null ? ringPlayer.ClipLength
+                       : phoneAudio != null && phoneAudio.clip != null ? phoneAudio.clip.length
+                       : 0f;
+            // The gap is measured from the end of the clip, so the next ring can never cut the
+            // last one off however long the clip is.
+            float ringGap = clip > 0f ? clip + phoneRingInterval : Mathf.Max(0.1f, phoneRingInterval);
+
+            for (int i = 0; i < phoneRingCount; i++)
+            {
+                PlayOneRing();
+
+                // No gap after the final ring; the hold below covers that.
+                float wait = i == phoneRingCount - 1 ? clip : ringGap;
+                yield return HoldSteady(wait, dimFloor, candleFloor, fogEmission, fogChurn);
+            }
+
+            // 3. The silence after the last ring is the point.
+            yield return HoldSteady(phoneEventHold, dimFloor, candleFloor, fogEmission, fogChurn);
+
+            // 4. Everything eases back to the authored state. Nothing is cut to black.
+            d = Mathf.Max(0.01f, phoneEventFadeOut);
             for (float e = 0f; e < d; e += Time.deltaTime)
             {
                 float k = e / d;
-                ApplyDimmed(dimFloor, 1f);
-                ApplyRed(k, 1f);
-                ApplyCandle(candleFloor, candleTurbulence);
-                ApplyFog(Mathf.Lerp(0.55f, 1f, k), fogEmission, fogChurn);
+                float eased = k * k * (3f - 2f * k);
+                ApplyDimmed(Mathf.Lerp(dimFloor, 1f, eased), 1f - eased);
+                ApplyCandle(Mathf.Lerp(candleFloor, 1f, eased),
+                            Mathf.Lerp(candleTurbulence, 1f, eased));
+                ApplyFog(1f - eased, fogEmission, fogChurn);
                 yield return null;
             }
 
-            // 4. The corridor belongs to the red. Irregular pulses on every channel; nothing
-            //    is on a beat the viewer can anticipate.
-            d = Random.Range(mainPhaseDuration.x, mainPhaseDuration.y);
+            // 5. Exactly the authored values again — not approximately.
+            RestoreBaselines();
+            _routine = null;
+            if (logEvents)
+                Debug.Log("[CIYC] Phone event: restored", this);
+        }
+
+        private void PlayOneRing()
+        {
+            if (ringPlayer != null)
+                ringPlayer.PlayRing();
+            else if (phoneAudio != null && phoneAudio.clip != null)
+                phoneAudio.Play();
+        }
+
+        /// <summary>
+        /// Holds the event at its current level for a while, still wobbling. Used between rings
+        /// so the corridor keeps breathing instead of freezing between them.
+        /// </summary>
+        private IEnumerator HoldSteady(float seconds, float dimFloor, float candleFloor,
+                                       float fogEmission, float fogChurn)
+        {
             float nextImpulse = Random.Range(impulseInterval * 0.4f, impulseInterval * 1.6f);
             float impulseDecay = 0f;
-            for (float e = 0f; e < d; e += Time.deltaTime)
+
+            for (float e = 0f; e < seconds; e += Time.deltaTime)
             {
                 if (e >= nextImpulse)
                 {
@@ -265,61 +288,15 @@ namespace CatchIfYouCan.Art
                 }
                 impulseDecay = Mathf.Max(0f, impulseDecay - Time.deltaTime * 4.5f);
 
-                float dip = 1f - impulseDecay * 0.75f;
+                float dip = 1f - impulseDecay * 0.55f;
                 ApplyDimmed(dimFloor * dip, 1f);
-                ApplyRed(1f, dip);
-                ApplyCandle(candleFloor * Mathf.Lerp(1f, 0.45f, impulseDecay), candleTurbulence);
-                // Surges with each impulse rather than sitting at a constant thickness.
-                ApplyFog(1f + impulseDecay * 0.25f, fogEmission, fogChurn);
+                ApplyCandle(candleFloor * Mathf.Lerp(1f, 0.55f, impulseDecay), candleTurbulence);
+                ApplyFog(1f + impulseDecay * 0.2f, fogEmission, fogChurn);
                 yield return null;
             }
-
-            // 5. The phone stops mid-ring. The silence is the point.
-            PhoneShouldKeepRinging = false;
-            if (phoneAudio != null)
-                phoneAudio.Stop();
-
-            // 6. Everything drops away for an instant.
-            d = Random.Range(dropoutDuration.x, dropoutDuration.y);
-            for (float e = 0f; e < d; e += Time.deltaTime)
-            {
-                ApplyDimmed(0.04f, 0f);
-                ApplyRed(0.08f, 0f);
-                ApplyCandle(0.25f, 1f);
-                if (atmosphere != null)
-                    atmosphere.ApplyEventAtmosphere(fogBlackoutEmission, 1f, fogEventTint);
-                yield return null;
-            }
-
-            // 7. Green comes back, red drains away, the candle settles.
-            d = Random.Range(recoveryDuration.x, recoveryDuration.y);
-            for (float e = 0f; e < d; e += Time.deltaTime)
-            {
-                float k = e / d;
-                float eased = k * k * (3f - 2f * k);
-                ApplyDimmed(Mathf.Lerp(0.04f, 1f, eased), 1f - eased);
-                ApplyRed(Mathf.Lerp(0.08f, 0f, eased), 0f);
-                ApplyCandle(Mathf.Lerp(0.25f, 1f, eased), Mathf.Lerp(1f, candleTurbulence, 1f - eased));
-                ApplyFog(1f - eased, fogEmission, fogChurn);
-                yield return null;
-            }
-
-            // 8. Exactly the authored values again — not approximately.
-            SetRedEnabled(false);
-            RestoreBaselines();
-            _routine = null;
-            if (logEvents)
-                Debug.Log("[CIYC] Phone horror event: restored", this);
         }
 
         // ---- helpers --------------------------------------------------------------------
-
-        /// <summary>Allocation-free wait; WaitForSeconds would allocate on every event.</summary>
-        private IEnumerator Wait(float seconds)
-        {
-            for (float e = 0f; e < seconds; e += Time.deltaTime)
-                yield return null;
-        }
 
         /// <summary>
         /// Perlin plus a faster layer, so the wobble is irregular rather than a sine.
@@ -341,15 +318,6 @@ namespace CatchIfYouCan.Art
                     dimmedLights[i].intensity = _dimBaseline[i] * f;
         }
 
-        private void ApplyRed(float factor, float wobble)
-        {
-            float n = wobble > 0f ? 1f + (Noise(_noiseOffsetRed, noiseSpeed * 1.3f) - 0.5f) * 0.6f * wobble : 1f;
-            float f = Mathf.Max(0f, factor * n * redPeakScale);
-            for (int i = 0; i < redLights.Length; i++)
-                if (redLights[i] != null)
-                    redLights[i].intensity = _redPeak[i] * f;
-        }
-
         private void ApplyCandle(float intensityScale, float turbulence)
         {
             if (candleFlicker != null)
@@ -358,8 +326,8 @@ namespace CatchIfYouCan.Art
 
         /// <summary>
         /// Unsettles the fog. <paramref name="k"/> is how far into the event we are, 0 at rest
-        /// and 1 at the peak; the emission, churn and tint all ride that one value so the mist
-        /// escalates with the lights instead of on a schedule of its own.
+        /// and 1 at the peak. Emission never drops below the authored rate, so the mist cannot
+        /// thin out or disappear part way through.
         /// </summary>
         private void ApplyFog(float k, float emissionPeak, float turbulencePeak)
         {
@@ -371,13 +339,6 @@ namespace CatchIfYouCan.Art
                 Mathf.Lerp(1f, emissionPeak, k),
                 Mathf.Lerp(1f, turbulencePeak, k),
                 Color.Lerp(Color.white, fogEventTint, k));
-        }
-
-        private void SetRedEnabled(bool on)
-        {
-            for (int i = 0; i < redLights.Length; i++)
-                if (redLights[i] != null)
-                    redLights[i].enabled = on;
         }
     }
 }

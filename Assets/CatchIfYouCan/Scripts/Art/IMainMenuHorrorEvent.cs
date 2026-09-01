@@ -22,6 +22,9 @@ namespace CatchIfYouCan.Art
         /// <summary>True while the event is mid-flight.</summary>
         bool IsPlaying { get; }
 
+        /// <summary>Short label for logs, so a director can say which beat it picked.</summary>
+        string EventName { get; }
+
         /// <summary>
         /// Offers the event a chance to fire. Implementations return false when they decline —
         /// because one is already running, because references are missing, or because the

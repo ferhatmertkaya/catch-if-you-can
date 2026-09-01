@@ -1,39 +1,42 @@
-using System.Collections;
-using CatchIfYouCan.Art;
 using UnityEngine;
 
+/// <summary>
+/// Plays a single ring of the rotary phone, with a little pitch and volume variation so
+/// repeated rings never sound like one clip looping.
+///
+/// <para>
+/// This used to schedule its own rings and, when it rang, offer the red lighting a chance to
+/// escalate. Both jobs have moved out: <see cref="CatchIfYouCan.Art.MainMenuHorrorEventDirector"/>
+/// decides when anything happens, and <see cref="CatchIfYouCan.Art.MainMenuPhoneHorrorEvent"/>
+/// owns the three-ring sequence. The phone no longer has any connection to the red event — that
+/// is now a separate beat the director can choose instead.
+/// </para>
+///
+/// <para>
+/// What is left is only the audio: which source, which clip, and how much each ring varies.
+/// </para>
+/// </summary>
+[DisallowMultipleComponent]
 public class RotaryPhoneRandomRing : MonoBehaviour
 {
     [Header("References")]
     [SerializeField] private AudioSource audioSource;
 
-    [Tooltip("Optional. When set, each ring sequence offers this event a chance to escalate " +
-             "into the red horror sequence. Leave empty and the phone just rings.")]
-    [SerializeField] private MainMenuPhoneHorrorEvent horrorEvent;
-
-    [Header("Random delay")]
-    [SerializeField] private float minDelay = 15f;
-    [SerializeField] private float maxDelay = 40f;
-
-    [Header("Testing")]
-    [Tooltip("Shortens the wait between rings so the event can be seen without waiting. " +
-             "Editor convenience only; leave off for the real cadence.")]
-    [SerializeField] private bool debugFastEvents;
-    [SerializeField] private float debugMinDelay = 5f;
-    [SerializeField] private float debugMaxDelay = 10f;
-
-    [Header("Ring sequence")]
-    [SerializeField] private int minRings = 2;
-    [SerializeField] private int maxRings = 4;
-    [SerializeField] private float pauseBetweenRings = 1.1f;
-
     [Header("Variation")]
+    [Tooltip("Each ring is pitched slightly differently so three in a row sound like a real " +
+             "bell rather than the same sample three times.")]
     [SerializeField] private float minPitch = 0.96f;
     [SerializeField] private float maxPitch = 1.03f;
     [SerializeField] private float minVolume = 0.65f;
     [SerializeField] private float maxVolume = 0.85f;
 
-    private Coroutine ringRoutine;
+    /// <summary>Length of the assigned ring clip in seconds, or 0 when there is none.</summary>
+    public float ClipLength => audioSource != null && audioSource.clip != null
+        ? audioSource.clip.length
+        : 0f;
+
+    /// <summary>True while a ring is sounding.</summary>
+    public bool IsRinging => audioSource != null && audioSource.isPlaying;
 
     private void Awake()
     {
@@ -47,68 +50,25 @@ public class RotaryPhoneRandomRing : MonoBehaviour
         }
     }
 
-    private void OnEnable()
+    private void OnDisable() => StopRinging();
+
+    /// <summary>
+    /// Sounds one ring. Caller decides how many and how far apart; nothing here loops.
+    /// </summary>
+    public void PlayRing()
     {
-        ringRoutine = StartCoroutine(RandomRingLoop());
+        if (audioSource == null || audioSource.clip == null)
+            return;
+
+        audioSource.pitch = Random.Range(minPitch, maxPitch);
+        audioSource.volume = Random.Range(minVolume, maxVolume);
+        audioSource.Play();
     }
 
-    private void OnDisable()
+    /// <summary>Cuts the current ring short. Used when an event is cancelled.</summary>
+    public void StopRinging()
     {
-        if (ringRoutine != null)
-        {
-            StopCoroutine(ringRoutine);
-            ringRoutine = null;
-        }
-
         if (audioSource != null)
             audioSource.Stop();
-    }
-
-    private IEnumerator RandomRingLoop()
-    {
-        while (true)
-        {
-            // The startup intro owns the screen, and a ring behind it would be heard over the
-            // video with nothing to see. Waiting here rather than stopping and restarting the
-            // loop keeps this the one and only scheduler. Because the wait comes before the
-            // delay roll, the full delay is counted from the moment the menu is actually
-            // visible, so a ring cannot land on the last frame of the reveal.
-            while (CatchIfYouCan.UI.StartupIntroVideo.IsIntroPlaying)
-                yield return null;
-
-            float delay = debugFastEvents
-                ? Random.Range(debugMinDelay, debugMaxDelay)
-                : Random.Range(minDelay, maxDelay);
-            yield return new WaitForSeconds(delay);
-
-            if (audioSource == null || audioSource.clip == null)
-                continue;
-
-            int ringCount = Random.Range(minRings, maxRings + 1);
-
-            // Offer the visual event a chance to escalate this ring. It answers false most of
-            // the time, and the phone rings exactly as it always has. When it answers true it
-            // takes over the ending: it cuts the audio at its climax, and the loop below stops
-            // issuing rings at that moment rather than ringing through the blackout.
-            bool escalated = horrorEvent != null && horrorEvent.TryBegin();
-
-            for (int i = 0; i < ringCount; i++)
-            {
-                if (escalated && !horrorEvent.PhoneShouldKeepRinging)
-                    break;
-
-                audioSource.pitch = Random.Range(minPitch, maxPitch);
-                audioSource.volume = Random.Range(minVolume, maxVolume);
-
-                audioSource.Play();
-
-                yield return new WaitForSeconds(audioSource.clip.length + pauseBetweenRings);
-            }
-
-            // One scheduler owns the cadence: don't queue the next ring until the visual
-            // event has finished restoring the scene.
-            while (escalated && horrorEvent.IsPlaying)
-                yield return null;
-        }
     }
 }
