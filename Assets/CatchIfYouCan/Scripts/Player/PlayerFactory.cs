@@ -10,6 +10,17 @@ namespace CatchIfYouCan.Player
         public Transform HandAnchor;
         public Transform CameraRoot;
         public Camera ViewCamera;
+
+        /// <summary>
+        /// Where the character model hangs. Always present and always empty of gameplay logic:
+        /// the root owns position, collision and movement, and this owns nothing but appearance.
+        /// Keeping them apart is what lets a remote player later use the same visual under a
+        /// networked root without dragging the local input and camera along with it.
+        /// </summary>
+        public Transform VisualRoot;
+
+        /// <summary>The instantiated character, or null when no visual prefab is available.</summary>
+        public GameObject CharacterVisual;
     }
 
     public static class PlayerFactory
@@ -30,6 +41,9 @@ namespace CatchIfYouCan.Player
             var cameraRoot = new GameObject("CameraRoot");
             cameraRoot.transform.SetParent(player.transform, false);
             cameraRoot.transform.localPosition = new Vector3(0f, 1.6f, 0f);
+
+            var visualRoot = new GameObject("VisualRoot");
+            visualRoot.transform.SetParent(player.transform, false);
 
             var handAnchor = new GameObject("HandAnchor");
             handAnchor.transform.SetParent(cameraRoot.transform, false);
@@ -62,13 +76,50 @@ namespace CatchIfYouCan.Player
             var fear = player.GetComponent<FearSystem>();
             SetPrivateField(fear, "targetCamera", viewCamera);
 
+            var characterVisual = AttachCharacterVisual(player, visualRoot.transform);
+
             return new PlayerBuildResult
             {
                 Root = player,
                 HandAnchor = handAnchor.transform,
                 CameraRoot = cameraRoot.transform,
-                ViewCamera = viewCamera
+                ViewCamera = viewCamera,
+                VisualRoot = visualRoot.transform,
+                CharacterVisual = characterVisual
             };
+        }
+
+        /// <summary>
+        /// Resources path of the character visual prefab. Loaded if it is there and skipped
+        /// silently if it is not, so the player is fully playable as a camera-only capsule until
+        /// a character is imported and nothing has to change in code when one is.
+        /// </summary>
+        public const string CharacterVisualResourcePath = "Characters/Player_CharacterVisual";
+
+        private static GameObject AttachCharacterVisual(GameObject player, Transform visualRoot)
+        {
+            var prefab = Resources.Load<GameObject>(CharacterVisualResourcePath);
+            if (prefab == null)
+                return null;
+
+            var visual = Object.Instantiate(prefab, visualRoot);
+            visual.transform.localPosition = Vector3.zero;
+            visual.transform.localRotation = Quaternion.identity;
+
+            // Animation is driven from the controller's real velocity, so this is added to the
+            // player root where the CharacterController lives rather than to the model.
+            var visualAnimator = player.GetComponent<PlayerVisualAnimator>();
+            if (visualAnimator == null)
+                visualAnimator = player.AddComponent<PlayerVisualAnimator>();
+            visualAnimator.BindAnimator(visual.GetComponentInChildren<Animator>());
+
+            // The local player must not see their own head from the inside; the model itself is
+            // left whole so a remote copy can still be drawn in full.
+            var bodyVisibility = visual.GetComponent<LocalPlayerBodyVisibility>();
+            if (bodyVisibility == null)
+                visual.AddComponent<LocalPlayerBodyVisibility>();
+
+            return visual;
         }
 
         public static MobileInputController EnsureMobileInput()
