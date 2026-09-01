@@ -62,11 +62,16 @@ namespace CatchIfYouCan.Player
         [SerializeField] private bool matchAnimationSpeedToMovement = true;
 
         [Tooltip("The speed the walk clip was authored to move at. Playback is scaled by " +
-                 "actualSpeed / this. Set from the clip, not guessed.")]
-        [SerializeField, Min(0.01f)] private float clipAuthoredSpeed = 1.4f;
+                 "actualSpeed / this. Measured from the clip, not guessed: Nathan's walk carries " +
+                 "its root 2.866 m over its 2.233 s, which is 1.283 m/s.")]
+        [SerializeField, Min(0.01f)] private float clipAuthoredSpeed = 1.283f;
 
         [SerializeField, Range(0.1f, 1f)] private float minAnimationSpeed = 0.6f;
-        [SerializeField, Range(1f, 3f)] private float maxAnimationSpeed = 1.8f;
+
+        [Tooltip("Ceiling on playback rate. PlayerController walks at 2.8 m/s against a clip " +
+                 "authored at 1.283 m/s, so the feet only keep up with the floor at about 2.2x. " +
+                 "Lowering this trades a fast cadence for visible foot sliding.")]
+        [SerializeField, Range(1f, 3f)] private float maxAnimationSpeed = 2.2f;
 
         private int _speedHash;
         private int _isWalkingHash;
