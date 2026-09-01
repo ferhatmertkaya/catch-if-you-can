@@ -61,6 +61,38 @@ namespace CatchIfYouCan.Art
         /// <summary>True while any event this director owns is mid-flight.</summary>
         public bool IsEventRunning { get; private set; }
 
+        /// <summary>
+        /// Set once the menu leaves cinematic mode. The loop stops and nothing may restart it —
+        /// re-enabling the component is not enough, which is deliberate: a pending wait that
+        /// wakes after the player has walked into the next room must never be able to ring a
+        /// phone or take the lights.
+        /// </summary>
+        public bool CinematicModeEnded { get; private set; }
+
+        /// <summary>
+        /// Leaves cinematic mode for good. Cancels the scheduling loop, then puts every event
+        /// back to its authored baseline — including one that is mid-flight, which is the case
+        /// that matters when the player taps during a red takeover or a ghost blackout.
+        /// </summary>
+        public void StopCinematicMode()
+        {
+            CinematicModeEnded = true;
+
+            if (_loop != null)
+            {
+                StopCoroutine(_loop);
+                _loop = null;
+            }
+
+            for (int i = 0; i < _events.Count; i++)
+                _events[i].CancelAndRestore();
+
+            IsEventRunning = false;
+
+            if (logEvents)
+                Debug.Log("[CIYC] Horror events: cinematic mode ended", this);
+        }
+
         private void Awake()
         {
             // Concrete fields rather than an interface array: Unity does not serialize
@@ -78,7 +110,8 @@ namespace CatchIfYouCan.Art
 
         private void OnEnable()
         {
-            if (_events.Count > 0)
+            // Never restarts once the menu has handed over to the interactive room.
+            if (_events.Count > 0 && !CinematicModeEnded)
                 _loop = StartCoroutine(EventLoop());
         }
 
@@ -127,6 +160,9 @@ namespace CatchIfYouCan.Art
                 // reloaded, and an event must never start while anything is covering the view.
                 while (CatchIfYouCan.UI.StartupIntroVideo.IsIntroPlaying)
                     yield return null;
+
+                if (CinematicModeEnded)
+                    yield break;
 
                 if (IsEventRunning || AnyEventPlaying())
                     continue;
