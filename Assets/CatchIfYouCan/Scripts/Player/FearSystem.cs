@@ -30,6 +30,12 @@ namespace CatchIfYouCan.Player
         private float _currentVignette;
         private float _bobPhase;
 
+        // The camera this component is bobbing, and the local position it was authored with.
+        // Only MainCamera is ever written; CameraRoot, which carries the eye height and forward
+        // offset, is never touched by this component.
+        private Camera _bobbedCamera;
+        private Vector3 _cameraBaseLocalPosition;
+
         public float Fear => _fear;
         public float NormalizedFear => _fear / 100f;
 
@@ -113,9 +119,24 @@ namespace CatchIfYouCan.Player
             if (targetCamera == null)
                 return;
 
+            // Capture the camera's authored local position the first time it is seen, and again
+            // if the camera is ever swapped. Without this the write below was an absolute
+            // assignment to (0, bob, 0), which silently discarded any offset the camera was built
+            // or tuned with - it only looked harmless because the authored value happened to be
+            // zero and fear starts at zero.
+            if (_bobbedCamera != targetCamera)
+            {
+                _bobbedCamera = targetCamera;
+                _cameraBaseLocalPosition = targetCamera.transform.localPosition;
+            }
+
             _bobPhase += Time.deltaTime * (1f + NormalizedFear * 2f);
             float bob = Mathf.Sin(_bobPhase * 2f) * maxBreathingBob * NormalizedFear;
-            targetCamera.transform.localPosition = new Vector3(0f, bob, 0f);
+
+            // Baseline plus offset, never a read-modify-write of the current value, so the bob
+            // cannot accumulate: at fear zero this restores the authored position exactly.
+            targetCamera.transform.localPosition =
+                _cameraBaseLocalPosition + new Vector3(0f, bob, 0f);
         }
 
         private void HandleHuntStarted() => _huntActive = true;

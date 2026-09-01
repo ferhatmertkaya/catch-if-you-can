@@ -122,10 +122,17 @@ namespace CatchIfYouCan.Player
         public const string CharacterVisualResourcePath = "Characters/Player_CharacterVisual";
 
         /// <summary>
-        /// Where the camera sits: the character's eye bones at 1.719 m, scaled by
-        /// <see cref="VisualScale"/>, which lands at about 1.79 m.
+        /// Camera height above the player root, in metres.
+        ///
+        /// <para>
+        /// Tuned by hand in Play Mode rather than derived. The anatomical eye line is 1.788 m
+        /// (Nathan's eye bones at 1.719 m scaled by <see cref="VisualScale"/>), and a camera
+        /// exactly there sat level with the top of the neck, so looking down went straight into
+        /// the collar. 1.68 m drops the view about 10 cm, to roughly mouth height, which puts the
+        /// open top of the neck behind and level with the camera instead of below it.
+        /// </para>
         /// </summary>
-        public const float EyeHeight = 1.78f;
+        public const float EyeHeight = 1.68f;
 
         /// <summary>
         /// How far forward of the spine the camera sits.
@@ -147,8 +154,16 @@ namespace CatchIfYouCan.Player
         /// their own chest rather than through it. It is well inside the 0.35 m capsule radius, so
         /// the camera cannot be pushed through a wall the controller has already stopped at.
         /// </para>
+        ///
+        /// <para>
+        /// 0.21 m is a hand-tuned value, not the 0.092 m the eye bones measure. Sitting further
+        /// forward than the anatomical eye puts the whole neck and collar behind the camera, which
+        /// is what stops a downward look ending inside them, and it opens up the chest and legs
+        /// below. Do not raise it much further without checking the capsule: at 0.35 m the camera
+        /// would be on the collision surface rather than inside it.
+        /// </para>
         /// </summary>
-        public const float EyeForward = 0.09f;
+        public const float EyeForward = 0.21f;
 
         /// <summary>
         /// Character scale. 1.04 takes the measured 1.86 m model to about 1.93 m — the small
