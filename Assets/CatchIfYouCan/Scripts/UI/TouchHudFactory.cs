@@ -1,21 +1,27 @@
 using CatchIfYouCan.Input;
 using UnityEngine;
-using UnityEngine.EventSystems;
 using UnityEngine.UI;
 
 namespace CatchIfYouCan.UI
 {
     /// <summary>
-    /// Builds the on-screen controls: a movement stick bottom-left, an invisible look area
-    /// filling the right of the screen, and the run and crouch buttons stacked at the right edge
-    /// on top of it.
+    /// Builds the on-screen controls: a glass movement stick bottom-left, an invisible look area
+    /// filling the right of the screen, a curved run / torch / crouch cluster bottom-right, and a
+    /// small reticle at the centre.
     ///
     /// <para>
-    /// The action buttons are on the right, with the look. That looks like a conflict and is not:
-    /// they are <see cref="TouchHoldButton"/>s, which forward their own drag to the look, so the
-    /// thumb that holds run also turns the camera by sliding. The left thumb never leaves the
-    /// movement stick, so the right is the only one free to press anything, and putting the
+    /// The action buttons sit on the right, inside the look area. That looks like a conflict and
+    /// is not: they are <see cref="TouchHoldButton"/>s, which forward their own drag to the look,
+    /// so the thumb that holds one still turns the camera by sliding. The left thumb never leaves
+    /// the movement stick, so the right is the only one free to press anything, and putting the
     /// buttons anywhere else would mean letting go of moving in order to run.
+    /// </para>
+    ///
+    /// <para>
+    /// The three are arranged on an arc rather than a column so that all of them are the same
+    /// distance from where the thumb rests. A column puts the top button a thumb-length further
+    /// away than the bottom one, which is why the torch - the one pressed most - is the large
+    /// button at the near end of the arc and the other two curve away from it.
     /// </para>
     ///
     /// <para>
@@ -26,11 +32,13 @@ namespace CatchIfYouCan.UI
     /// </para>
     ///
     /// <para>
-    /// Layout is anchored and expressed in reference-resolution units, then inset by
-    /// <see cref="Screen.safeArea"/>, so a notch, a Dynamic Island or a rounded corner moves the
-    /// controls rather than covering them. The canvas scaler matches by height, which keeps the
-    /// stick the same physical size whether the screen is 16:9 or 20:9 — only the empty middle
-    /// grows.
+    /// Layout is anchored to the corner each control belongs to and expressed in
+    /// reference-resolution units, then inset by <see cref="Screen.safeArea"/>, so a notch, a
+    /// Dynamic Island or a rounded corner moves the controls rather than covering them. The
+    /// canvas scaler matches by height, which keeps every control the same physical size whether
+    /// the screen is 16:9 or 20:9 - only the empty middle grows. The reticle is deliberately
+    /// outside the safe area, because it marks where the camera is pointing and the camera is
+    /// centred on the screen, not on the safe rectangle.
     /// </para>
     /// </summary>
     public static class TouchHudFactory
@@ -39,12 +47,50 @@ namespace CatchIfYouCan.UI
         // thumbs rather than larger controls.
         private static readonly Vector2 ReferenceResolution = new Vector2(1920f, 1080f);
 
-        private static readonly Color StickBackground = new Color(0.06f, 0.09f, 0.08f, 0.28f);
-        private static readonly Color StickHandle = new Color(0.55f, 0.78f, 0.66f, 0.42f);
-        private static readonly Color ButtonIdle = new Color(0.08f, 0.12f, 0.10f, 0.34f);
-        private static readonly Color ButtonAccent = new Color(0.55f, 0.78f, 0.66f, 0.55f);
-        private static readonly Color CrouchIdle = new Color(0.55f, 0.78f, 0.66f, 0.22f);
-        private static readonly Color CrouchActive = new Color(0.66f, 0.88f, 0.74f, 0.85f);
+        // ---- palette -----------------------------------------------------------------------
+        // Smoked glass: a pale tint at very low alpha rather than a dark one. Over a dark horror
+        // scene a dark fill is simply invisible, so what reads as "smoked glass" here is a faint
+        // lift, not a shade. Alphas are the brief's: body 10-18%, border 20-30%, icon 70-85%.
+
+        private static readonly Color Glass = new Color(0.60f, 0.66f, 0.63f, 0.14f);
+        private static readonly Color GlassBorder = new Color(0.86f, 0.92f, 0.89f, 0.26f);
+        private static readonly Color IconTint = new Color(0.91f, 0.94f, 0.92f, 0.80f);
+
+        private static readonly Color StickGlass = new Color(0.55f, 0.62f, 0.58f, 0.12f);
+        private static readonly Color StickBorder = new Color(0.84f, 0.90f, 0.87f, 0.22f);
+        private static readonly Color KnobGlass = new Color(0.80f, 0.87f, 0.83f, 0.16f);
+        private static readonly Color KnobBorder = new Color(0.90f, 0.95f, 0.92f, 0.30f);
+
+        private static readonly Color ReticleTint = new Color(0.88f, 0.92f, 0.90f, 0.22f);
+
+        // Barely there, and only visible where the scene behind is bright. Against the dark it
+        // does nothing, which is the point: a drop shadow that reads in a lit corridor and
+        // disappears in a black room.
+        private static readonly Color Shade = new Color(0f, 0f, 0f, 0.18f);
+
+        private static Color Accent(float alpha)
+        {
+            var c = UITheme.Primary;      // #57FF68
+            c.a = alpha;
+            return c;
+        }
+
+        // ---- layout ------------------------------------------------------------------------
+
+        private const float StickTouchSize = 380f;   // the pad the thumb may land anywhere in
+        private const float StickRingSize = 300f;    // the circle actually drawn
+        private const float StickKnobSize = 118f;
+        private const float StickHandleRange = 108f;
+        private static readonly Vector2 StickCentre = new Vector2(300f, 300f);
+
+        private const float FlashlightSize = 196f;
+        private const float SmallButtonSize = 157f;  // 20% smaller than the torch
+        private const float ClusterArcRadius = 192f;
+        private const float ClusterArcDegrees = 142f;
+        private static readonly Vector2 FlashlightCentre = new Vector2(-160f, 250f);
+
+        private const float IconFraction = 0.5f;
+        private const float ReticleSize = 34f;
 
         /// <summary>
         /// Creates the HUD and hands back its root. The caller owns when it is shown; nothing
@@ -68,13 +114,16 @@ namespace CatchIfYouCan.UI
 
             root.AddComponent<GraphicRaycaster>();
 
+            // Outside the safe area on purpose: it marks the middle of the camera, and the camera
+            // is centred on the screen whatever the notch does to the usable rectangle.
+            CreateReticle(root.GetComponent<RectTransform>());
+
             var safe = CreateRect("SafeArea", root.transform, Vector2.zero, Vector2.one);
             safe.gameObject.AddComponent<SafeAreaFitter>();
 
             CreateLookArea(safe);
             var joystick = CreateJoystick(safe);
-            CreateSprintButton(safe);
-            CreateCrouchButton(safe);
+            CreateActionCluster(safe);
 
             // The look area is created first so it sits behind the stick and the buttons in the
             // hierarchy; the raycaster walks front to back, so a thumb on any of those never
@@ -85,15 +134,18 @@ namespace CatchIfYouCan.UI
             return root;
         }
 
-        private static void EnsureEventSystem()
-        {
-            if (EventSystem.current != null)
-                return;
-
-            var go = new GameObject("EventSystem");
-            go.AddComponent<EventSystem>();
-            go.AddComponent<StandaloneInputModule>();
-        }
+        /// <summary>
+        /// Makes sure something is dispatching pointer events, through the project's own helper.
+        ///
+        /// <para>
+        /// This used to build its own EventSystem with a StandaloneInputModule, and that was
+        /// wrong for this project: the player settings select the Input System, so an
+        /// InputSystemUIInputModule is what should be dispatching. It happened to work because
+        /// the legacy manager is also enabled, but whichever of the HUD and
+        /// <see cref="EventSystemUtil"/> ran first decided which module the whole game got.
+        /// </para>
+        /// </summary>
+        private static void EnsureEventSystem() => EventSystemUtil.EnsureEventSystem();
 
         // ---- pieces ------------------------------------------------------------------------
 
@@ -108,101 +160,146 @@ namespace CatchIfYouCan.UI
             image.raycastTarget = true;
 
             rect.gameObject.AddComponent<TouchLookArea>();
+            rect.gameObject.AddComponent<LookTransparentUI>();
         }
 
         private static VirtualJoystick CreateJoystick(RectTransform parent)
         {
-            var rect = CreateRect("MoveJoystick", parent, Vector2.zero, Vector2.zero);
-            rect.pivot = new Vector2(0f, 0f);
-            rect.anchoredPosition = new Vector2(150f, 140f);
-            rect.sizeDelta = new Vector2(300f, 300f);
+            var pad = CreateAnchored("MoveJoystick", parent, new Vector2(0f, 0f),
+                                     StickCentre, new Vector2(StickTouchSize, StickTouchSize));
 
-            // Touch target is the whole 300 px square; the ring drawn inside it is smaller, so
+            // Touch target is the whole 380 px square; the ring drawn inside it is smaller, so
             // the control is easier to hit than it looks.
-            var pad = rect.gameObject.AddComponent<Image>();
-            pad.color = new Color(0f, 0f, 0f, 0f);
-            pad.raycastTarget = true;
+            var padImage = pad.gameObject.AddComponent<Image>();
+            padImage.color = new Color(0f, 0f, 0f, 0f);
+            padImage.raycastTarget = true;
+            pad.gameObject.AddComponent<LookTransparentUI>();
 
-            var background = CreateRect("Background", rect, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f));
-            background.sizeDelta = new Vector2(220f, 220f);
+            AddSprite(pad, "Shade", HudSprites.Glow, Shade, StickRingSize * 1.5f);
+
+            var background = CreateRect("Background", pad, Half, Half);
+            background.sizeDelta = new Vector2(StickRingSize, StickRingSize);
             var bgImage = background.gameObject.AddComponent<Image>();
-            bgImage.color = StickBackground;
+            bgImage.sprite = HudSprites.Disc;
+            bgImage.color = StickGlass;
             bgImage.raycastTarget = false;
 
-            var handle = CreateRect("Handle", background, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f));
-            handle.sizeDelta = new Vector2(92f, 92f);
+            AddSprite(background, "Border", HudSprites.Ring, StickBorder, StickRingSize);
+
+            var handle = CreateRect("Handle", background, Half, Half);
+            handle.sizeDelta = new Vector2(StickKnobSize, StickKnobSize);
             var handleImage = handle.gameObject.AddComponent<Image>();
-            handleImage.color = StickHandle;
+            handleImage.sprite = HudSprites.Disc;
+            handleImage.color = KnobGlass;
             handleImage.raycastTarget = false;
 
-            var joystick = rect.gameObject.AddComponent<VirtualJoystick>();
+            AddSprite(handle, "Border", HudSprites.Ring, KnobBorder, StickKnobSize);
+
+            var joystick = pad.gameObject.AddComponent<VirtualJoystick>();
             SetPrivateField(joystick, "background", background);
             SetPrivateField(joystick, "handle", handle);
-            SetPrivateField(joystick, "handleRange", 96f);
+            SetPrivateField(joystick, "handleRange", StickHandleRange);
             SetPrivateField(joystick, "deadZone", 0.14f);
             return joystick;
         }
 
-        // Right edge, stacked. Sized and spaced for a thumb that also has to reach the whole
-        // look area around them: 160 px at the 1080-high reference is about 11 mm on a phone.
-        private const float ButtonSize = 160f;
-        private const float ButtonEdgeInset = -130f;
-
-        private static void CreateSprintButton(RectTransform parent)
+        /// <summary>
+        /// The three action buttons, on an arc opening away from the corner. The torch sits at
+        /// the near end and the other two are placed by angle rather than by hand, so the arc
+        /// stays an arc if any of the sizes are retuned.
+        /// </summary>
+        private static void CreateActionCluster(RectTransform parent)
         {
-            var rect = CreateRightEdgeButton("SprintButton", parent, 320f);
+            float a = ClusterArcDegrees * Mathf.Deg2Rad;
+            var offset = new Vector2(Mathf.Cos(a), Mathf.Sin(a)) * ClusterArcRadius;
 
-            // Two chevrons, the upper one solid: reads as "faster" without a word of text.
-            AddBar(rect, new Vector2(66f, 9f), new Vector2(0f, 10f), ButtonAccent);
-            AddBar(rect, new Vector2(44f, 9f), new Vector2(0f, -10f),
-                   new Color(ButtonAccent.r, ButtonAccent.g, ButtonAccent.b, 0.3f));
-
-            rect.gameObject.AddComponent<SprintButton>();
+            // Torch first, so its glow - which is wider than the button and reaches the other
+            // two - is drawn underneath them rather than washing green over their glass.
+            CreateFlashlightButton(parent, FlashlightCentre);
+            CreateSprintButton(parent, FlashlightCentre + offset);
+            CreateCrouchButton(parent, FlashlightCentre + new Vector2(offset.x, -offset.y));
         }
 
-        private static void CreateCrouchButton(RectTransform parent)
+        private static void CreateFlashlightButton(RectTransform parent, Vector2 centre)
         {
-            var rect = CreateRightEdgeButton("CrouchButton", parent, 130f);
+            var button = CreateRoundButton("FlashlightButton", parent, centre, FlashlightSize,
+                                           HudSprites.Flashlight,
+                                           out var ring, out var icon, out var glow);
 
-            // A lid over a floor. The lid brightens while crouched, so the latch is readable at
-            // a glance - a toggle with no visible state is a toggle nobody trusts.
-            var lid = AddBar(rect, new Vector2(62f, 9f), new Vector2(0f, 12f), CrouchIdle);
-            AddBar(rect, new Vector2(62f, 5f), new Vector2(0f, -20f),
-                   new Color(ButtonAccent.r, ButtonAccent.g, ButtonAccent.b, 0.28f));
-
-            var crouch = rect.gameObject.AddComponent<CrouchButton>();
-            SetPrivateField(crouch, "activeIndicator", lid);
-            SetPrivateField(crouch, "idleColor", CrouchIdle);
-            SetPrivateField(crouch, "activeColor", CrouchActive);
+            var flashlight = button.gameObject.AddComponent<FlashlightButton>();
+            SetPrivateField(flashlight, "icon", icon);
+            SetPrivateField(flashlight, "ring", ring);
+            SetPrivateField(flashlight, "glow", glow);
+            SetPrivateField(flashlight, "iconIdle", IconTint);
+            SetPrivateField(flashlight, "iconActive", Color.Lerp(Color.white, UITheme.Primary, 0.55f));
+            SetPrivateField(flashlight, "ringIdle", GlassBorder);
+            SetPrivateField(flashlight, "ringActive", Accent(0.42f));
+            SetPrivateField(flashlight, "glowActive", Accent(0.12f));
         }
 
-        private static RectTransform CreateRightEdgeButton(string name, RectTransform parent, float y)
+        private static void CreateSprintButton(RectTransform parent, Vector2 centre)
         {
-            // Anchored to the bottom-right corner rather than positioned from the left, so the
-            // buttons stay under the thumb on any aspect ratio instead of drifting inward as the
-            // screen gets wider.
-            var rect = CreateRect(name, parent, new Vector2(1f, 0f), new Vector2(1f, 0f));
-            rect.pivot = new Vector2(1f, 0f);
-            rect.anchoredPosition = new Vector2(ButtonEdgeInset, y);
-            rect.sizeDelta = new Vector2(ButtonSize, ButtonSize);
+            var button = CreateRoundButton("SprintButton", parent, centre, SmallButtonSize,
+                                           HudSprites.Sprint, out _, out _, out _);
+            button.gameObject.AddComponent<SprintButton>();
+        }
+
+        private static void CreateCrouchButton(RectTransform parent, Vector2 centre)
+        {
+            var button = CreateRoundButton("CrouchButton", parent, centre, SmallButtonSize,
+                                           HudSprites.Crouch, out var ring, out _, out _);
+
+            var crouch = button.gameObject.AddComponent<CrouchButton>();
+            // The border carries the latch, exactly as the torch's does, so the two read as one
+            // language rather than as two unrelated indicators.
+            SetPrivateField(crouch, "activeIndicator", ring);
+            SetPrivateField(crouch, "idleColor", GlassBorder);
+            SetPrivateField(crouch, "activeColor", Accent(0.5f));
+        }
+
+        /// <summary>
+        /// One glass button: a transparent container that takes the touch, with the shadow, body,
+        /// border and icon drawn inside it. The container carries the raycast rather than the
+        /// glass, so the whole square is pressable and the thumb does not have to find the circle.
+        /// </summary>
+        private static RectTransform CreateRoundButton(string name, RectTransform parent,
+                                                       Vector2 centre, float size,
+                                                       Sprite iconSprite,
+                                                       out Image ring, out Image icon,
+                                                       out Image glow)
+        {
+            var button = CreateAnchored(name, parent, new Vector2(1f, 0f), centre,
+                                        new Vector2(size, size));
+
+            var hit = button.gameObject.AddComponent<Image>();
+            hit.color = new Color(0f, 0f, 0f, 0f);
+            hit.raycastTarget = true;
+            button.gameObject.AddComponent<LookTransparentUI>();
+
+            // Behind everything, and transparent until something fades it up.
+            glow = AddSprite(button, "Glow", HudSprites.Glow, new Color(0f, 0f, 0f, 0f), size * 1.75f);
+            AddSprite(button, "Shade", HudSprites.Glow, Shade, size * 1.5f);
+            AddSprite(button, "Glass", HudSprites.Disc, Glass, size);
+            ring = AddSprite(button, "Border", HudSprites.Ring, GlassBorder, size);
+            icon = AddSprite(button, "Icon", iconSprite, IconTint, size * IconFraction);
+            return button;
+        }
+
+        private static void CreateReticle(RectTransform parent)
+        {
+            var rect = CreateRect("Reticle", parent, Half, Half);
+            rect.sizeDelta = new Vector2(ReticleSize, ReticleSize);
+            rect.anchoredPosition = Vector2.zero;
 
             var image = rect.gameObject.AddComponent<Image>();
-            image.color = ButtonIdle;
-            image.raycastTarget = true;
-            return rect;
-        }
-
-        private static Image AddBar(RectTransform parent, Vector2 size, Vector2 offset, Color color)
-        {
-            var bar = CreateRect("Accent", parent, new Vector2(0.5f, 0.5f), new Vector2(0.5f, 0.5f));
-            bar.sizeDelta = size;
-            bar.anchoredPosition = offset;
-
-            var image = bar.gameObject.AddComponent<Image>();
-            image.color = color;
+            image.sprite = HudSprites.Reticle;
+            image.color = ReticleTint;
             image.raycastTarget = false;
-            return image;
         }
+
+        // ---- plumbing ----------------------------------------------------------------------
+
+        private static readonly Vector2 Half = new Vector2(0.5f, 0.5f);
 
         private static RectTransform CreateRect(string name, Transform parent, Vector2 anchorMin, Vector2 anchorMax)
         {
@@ -215,6 +312,38 @@ namespace CatchIfYouCan.UI
             rect.offsetMin = Vector2.zero;
             rect.offsetMax = Vector2.zero;
             return rect;
+        }
+
+        /// <summary>
+        /// A fixed-size rect pinned to one corner, positioned by its own centre. Anchor and pivot
+        /// are the same point, so the offset is a plain distance from that corner and the control
+        /// keeps its distance from it on every aspect ratio.
+        /// </summary>
+        private static RectTransform CreateAnchored(string name, RectTransform parent,
+                                                    Vector2 corner, Vector2 centre, Vector2 size)
+        {
+            var rect = CreateRect(name, parent, corner, corner);
+            rect.pivot = Half;
+            rect.sizeDelta = size;
+            rect.anchoredPosition = centre;
+            return rect;
+        }
+
+        private static Image AddSprite(RectTransform parent, string name, Sprite sprite,
+                                       Color color, float size)
+        {
+            var rect = CreateRect(name, parent, Half, Half);
+            rect.sizeDelta = new Vector2(size, size);
+            rect.anchoredPosition = Vector2.zero;
+
+            var image = rect.gameObject.AddComponent<Image>();
+            image.sprite = sprite;
+            image.color = color;
+            image.raycastTarget = false;
+            // Nothing here is nine-sliced, and a circle cannot be; simple keeps the quad count
+            // at one per element.
+            image.type = Image.Type.Simple;
+            return image;
         }
 
         private static void SetPrivateField(object target, string fieldName, object value)

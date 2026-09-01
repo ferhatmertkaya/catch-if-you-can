@@ -84,6 +84,22 @@ namespace CatchIfYouCan.Input
         public bool FlashlightPressed { get; private set; }
         public bool InteractHeld { get; private set; }
 
+        /// <summary>
+        /// Whether the torch is currently lit, as reported by whatever owns it.
+        ///
+        /// <para>
+        /// Input does not decide this and does not toggle it: <see cref="PressFlashlight"/> asks,
+        /// the torch answers. Keeping the answer here rather than having the HUD find the torch
+        /// is what lets the button show the real state without the UI holding a reference to a
+        /// gameplay object, or - worse - keeping its own copy of the state that drifts the first
+        /// time anything else switches the light.
+        /// </para>
+        /// </summary>
+        public bool FlashlightOn { get; private set; }
+
+        /// <summary>Called by the torch when it lights or goes out.</summary>
+        public void ReportFlashlightState(bool on) => FlashlightOn = on;
+
         private int _lookFingerId = -1;
         private bool _blockMouseLookThisFrame;
 
@@ -179,6 +195,11 @@ namespace CatchIfYouCan.Input
                 PressUse();
             if (Keyboard.current.tabKey.wasPressedThisFrame)
                 PressJournal();
+            // The torch had no key at all, so the HUD button was its only control and desktop
+            // could not switch it on. G rather than the more usual F because F is already bound
+            // to Use above and rebinding it is not this change's business.
+            if (Keyboard.current.gKey.wasPressedThisFrame)
+                PressFlashlight();
             if (Keyboard.current.leftShiftKey.wasPressedThisFrame)
                 SetSprint(true);
             if (Keyboard.current.leftShiftKey.wasReleasedThisFrame)
@@ -194,6 +215,8 @@ namespace CatchIfYouCan.Input
                 PressUse();
             if (UnityEngine.Input.GetKeyDown(KeyCode.Tab))
                 PressJournal();
+            if (UnityEngine.Input.GetKeyDown(KeyCode.G))
+                PressFlashlight();
             if (UnityEngine.Input.GetKeyDown(KeyCode.LeftShift))
                 SetSprint(true);
             if (UnityEngine.Input.GetKeyUp(KeyCode.LeftShift))
@@ -341,12 +364,27 @@ namespace CatchIfYouCan.Input
         }
 
         /// <summary>
-        /// True when the mouse cursor is over a UI element. Deliberately ignores touches: a
-        /// finger on the joystick says nothing about whether the other thumb may look around.
+        /// True when the mouse cursor is over a UI element that should stop the camera.
+        ///
+        /// <para>
+        /// Deliberately ignores touches: a finger on the joystick says nothing about whether the
+        /// other thumb may look around.
+        /// </para>
+        ///
+        /// <para>
+        /// It also ignores the touch HUD itself. The controls are a transparent overlay across
+        /// the right of the screen - exactly where a desktop cursor lives - so counting them as
+        /// blocking meant free mouse-look froze whenever the pointer drifted over a button, on a
+        /// build that has no touchscreen and never uses them. Menus and panels still block, which
+        /// is the case this test exists for.
+        /// </para>
         /// </summary>
         private static bool IsMousePointerOverUI()
         {
-            return EventSystem.current != null && EventSystem.current.IsPointerOverGameObject();
+            if (EventSystem.current == null || !EventSystem.current.IsPointerOverGameObject())
+                return false;
+
+            return !LookTransparentUI.PointerIsOver;
         }
 
         public static bool IsPointerOverUI()

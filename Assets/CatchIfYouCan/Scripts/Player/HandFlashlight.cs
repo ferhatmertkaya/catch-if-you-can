@@ -89,11 +89,28 @@ namespace CatchIfYouCan.Player
         private Material _bodyMaterial;
         private Material _lensMaterial;
 
-        /// <summary>Whether the beam is on. Safe to set at any time.</summary>
+        /// <summary>
+        /// Whether the beam is on. Safe to set at any time.
+        ///
+        /// <para>
+        /// Every path in and out of this goes through the setter, and the setter tells the input
+        /// layer. That is what lets the HUD button show the real state: it reads
+        /// <see cref="MobileInputController.FlashlightOn"/> rather than holding a reference to
+        /// this component, so the light being switched by a script, a cutscene or a key still
+        /// updates the button.
+        /// </para>
+        /// </summary>
         public bool LightOn
         {
             get => _light != null && _light.enabled;
-            set { if (_light != null) _light.enabled = value; }
+            set
+            {
+                if (_light == null || _light.enabled == value)
+                    return;
+
+                _light.enabled = value;
+                Input.MobileInputController.Instance?.ReportFlashlightState(value);
+            }
         }
 
         private void Awake()
@@ -114,7 +131,12 @@ namespace CatchIfYouCan.Player
         {
             var input = MobileInputController.Instance;
             if (input != null)
+            {
                 input.OnFlashlightTap += Toggle;
+                // Report on the way in as well as on every change, so a HUD built after this
+                // component does not come up showing the opposite of the truth.
+                input.ReportFlashlightState(LightOn);
+            }
         }
 
         private void OnDisable()
