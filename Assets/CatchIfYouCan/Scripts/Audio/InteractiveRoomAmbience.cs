@@ -198,6 +198,18 @@ namespace CatchIfYouCan.Audio
             if (_running)
                 return;
 
+            // Re-entry after End(): the sources are still there, so restart rather than rebuild.
+            if (_night != null)
+            {
+                if (nightAmbience != null && !_night.isPlaying)
+                    _night.Play();
+                _exteriorTimer = Range(4f, 10f);
+                _buildingTimer = NextInterval(buildingInterval);
+                _behindTimer = NextInterval(behindFirstDelay);
+                _running = true;
+                return;
+            }
+
             // Cosmetic only, and its own stream: nothing here may reach the mission seed or
             // anything the network agrees on. Which owl hoots is not shared state.
             _rng = new System.Random(unchecked((int)System.DateTime.UtcNow.Ticks) ^ (GetHashCode() * 31));
@@ -207,7 +219,9 @@ namespace CatchIfYouCan.Audio
             _exteriorVoices = BuildPool("Exterior", 2, exteriorMinDistance, exteriorMaxDistance, false, out _);
             _buildingVoices = BuildPool("Building", 2, buildingMinDistance, buildingMaxDistance, true, out _buildingFilters);
 
-            _exteriorTimer = NextInterval(exteriorInterval) * 0.5f;
+            // Deliberately soon. A layer whose first event is half a minute away is
+            // indistinguishable from a layer that does not work.
+            _exteriorTimer = Range(4f, 10f);
             _buildingTimer = NextInterval(buildingInterval);
             _behindTimer = NextInterval(behindFirstDelay);
 
@@ -222,6 +236,11 @@ namespace CatchIfYouCan.Audio
             StopAll(_exteriorVoices);
             StopAll(_buildingVoices);
             _behindEndTime = 0f;
+
+            // Not just silence: the room is no longer running. Without this the sources stayed
+            // built and _running stayed true, so a second entry would take Begin's early return
+            // and the night would never start again.
+            _running = false;
         }
 
         private static void StopAll(AudioSource[] voices)

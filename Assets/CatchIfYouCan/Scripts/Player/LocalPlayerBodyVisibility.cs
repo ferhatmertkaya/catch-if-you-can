@@ -80,6 +80,15 @@ namespace CatchIfYouCan.Player
         [SerializeField] private BodyMode mode = BodyMode.FirstPersonBody;
 
         [Header("First person body")]
+        [Tooltip("Shrink the head so the local camera cannot see inside it. Off by default, and " +
+                 "deliberately so: the camera sits at CameraRoot (0, 1.68, 0.21), which is about " +
+                 "19 cm in front of the head bone, so the whole skull — face, eyes, hair — is " +
+                 "already behind the camera and cannot be seen however the player looks. " +
+                 "Shrinking it bought nothing and cost the shadow its head, because bone scale is " +
+                 "skeleton state and the shadow is skinned from the same skeleton. Switch it back " +
+                 "on if CameraRoot's Z is ever pulled back toward the neck.")]
+        [SerializeField] private bool hideHead;
+
         [Tooltip("Bone whose subtree is collapsed out of view. Matched by name suffix, so it " +
                  "survives the model's long prefixed bone names.")]
         [SerializeField] private string headBoneSuffix = "_head";
@@ -138,7 +147,7 @@ namespace CatchIfYouCan.Player
         /// </summary>
         private void LateUpdate()
         {
-            if (mode != BodyMode.FirstPersonBody || _headBone == null)
+            if (!hideHead || mode != BodyMode.FirstPersonBody || _headBone == null)
                 return;
 
             if (_headBone.localScale.x != collapsedScale)
@@ -268,7 +277,7 @@ namespace CatchIfYouCan.Player
 
             if (_headBone != null)
             {
-                _headBone.localScale = mode == BodyMode.FirstPersonBody
+                _headBone.localScale = hideHead && mode == BodyMode.FirstPersonBody
                     ? Vector3.one * collapsedScale
                     : _headBoneScale;
             }

@@ -23,6 +23,25 @@ namespace CatchIfYouCan.Player
     /// </para>
     ///
     /// <para>
+    /// <b>And <c>applyRootMotion</c> alone was not enough to achieve that.</b> Root motion is
+    /// only <em>root motion</em> if the importer extracted it, and for a Generic rig that needs a
+    /// Root Node naming the bone to lift it from. The FBX's <c>motionNodeName</c> was empty; the
+    /// bone name sat in <c>rootMotionBoneName</c>, which only a Humanoid rig reads. So the walk's
+    /// 2.866 m of forward travel was never lifted out — it stayed as ordinary transform animation
+    /// on the root bone, where <c>applyRootMotion</c> has no say over it, and the skeleton walked
+    /// out of the player and away in front of the camera, looping back every 2.2 s.
+    /// </para>
+    ///
+    /// <para>
+    /// So the root bone is pinned here instead, in LateUpdate, after the Animator has written.
+    /// Position and rotation both, which is exactly what discarding correctly-extracted root
+    /// motion would have produced. It costs one comparison and, when the clip has moved it, one
+    /// transform write. The importer is being fixed too, and once that lands this pin finds the
+    /// bone already at the bind pose and does nothing — which is the point: the thing that made
+    /// this bug survive so long is that nothing was checking.
+    /// </para>
+    ///
+    /// <para>
     /// Parameters are looked up once and only written if the controller actually declares them,
     /// so this is safe to attach before an Animator Controller exists — it simply does nothing
     /// rather than logging a warning every frame.
@@ -79,6 +98,17 @@ namespace CatchIfYouCan.Player
                  "it, so adding a Run state later needs no code change here.")]
         [SerializeField] private string isRunningParameter = "IsRunning";
 
+        [Header("Root bone")]
+        [Tooltip("Bone whose animated travel is discarded, matched by name suffix. This is what " +
+                 "keeps the character animating in place while the CharacterController does the " +
+                 "actual moving. Clear it only if the clip genuinely carries no root travel.")]
+        [SerializeField] private string rootBoneSuffix = "_root";
+
+        private Transform _rootBone;
+        private Vector3 _rootBindPosition;
+        private Quaternion _rootBindRotation;
+        private bool _hasRootBone;
+
         private int _speedHash;
         private int _isWalkingHash;
         private int _isRunningHash;
@@ -111,6 +141,7 @@ namespace CatchIfYouCan.Player
                 // The controller moves the player. The animation only shows it happening.
                 animator.applyRootMotion = false;
                 CacheParameters();
+                CacheRootBone();
             }
         }
 
@@ -156,6 +187,49 @@ namespace CatchIfYouCan.Player
             if (animator != null)
                 animator.applyRootMotion = false;
             CacheParameters();
+            CacheRootBone();
+        }
+
+        /// <summary>
+        /// Finds the root bone and remembers the pose it should be holding. Captured before the
+        /// Animator has played a frame, so this is the bind pose rather than a walk frame.
+        /// </summary>
+        private void CacheRootBone()
+        {
+            _hasRootBone = false;
+            _rootBone = null;
+
+            if (animator == null || string.IsNullOrEmpty(rootBoneSuffix))
+                return;
+
+            var all = animator.GetComponentsInChildren<Transform>(true);
+            for (int i = 0; i < all.Length; i++)
+            {
+                if (!all[i].name.EndsWith(rootBoneSuffix, System.StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                _rootBone = all[i];
+                _rootBindPosition = all[i].localPosition;
+                _rootBindRotation = all[i].localRotation;
+                _hasRootBone = true;
+                return;
+            }
+        }
+
+        /// <summary>
+        /// Holds the root bone at its bind pose, after the Animator has written and before
+        /// anything is drawn. Equivalent to discarding root motion, for a rig where the importer
+        /// never extracted any to discard.
+        /// </summary>
+        private void LateUpdate()
+        {
+            if (!_hasRootBone || _rootBone == null)
+                return;
+
+            if (_rootBone.localPosition != _rootBindPosition)
+                _rootBone.localPosition = _rootBindPosition;
+            if (_rootBone.localRotation != _rootBindRotation)
+                _rootBone.localRotation = _rootBindRotation;
         }
 
         private void Update()

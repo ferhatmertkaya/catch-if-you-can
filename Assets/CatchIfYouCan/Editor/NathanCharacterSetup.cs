@@ -53,6 +53,9 @@ namespace CatchIfYouCan.EditorTools
         /// <summary>The FBX's only animation take.</summary>
         private const string TakeName = "Take 001";
 
+        /// <summary>The bone the walk carries its travel on; the rig's Root Node.</summary>
+        private const string RootBoneName = "rp_nathan_animated_003_walking_root";
+
         // The take runs frames 0..68 at 30 fps. Frame 0 is the bind pose — every bone rotation is
         // exactly zero there and then jumps by tens of degrees into the first walk pose — so the
         // usable cycle starts at frame 1. Frames 1..68 hold two full strides and are each other's
@@ -212,6 +215,14 @@ namespace CatchIfYouCan.EditorTools
 
             importer.clipAnimations = new[] { walk };
 
+            // The Root Node, and it was the whole of the walking-away bug. This rig is Generic,
+            // and a Generic rig lifts root motion out of a clip only when motionNodeName names the
+            // bone to lift it from. That field was empty. The bone name was sitting in
+            // rootMotionBoneName instead, which is part of the human description and which only a
+            // Humanoid rig ever reads — so nothing was extracted, the clip's 2.866 m of travel
+            // stayed as plain animation on the root bone, and applyRootMotion had no say over it.
+            importer.motionNodeName = RootBoneName;
+
             // Material creation is off, so the model brings no materials of its own into the
             // project; this points its one slot at the URP material that is checked in.
             var material = AssetDatabase.LoadAssetAtPath<Material>(MaterialPath);
@@ -293,9 +304,17 @@ namespace CatchIfYouCan.EditorTools
                     float drift = rootBone.localPosition.magnitude;
                     log.AppendLine("  root drift when sampling the walk at " +
                                    sampleTime.ToString("0.000") + "s: " + drift.ToString("0.000") + " m" +
-                                   (drift > 0.05f
-                                       ? "  <-- root motion was NOT extracted; check the rig's Root node"
-                                       : "  (root motion extracted correctly)"));
+                                   (drift > 0.05f ? "  <-- NOT EXTRACTED" : "  (extracted correctly)"));
+
+                    // This went unnoticed for weeks because it was one line in a long log and the
+                    // README asserted the opposite. A warning is harder to read past.
+                    if (drift > 0.05f)
+                        Debug.LogWarning("[CIYC] Nathan's walk still carries " +
+                                         drift.ToString("0.00") + " m of root travel after import, " +
+                                         "so the body will walk away from the player. The rig's " +
+                                         "Root Node (motionNodeName) is not resolving to '" +
+                                         RootBoneName + "'. PlayerVisualAnimator pins the bone at " +
+                                         "runtime so this is survivable, but the import is wrong.");
                 }
 
                 RestoreBind(instance.transform, bind, scales);

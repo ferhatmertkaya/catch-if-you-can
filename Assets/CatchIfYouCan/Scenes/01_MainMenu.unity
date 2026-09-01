@@ -48105,8 +48105,8 @@ Light:
   m_Enabled: 1
   serializedVersion: 13
   m_Type: 1
-  m_Color: {r: 0.62, g: 0.6, b: 0.58, a: 1}
-  m_Intensity: 0.08
+  m_Color: {r: 0.66, g: 0.64, b: 0.615, a: 1}
+  m_Intensity: 0.32
   m_Range: 10
   m_SpotAngle: 30
   m_InnerSpotAngle: 21.802082
@@ -48233,8 +48233,8 @@ Light:
   serializedVersion: 13
   m_Type: 2
   m_Color: {r: 1, g: 0.603827, b: 0.2957, a: 1}
-  m_Intensity: 1.5
-  m_Range: 6.0
+  m_Intensity: 2.6
+  m_Range: 7.5
   m_SpotAngle: 30
   m_InnerSpotAngle: 21.802082
   m_CookieSize2D: {x: 0.5, y: 0.5}
@@ -48360,8 +48360,8 @@ Light:
   serializedVersion: 13
   m_Type: 2
   m_Color: {r: 0.477, g: 0.603827, b: 1, a: 1}
-  m_Intensity: 0.5
-  m_Range: 7.5
+  m_Intensity: 1.1
+  m_Range: 9.0
   m_SpotAngle: 30
   m_InnerSpotAngle: 21.802082
   m_CookieSize2D: {x: 0.5, y: 0.5}
@@ -52168,21 +52168,21 @@ MonoBehaviour:
   owlWeight: 6
   wolfWeight: 2
   bellWeight: 1
-  exteriorInterval: {x: 22, y: 75}
-  exteriorVolume: 0.55
-  exteriorMinDistance: 6
-  exteriorMaxDistance: 70
+  exteriorInterval: {x: 16, y: 46}
+  exteriorVolume: 0.85
+  exteriorMinDistance: 4
+  exteriorMaxDistance: 36
   exteriorSpots:
   - label: ValleyFarLeft
-    position: {x: 38, y: 3, z: -18}
+    position: {x: 34, y: 2, z: -14}
   - label: ForestFarRight
-    position: {x: 36, y: 2, z: 16}
+    position: {x: 33, y: 1.5, z: 12}
   - label: DistantHills
-    position: {x: 52, y: 9, z: 3}
+    position: {x: 42, y: 7, z: 2}
   - label: LowerTerrace
-    position: {x: 30, y: -5, z: 8}
+    position: {x: 31, y: -4, z: 7}
   - label: HighRidge
-    position: {x: 44, y: 14, z: -9}
+    position: {x: 37, y: 10, z: -7}
   buildingClips:
   - {fileID: 8300000, guid: 65b1a11b470984c4caa4e40b212d44b1, type: 3}
   - {fileID: 8300000, guid: b8905cbdbbb71477ea9db62d0ccfe555, type: 3}
