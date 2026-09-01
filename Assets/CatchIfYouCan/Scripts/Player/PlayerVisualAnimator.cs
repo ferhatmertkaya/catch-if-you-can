@@ -68,15 +68,24 @@ namespace CatchIfYouCan.Player
 
         [SerializeField, Range(0.1f, 1f)] private float minAnimationSpeed = 0.6f;
 
-        [Tooltip("Ceiling on playback rate. PlayerController walks at 2.8 m/s against a clip " +
-                 "authored at 1.283 m/s, so the feet only keep up with the floor at about 2.2x. " +
-                 "Lowering this trades a fast cadence for visible foot sliding.")]
-        [SerializeField, Range(1f, 3f)] private float maxAnimationSpeed = 2.2f;
+        [Tooltip("Ceiling on playback rate. Walking at 1.9 m/s against a clip authored at 1.283 " +
+                 "needs 1.48x and stays under this. Sprinting at 3.8 would need 2.96x, which is " +
+                 "not a run, it is a cartoon; the cap holds it at a fast walk and accepts the " +
+                 "foot slide until there is a real run clip to blend to.")]
+        [SerializeField, Range(1f, 3f)] private float maxAnimationSpeed = 2f;
+
+        [Header("Future run state")]
+        [Tooltip("Bool parameter set while sprinting. Written only if the controller declares " +
+                 "it, so adding a Run state later needs no code change here.")]
+        [SerializeField] private string isRunningParameter = "IsRunning";
 
         private int _speedHash;
         private int _isWalkingHash;
+        private int _isRunningHash;
         private bool _hasSpeed;
         private bool _hasIsWalking;
+        private bool _hasIsRunning;
+        private PlayerController _playerController;
         private float _smoothedSpeed;
         private float _smoothVelocity;
 
@@ -94,6 +103,9 @@ namespace CatchIfYouCan.Player
             if (characterController == null)
                 characterController = GetComponentInParent<CharacterController>();
 
+            if (_playerController == null)
+                _playerController = GetComponentInParent<PlayerController>();
+
             if (animator != null)
             {
                 // The controller moves the player. The animation only shows it happening.
@@ -110,12 +122,14 @@ namespace CatchIfYouCan.Player
         {
             _hasSpeed = false;
             _hasIsWalking = false;
+            _hasIsRunning = false;
 
             if (animator == null || animator.runtimeAnimatorController == null)
                 return;
 
             _speedHash = Animator.StringToHash(speedParameter);
             _isWalkingHash = Animator.StringToHash(isWalkingParameter);
+            _isRunningHash = Animator.StringToHash(isRunningParameter);
 
             foreach (var p in animator.parameters)
             {
@@ -126,6 +140,10 @@ namespace CatchIfYouCan.Player
                 if (!string.IsNullOrEmpty(isWalkingParameter) &&
                     p.type == AnimatorControllerParameterType.Bool && p.nameHash == _isWalkingHash)
                     _hasIsWalking = true;
+
+                if (!string.IsNullOrEmpty(isRunningParameter) &&
+                    p.type == AnimatorControllerParameterType.Bool && p.nameHash == _isRunningHash)
+                    _hasIsRunning = true;
             }
         }
 
@@ -160,6 +178,12 @@ namespace CatchIfYouCan.Player
 
             if (_hasSpeed) animator.SetFloat(_speedHash, _smoothedSpeed);
             if (_hasIsWalking) animator.SetBool(_isWalkingHash, IsWalking);
+
+            // Written for a Run state that does not exist yet. Harmless until one does, and it
+            // means adding the clip is an Animator change rather than a code change.
+            if (_hasIsRunning)
+                animator.SetBool(_isRunningHash, IsWalking && _playerController != null &&
+                                                 _playerController.IsSprinting);
 
             if (matchAnimationSpeedToMovement)
             {

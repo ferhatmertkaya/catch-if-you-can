@@ -7,9 +7,17 @@ namespace CatchIfYouCan.Player
     public class PlayerController : MonoBehaviour
     {
         [Header("Movement")]
-        [SerializeField] private float walkSpeed = 2.8f;
-        [SerializeField] private float sprintSpeed = 5.2f;
-        [SerializeField] private float crouchSpeed = 1.4f;
+        // Nathan's only clip is authored at a measured 1.283 m/s. At the old 2.8 the walk cycle
+        // had to play at 2.2x to keep the feet on the floor, which reads as a scurry; 1.9 lands
+        // at about 1.5x, which still looks like walking.
+        [SerializeField] private float walkSpeed = 1.9f;
+        [SerializeField] private float sprintSpeed = 3.8f;
+        [SerializeField] private float crouchSpeed = 1f;
+
+        [Tooltip("Push the movement stick past this to sprint without the button. Zero disables " +
+                 "it; the sprint button is the intended interaction and a stick threshold is easy " +
+                 "to trip by accident.")]
+        [SerializeField, Range(0f, 1f)] private float sprintStickThreshold;
         [SerializeField] private float gravity = -18f;
         [SerializeField] private float jumpHeight = 0f;
 
@@ -90,7 +98,10 @@ namespace CatchIfYouCan.Player
             Vector2 moveInput = _input.MoveInput;
             Vector3 move = transform.right * moveInput.x + transform.forward * moveInput.y;
 
-            IsSprinting = _input.SprintHeld && moveInput.sqrMagnitude > 0.01f && !IsCrouching;
+            bool stickSprint = sprintStickThreshold > 0f &&
+                               moveInput.magnitude >= sprintStickThreshold;
+            IsSprinting = (_input.SprintHeld || stickSprint) &&
+                          moveInput.sqrMagnitude > 0.01f && !IsCrouching;
             float speed = IsCrouching ? crouchSpeed : IsSprinting ? sprintSpeed : walkSpeed;
 
             _controller.Move(move * speed * Time.deltaTime);

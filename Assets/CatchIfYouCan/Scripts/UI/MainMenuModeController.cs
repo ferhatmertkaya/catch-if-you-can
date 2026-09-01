@@ -74,9 +74,20 @@ namespace CatchIfYouCan.UI
         [Tooltip("Seconds to fade the interactive room up.")]
         [SerializeField, Min(0f)] private float fadeInDuration = 0.3f;
 
-        [Tooltip("Fade to menu music over this long rather than cutting it, so the loop does " +
-                 "not end on an audible click.")]
-        [SerializeField, Min(0f)] private float musicFadeDuration = 0.25f;
+        [Tooltip("How long the menu music takes to reach silence. Long enough to read as the " +
+                 "cinematic letting go rather than someone pulling the plug; the visual fade is " +
+                 "shorter, so the last of the music plays under a black screen.")]
+        [SerializeField, Min(0f)] private float musicFadeDuration = 1.2f;
+
+        [Tooltip("The phone gets a shorter fade than the music. It is a diegetic sound tied to " +
+                 "an object the player is leaving behind, so it should go first, but cutting it " +
+                 "on the frame of the tap is audible as a click.")]
+        [SerializeField, Min(0f)] private float phoneFadeDuration = 0.35f;
+
+        [Tooltip("Decibels the fade travels before the source is stopped. -60 dB is inaudible " +
+                 "under anything; fading amplitude linearly instead sounds like a sudden drop " +
+                 "followed by a long tail.")]
+        [SerializeField] private float fadeFloorDecibels = -60f;
 
         [Tooltip("On PC, lock and hide the cursor once the room is live.")]
         [SerializeField] private bool lockCursorInRoom = true;
@@ -119,41 +130,57 @@ namespace CatchIfYouCan.UI
             if (logTransition)
                 Debug.Log("[CIYC] Menu: entering interactive room", this);
 
-            // 1. The label goes first, so a player hammering the screen sees it stop responding
+            // 1. The music starts leaving on the frame of the tap, running alongside everything
+            //    below rather than after it. Waiting until the screen is already black to begin
+            //    fading is what made the old transition sound like a cut.
+            var musicFade = StartCoroutine(FadeOutMenuMusic());
+            var sourceFades = StartCoroutine(FadeOutCinematicSources());
+
+            // 2. The label goes next, so a player hammering the screen sees it stop responding
             //    immediately rather than during the fade.
             SetCinematicUiActive(false);
 
-            // 2. Black before anything moves, so the camera swap and the spawn are never seen.
+            // 3. Black before anything moves, so the camera swap and the spawn are never seen.
             BuildFadeOverlay();
             yield return Fade(0f, 1f, fadeOutDuration);
 
-            // 3. Cinematic mode ends while the screen is covered. The director cancels a
+            // 4. Cinematic mode ends while the screen is covered. The director cancels a
             //    mid-flight event and restores its baselines, so the room is never entered with
-            //    red lights up, the ghost displaced or the fog still agitated.
+            //    red lights up, the ghost displaced or the fog still agitated. This is visual
+            //    state only; the audio is already on its way out above.
             if (horrorDirector != null)
                 horrorDirector.StopCinematicMode();
 
-            // 4. The phone is cut explicitly. The director's cancel already stops the event, but
-            //    a ring that is sounding at that instant is audio, not event state.
+            // 5. Wait for silence before handing over. The room is quiet, so arriving in it while
+            //    the menu is still audible would be the one thing that gives the seam away.
+            yield return musicFade;
+            yield return sourceFades;
+
+            // 6. Only now is the phone told to stop for good. Its source has already faded, so
+            //    this is bookkeeping rather than a cut, and it is what guarantees a ring that was
+            //    mid-flight cannot survive into the room.
             if (phoneRing != null)
                 phoneRing.StopRinging();
 
             for (int i = 0; i < cinematicAudioSources.Length; i++)
-                if (cinematicAudioSources[i] != null)
-                    cinematicAudioSources[i].Stop();
+            {
+                if (cinematicAudioSources[i] == null)
+                    continue;
 
-            // 5. Menu music fades rather than cutting. This asks the audio manager to stop its
-            //    own music source; the manager, the mixer and every other channel are untouched,
-            //    because the room will want them.
-            yield return FadeOutMenuMusic();
+                cinematicAudioSources[i].Stop();
+                // Put the authored volume back now the source is silent, so the scene asset is
+                // left as it was serialized rather than permanently at zero.
+                if (_cinematicSourceVolumes != null && i < _cinematicSourceVolumes.Length)
+                    cinematicAudioSources[i].volume = _cinematicSourceVolumes[i];
+            }
 
             if (UIManager.Instance != null)
                 UIManager.Instance.HideAll();
 
-            // 6. The room exists before the player is put in it.
+            // 7. The room exists before the player is put in it.
             SetRoomActive(true);
 
-            // 7. Listener first, then the player. The player builds its own AudioListener, so
+            // 8. Listener first, then the player. The player builds its own AudioListener, so
             //    silencing the menu's before it exists is what guarantees there is never a frame
             //    with two enabled listeners.
             if (cinematicAudioListener != null)
@@ -168,9 +195,13 @@ namespace CatchIfYouCan.UI
 
             Mode = MenuMode.InteractiveRoom;
 
-            // 9. Reveal, then arm input. Enabling movement and look before the fade finishes is
-            //    what would let the tap that started all this carry through as a look delta.
+            // 10. Reveal, then arm input. Enabling movement and look before the fade finishes is
+            //     what would let the tap that started all this carry through as a look delta,
+            //     and showing the controls over a black screen would look like a glitch.
             yield return Fade(1f, 0f, fadeInDuration);
+
+            if (_player != null && _player.TouchHud != null)
+                _player.TouchHud.SetActive(true);
 
             EnablePlayerInput(true);
             DestroyFadeOverlay();
@@ -235,6 +266,23 @@ namespace CatchIfYouCan.UI
                     cinematicUiRoots[i].SetActive(active);
         }
 
+        /// <summary>
+        /// Converts a normalised fade position into a volume multiplier.
+        ///
+        /// <para>
+        /// The travel happens in decibels, not in amplitude. Halving amplitude only drops
+        /// loudness by 6 dB, so a straight lerp to zero sounds like the music dives and then
+        /// hangs around barely audible for most of the fade. Sweeping the gain down a dB scale
+        /// instead is what makes the level appear to fall evenly, and the SmoothStep takes the
+        /// corners off both ends so neither the start nor the arrival at silence is a step.
+        /// </para>
+        /// </summary>
+        private float FadeCurve(float t)
+        {
+            float decibels = Mathf.Lerp(0f, fadeFloorDecibels, Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(t)));
+            return Mathf.Pow(10f, decibels / 20f);
+        }
+
         private IEnumerator FadeOutMenuMusic()
         {
             var audio = AudioManager.Instance;
@@ -244,16 +292,52 @@ namespace CatchIfYouCan.UI
             float start = audio.GetMusicVolume();
             for (float e = 0f; e < musicFadeDuration; e += Time.unscaledDeltaTime)
             {
-                audio.SetMusicVolume(Mathf.Lerp(start, 0f, e / Mathf.Max(0.0001f, musicFadeDuration)));
+                audio.SetMusicVolume(start * FadeCurve(e / Mathf.Max(0.0001f, musicFadeDuration)));
                 yield return null;
             }
 
             // A null clip is this manager's documented way of stopping the music source. Nothing
             // else on the manager is touched, so UI sounds and anything the room needs later
-            // still work.
+            // still work, and the stored volume is put back so a future return to the menu is
+            // not silent.
+            audio.SetMusicVolume(0f);
             audio.PlayMusic(null);
             audio.SetMusicVolume(start);
         }
+
+        /// <summary>
+        /// Fades the scene's cinematic sources — in practice the phone — then leaves them at
+        /// zero. Stopping them is done by the caller once the handover is committed, so a ring
+        /// that was sounding at the moment of the tap dies away instead of clicking off.
+        /// </summary>
+        private IEnumerator FadeOutCinematicSources()
+        {
+            if (cinematicAudioSources.Length == 0 || phoneFadeDuration <= 0f)
+                yield break;
+
+            var starts = new float[cinematicAudioSources.Length];
+            for (int i = 0; i < cinematicAudioSources.Length; i++)
+                starts[i] = cinematicAudioSources[i] != null ? cinematicAudioSources[i].volume : 0f;
+
+            for (float e = 0f; e < phoneFadeDuration; e += Time.unscaledDeltaTime)
+            {
+                float k = FadeCurve(e / phoneFadeDuration);
+                for (int i = 0; i < cinematicAudioSources.Length; i++)
+                    if (cinematicAudioSources[i] != null)
+                        cinematicAudioSources[i].volume = starts[i] * k;
+                yield return null;
+            }
+
+            for (int i = 0; i < cinematicAudioSources.Length; i++)
+                if (cinematicAudioSources[i] != null)
+                    cinematicAudioSources[i].volume = 0f;
+
+            // The authored volumes are restored after the stop, so the sources are left exactly
+            // as the scene serialized them and a later menu is not silent.
+            _cinematicSourceVolumes = starts;
+        }
+
+        private float[] _cinematicSourceVolumes;
 
         // ---- fade overlay ----------------------------------------------------------------
 

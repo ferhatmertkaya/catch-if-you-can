@@ -54,7 +54,28 @@ namespace CatchIfYouCan.Input
         public bool InteractHeld { get; private set; }
 
         private int _lookFingerId = -1;
-        private bool _blockLookThisFrame;
+        private bool _blockMouseLookThisFrame;
+
+        // Set while a TouchLookArea is alive. When one is, the EventSystem is delivering look
+        // drags to it per pointer and the raw touch scan below must stay out of the way.
+        private static TouchLookArea _lookArea;
+
+        internal static void RegisterLookArea(TouchLookArea area) => _lookArea = area;
+
+        internal static void UnregisterLookArea(TouchLookArea area)
+        {
+            if (_lookArea == area)
+                _lookArea = null;
+        }
+
+        /// <summary>
+        /// Adds look movement measured by the UI, in pixels. Accumulated rather than assigned so
+        /// two sources in the same frame cannot silently discard each other.
+        /// </summary>
+        public void AddLookDelta(Vector2 pixelDelta)
+        {
+            LookDelta += pixelDelta * lookSensitivity;
+        }
 
         public event Action OnInteractTap;
         public event Action OnUseTap;
@@ -68,7 +89,11 @@ namespace CatchIfYouCan.Input
             UsePressed = false;
             JournalPressed = false;
             FlashlightPressed = false;
-            _blockLookThisFrame = IsPointerOverUI();
+            // Only the mouse is blocked by the cursor being over UI. Touch is not: asking "is any
+            // pointer over UI" and blocking the whole frame is what made holding the movement
+            // joystick — itself a UI element — switch looking off, which is the opposite of the
+            // simultaneous move-and-look this game needs.
+            _blockMouseLookThisFrame = IsMousePointerOverUI();
 
             ProcessLookTouch();
             ProcessKeyboardLook();
@@ -85,7 +110,7 @@ namespace CatchIfYouCan.Input
         {
 #if ENABLE_INPUT_SYSTEM
             bool hasActiveTouch = Touchscreen.current != null && Touchscreen.current.primaryTouch.press.isPressed;
-            if (_blockLookThisFrame || hasActiveTouch || _lookFingerId >= 0)
+            if (_blockMouseLookThisFrame || hasActiveTouch || _lookFingerId >= 0)
                 return;
 
             if (Mouse.current == null)
@@ -93,15 +118,15 @@ namespace CatchIfYouCan.Input
 
             Vector2 mouseDelta = Mouse.current.delta.ReadValue();
             if (mouseDelta.sqrMagnitude > 0.001f)
-                LookDelta = mouseDelta * lookSensitivity * 0.05f;
+                LookDelta += mouseDelta * lookSensitivity * 0.05f;
 #else
-            if (_blockLookThisFrame || UnityEngine.Input.touchCount > 0 || _lookFingerId >= 0)
+            if (_blockMouseLookThisFrame || UnityEngine.Input.touchCount > 0 || _lookFingerId >= 0)
                 return;
 
             float mouseX = UnityEngine.Input.GetAxis("Mouse X");
             float mouseY = UnityEngine.Input.GetAxis("Mouse Y");
             if (Mathf.Abs(mouseX) > 0.001f || Mathf.Abs(mouseY) > 0.001f)
-                LookDelta = new Vector2(mouseX, mouseY) * lookSensitivity * 10f;
+                LookDelta += new Vector2(mouseX, mouseY) * lookSensitivity * 10f;
 #endif
         }
 
@@ -145,7 +170,10 @@ namespace CatchIfYouCan.Input
 
         private void ProcessLookTouch()
         {
-            if (_blockLookThisFrame)
+            // A TouchLookArea owns looking when one exists; the EventSystem routes each finger to
+            // exactly one widget, which is stricter than anything this scan can manage. The scan
+            // stays only as a fallback for scenes that have no HUD.
+            if (_lookArea != null)
             {
                 _lookFingerId = -1;
                 return;
@@ -274,6 +302,15 @@ namespace CatchIfYouCan.Input
         {
             FlashlightPressed = true;
             OnFlashlightTap?.Invoke();
+        }
+
+        /// <summary>
+        /// True when the mouse cursor is over a UI element. Deliberately ignores touches: a
+        /// finger on the joystick says nothing about whether the other thumb may look around.
+        /// </summary>
+        private static bool IsMousePointerOverUI()
+        {
+            return EventSystem.current != null && EventSystem.current.IsPointerOverGameObject();
         }
 
         public static bool IsPointerOverUI()

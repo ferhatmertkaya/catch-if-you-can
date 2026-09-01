@@ -21,6 +21,12 @@ namespace CatchIfYouCan.Player
 
         /// <summary>The instantiated character, or null when no visual prefab is available.</summary>
         public GameObject CharacterVisual;
+
+        /// <summary>
+        /// The on-screen controls. Handed back rather than shown, so the caller decides when the
+        /// player is allowed to see them — they must not appear over the transition fade.
+        /// </summary>
+        public GameObject TouchHud;
     }
 
     public static class PlayerFactory
@@ -40,7 +46,10 @@ namespace CatchIfYouCan.Player
 
             var cameraRoot = new GameObject("CameraRoot");
             cameraRoot.transform.SetParent(player.transform, false);
-            cameraRoot.transform.localPosition = new Vector3(0f, 1.6f, 0f);
+            // Eye height, not head height. Nathan's eye bones sit at 1.719 m in the bind pose, so
+            // the camera goes where his eyes are; that is what makes looking down at his own
+            // chest and legs read as a body rather than a prop hanging below a floating camera.
+            cameraRoot.transform.localPosition = new Vector3(0f, EyeHeight, 0f);
 
             var visualRoot = new GameObject("VisualRoot");
             visualRoot.transform.SetParent(player.transform, false);
@@ -53,6 +62,9 @@ namespace CatchIfYouCan.Player
             cameraGo.tag = "MainCamera";
             cameraGo.transform.SetParent(cameraRoot.transform, false);
             var viewCamera = cameraGo.AddComponent<Camera>();
+            // 5 cm. The nearest thing the camera can see of its own body is the shoulder, about
+            // 25 cm away when looking straight down, so this clears it comfortably without
+            // squeezing the depth buffer the way a millimetre near plane would.
             viewCamera.nearClipPlane = 0.05f;
             cameraGo.AddComponent<AudioListener>();
 
@@ -77,6 +89,12 @@ namespace CatchIfYouCan.Player
             SetPrivateField(fear, "targetCamera", viewCamera);
 
             var characterVisual = AttachCharacterVisual(player, visualRoot.transform);
+            AttachFootsteps(player);
+
+            // Built here because this is the only moment a player exists to drive; the caller
+            // switches it on once the screen has faded back in.
+            var touchHud = UI.TouchHudFactory.Create();
+            touchHud.SetActive(false);
 
             return new PlayerBuildResult
             {
@@ -85,7 +103,8 @@ namespace CatchIfYouCan.Player
                 CameraRoot = cameraRoot.transform,
                 ViewCamera = viewCamera,
                 VisualRoot = visualRoot.transform,
-                CharacterVisual = characterVisual
+                CharacterVisual = characterVisual,
+                TouchHud = touchHud
             };
         }
 
@@ -95,6 +114,36 @@ namespace CatchIfYouCan.Player
         /// a character is imported and nothing has to change in code when one is.
         /// </summary>
         public const string CharacterVisualResourcePath = "Characters/Player_CharacterVisual";
+
+        /// <summary>Where the camera sits, matching the character's eye bones rather than the
+        /// top of the capsule.</summary>
+        public const float EyeHeight = 1.7f;
+
+        /// <summary>Placeholder wood footsteps, replaced by dropping real recordings in.</summary>
+        public const string FootstepClipResourcePath = "Audio/SFX/Footsteps";
+
+        /// <summary>
+        /// Gives the player one AudioSource for footsteps and a controller that decides when to
+        /// use it. One source, reused for every step; nothing is created while walking.
+        /// </summary>
+        private static void AttachFootsteps(GameObject player)
+        {
+            var source = player.AddComponent<AudioSource>();
+            source.playOnAwake = false;
+            source.loop = false;
+            // Close and dry. These are the player's own boots, not a sound happening across the
+            // room, so they should not thin out with distance or pan away from centre.
+            source.spatialBlend = 0f;
+            source.dopplerLevel = 0f;
+            source.priority = 160;
+
+            var footsteps = player.GetComponent<CatchIfYouCan.Audio.FootstepController>();
+            if (footsteps == null)
+                footsteps = player.AddComponent<CatchIfYouCan.Audio.FootstepController>();
+
+            footsteps.BindSource(source);
+            footsteps.SetWoodClips(Resources.LoadAll<AudioClip>(FootstepClipResourcePath));
+        }
 
         private static GameObject AttachCharacterVisual(GameObject player, Transform visualRoot)
         {
