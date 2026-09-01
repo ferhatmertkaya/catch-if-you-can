@@ -7,3 +7,5 @@ Assets/CatchIfYouCan/Art/Environment/Props/HauntedTable/Models/CIYC_HauntedTable
 Assets/CatchIfYouCan/Art/Environment/Props/HauntedCandleHolder/Textures/CIYC_HauntedCandleHolder_BaseColor.png filter=lfs diff=lfs merge=lfs -text
 Assets/CatchIfYouCan/Art/Environment/Doors/CIYC_VictorianHauntedDoor/Models/CIYC_VictorianHauntedDoor.fbx filter=lfs diff=lfs merge=lfs -text
 Assets/CatchIfYouCan/Resources/Video/Intro/CIYC_StartupIntro.mp4 filter=lfs diff=lfs merge=lfs -text
+Assets/CatchIfYouCan/Art/Characters/Nathan/Models/*.fbx filter=lfs diff=lfs merge=lfs -text
+Assets/CatchIfYouCan/Art/Characters/Nathan/Textures/*.jpg filter=lfs diff=lfs merge=lfs -text
