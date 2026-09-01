@@ -82,23 +82,23 @@ namespace CatchIfYouCan.Art
 
         [Tooltip("Bright on purpose. This corner exists so the player can actually see " +
                  "themselves, which a room lit for a horror game otherwise does not allow.")]
-        [SerializeField] private float lampIntensity = 5.5f;
+        [SerializeField] private float lampIntensity = 6.5f;
 
-        [SerializeField] private float lampRange = 6.5f;
+        [SerializeField] private float lampRange = 7f;
         [SerializeField] private Color lampShadeColor = new Color(0.86f, 0.78f, 0.62f);
 
         [Header("Fill")]
         [Tooltip("A softer light above the mirror aimed back into the room, so the player is lit " +
-                 "from the front rather than silhouetted against the lamp beside them. Off by " +
-                 "default: this project's URP asset allows four additional lights per object, " +
-                 "and the corner already spends three of them on the room's own lamp, its fill " +
-                 "and the standing lamp here. A fifth makes lights pop in and out as the player " +
-                 "walks. Switch it on if the per-object limit is ever raised.")]
-        [SerializeField] private bool buildFill;
+                 "from the front rather than silhouetted against the lamp beside them. This is " +
+                 "what actually makes a face readable in the glass, and it is on: the URP asset " +
+                 "now allows eight additional lights per object, where the four it allowed " +
+                 "before were already spent on the room's lamp and fill, the standing lamp here " +
+                 "and the torch.")]
+        [SerializeField] private bool buildFill = true;
 
         [SerializeField] private Vector3 fillLocalPosition = new Vector3(0f, 2.15f, 0.12f);
-        [SerializeField] private float fillIntensity = 2.4f;
-        [SerializeField] private float fillRange = 5f;
+        [SerializeField] private float fillIntensity = 3f;
+        [SerializeField] private float fillRange = 6f;
 
         private Transform _surface;
         private Camera _mirrorCamera;

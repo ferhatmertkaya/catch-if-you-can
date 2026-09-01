@@ -52295,13 +52295,13 @@ MonoBehaviour:
   lampLocalPosition: {x: 0.85, y: 0, z: 0.35}
   lampHeight: 1.55
   lampColor: {r: 1, g: 0.87, b: 0.7, a: 1}
-  lampIntensity: 5.5
-  lampRange: 6.5
+  lampIntensity: 6.5
+  lampRange: 7
   lampShadeColor: {r: 0.86, g: 0.78, b: 0.62, a: 1}
-  buildFill: 0
+  buildFill: 1
   fillLocalPosition: {x: 0, y: 2.15, z: 0.12}
-  fillIntensity: 2.4
-  fillRange: 5
+  fillIntensity: 3
+  fillRange: 6
 --- !u!1 &7311221300000010
 GameObject:
   m_ObjectHideFlags: 0

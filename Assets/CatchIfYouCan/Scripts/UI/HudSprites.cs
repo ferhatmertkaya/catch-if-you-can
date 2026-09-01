@@ -24,7 +24,7 @@ namespace CatchIfYouCan.UI
         private const string Root = "UI/Controls/";
 
         private static Sprite _disc, _ring, _glow, _chevron, _reticle;
-        private static Sprite _flashlight, _sprint, _crouch, _pickup, _drop;
+        private static Sprite _flashlight, _sprint, _crouch, _interact, _pickup, _drop;
         private static bool _loaded;
 
         /// <summary>Filled circle. The glass body of every control.</summary>
@@ -50,7 +50,10 @@ namespace CatchIfYouCan.UI
         public static Sprite Sprint { get { Load(); return _sprint; } }
         public static Sprite Crouch { get { Load(); return _crouch; } }
 
-        /// <summary>Open hand. Shown when there is something in reach to take.</summary>
+        /// <summary>Finger on a ring. Shown for anything in reach that is used rather than taken.</summary>
+        public static Sprite Interact { get { Load(); return _interact; } }
+
+        /// <summary>Reaching hand. Shown when there is something in reach to take.</summary>
         public static Sprite Pickup { get { Load(); return _pickup; } }
 
         /// <summary>The same hand with the item falling out of it.</summary>
@@ -70,6 +73,7 @@ namespace CatchIfYouCan.UI
             _flashlight = Resources.Load<Sprite>(Root + "Icon_Flashlight");
             _sprint = Resources.Load<Sprite>(Root + "Icon_Sprint");
             _crouch = Resources.Load<Sprite>(Root + "Icon_Crouch");
+            _interact = Resources.Load<Sprite>(Root + "Icon_Interact");
             _pickup = Resources.Load<Sprite>(Root + "Icon_Pickup");
             _drop = Resources.Load<Sprite>(Root + "Icon_Drop");
 

@@ -365,6 +365,18 @@ namespace CatchIfYouCan.Input
 
         public void ReleaseInteract() => InteractHeld = false;
 
+        /// <summary>
+        /// Holds or releases the interact button.
+        ///
+        /// <para>
+        /// Separate from <see cref="PressInteract"/> because a hold and a press are different
+        /// things to the interaction system: an instant interactable reads the press, while one
+        /// with a hold duration - a hiding place, a breaker box - only progresses while this is
+        /// true, and abandons the hold the moment it is not.
+        /// </para>
+        /// </summary>
+        public void SetInteractHeld(bool held) => InteractHeld = held;
+
         public void PressUse()
         {
             _useFrame = Time.frameCount;

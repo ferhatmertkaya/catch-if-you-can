@@ -304,6 +304,7 @@ namespace CatchIfYouCan.UI
             SetPrivateField(carry, "icon", icon);
             SetPrivateField(carry, "ring", ring);
             SetPrivateField(carry, "group", group);
+            SetPrivateField(carry, "interactSprite", HudSprites.Interact);
             SetPrivateField(carry, "pickupSprite", HudSprites.Pickup);
             SetPrivateField(carry, "dropSprite", HudSprites.Drop);
         }

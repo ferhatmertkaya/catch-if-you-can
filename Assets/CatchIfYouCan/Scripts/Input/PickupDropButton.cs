@@ -6,15 +6,21 @@ using UnityEngine.UI;
 namespace CatchIfYouCan.Input
 {
     /// <summary>
-    /// One button for taking things and putting them down, above and right of the torch.
+    /// One button for using, taking and putting down, above and right of the torch.
     ///
     /// <para>
-    /// It is one control rather than two because the two states are almost never both wanted:
-    /// with empty hands there is nothing to put down, and with a full hand the thing in reach is
-    /// usually not the thing you want. It shows the hand while something is in reach and there is
-    /// a slot free, and the hand dropping an item otherwise while carrying. When neither applies
-    /// it fades out entirely rather than sitting there greyed - this is a horror game and an
-    /// unusable button is just something else covering the room.
+    /// It is one control rather than three because at most one of them is ever the obvious thing
+    /// to do: a reaching hand for something that can be taken, a finger for a door or a switch
+    /// that is used rather than pocketed, and a hand dropping an item when carrying with nothing
+    /// in front of you. When none applies it fades out entirely rather than sitting there greyed
+    /// - this is a horror game and an unusable button is just something else covering the room.
+    /// </para>
+    ///
+    /// <para>
+    /// Press and hold works, which matters because hiding and the breaker box are holds rather
+    /// than taps. While the thumb is down and has not wandered, the interact input is held, so
+    /// those progress; the moment the press turns into a look the hold is dropped, which cancels
+    /// them exactly as taking the finger off would.
     /// </para>
     ///
     /// <para>
@@ -31,13 +37,14 @@ namespace CatchIfYouCan.Input
     /// </summary>
     public sealed class PickupDropButton : TouchHoldButton
     {
-        public enum Mode { Hidden, Pickup, Drop }
+        public enum Mode { Hidden, Interact, Pickup, Drop }
 
         [Header("Visuals")]
         [SerializeField] private Image icon;
         [SerializeField] private Graphic ring;
         [SerializeField] private CanvasGroup group;
 
+        [SerializeField] private Sprite interactSprite;
         [SerializeField] private Sprite pickupSprite;
         [SerializeField] private Sprite dropSprite;
 
@@ -53,6 +60,7 @@ namespace CatchIfYouCan.Input
 
         private Mode _mode = Mode.Hidden;
         private float _shown;
+        private bool _holdingInteract;
 
         /// <summary>What the button is currently offering to do.</summary>
         public Mode Current => _mode;
@@ -63,22 +71,53 @@ namespace CatchIfYouCan.Input
             ApplyFade(0f);
         }
 
+        protected override void OnPressed()
+        {
+            // Nothing fires here. The press only becomes an action on release, and only if the
+            // thumb stayed put, because this button sits inside the look area and a drag that
+            // starts on it is a look.
+            SetHold(_mode == Mode.Interact || _mode == Mode.Pickup);
+        }
+
         protected override void OnReleased(bool dragged)
         {
-            // A drag was a look. Same rule as the torch: these buttons sit inside the look area
-            // and must never act on a gesture that was aimed past them.
+            SetHold(false);
+
             if (dragged || _mode == Mode.Hidden)
                 return;
 
-            if (_mode == Mode.Pickup)
-                MobileInputController.Instance?.TapInteract();
-            else if (inventory != null)
-                inventory.DropSelected();
+            if (_mode == Mode.Drop)
+            {
+                if (inventory != null)
+                    inventory.DropSelected();
+                return;
+            }
+
+            // Instant interactables read the press; ones with a hold duration were already
+            // progressing from the held flag above and ignore this.
+            MobileInputController.Instance?.TapInteract();
+        }
+
+        protected override void OnCancelled() => SetHold(false);
+
+        private void SetHold(bool held)
+        {
+            if (_holdingInteract == held)
+                return;
+
+            _holdingInteract = held;
+            MobileInputController.Instance?.SetInteractHeld(held);
         }
 
         private void Update()
         {
             Resolve();
+
+            // Letting the thumb wander turns the press into a look, so the hold has to go with
+            // it - otherwise sliding off the button to look around would quietly keep opening
+            // whatever it was pointed at.
+            if (_holdingInteract && (WasDragged || !IsHeld || _mode == Mode.Hidden || _mode == Mode.Drop))
+                SetHold(false);
 
             var target = _mode == Mode.Hidden ? 0f : 1f;
             if (!Mathf.Approximately(_shown, target))
@@ -94,24 +133,33 @@ namespace CatchIfYouCan.Input
         /// Decides what the button is for this frame.
         ///
         /// <para>
-        /// Taking wins over putting down when both are possible, so walking up to a second item
-        /// while already carrying one still picks it up rather than making the player empty their
-        /// hands first. The free-slot test matters: without it the button would offer a pickup
-        /// that <see cref="PlayerInventory.AddItem"/> then silently refuses.
+        /// What is in front of the player wins over what is in their hands, so walking up to a
+        /// second item while already carrying one still picks it up rather than making them empty
+        /// their hands first, and a door in reach is still a door. The free-slot test matters:
+        /// without it the button would offer a pickup that <see cref="PlayerInventory.AddItem"/>
+        /// then silently refuses - and a full inventory in front of an item falls through to the
+        /// interact icon, which is at least honest about there being something there.
         /// </para>
         /// </summary>
         private void Resolve()
         {
             ResolveReferences();
 
-            bool canTake = interaction != null &&
-                           interaction.CurrentTarget != null &&
-                           interaction.CurrentTarget.InteractionType == InteractionType.Pickup &&
-                           inventory != null && inventory.HasFreeSlot;
-
+            var target = interaction != null ? interaction.CurrentTarget : null;
+            bool isPickup = target != null && target.InteractionType == InteractionType.Pickup;
+            bool canTake = isPickup && inventory != null && inventory.HasFreeSlot;
             bool carrying = inventory != null && inventory.GetSelectedItem() != null;
 
-            Mode next = canTake ? Mode.Pickup : carrying ? Mode.Drop : Mode.Hidden;
+            Mode next;
+            if (canTake)
+                next = Mode.Pickup;
+            else if (target != null && !isPickup)
+                next = Mode.Interact;
+            else if (carrying)
+                next = Mode.Drop;
+            else
+                next = Mode.Hidden;
+
             if (next == _mode)
                 return;
 
@@ -119,10 +167,12 @@ namespace CatchIfYouCan.Input
             if (icon == null)
                 return;
 
-            if (_mode == Mode.Pickup && pickupSprite != null)
-                icon.sprite = pickupSprite;
-            else if (_mode == Mode.Drop && dropSprite != null)
-                icon.sprite = dropSprite;
+            Sprite sprite = _mode == Mode.Pickup ? pickupSprite
+                          : _mode == Mode.Interact ? interactSprite
+                          : _mode == Mode.Drop ? dropSprite
+                          : null;
+            if (sprite != null)
+                icon.sprite = sprite;
         }
 
         private void ResolveReferences()
