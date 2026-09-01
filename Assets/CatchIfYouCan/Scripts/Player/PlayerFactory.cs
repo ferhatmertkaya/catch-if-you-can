@@ -124,7 +124,7 @@ namespace CatchIfYouCan.Player
 
             var characterVisual = AttachCharacterVisual(player, visualRoot.transform);
             AttachBodyMotion(player, visualRoot.transform, cameraRoot.transform, characterVisual);
-            AttachFlashlight(player, handAnchor.transform, characterVisual);
+            AttachFlashlight(player, characterVisual);
             AttachFootsteps(player);
 
             // Built here because this is the only moment a player exists to drive; the caller
@@ -318,24 +318,46 @@ namespace CatchIfYouCan.Player
         }
 
         /// <summary>
-        /// Puts the placeholder torch in the character's hand, or on the viewmodel anchor when
-        /// there is no character to hold it.
+        /// Builds the placeholder torch and puts it in the player's hands.
+        ///
+        /// <para>
+        /// It is made as an ordinary item and handed to <see cref="PlayerInventory"/> rather than
+        /// bolted to the player, so everything about carrying it - equipping, dropping, picking
+        /// it back up, the HUD button that does those - is the code that already existed. The
+        /// only thing the torch itself adds is that its beam survives being put down.
+        /// </para>
         /// </summary>
-        private static void AttachFlashlight(GameObject player, Transform handAnchor,
-                                             GameObject characterVisual)
+        private static void AttachFlashlight(GameObject player, GameObject characterVisual)
         {
-            var flashlight = player.GetComponent<HandFlashlight>();
-            if (flashlight == null)
-                flashlight = player.AddComponent<HandFlashlight>();
+            var inventory = player.GetComponent<PlayerInventory>();
+            if (inventory == null)
+                return;
 
-            SetPrivateField(flashlight, "fallbackAnchor", handAnchor);
-            SetPrivateField(flashlight, "playerBody", player.transform);
-            SetPrivateField(flashlight, "playerController", player.GetComponent<PlayerController>());
+            var go = new GameObject("Flashlight_Placeholder");
+            go.transform.SetParent(player.transform, false);
 
-            // Called even with no character: the component resolved its anchor in Awake, before
-            // the fallback had been handed to it, so without this the torch would sit at the
-            // player's feet whenever the model failed to load.
-            flashlight.BindCharacter(characterVisual != null ? characterVisual.transform : null);
+            // A trigger, not a solid: the interaction ray is cast with
+            // QueryTriggerInteraction.Collide, so this is enough to be picked up, and a solid
+            // collider on something held inside the player's own capsule is nothing but a source
+            // of contacts to resolve.
+            var collider = go.AddComponent<SphereCollider>();
+            collider.radius = 0.14f;
+            collider.isTrigger = true;
+
+            var torch = go.AddComponent<Equipment.PlaceholderFlashlight>();
+            var definition = Equipment.EquipmentDefinitionFactory.GetById("flashlight");
+            if (definition != null)
+                torch.BindDefinition(definition);
+
+            torch.BindCharacter(characterVisual != null ? characterVisual.transform : null,
+                                player.transform);
+
+            var pickup = go.AddComponent<Interaction.InteractivePickup>();
+            SetPrivateField(pickup, "itemComponent", torch);
+            SetPrivateField(pickup, "prompt", "Pick Up Flashlight");
+            SetPrivateField(pickup, "destroyOnPickup", false);
+
+            inventory.AddItem(torch);
         }
 
         public static MobileInputController EnsureMobileInput()

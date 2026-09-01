@@ -18,6 +18,18 @@ namespace CatchIfYouCan.Player
         public int SelectedIndex => _selectedIndex;
         public event Action<int, EquipmentBase> OnSlotChanged;
 
+        /// <summary>True when at least one slot is empty, so a pickup would actually land.</summary>
+        public bool HasFreeSlot
+        {
+            get
+            {
+                for (int i = 0; i < SlotCount; i++)
+                    if (_slots[i] == null)
+                        return true;
+                return false;
+            }
+        }
+
         public EquipmentBase GetSlot(int index)
         {
             if (index < 0 || index >= SlotCount)

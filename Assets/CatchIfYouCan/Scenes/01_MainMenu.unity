@@ -47168,6 +47168,7 @@ Transform:
   - {fileID: 7311221100000204}
   - {fileID: 7311221200000101}
   - {fileID: 7311221300000011}
+  - {fileID: 7311221400000011}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &7311220700000020
@@ -52236,6 +52237,71 @@ MonoBehaviour:
   behindRadius: 1.1
   behindArc: {x: 118, y: 242}
   behindHeightOffset: -0.08
+--- !u!1 &7311221400000010
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 7311221400000011}
+  - component: {fileID: 7311221400000012}
+  m_Layer: 0
+  m_Name: InteractiveRoom_MirrorCorner
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &7311221400000011
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 7311221400000010}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0.70710678, z: 0, w: 0.70710678}
+  m_LocalPosition: {x: 15.02, y: 0, z: -2}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 7311220700000011}
+  m_LocalEulerAnglesHint: {x: 0, y: 90, z: 0}
+--- !u!114 &7311221400000012
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 7311221400000010}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 6d24f8b09a3e4c17be5028da1f76c3e9, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::CatchIfYouCan.Art.MirrorCorner
+  glassSize: {x: 0.72, y: 1.4}
+  glassLocalPosition: {x: 0, y: 1.25, z: 0.02}
+  resolution: 512
+  mirrorImage: 1
+  renderDistance: 7
+  nearPlane: 0.05
+  farPlane: 40
+  frameBorder: 0.06
+  frameDepth: 0.05
+  frameColor: {r: 0.16, g: 0.12, b: 0.09, a: 1}
+  buildLamp: 1
+  lampLocalPosition: {x: 0.85, y: 0, z: 0.35}
+  lampHeight: 1.55
+  lampColor: {r: 1, g: 0.87, b: 0.7, a: 1}
+  lampIntensity: 5.5
+  lampRange: 6.5
+  lampShadeColor: {r: 0.86, g: 0.78, b: 0.62, a: 1}
+  buildFill: 0
+  fillLocalPosition: {x: 0, y: 2.15, z: 0.12}
+  fillIntensity: 2.4
+  fillRange: 5
 --- !u!1 &7311221300000010
 GameObject:
   m_ObjectHideFlags: 0

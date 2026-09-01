@@ -23,7 +23,8 @@ namespace CatchIfYouCan.UI
     {
         private const string Root = "UI/Controls/";
 
-        private static Sprite _disc, _ring, _glow, _reticle, _flashlight, _sprint, _crouch;
+        private static Sprite _disc, _ring, _glow, _chevron, _reticle;
+        private static Sprite _flashlight, _sprint, _crouch, _pickup, _drop;
         private static bool _loaded;
 
         /// <summary>Filled circle. The glass body of every control.</summary>
@@ -42,9 +43,18 @@ namespace CatchIfYouCan.UI
         /// <summary>Small ring with a centre dot.</summary>
         public static Sprite Reticle { get { Load(); return _reticle; } }
 
+        /// <summary>Single chevron, pointing up. Rotated in the UI for the other three.</summary>
+        public static Sprite Chevron { get { Load(); return _chevron; } }
+
         public static Sprite Flashlight { get { Load(); return _flashlight; } }
         public static Sprite Sprint { get { Load(); return _sprint; } }
         public static Sprite Crouch { get { Load(); return _crouch; } }
+
+        /// <summary>Open hand. Shown when there is something in reach to take.</summary>
+        public static Sprite Pickup { get { Load(); return _pickup; } }
+
+        /// <summary>The same hand with the item falling out of it.</summary>
+        public static Sprite Drop { get { Load(); return _drop; } }
 
         private static void Load()
         {
@@ -55,10 +65,13 @@ namespace CatchIfYouCan.UI
             _disc = Resources.Load<Sprite>(Root + "UI_Disc");
             _ring = Resources.Load<Sprite>(Root + "UI_Ring");
             _glow = Resources.Load<Sprite>(Root + "UI_Glow");
+            _chevron = Resources.Load<Sprite>(Root + "UI_Chevron");
             _reticle = Resources.Load<Sprite>(Root + "UI_Reticle");
             _flashlight = Resources.Load<Sprite>(Root + "Icon_Flashlight");
             _sprint = Resources.Load<Sprite>(Root + "Icon_Sprint");
             _crouch = Resources.Load<Sprite>(Root + "Icon_Crouch");
+            _pickup = Resources.Load<Sprite>(Root + "Icon_Pickup");
+            _drop = Resources.Load<Sprite>(Root + "Icon_Drop");
 
             if (_disc == null || _ring == null)
             {

@@ -78,10 +78,22 @@ namespace CatchIfYouCan.Input
             _lookAccumulatorFrame == Time.frameCount ? _lookAccumulator : Vector2.zero;
         public bool SprintHeld { get; private set; }
         public bool CrouchHeld { get; private set; }
-        public bool InteractPressed { get; private set; }
-        public bool UsePressed { get; private set; }
-        public bool JournalPressed { get; private set; }
-        public bool FlashlightPressed { get; private set; }
+
+        // One-shot presses, stamped with the frame they happened in rather than cleared at the
+        // top of Update. Same reasoning as LookDelta above, and the same bug if it is not done:
+        // a HUD button reports from a UI callback, which Unity dispatches from the EventSystem's
+        // own Update, and the order of two MonoBehaviour Updates is not defined. Clearing a bool
+        // here could wipe a press the button had already reported and that its consumer had not
+        // read yet, so a tap would do nothing - intermittently, depending on script order.
+        private int _interactFrame = -1;
+        private int _useFrame = -1;
+        private int _journalFrame = -1;
+        private int _flashlightFrame = -1;
+
+        public bool InteractPressed => _interactFrame == Time.frameCount;
+        public bool UsePressed => _useFrame == Time.frameCount;
+        public bool JournalPressed => _journalFrame == Time.frameCount;
+        public bool FlashlightPressed => _flashlightFrame == Time.frameCount;
         public bool InteractHeld { get; private set; }
 
         /// <summary>
@@ -138,10 +150,6 @@ namespace CatchIfYouCan.Input
 
         private void Update()
         {
-            InteractPressed = false;
-            UsePressed = false;
-            JournalPressed = false;
-            FlashlightPressed = false;
             // Only the mouse is blocked by the cursor being over UI. Touch is not: asking "is any
             // pointer over UI" and blocking the whole frame is what made holding the movement
             // joystick — itself a UI element — switch looking off, which is the opposite of the
@@ -338,28 +346,40 @@ namespace CatchIfYouCan.Input
 
         public void PressInteract()
         {
-            InteractPressed = true;
+            _interactFrame = Time.frameCount;
             InteractHeld = true;
             OnInteractTap?.Invoke();
+        }
+
+        /// <summary>
+        /// A press and its release in one call, for a control that taps rather than holds.
+        /// Interactions with no hold duration - picking something up, flicking a switch - only
+        /// ever read the press, and leaving InteractHeld latched afterwards would quietly
+        /// complete every hold-to-interact the player then looked at.
+        /// </summary>
+        public void TapInteract()
+        {
+            PressInteract();
+            InteractHeld = false;
         }
 
         public void ReleaseInteract() => InteractHeld = false;
 
         public void PressUse()
         {
-            UsePressed = true;
+            _useFrame = Time.frameCount;
             OnUseTap?.Invoke();
         }
 
         public void PressJournal()
         {
-            JournalPressed = true;
+            _journalFrame = Time.frameCount;
             OnJournalTap?.Invoke();
         }
 
         public void PressFlashlight()
         {
-            FlashlightPressed = true;
+            _flashlightFrame = Time.frameCount;
             OnFlashlightTap?.Invoke();
         }
 

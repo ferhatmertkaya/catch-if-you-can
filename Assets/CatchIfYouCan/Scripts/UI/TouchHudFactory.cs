@@ -60,6 +60,7 @@ namespace CatchIfYouCan.UI
         private static readonly Color StickBorder = new Color(0.84f, 0.90f, 0.87f, 0.22f);
         private static readonly Color KnobGlass = new Color(0.80f, 0.87f, 0.83f, 0.16f);
         private static readonly Color KnobBorder = new Color(0.90f, 0.95f, 0.92f, 0.30f);
+        private static readonly Color StickChevron = new Color(0.90f, 0.94f, 0.92f, 0.34f);
 
         private static readonly Color ReticleTint = new Color(0.88f, 0.92f, 0.90f, 0.22f);
 
@@ -68,12 +69,13 @@ namespace CatchIfYouCan.UI
         // disappears in a black room.
         private static readonly Color Shade = new Color(0f, 0f, 0f, 0.18f);
 
-        private static Color Accent(float alpha)
-        {
-            var c = UITheme.Primary;      // #57FF68
-            c.a = alpha;
-            return c;
-        }
+        // Active states are a brighter white, not a colour. The HUD is deliberately monochrome:
+        // a green ring is the one thing on screen that could not be part of the room, and in a
+        // game whose whole look is a dark room lit by one torch that reads as a menu, not as a
+        // torch being on.
+        private static readonly Color IconActive = new Color(1f, 1f, 1f, 0.98f);
+        private static readonly Color RingActive = new Color(0.96f, 0.98f, 0.97f, 0.5f);
+        private static readonly Color GlowActive = new Color(0.94f, 0.97f, 0.96f, 0.1f);
 
         // ---- layout ------------------------------------------------------------------------
 
@@ -89,8 +91,15 @@ namespace CatchIfYouCan.UI
         private const float ClusterArcDegrees = 142f;
         private static readonly Vector2 FlashlightCentre = new Vector2(-160f, 250f);
 
+        private const float ChevronSize = 46f;
+        private const float ChevronRadius = 112f;   // between the knob and the ring
+
         private const float IconFraction = 0.5f;
         private const float ReticleSize = 34f;
+
+        // Above and to the right of the torch, clear of it and of the run button.
+        private const float CarryButtonSize = 132f;
+        private static readonly Vector2 CarryCentre = new Vector2(-118f, 452f);
 
         /// <summary>
         /// Creates the HUD and hands back its root. The caller owns when it is shown; nothing
@@ -185,6 +194,7 @@ namespace CatchIfYouCan.UI
             bgImage.raycastTarget = false;
 
             AddSprite(background, "Border", HudSprites.Ring, StickBorder, StickRingSize);
+            AddChevrons(background);
 
             var handle = CreateRect("Handle", background, Half, Half);
             handle.sizeDelta = new Vector2(StickKnobSize, StickKnobSize);
@@ -204,6 +214,25 @@ namespace CatchIfYouCan.UI
         }
 
         /// <summary>
+        /// Four arrows around the knob, so the stick reads as a direction pad at a glance rather
+        /// than as an empty ring. One sprite, rotated: a separate asset per direction would be
+        /// four things to keep looking identical.
+        /// </summary>
+        private static void AddChevrons(RectTransform background)
+        {
+            for (int i = 0; i < 4; i++)
+            {
+                float degrees = i * 90f;                       // up, left, down, right
+                float radians = (90f + degrees) * Mathf.Deg2Rad;
+                var chevron = AddSprite(background, "Chevron", HudSprites.Chevron,
+                                        StickChevron, ChevronSize);
+                chevron.rectTransform.anchoredPosition =
+                    new Vector2(Mathf.Cos(radians), Mathf.Sin(radians)) * ChevronRadius;
+                chevron.rectTransform.localRotation = Quaternion.Euler(0f, 0f, degrees);
+            }
+        }
+
+        /// <summary>
         /// The three action buttons, on an arc opening away from the corner. The torch sits at
         /// the near end and the other two are placed by angle rather than by hand, so the arc
         /// stays an arc if any of the sizes are retuned.
@@ -218,6 +247,7 @@ namespace CatchIfYouCan.UI
             CreateFlashlightButton(parent, FlashlightCentre);
             CreateSprintButton(parent, FlashlightCentre + offset);
             CreateCrouchButton(parent, FlashlightCentre + new Vector2(offset.x, -offset.y));
+            CreateCarryButton(parent);
         }
 
         private static void CreateFlashlightButton(RectTransform parent, Vector2 centre)
@@ -231,10 +261,10 @@ namespace CatchIfYouCan.UI
             SetPrivateField(flashlight, "ring", ring);
             SetPrivateField(flashlight, "glow", glow);
             SetPrivateField(flashlight, "iconIdle", IconTint);
-            SetPrivateField(flashlight, "iconActive", Color.Lerp(Color.white, UITheme.Primary, 0.55f));
+            SetPrivateField(flashlight, "iconActive", IconActive);
             SetPrivateField(flashlight, "ringIdle", GlassBorder);
-            SetPrivateField(flashlight, "ringActive", Accent(0.42f));
-            SetPrivateField(flashlight, "glowActive", Accent(0.12f));
+            SetPrivateField(flashlight, "ringActive", RingActive);
+            SetPrivateField(flashlight, "glowActive", GlowActive);
         }
 
         private static void CreateSprintButton(RectTransform parent, Vector2 centre)
@@ -254,7 +284,28 @@ namespace CatchIfYouCan.UI
             // language rather than as two unrelated indicators.
             SetPrivateField(crouch, "activeIndicator", ring);
             SetPrivateField(crouch, "idleColor", GlassBorder);
-            SetPrivateField(crouch, "activeColor", Accent(0.5f));
+            SetPrivateField(crouch, "activeColor", RingActive);
+        }
+
+        /// <summary>
+        /// The take / put-down button. Built like the others and then given a CanvasGroup, because
+        /// unlike them it is not always there: it fades in when there is something to do with it.
+        /// </summary>
+        private static void CreateCarryButton(RectTransform parent)
+        {
+            var button = CreateRoundButton("CarryButton", parent, CarryCentre, CarryButtonSize,
+                                           HudSprites.Pickup, out var ring, out var icon, out _);
+
+            var group = button.gameObject.AddComponent<CanvasGroup>();
+            group.alpha = 0f;
+            group.blocksRaycasts = false;
+
+            var carry = button.gameObject.AddComponent<PickupDropButton>();
+            SetPrivateField(carry, "icon", icon);
+            SetPrivateField(carry, "ring", ring);
+            SetPrivateField(carry, "group", group);
+            SetPrivateField(carry, "pickupSprite", HudSprites.Pickup);
+            SetPrivateField(carry, "dropSprite", HudSprites.Drop);
         }
 
         /// <summary>

@@ -29,8 +29,15 @@ namespace CatchIfYouCan.Interaction
             if (itemComponent == null)
                 return false;
 
+            // Never offer something the player is already holding. Without this a carried item
+            // whose collider sits in front of the camera - anything held at the viewmodel anchor
+            // - is picked up by the interaction ray every frame and permanently reads as "Pick
+            // Up", covering whatever is actually in front of the player.
+            if (itemComponent.IsEquipped)
+                return false;
+
             PlayerInventory inventory = interactor.GetComponent<PlayerInventory>();
-            return inventory != null;
+            return inventory != null && inventory.HasFreeSlot;
         }
 
         public void Interact(GameObject interactor)
@@ -47,6 +54,13 @@ namespace CatchIfYouCan.Interaction
                 noise.EmitCustomNoise(pickupNoise);
             else
                 GameEvents.NoiseGenerated(pickupNoise, transform.position);
+
+            // When the item lives on this same object - which is what Awake's fallback sets up -
+            // the inventory now owns the thing being destroyed. Destroying or deactivating it
+            // here would take the item straight back out of the bag it was just put in. Only the
+            // separate-marker case has anything left to clean up.
+            if (itemComponent.gameObject == gameObject)
+                return;
 
             if (destroyOnPickup)
             {
