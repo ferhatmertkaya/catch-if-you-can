@@ -40,9 +40,13 @@ namespace CatchIfYouCan.Art
         [Tooltip("The menu camera the ghost approaches. Falls back to Camera.main.")]
         [SerializeField] private Camera menuCamera;
 
-        [Tooltip("The same green/ambient scene lights the other events dim. Driven to near " +
-                 "black for the teleport frames and restored exactly.")]
+        [Tooltip("The normal environmental lights. Driven to near black for the teleport frames " +
+                 "and restored exactly. The doorway lights below are deliberately NOT in here.")]
         [SerializeField] private Light[] dimmedLights = new Light[0];
+
+        [Tooltip("The doorway lights. These are never taken all the way down, so the doorway " +
+                 "still reads and the ghost keeps a silhouette to be seen against.")]
+        [SerializeField] private Light[] doorwayLights = new Light[0];
 
         [Tooltip("The candle light's flicker component. The existing strong-flicker API.")]
         [SerializeField] private CandleFlicker candleFlicker;
@@ -87,6 +91,11 @@ namespace CatchIfYouCan.Art
         [Tooltip("Light level during the blackout, as a fraction of authored. Near zero.")]
         [SerializeField, Range(0f, 0.2f)] private float ghostCloserDarkLevel = 0.02f;
 
+        [Tooltip("Floor the doorway lights never drop below, as a fraction of authored. Raising " +
+                 "this makes the doorway clearer but the ghost's silhouette easier to track " +
+                 "across the blackout, which is the thing the teleport relies on hiding.")]
+        [SerializeField, Range(0f, 0.6f)] private float doorwayDarkLevel = 0.12f;
+
         [Tooltip("Light level the reveal comes back to. 1 is the normal menu. A touch above 1 " +
                  "makes the closer face readable without lighting the corridor up.")]
         [SerializeField, Range(0.5f, 2f)] private float ghostCloserRevealLevel = 1f;
@@ -106,6 +115,7 @@ namespace CatchIfYouCan.Art
 
         // ---- captured once, never written back ------------------------------------------
         private float[] _dimBaseline;
+        private float[] _doorwayBaseline;
         private Coroutine _routine;
         private bool _ready;
         private float _lastFinishedTime = -99999f;
@@ -119,12 +129,26 @@ namespace CatchIfYouCan.Art
         /// <summary>Name shown in the director's log line.</summary>
         public string EventName => "GhostCloser";
 
+        /// <summary>
+        /// Adds the cooldown to the usual checks, so the director can leave this one out of the
+        /// draw entirely while it is counting down instead of picking it and being refused.
+        /// </summary>
+        public bool IsAvailable =>
+            _ready && enableGhostCloserEvent && isActiveAndEnabled && !IsPlaying
+            && ghostFloat != null && menuCamera != null
+            && Time.time - _lastFinishedTime >= ghostCloserCooldown;
+
         private void Awake()
         {
             _dimBaseline = new float[dimmedLights.Length];
             for (int i = 0; i < dimmedLights.Length; i++)
                 if (dimmedLights[i] != null)
                     _dimBaseline[i] = dimmedLights[i].intensity;
+
+            _doorwayBaseline = new float[doorwayLights.Length];
+            for (int i = 0; i < doorwayLights.Length; i++)
+                if (doorwayLights[i] != null)
+                    _doorwayBaseline[i] = doorwayLights[i].intensity;
 
             if (menuCamera == null)
                 menuCamera = Camera.main;
@@ -188,6 +212,10 @@ namespace CatchIfYouCan.Art
             for (int i = 0; i < dimmedLights.Length; i++)
                 if (dimmedLights[i] != null)
                     dimmedLights[i].intensity = _dimBaseline[i];
+
+            for (int i = 0; i < doorwayLights.Length; i++)
+                if (doorwayLights[i] != null)
+                    doorwayLights[i].intensity = _doorwayBaseline[i];
 
             if (candleFlicker != null)
                 candleFlicker.ClearEventModulation();
@@ -258,8 +286,10 @@ namespace CatchIfYouCan.Art
             yield return Flicker(flickerDuration);
 
             // Full black, and the candle drops with everything else.
+            // The candle keeps its reduced level through the blackout rather than dipping
+            // further. It is a table light about a metre from the ghost with a 0.8 range, so it
+            // does not reach the ghost and cannot give the teleport away.
             SetLightFactor(ghostCloserDarkLevel);
-            ApplyCandle(_candleFloor * 0.25f);
 
             // This is the part that has to be right. Waiting for the end of the frame means the
             // dark frame has actually been rendered and presented before anything moves; moving
@@ -272,7 +302,6 @@ namespace CatchIfYouCan.Art
             yield return Wait(ghostCloserDarkDuration);
 
             yield return Reveal();
-            ApplyCandle(_candleFloor);
         }
 
         /// <summary>
@@ -327,6 +356,13 @@ namespace CatchIfYouCan.Art
             for (int i = 0; i < dimmedLights.Length; i++)
                 if (dimmedLights[i] != null)
                     dimmedLights[i].intensity = _dimBaseline[i] * f;
+
+            // The doorway never goes fully dark: it follows the same stutter but is floored, so
+            // there is always a doorway to see and a shape in front of it.
+            float doorway = Mathf.Max(f, doorwayDarkLevel);
+            for (int i = 0; i < doorwayLights.Length; i++)
+                if (doorwayLights[i] != null)
+                    doorwayLights[i].intensity = _doorwayBaseline[i] * doorway;
         }
 
         private void ApplyCandle(float intensityScale)

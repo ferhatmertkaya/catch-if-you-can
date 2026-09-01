@@ -2187,7 +2187,7 @@ ParticleSystem:
         m_RotationOrder: 4
     randomizeRotationDirection: 0
     gravitySource: 0
-    maxNumParticles: 26
+    maxNumParticles: 100
     customEmitterVelocity: {x: 0, y: 0, z: 0}
     size3D: 0
     rotation3D: 0
@@ -6937,7 +6937,7 @@ ParticleSystem:
         m_RotationOrder: 4
     randomizeRotationDirection: 0
     gravitySource: 0
-    maxNumParticles: 30
+    maxNumParticles: 120
     customEmitterVelocity: {x: 0, y: 0, z: 0}
     size3D: 0
     rotation3D: 0
@@ -11877,7 +11877,7 @@ ParticleSystem:
         m_RotationOrder: 4
     randomizeRotationDirection: 0
     gravitySource: 0
-    maxNumParticles: 24
+    maxNumParticles: 90
     customEmitterVelocity: {x: 0, y: 0, z: 0}
     size3D: 0
     rotation3D: 0
@@ -16722,7 +16722,7 @@ ParticleSystem:
         m_RotationOrder: 4
     randomizeRotationDirection: 0
     gravitySource: 0
-    maxNumParticles: 44
+    maxNumParticles: 120
     customEmitterVelocity: {x: 0, y: 0, z: 0}
     size3D: 0
     rotation3D: 0
@@ -30983,6 +30983,7 @@ MonoBehaviour:
   maxPitch: 1.03
   minVolume: 0.23
   maxVolume: 0.33
+  ringVolumeScale: 0.7
 --- !u!82 &1274160868
 AudioSource:
   m_ObjectHideFlags: 0
@@ -41720,9 +41721,19 @@ MonoBehaviour:
   candleEventIntensity: {x: 0.2, y: 1}
   candleTurbulence: 5.37
   atmosphere: {fileID: 945267605}
-  fogEventEmission: {x: 1.7, y: 2.4}
+  fogEventEmission: {x: 2.8, y: 3.6}
   fogEventTurbulence: {x: 1.8, y: 2.6}
   fogEventTint: {r: 1, g: 0.72, b: 0.68, a: 1}
+  fogEventColor: {r: 0.9, g: 0.08, b: 0.06, a: 1}
+  fogEventColorBlend: 0.88
+  candleLights:
+  - {fileID: 7311220100000012}
+  candleFlames:
+  - {fileID: 896582980}
+  - {fileID: 2143377576}
+  - {fileID: 1072534174}
+  candleEventColor: {r: 0.85, g: 0.1, b: 0.06, a: 1}
+  candleEventColorBlend: 0.9
   logEvents: 1
 --- !u!114 &7311220400000021
 MonoBehaviour:
@@ -41759,11 +41770,12 @@ MonoBehaviour:
   ghostFloat: {fileID: 7311220500000012}
   menuCamera: {fileID: 200003}
   dimmedLights:
-  - {fileID: 24644816}
   - {fileID: 655823766}
-  - {fileID: 1054892508}
   - {fileID: 1949104168}
   - {fileID: 595639481}
+  doorwayLights:
+  - {fileID: 24644816}
+  - {fileID: 1054892508}
   candleFlicker: {fileID: 7311220100000013}
   enableGhostCloserEvent: 1
   ghostCloserStepDistance: 0.3
@@ -41777,9 +41789,10 @@ MonoBehaviour:
   ghostCloserMinimumCameraDistance: 0.65
   ghostCloserCooldown: 60
   ghostCloserDarkLevel: 0.02
+  doorwayDarkLevel: 0.12
   ghostCloserRevealLevel: 1
   ghostCloserRevealDuration: 0.12
-  candleEventIntensity: {x: 0.25, y: 0.55}
+  candleEventIntensity: {x: 0.35, y: 0.35}
   candleTurbulence: 4
   logEvents: 1
 --- !u!1 &7311220200000020
@@ -42767,7 +42780,7 @@ ParticleSystem:
         m_RotationOrder: 4
     randomizeRotationDirection: 0
     gravitySource: 0
-    maxNumParticles: 10
+    maxNumParticles: 36
     customEmitterVelocity: {x: 0, y: 0, z: 0}
     size3D: 0
     rotation3D: 0

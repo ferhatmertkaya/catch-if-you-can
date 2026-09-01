@@ -47,8 +47,16 @@ namespace CatchIfYouCan.Art
         [SerializeField] private bool logEvents;
 
         private readonly List<IMainMenuHorrorEvent> _events = new List<IMainMenuHorrorEvent>();
+        private readonly List<IMainMenuHorrorEvent> _eligible = new List<IMainMenuHorrorEvent>();
         private IMainMenuHorrorEvent _previous;
         private Coroutine _loop;
+
+        // The menu draws from its own stream rather than the process-wide UnityEngine.Random,
+        // which every cosmetic system in the project also draws from. Whose turn it is in the
+        // menu should not depend on how many times a flicker or a footstep happened to draw
+        // first, and the project already treats that shared stream as something cosmetic code
+        // must not lean on for meaningful choices.
+        private System.Random _rng;
 
         /// <summary>True while any event this director owns is mid-flight.</summary>
         public bool IsEventRunning { get; private set; }
@@ -63,6 +71,9 @@ namespace CatchIfYouCan.Art
             // Ghost Closer carries its own cooldown and simply declines when it is too soon,
             // which makes it the rarer beat without needing per-event weights here.
             if (ghostCloserEvent != null) _events.Add(ghostCloserEvent);
+
+            _rng = new System.Random(
+                unchecked((int)System.DateTime.UtcNow.Ticks) ^ (GetInstanceID() * 397));
         }
 
         private void OnEnable()
@@ -99,7 +110,7 @@ namespace CatchIfYouCan.Art
             {
                 float low = Mathf.Min(minEventInterval, maxEventInterval);
                 float high = Mathf.Max(minEventInterval, maxEventInterval);
-                yield return new WaitForSeconds(Random.Range(low, high));
+                yield return new WaitForSeconds(low + (float)_rng.NextDouble() * (high - low));
 
                 // A second guard: the intro can only run once, but the menu scene may be
                 // reloaded, and an event must never start while anything is covering the view.
@@ -109,19 +120,29 @@ namespace CatchIfYouCan.Art
                 if (IsEventRunning || AnyEventPlaying())
                     continue;
 
-                var picked = Pick();
+                BuildEligible();
+
+                // Try the eligible events in a random order until one actually starts. Giving up
+                // on the first refusal is what used to cost a whole interval and quietly drop an
+                // event out of the rotation.
+                IMainMenuHorrorEvent picked = null;
+                while (_eligible.Count > 0)
+                {
+                    int index = _rng.Next(_eligible.Count);
+                    var candidate = _eligible[index];
+                    _eligible.RemoveAt(index);
+
+                    if (candidate.TryBegin())
+                    {
+                        picked = candidate;
+                        break;
+                    }
+                }
+
                 if (picked == null)
                     continue;
 
                 IsEventRunning = true;
-                if (!picked.TryBegin())
-                {
-                    // Declined — it may have been disabled since. Try again after the next wait
-                    // rather than hammering it.
-                    IsEventRunning = false;
-                    continue;
-                }
-
                 _previous = picked;
                 if (logEvents)
                     Debug.Log($"[CIYC] Horror event: {picked.EventName}", this);
@@ -143,31 +164,30 @@ namespace CatchIfYouCan.Art
         }
 
         /// <summary>
-        /// Picks an event at random, skipping the one that just played when there is a choice.
-        /// With a single event configured it simply returns that one, so the menu still has a
-        /// beat rather than going silent.
+        /// Fills <see cref="_eligible"/> with the events that could actually run right now, in
+        /// registration order; the caller draws from it at random.
+        ///
+        /// <para>
+        /// Asking availability first is the important part. Picking blind and being refused meant
+        /// that whenever one event sat on a cooldown the other two were the only ones that ever
+        /// started, and anti-repeat then forced them to alternate — a fixed A, B, A, B order that
+        /// looked hard-coded but was really just two survivors with no third choice.
+        /// </para>
+        ///
+        /// <para>
+        /// Anti-repeat is applied only while it still leaves something to pick, so the last
+        /// available event is never filtered away into silence.
+        /// </para>
         /// </summary>
-        private IMainMenuHorrorEvent Pick()
+        private void BuildEligible()
         {
-            if (_events.Count == 0)
-                return null;
-
-            if (_events.Count == 1 || !preventImmediateRepeat || _previous == null)
-                return _events[Random.Range(0, _events.Count)];
-
-            // Choose among everything except the previous pick. Indexing past it rather than
-            // re-rolling keeps this allocation free and always terminates.
-            int index = Random.Range(0, _events.Count - 1);
+            _eligible.Clear();
             for (int i = 0; i < _events.Count; i++)
-            {
-                if (ReferenceEquals(_events[i], _previous))
-                    continue;
-                if (index == 0)
-                    return _events[i];
-                index--;
-            }
+                if (_events[i].IsAvailable)
+                    _eligible.Add(_events[i]);
 
-            return _events[Random.Range(0, _events.Count)];
+            if (preventImmediateRepeat && _previous != null && _eligible.Count > 1)
+                _eligible.Remove(_previous);
         }
 
         /// <summary>Runs the phone beat now, ignoring the schedule. For testing.</summary>

@@ -26,6 +26,19 @@ namespace CatchIfYouCan.Art
         string EventName { get; }
 
         /// <summary>
+        /// Whether this event could run right now — switched on, references present, and past
+        /// any cooldown of its own.
+        ///
+        /// <para>
+        /// A director is expected to ask before picking rather than picking blind and being
+        /// refused. Picking blind is how one event being on cooldown quietly turns the rest into
+        /// a fixed rotation: the remaining two alternate, because anti-repeat leaves no other
+        /// choice, and the cycle spent on the refusal is simply lost.
+        /// </para>
+        /// </summary>
+        bool IsAvailable { get; }
+
+        /// <summary>
         /// Offers the event a chance to fire. Implementations return false when they decline —
         /// because one is already running, because references are missing, or because the
         /// event's own probability roll failed. A false return is normal, not an error: the

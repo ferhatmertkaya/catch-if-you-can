@@ -110,11 +110,36 @@ namespace CatchIfYouCan.Art
                  "red lights already colour it; this is a nudge, not a repaint.")]
         [SerializeField] private Color fogEventTint = new Color(0.85f, 0.62f, 0.60f, 1f);
 
+        [Tooltip("The colour the fog is pulled toward. The authored fog is green, so this is a " +
+                 "blend toward a hue rather than a multiplier — multiplying green by red only " +
+                 "ever gives dark green.")]
+        [SerializeField] private Color fogEventColor = new Color(0.90f, 0.08f, 0.06f, 1f);
+
+        [Tooltip("How far the fog is pulled toward that colour at the peak. 1 is fully red.")]
+        [SerializeField, Range(0f, 1f)] private float fogEventColorBlend = 0.88f;
+
+        [Header("Candle colour")]
+        [Tooltip("The candle Lights turned red for the event. Only their colour is written — " +
+                 "CandleFlicker keeps sole ownership of their intensity.")]
+        [SerializeField] private Light[] candleLights = new Light[0];
+
+        [Tooltip("The flame particle systems, so the visible flame turns with the light. " +
+                 "Optional; leave empty to colour the light only.")]
+        [SerializeField] private ParticleSystem[] candleFlames = new ParticleSystem[0];
+
+        [Tooltip("The colour candles are pulled toward during the event.")]
+        [SerializeField] private Color candleEventColor = new Color(0.85f, 0.10f, 0.06f, 1f);
+
+        [Tooltip("How far the candles are pulled toward that colour at the peak.")]
+        [SerializeField, Range(0f, 1f)] private float candleEventColorBlend = 0.9f;
+
         [Header("Debug")]
         [SerializeField] private bool logEvents;
 
         // ---- captured once, never written back ------------------------------------------
         private float[] _dimBaseline;
+        private Color[] _candleBaselineColor;
+        private Color[] _flameBaselineColor;
         private Coroutine _routine;
         private float _flickerOffset;
         private bool _ready;
@@ -124,12 +149,27 @@ namespace CatchIfYouCan.Art
         /// <summary>Name shown in the director's log line.</summary>
         public string EventName => "RedRoom";
 
+        /// <summary>No cooldown of its own; available whenever it is not already running.</summary>
+        public bool IsAvailable => _ready && isActiveAndEnabled && !IsPlaying;
+
         private void Awake()
         {
             _dimBaseline = new float[dimmedLights.Length];
             for (int i = 0; i < dimmedLights.Length; i++)
                 if (dimmedLights[i] != null)
                     _dimBaseline[i] = dimmedLights[i].intensity;
+
+            // Colour is captured separately from intensity: CandleFlicker owns the intensity and
+            // never touches colour, so writing colour here is not a second writer of anything.
+            _candleBaselineColor = new Color[candleLights.Length];
+            for (int i = 0; i < candleLights.Length; i++)
+                if (candleLights[i] != null)
+                    _candleBaselineColor[i] = candleLights[i].color;
+
+            _flameBaselineColor = new Color[candleFlames.Length];
+            for (int i = 0; i < candleFlames.Length; i++)
+                if (candleFlames[i] != null)
+                    _flameBaselineColor[i] = candleFlames[i].main.startColor.color;
 
             _flickerOffset = Random.value * 128f + 0.53f;
             _ready = true;
@@ -183,6 +223,7 @@ namespace CatchIfYouCan.Art
                     dimmedLights[i].intensity = _dimBaseline[i];
 
             SetRedResting();
+            ApplyCandleColour(0f);
 
             if (candleFlicker != null)
                 candleFlicker.ClearEventModulation();
@@ -216,6 +257,7 @@ namespace CatchIfYouCan.Art
                 ApplyRed(eased, false);
                 ApplyCandle(Mathf.Lerp(1f, candleFloor, eased),
                             Mathf.Lerp(1f, candleTurbulence, eased));
+                ApplyCandleColour(eased);
                 ApplyFog(eased, fogEmission, fogChurn);
                 yield return null;
             }
@@ -226,6 +268,7 @@ namespace CatchIfYouCan.Art
                 ApplyDimmed(dimFloor);
                 ApplyRed(1f, true);
                 ApplyCandle(candleFloor, candleTurbulence);
+                ApplyCandleColour(1f);
                 ApplyFog(1f, fogEmission, fogChurn);
                 yield return null;
             }
@@ -240,6 +283,7 @@ namespace CatchIfYouCan.Art
                 ApplyRed(1f - eased, false);
                 ApplyCandle(Mathf.Lerp(candleFloor, 1f, eased),
                             Mathf.Lerp(candleTurbulence, 1f, eased));
+                ApplyCandleColour(1f - eased);
                 ApplyFog(1f - eased, fogEmission, fogChurn);
                 yield return null;
             }
@@ -298,6 +342,31 @@ namespace CatchIfYouCan.Art
                 candleFlicker.ApplyEventModulation(intensityScale, turbulence);
         }
 
+        /// <summary>
+        /// Bleeds the candles red. Colour only: the flame keeps guttering because CandleFlicker
+        /// is still the one thing driving intensity, and it neither reads nor writes colour.
+        /// <paramref name="k"/> is 0 at rest and 1 at the peak, so this rides the same ramp as
+        /// the lights and restores itself on the way out.
+        /// </summary>
+        private void ApplyCandleColour(float k)
+        {
+            float blend = candleEventColorBlend * Mathf.Clamp01(k);
+
+            for (int i = 0; i < candleLights.Length; i++)
+                if (candleLights[i] != null)
+                    candleLights[i].color = Color.Lerp(_candleBaselineColor[i], candleEventColor, blend);
+
+            for (int i = 0; i < candleFlames.Length; i++)
+            {
+                if (candleFlames[i] == null)
+                    continue;
+                var main = candleFlames[i].main;
+                Color target = candleEventColor;
+                target.a = _flameBaselineColor[i].a;   // keep the flame's authored opacity
+                main.startColor = Color.Lerp(_flameBaselineColor[i], target, blend);
+            }
+        }
+
         private void ApplyFog(float k, float emissionPeak, float turbulencePeak)
         {
             if (atmosphere == null)
@@ -307,7 +376,9 @@ namespace CatchIfYouCan.Art
             atmosphere.ApplyEventAtmosphere(
                 Mathf.Lerp(1f, emissionPeak, k),
                 Mathf.Lerp(1f, turbulencePeak, k),
-                Color.Lerp(Color.white, fogEventTint, k));
+                Color.Lerp(Color.white, fogEventTint, k),
+                fogEventColor,
+                fogEventColorBlend * k);
         }
 
 #if UNITY_EDITOR

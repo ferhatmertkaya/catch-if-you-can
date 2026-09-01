@@ -30,6 +30,11 @@ public class RotaryPhoneRandomRing : MonoBehaviour
     [SerializeField] private float minVolume = 0.65f;
     [SerializeField] private float maxVolume = 0.85f;
 
+    [Tooltip("Scales every ring. 0.7 makes the phone 30% quieter than the min/max above.\n\n" +
+             "This is applied fresh to the serialized range on each ring and is never written " +
+             "back into it, so repeated events cannot multiply the volume down over time.")]
+    [SerializeField, Range(0f, 1f)] private float ringVolumeScale = 0.7f;
+
     /// <summary>Length of the assigned ring clip in seconds, or 0 when there is none.</summary>
     public float ClipLength => audioSource != null && audioSource.clip != null
         ? audioSource.clip.length
@@ -61,7 +66,9 @@ public class RotaryPhoneRandomRing : MonoBehaviour
             return;
 
         audioSource.pitch = Random.Range(minPitch, maxPitch);
-        audioSource.volume = Random.Range(minVolume, maxVolume);
+        // Derived from the serialized range every time, never from audioSource.volume, which is
+        // what would let the scale compound across events.
+        audioSource.volume = Random.Range(minVolume, maxVolume) * ringVolumeScale;
         audioSource.Play();
     }
 

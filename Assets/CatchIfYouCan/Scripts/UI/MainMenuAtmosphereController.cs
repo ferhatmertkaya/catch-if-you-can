@@ -44,6 +44,12 @@ namespace CatchIfYouCan.UI
         private float _eventTurbulence = 1f;
         private Color _eventTint = Color.white;
 
+        // A colour the fog is pulled *toward*, rather than multiplied by. The authored fog is
+        // green, so no multiplier can ever make it red — it can only darken it. Events that need
+        // a different hue blend toward one instead. Zero blend means "behave exactly as before".
+        private Color _eventColor = Color.white;
+        private float _eventColorBlend;
+
         private void Awake()
         {
             CacheAuthoredValues();
@@ -105,7 +111,19 @@ namespace CatchIfYouCan.UI
                 emission.rateOverTime = _authoredEmission[i] * fogIntensity * _eventEmissionScale;
 
                 var main = system.main;
-                main.startColor = _authoredStartColor[i] * fogTint * _eventTint;
+
+                Color colour = _authoredStartColor[i] * fogTint * _eventTint;
+                if (_eventColorBlend > 0f)
+                {
+                    // The authored alpha is carried across deliberately. Density comes from the
+                    // number of particles, never from making each one more opaque, which is what
+                    // keeps a very thick fog reading as soft rather than as a painted wall.
+                    Color target = _eventColor;
+                    target.a = colour.a;
+                    colour = Color.Lerp(colour, target, Mathf.Clamp01(_eventColorBlend));
+                }
+                main.startColor = colour;
+
                 main.simulationSpeed = _authoredSimulationSpeed[i] * _eventTurbulence;
             }
         }
@@ -135,10 +153,23 @@ namespace CatchIfYouCan.UI
         /// <para>All three are set, never accumulated.</para>
         /// </summary>
         public void ApplyEventAtmosphere(float emissionScale, float turbulence, Color tint)
+            => ApplyEventAtmosphere(emissionScale, turbulence, tint, Color.white, 0f);
+
+        /// <summary>
+        /// As above, but also pulls the fog's colour toward <paramref name="targetColor"/> by
+        /// <paramref name="colorBlend"/>. Passing a blend of 0 is identical to the three-argument
+        /// call, so existing callers are unaffected.
+        /// </summary>
+        public void ApplyEventAtmosphere(float emissionScale, float turbulence, Color tint,
+                                         Color targetColor, float colorBlend)
         {
-            _eventEmissionScale = Mathf.Clamp(emissionScale, 0f, 4f);
+            // The ceiling is high because "extremely dense" is a legitimate ask; the emission
+            // rate is still the authored one times this, so the resting fog is untouched.
+            _eventEmissionScale = Mathf.Clamp(emissionScale, 0f, 12f);
             _eventTurbulence = Mathf.Clamp(turbulence, 0.05f, 4f);
             _eventTint = tint;
+            _eventColor = targetColor;
+            _eventColorBlend = Mathf.Clamp01(colorBlend);
             ApplyFogValues();
         }
 
@@ -148,6 +179,8 @@ namespace CatchIfYouCan.UI
             _eventEmissionScale = 1f;
             _eventTurbulence = 1f;
             _eventTint = Color.white;
+            _eventColor = Color.white;
+            _eventColorBlend = 0f;
             ApplyFogValues();
         }
 

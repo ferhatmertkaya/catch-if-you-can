@@ -120,6 +120,9 @@ namespace CatchIfYouCan.Art
         /// <summary>Name shown in the director's log line.</summary>
         public string EventName => "Phone";
 
+        /// <summary>No cooldown of its own; available whenever it is not already running.</summary>
+        public bool IsAvailable => _ready && isActiveAndEnabled && !IsPlaying;
+
         private void Awake()
         {
             _dimBaseline = new float[dimmedLights.Length];
