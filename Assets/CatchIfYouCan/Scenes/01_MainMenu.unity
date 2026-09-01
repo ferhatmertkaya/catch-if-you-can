@@ -47117,7 +47117,7 @@ GameObject:
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
-  m_IsActive: 1
+  m_IsActive: 0
 --- !u!4 &7311220700000011
 Transform:
   m_ObjectHideFlags: 0
@@ -52183,6 +52183,8 @@ MonoBehaviour:
     distanceRange: {x: 40, y: 58}
     volumeRange: {x: 0.40, y: 0.62}
     heightRange: {x: 2, y: 12}
+    useFixedPosition: 1
+    fixedPosition: {x: 67.7, y: 15.8, z: -29.8}
   exteriorInterval: {x: 16, y: 46}
   exteriorSpreadDegrees: 72
   exteriorMinBearingChange: 45

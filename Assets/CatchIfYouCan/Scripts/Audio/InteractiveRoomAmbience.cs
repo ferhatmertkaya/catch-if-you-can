@@ -60,6 +60,15 @@ namespace CatchIfYouCan.Audio
 
             [Tooltip("Height relative to the window, rolled per event.")]
             public Vector2 heightRange = new Vector2(-3f, 8f);
+
+            [Tooltip("Always sound from exactly one place. A church does not move: a bell that " +
+                     "arrives from a different bearing each time reads as several churches, or " +
+                     "as something following you. With this on the bearing, distance and height " +
+                     "rolls are skipped and fixedPosition is used as-is.")]
+            public bool useFixedPosition;
+
+            [Tooltip("World position used when useFixedPosition is on.")]
+            public Vector3 fixedPosition;
         }
 
         [System.Serializable]
@@ -481,15 +490,25 @@ namespace CatchIfYouCan.Audio
             _lastExteriorKind = k;
             _lastExteriorClip = clip;
 
-            float bearing = PickBearing();
-            float distance = Range(Mathf.Min(kind.distanceRange.x, kind.distanceRange.y),
-                                   Mathf.Max(kind.distanceRange.x, kind.distanceRange.y));
+            Vector3 pos;
+            if (kind.useFixedPosition)
+            {
+                // Left exactly where it is, and the last bearing is deliberately not updated:
+                // a fixed landmark should not constrain where the next owl is allowed to be.
+                pos = kind.fixedPosition;
+            }
+            else
+            {
+                float bearing = PickBearing();
+                float distance = Range(Mathf.Min(kind.distanceRange.x, kind.distanceRange.y),
+                                       Mathf.Max(kind.distanceRange.x, kind.distanceRange.y));
 
-            // Out through the window, then turned by the bearing. Window faces +X.
-            Vector3 dir = Quaternion.AngleAxis(bearing, Vector3.up) * Vector3.right;
-            Vector3 pos = windowPosition + dir * distance;
-            pos.y = windowPosition.y + Range(Mathf.Min(kind.heightRange.x, kind.heightRange.y),
-                                             Mathf.Max(kind.heightRange.x, kind.heightRange.y));
+                // Out through the window, then turned by the bearing. Window faces +X.
+                Vector3 dir = Quaternion.AngleAxis(bearing, Vector3.up) * Vector3.right;
+                pos = windowPosition + dir * distance;
+                pos.y = windowPosition.y + Range(Mathf.Min(kind.heightRange.x, kind.heightRange.y),
+                                                 Mathf.Max(kind.heightRange.x, kind.heightRange.y));
+            }
 
             var voice = _exteriorVoices[_exteriorCursor];
             _exteriorCursor = (_exteriorCursor + 1) % _exteriorVoices.Length;

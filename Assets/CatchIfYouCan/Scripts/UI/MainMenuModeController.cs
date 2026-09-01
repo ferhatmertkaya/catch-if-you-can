@@ -114,9 +114,19 @@ namespace CatchIfYouCan.UI
 
         private void Awake()
         {
-            // The room is dormant until it is needed. Doing this here rather than in the scene
-            // means the menu is never rendering or simulating a room nobody can see.
+            // The room is dormant until it is needed. It is also switched off in the scene
+            // itself, and that is the part that matters: doing it only here left a window in
+            // which everything under the room had already run its Awake and OnEnable, because
+            // Unity does not define whether this runs before or after theirs. The moon light
+            // claiming the scene's sun, or an emitter starting, would both have happened over
+            // the menu. This call is now the belt to that braces.
             SetRoomActive(false);
+
+            // Nothing from the room is allowed to be heard here, ever. The room being inactive
+            // already guarantees it; saying so out loud costs nothing and means a future change
+            // that reactivates the room early cannot quietly bring the night in with it.
+            if (roomAmbience != null)
+                roomAmbience.End();
         }
 
         /// <summary>
