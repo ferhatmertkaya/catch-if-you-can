@@ -52,10 +52,14 @@ namespace CatchIfYouCan.EditorTools
             if (SessionState.GetBool(AttemptedKey, false))
                 return;
 
-            // The sky is cheap to check and independent of the character, so it is brought up
-            // to date whether or not the character needs building.
+            // The sky and the flame material are cheap to check and independent of the
+            // character, so they are brought up to date whether or not the character needs
+            // building.
             if (!InteractiveRoomSkySetup.IsBuilt())
                 InteractiveRoomSkySetup.Build();
+
+            if (!CandleFlameSetup.IsBuilt())
+                CandleFlameSetup.BuildMenuItem();
 
             if (AssetDatabase.LoadAssetAtPath<GameObject>(ResourcePrefabPath) != null)
                 return;   // already built, nothing to do and nothing to say

@@ -45,6 +45,11 @@ namespace CatchIfYouCan.Art
         [Tooltip("The candle light's flicker component. Modulated through its own API.")]
         [SerializeField] private CandleFlicker candleFlicker;
 
+        [Tooltip("The visible flames, dimmed alongside the light they cast. Without these the " +
+                 "light drops but the flame stays burning, which reads as the candle being lit " +
+                 "by something else.")]
+        [SerializeField] private CandleFlameFlicker[] candleFlames = new CandleFlameFlicker[0];
+
         [Tooltip("The doorway atmosphere owner. The fog is unsettled through its API rather " +
                  "than by writing particle systems directly. Optional.")]
         [SerializeField] private CatchIfYouCan.UI.MainMenuAtmosphereController atmosphere;
@@ -193,6 +198,10 @@ namespace CatchIfYouCan.Art
             if (candleFlicker != null)
                 candleFlicker.ClearEventModulation();
 
+            for (int i = 0; i < candleFlames.Length; i++)
+                if (candleFlames[i] != null)
+                    candleFlames[i].ClearEventModulation();
+
             // Puts emission, churn and tint back to the authored atmosphere. The fog is never
             // disabled or emptied by this event, only returned to its normal thickness.
             if (atmosphere != null)
@@ -325,6 +334,10 @@ namespace CatchIfYouCan.Art
         {
             if (candleFlicker != null)
                 candleFlicker.ApplyEventModulation(intensityScale, turbulence);
+
+            for (int i = 0; i < candleFlames.Length; i++)
+                if (candleFlames[i] != null)
+                    candleFlames[i].ApplyEventModulation(intensityScale, turbulence);
         }
 
         /// <summary>

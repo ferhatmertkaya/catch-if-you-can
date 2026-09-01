@@ -321,10 +321,29 @@ settings, so the cinematic menu camera inherits nothing and the main menu before
 untouched. There is no `SkyCamera` and no `WindowCamera`; one shared `PlayerCamera` does the whole
 job, with `clearFlags` set to `Skybox`.
 
-The panoramas are generated, not downloaded: `CIYC_NightSky_Clear.png` and
-`CIYC_NightSky_Cloudy.png`, 2048×1024 latlong, mean luminance 18/255, wrap repeat horizontally and
-clamp vertically. The skybox *materials* are built by the editor step
-`Catch If You Can > Characters > Build Interactive Room Sky` rather than checked in as hand-written
+The sky is `CIYC_HauntedNight_Panorama.png`, supplied as artwork and resampled from its native
+1774×887 to **2048×1024**. The source is already an exact 2:1, so nothing is stretched; it is
+resampled only to reach a power of two, which is what lets ASTC and BC compress it without a
+non-power-of-two fallback and makes the mip chain exact. 2048 is also the ceiling worth having —
+the source carries no detail above 1774 px, so a larger import would cost memory for nothing.
+
+Its measured properties: mean luminance 16/255 (genuinely dark, so exposure sits at Unity's neutral
+1 rather than being pulled down), the moon at u = 0.311 / v = 0.406, and the horizon at 60.2% of
+image height rather than 50%. That last one matters — in a latlong projection the vertical centre
+is eye level, so this horizon sits about **18° below** eye level and the player looks slightly down
+into the valley. It reads as a room above a valley, which is what the room is, but it is why the
+foreground silhouettes are switched off (below).
+
+**Seam and poles.** The supplied edges did not join: the left-to-right discontinuity measured 2.98
+against a typical adjacent-column difference of 1.85, so about 1.6× a normal step — mild, but real.
+A 6 px circular cross-fade (about 1° of longitude, far too narrow to ghost content) brings it to
+0.00, so columns 0 and 2047 are now identical and the wrap is continuous under any rotation. The
+poles are dark and low-variance (top mean 12.9 σ 4.0, bottom mean 4.9 σ 3.3), so neither pinches
+into a visible swirl at the zenith or nadir. `wrapU` is Repeat — required, or rotating the sky
+tears at the seam — and `wrapV` is Clamp.
+
+The skybox *material*, `MAT_Skybox_HauntedNight`, is built by the editor step
+`Catch If You Can > Environment > Build Interactive Room Sky` rather than checked in as hand-written
 YAML, for a specific reason: `Skybox/Panoramic` is a built-in shader and built-in shaders are
 referenced by a numeric file ID inside Unity's own resource bundle. Guessing that number is exactly
 how you get a magenta sky with no way to tell why. Asking Unity for the shader by name and letting
@@ -333,10 +352,28 @@ the shader survives shader stripping in a mobile player — a runtime `Shader.Fi
 referencing the shader is the classic way to get a sky that works in the editor and is pink on the
 device.
 
-In front of the sky: `Exterior_Ridge` (3 boxes, always on) and two variant groups,
-`Exterior_Trees` (5) and `Exterior_Ruins` (5), all in `MAT_Exterior_Silhouette` — an almost-black
-matte base at (0.020, 0.026, 0.038) that reads as shape against the sky and does not ask the
-lighting for anything. `WindowMoonlight` is a cold point light at (24.2, 1.9, 0), colour
+That step also owns the panorama's mobile import settings, for the reason set out in
+`NathanTextureImportSettings`: a stored iOS entry left on Automatic resolves against the platform's
+retired PVRTC default and warns in Unity 6.5, so the committed `.meta` carries no mobile entry at
+all and the format is named in code as a `TextureImporterFormat` constant. Desktop stays Automatic
+(the BC family it picks is current); Android and iOS are ASTC 6×6 at 2048, about 1.2 MB with mips
+for the single texture that is the entire outside world.
+
+**The interior lighting is unaffected by any of this**, and that is a property of the architecture
+rather than a tuning exercise. Ambient light comes from `RenderSettings.skybox`, which is still
+empty; a `Skybox` *component* overrides the sky for one camera and does not feed the ambient probe.
+So the bright moon in the panorama cannot brighten the room, and the room's authored lighting stays
+authoritative without anything having to be dialled back.
+
+In front of the sky: `Exterior_Ridge` (3 boxes) and two variant groups, `Exterior_Trees` (5) and
+`Exterior_Ruins` (5), all in `MAT_Exterior_Silhouette` — an almost-black matte base at
+(0.020, 0.026, 0.038). **These are switched off by default** (`useForegroundSilhouettes`). They
+were massed against the flatter placeholder sky they were built for, and the Haunted Night panorama
+already contains its own forest, ridge line, valley and distant house; crude boxes in front of
+painted ones would subtract rather than add. Turning the toggle on restores near-field parallax,
+which is what most strongly stops a window reading as a picture — expect to re-tune their heights
+against the new horizon first, since it is 18° lower than the one they were placed against.
+`WindowMoonlight` is a cold point light at (24.2, 1.9, 0), colour
 (0.34, 0.47, 0.72) as stored, which is linear, range 5, shadows off, which spills onto the sill and floor so the window is a
 light source in the room rather than a picture on the wall.
 
@@ -348,11 +385,20 @@ carries its own `System.Random`, seeded from `DateTime.UtcNow.Ticks` mixed with 
 network seed, and nothing it decides is ever read back by gameplay. Multiplayer and procedural
 determinism are untouched by this change.
 
-Per session it picks one of the two skies, a sky rotation in 0–360°, an exposure in 0.45–0.7, a
-moonlight intensity in 0.25–0.75, and one of the two scenery variants. The sky material is
-instantiated at runtime before rotation and exposure are written, so the asset on disk is never
-mutated — without that copy the randomisation would dirty the material and persist into the next
-session.
+Per session it picks a sky rotation of 143° ± 6°, an exposure in 0.92–1.06, and a moonlight
+intensity in 0.25–0.75. The sky material is instantiated at runtime before rotation and exposure
+are written, so the asset on disk is never mutated — without that copy the randomisation would
+dirty the material and persist into the next session.
+
+The rotation is no longer a free 0–360°. This sky is a painting with a moon in it, and spinning it
+freely would as often as not point the window at empty horizon. 143° is derived rather than
+guessed: with `_Rotation` at 0 the panoramic shader puts u = 0.5 toward −Z, so the moon at
+u = 0.311 sits at longitude −68°; the window faces +X, which is +90°; bringing the moon to about
++75° — just off centre, framed against the ridge rather than dead ahead — is a 143° shift. Its
+elevation, +16.9°, puts it comfortably above the horizon. **The sign convention is the one thing
+here that wants an eye on it:** if the moon ends up behind the player rather than in the window,
+the value is 360 − 143 = **217°**, and `skyRotation` is serialized on the component precisely so
+that is a one-field change rather than a code change.
 
 ## Cost
 
@@ -361,3 +407,112 @@ asset has additional-light shadows off), and at most 8 silhouette boxes sharing 
 smoothness 0.02, so it costs the shader and not the lighting).
 The wall split adds four box renderers where there was one. Nothing here allocates per frame and
 nothing here adds a camera.
+
+## The candle
+
+`CandleFX` holds three flames and one light:
+
+```
+CandleFX
+├── Flame_Left     ParticleSystem + CandleFlameFlicker
+├── Flame_Center   ParticleSystem + CandleFlameFlicker
+├── Flame_Right    ParticleSystem + CandleFlameFlicker
+└── CandleLight    Point Light    + CandleFlicker
+```
+
+**One real-time light, not three.** Three point lights 1.6 cm apart cannot produce three
+distinguishable pools of light — they sum to one slightly wider pool at three times the per-pixel
+cost, on a renderer configured for four additional lights per object. The three flames are
+independent where independence is actually visible (the flame itself), and share a light where it
+is not. `CandleLight` casts no shadows, because the URP asset has additional-light shadows off
+project-wide.
+
+### Why the flames could not be seen
+
+`MAT_CandleFlame` was authored on `Universal Render Pipeline/Particles/Lit` with `_EmissionColor`
+at black and no `_EMISSION` keyword. A lit material can only show what the room reflects onto it,
+and this room's ambient is black by design (`m_AmbientMode: Skybox` with no skybox material), so
+the flame had nothing to be lit *by*. Additive blending was the only reason anything appeared at
+all. It was never a flicker problem, and the flame was never hidden — it was being drawn almost
+black.
+
+`CandleFlameSetup` moves the material to `Particles/Unlit`, which is both correct (a flame is a
+light source, it should not be shaded by the room) and cheaper on a phone, and gives it a warm
+base colour above 1. The shader is resolved with `Shader.Find` rather than by writing a GUID, for
+the same reason the skybox is built in code; if the unlit shader cannot be resolved the material
+keeps the one it has and emission is switched on there instead, which is worse but never invisible.
+The material is upgraded **in place**, so its GUID is unchanged and the three renderers still point
+at one shared asset.
+
+The tint is close to white on purpose. `CIYC_CandleFlame.png` already runs from a pale yellow core
+(254, 250, 120) through orange to a dark red tip, and the particle's own start colour multiplies a
+second orange over it; a third would have produced a red blob. The brightness above 1 is what makes
+the core read as hot — additive blending clips the centre toward white while the thinner edges stay
+orange. **This does not depend on bloom:** the project's Bloom override is authored at intensity 0,
+so nothing here relies on a glow that is switched off. Raising it to about 0.15 would add a soft
+halo, but that is a global post setting and would change the main menu too, so it is left alone.
+
+### Independent flicker
+
+Each flame owns its scale, roll and brightness; the light owns its own intensity. All of it is
+two-layer Perlin, never `Random.Range` per frame — white noise reads as a failing bulb because
+consecutive frames are uncorrelated.
+
+| | Center | Left | Right |
+|---|---|---|---|
+| seed | 11 | 27 | 43 |
+| scale X / Y | 0.08 / 0.16 | 0.07 / 0.14 | 0.09 / 0.18 |
+| scale speed | 2.2 | 2.6 | 1.9 |
+| roll ° / speed | 5 / 1.8 | 4 / 2.1 | 6 / 1.5 |
+| brightness amount / speed | 0.16 / 2.40 | 0.14 / 2.90 | 0.18 / 2.05 |
+
+Brightness runs on its own noise offset and its own speed, so a flame is not at its brightest
+exactly when it is at its tallest. Brightness is clamped to 0.72–1.20 of the authored colour, so a
+flame never goes out. The slowest flame swings widest, which is how a real wick behaves.
+
+Simulating those rates over 60 s at 60 fps gives pairwise correlations of −0.016, −0.078 and +0.009
+on brightness and −0.006, −0.036, +0.026 on scale: uncorrelated in practice. The closest pair of
+brightness rates beats every 1.18 s, so there is no slow drift into unison either. (That is a check
+of the maths, not a Unity run — Unity's `PerlinNoise` is not the generator used for it.)
+
+Position is never written. That is what keeps the base of each flame welded to its wick.
+
+### Why the flame's colour is not the particle's start colour
+
+Each flame is **one** particle: `maxNumParticles: 1`, `startLifetime: 3600`, prewarmed. It is
+emitted once and then simply persists. `main.startColor` applies to particles at emission, so
+writing it afterwards changes nothing that is on screen — which means the red event's flame
+recolouring, which did exactly that, had never actually worked. The lights turned red and the
+flames stayed orange.
+
+`CandleFlameFlicker` writes a `MaterialPropertyBlock` instead. A property block is read at draw
+time, so it reaches the particle that is actually burning, and it does not instance the material —
+all three flames still share one asset. The block is allocated once in `Awake`; `Update` writes
+into it and nothing allocates. `sharedMaterial` is read once for the baseline colour, never
+`material`, which would clone the asset per flame and defeat the point.
+
+### Ownership, and the horror events
+
+One writer per property, which is the rule that keeps events and flicker from fighting:
+
+| property | sole writer | how events reach it |
+|---|---|---|
+| `Light.intensity` | `CandleFlicker` | `ApplyEventModulation(scale, turbulence)` |
+| `Light.color` | the red event | written directly; nothing else touches colour |
+| flame transform | `CandleFlameFlicker` | not touched by events |
+| flame colour + brightness | `CandleFlameFlicker` | `ApplyEventModulation` / `ApplyEventColour` |
+
+Event values are **assigned, never accumulated**, and both components restore themselves on
+`ClearEventModulation`, so an interrupted event cannot leave the candle permanently dimmed or
+permanently red. The flame's envelope opens up with the turbulence an event asks for on exactly the
+same curve the light uses, so the flame and the pool of light it casts never disagree about how
+hard the candle is guttering.
+
+The colour wins and the flicker rides underneath it: a red flame still gutters rather than sitting
+flat. Because the particle's own start colour stays orange and the property block multiplies over
+it, pulling the base toward (0.85, 0.10, 0.06) suppresses green to about 0.07 and blue to 0.01 —
+a deep red flame rather than a muddy one.
+
+All three events now drive the flames, not just the red one. That is a consequence of the flames
+becoming visible: the ghost event dims the candle to 0.03 for its blackout, and a blackout with
+three bright flames still burning in it would read as the candle being lit by something else.

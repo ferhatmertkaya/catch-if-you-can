@@ -22,9 +22,11 @@ namespace CatchIfYouCan.Art
     /// </para>
     ///
     /// <para>
-    /// Variation is cosmetic and deliberately shallow: which of two panoramas, how it is rotated,
-    /// how bright it is, and which silhouette groups are switched on. Nothing is generated, nothing
-    /// moves after setup, and no scenery has a collider, a script or a shadow.
+    /// Variation is cosmetic and deliberately shallow: a few degrees of sky rotation, a little
+    /// exposure, and the moonlight that follows it. Nothing is generated, nothing moves after
+    /// setup, and no scenery has a collider, a script or a shadow. The rotation jitter is
+    /// deliberately narrow rather than a full circle, because the sky is a painting with a moon
+    /// in it and spinning it freely would as often as not point the window at empty horizon.
     /// </para>
     /// </summary>
     [DisallowMultipleComponent]
@@ -32,15 +34,38 @@ namespace CatchIfYouCan.Art
     public sealed class InteractiveRoomExterior : MonoBehaviour
     {
         [Header("Sky")]
-        [Tooltip("Skybox materials, loaded from Resources so the built-in panoramic shader is " +
+        [Tooltip("Skybox material, loaded from Resources so the built-in panoramic shader is " +
                  "always included in a player build.")]
+        [SerializeField] private string skyResourcePath = "Sky/MAT_Skybox_HauntedNight";
+
+        [Tooltip("Searched if the named material is missing, so a renamed sky still shows up " +
+                 "rather than leaving the window black.")]
         [SerializeField] private string skyResourceFolder = "Sky";
 
-        [Tooltip("Brightness range applied to the chosen sky. Kept low: this is a night the " +
-                 "player looks out into, not a light source for the room.")]
-        [SerializeField] private Vector2 exposureRange = new Vector2(0.45f, 0.7f);
+        [Tooltip("Brightness range applied to the sky. The panorama is already authored for " +
+                 "night at a mean luminance of 16/255, so this sits around Unity's neutral 1 " +
+                 "rather than pulling it down further.")]
+        [SerializeField] private Vector2 exposureRange = new Vector2(0.92f, 1.06f);
+
+        [Tooltip("Degrees of sky rotation that put the moon in the window. The room's window " +
+                 "faces +X; the moon sits at u=0.311 in the panorama, so this brings it round " +
+                 "to roughly 15 degrees left of straight out, which frames it against the " +
+                 "ridge rather than dead centre.")]
+        [SerializeField, Range(0f, 360f)] private float skyRotation = 143f;
+
+        [Tooltip("Cosmetic wobble either side of that rotation. Small on purpose: enough that " +
+                 "two sessions are not pixel-identical, far too small to lose the moon.")]
+        [SerializeField, Range(0f, 30f)] private float skyRotationJitter = 6f;
 
         [Header("Scenery")]
+        [Tooltip("Foreground silhouettes outside the window. Off by default: the Haunted Night " +
+                 "panorama already contains its own forest, ridge line, valley and distant " +
+                 "house, and these boxes were massed against the flatter placeholder sky they " +
+                 "were built for. Switch this on to get near-field parallax back, and expect to " +
+                 "re-tune their heights against the new horizon, which sits 18 degrees below eye " +
+                 "level rather than on it.")]
+        [SerializeField] private bool useForegroundSilhouettes;
+
         [Tooltip("Silhouette groups outside the window. One is chosen per session and the rest " +
                  "are switched off; they are only geometry, so switching them off costs nothing.")]
         [SerializeField] private GameObject[] sceneryVariants = new GameObject[0];
@@ -89,14 +114,19 @@ namespace CatchIfYouCan.Art
             var rng = new System.Random(
                 unchecked((int)System.DateTime.UtcNow.Ticks) ^ (GetHashCode() * 397));
 
-            var skies = Resources.LoadAll<Material>(skyResourceFolder);
-            if (skies != null && skies.Length > 0)
+            var source = LoadSky();
+            if (source != null)
             {
-                var source = skies[rng.Next(skies.Length)];
+                // Instanced before anything is written to it: _Rotation and _Exposure are
+                // material state, and writing them on the Resources asset would persist into the
+                // next session and dirty the file in the editor.
                 _skyInstance = new Material(source);
 
                 if (_skyInstance.HasProperty("_Rotation"))
-                    _skyInstance.SetFloat("_Rotation", (float)rng.NextDouble() * 360f);
+                {
+                    float jitter = ((float)rng.NextDouble() * 2f - 1f) * skyRotationJitter;
+                    _skyInstance.SetFloat("_Rotation", Mathf.Repeat(skyRotation + jitter, 360f));
+                }
 
                 float exposure = Mathf.Lerp(exposureRange.x, exposureRange.y, (float)rng.NextDouble());
                 if (_skyInstance.HasProperty("_Exposure"))
@@ -112,15 +142,39 @@ namespace CatchIfYouCan.Art
 
             for (int i = 0; i < sceneryAlways.Length; i++)
                 if (sceneryAlways[i] != null)
-                    sceneryAlways[i].SetActive(true);
+                    sceneryAlways[i].SetActive(useForegroundSilhouettes);
 
             if (sceneryVariants.Length > 0)
             {
-                int keep = rng.Next(sceneryVariants.Length);
+                int keep = useForegroundSilhouettes ? rng.Next(sceneryVariants.Length) : -1;
                 for (int i = 0; i < sceneryVariants.Length; i++)
                     if (sceneryVariants[i] != null)
                         sceneryVariants[i].SetActive(i == keep);
             }
+        }
+
+        /// <summary>
+        /// The named sky, or any sky in the folder if the name has moved. Returning null here is
+        /// what leaves the window showing the camera's clear colour, so it is worth saying so.
+        /// </summary>
+        private Material LoadSky()
+        {
+            if (!string.IsNullOrEmpty(skyResourcePath))
+            {
+                var named = Resources.Load<Material>(skyResourcePath);
+                if (named != null)
+                    return named;
+            }
+
+            var found = Resources.LoadAll<Material>(skyResourceFolder);
+            if (found != null && found.Length > 0)
+                return found[0];
+
+            Debug.LogError("[CIYC] No skybox material at Resources/" + skyResourcePath +
+                           " and none in Resources/" + skyResourceFolder + ", so the window " +
+                           "has nothing behind it. Run Catch If You Can > Environment > " +
+                           "Build Interactive Room Sky.");
+            return null;
         }
 
         /// <summary>

@@ -51,6 +51,11 @@ namespace CatchIfYouCan.Art
         [Tooltip("The candle light's flicker component. The existing strong-flicker API.")]
         [SerializeField] private CandleFlicker candleFlicker;
 
+        [Tooltip("The visible flames, dimmed alongside the light they cast. Without these the " +
+                 "light drops but the flame stays burning, which reads as the candle being lit " +
+                 "by something else.")]
+        [SerializeField] private CandleFlameFlicker[] candleFlames = new CandleFlameFlicker[0];
+
         [Header("Ghost Closer Event")]
         [SerializeField] private bool enableGhostCloserEvent = true;
 
@@ -230,6 +235,10 @@ namespace CatchIfYouCan.Art
 
             if (candleFlicker != null)
                 candleFlicker.ClearEventModulation();
+
+            for (int i = 0; i < candleFlames.Length; i++)
+                if (candleFlames[i] != null)
+                    candleFlames[i].ClearEventModulation();
         }
 
         // ---- the event ------------------------------------------------------------------
@@ -391,6 +400,10 @@ namespace CatchIfYouCan.Art
         {
             if (candleFlicker != null)
                 candleFlicker.ApplyEventModulation(intensityScale, candleTurbulence);
+
+            for (int i = 0; i < candleFlames.Length; i++)
+                if (candleFlames[i] != null)
+                    candleFlames[i].ApplyEventModulation(intensityScale, candleTurbulence);
         }
     }
 }

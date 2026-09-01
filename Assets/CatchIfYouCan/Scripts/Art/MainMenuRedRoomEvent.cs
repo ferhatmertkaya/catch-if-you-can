@@ -123,9 +123,13 @@ namespace CatchIfYouCan.Art
                  "CandleFlicker keeps sole ownership of their intensity.")]
         [SerializeField] private Light[] candleLights = new Light[0];
 
-        [Tooltip("The flame particle systems, so the visible flame turns with the light. " +
-                 "Optional; leave empty to colour the light only.")]
-        [SerializeField] private ParticleSystem[] candleFlames = new ParticleSystem[0];
+        [Tooltip("The visible flames, so they turn with the light. Optional; leave empty to " +
+                 "colour the light only. These are the flames' own flicker components, not their " +
+                 "particle systems: a flame is one particle emitted at prewarm with an hour of " +
+                 "lifetime, so main.startColor only reaches a particle that has not been emitted " +
+                 "yet and never recolours the one on screen. CandleFlameFlicker writes a property " +
+                 "block instead, which is read at draw time.")]
+        [SerializeField] private CandleFlameFlicker[] candleFlames = new CandleFlameFlicker[0];
 
         [Tooltip("The colour candles are pulled toward during the event.")]
         [SerializeField] private Color candleEventColor = new Color(0.85f, 0.10f, 0.06f, 1f);
@@ -139,7 +143,6 @@ namespace CatchIfYouCan.Art
         // ---- captured once, never written back ------------------------------------------
         private float[] _dimBaseline;
         private Color[] _candleBaselineColor;
-        private Color[] _flameBaselineColor;
         private Coroutine _routine;
         private float _flickerOffset;
         private bool _ready;
@@ -165,11 +168,6 @@ namespace CatchIfYouCan.Art
             for (int i = 0; i < candleLights.Length; i++)
                 if (candleLights[i] != null)
                     _candleBaselineColor[i] = candleLights[i].color;
-
-            _flameBaselineColor = new Color[candleFlames.Length];
-            for (int i = 0; i < candleFlames.Length; i++)
-                if (candleFlames[i] != null)
-                    _flameBaselineColor[i] = candleFlames[i].main.startColor.color;
 
             _flickerOffset = Random.value * 128f + 0.53f;
             _ready = true;
@@ -227,6 +225,10 @@ namespace CatchIfYouCan.Art
 
             if (candleFlicker != null)
                 candleFlicker.ClearEventModulation();
+
+            for (int i = 0; i < candleFlames.Length; i++)
+                if (candleFlames[i] != null)
+                    candleFlames[i].ClearEventModulation();
 
             if (atmosphere != null)
                 atmosphere.ClearEventAtmosphere();
@@ -340,13 +342,19 @@ namespace CatchIfYouCan.Art
         {
             if (candleFlicker != null)
                 candleFlicker.ApplyEventModulation(intensityScale, turbulence);
+
+            // The visible flames dim with the light they cast. Same numbers, so the flame and
+            // its pool of light never disagree about how strongly the candle is burning.
+            for (int i = 0; i < candleFlames.Length; i++)
+                if (candleFlames[i] != null)
+                    candleFlames[i].ApplyEventModulation(intensityScale, turbulence);
         }
 
         /// <summary>
         /// Bleeds the candles red. Colour only: the flame keeps guttering because CandleFlicker
-        /// is still the one thing driving intensity, and it neither reads nor writes colour.
-        /// <paramref name="k"/> is 0 at rest and 1 at the peak, so this rides the same ramp as
-        /// the lights and restores itself on the way out.
+        /// owns the light's intensity and CandleFlameFlicker owns the flame's, and neither reads
+        /// nor writes colour on its own. <paramref name="k"/> is 0 at rest and 1 at the peak, so
+        /// this rides the same ramp as the lights and restores itself on the way out.
         /// </summary>
         private void ApplyCandleColour(float k)
         {
@@ -356,15 +364,11 @@ namespace CatchIfYouCan.Art
                 if (candleLights[i] != null)
                     candleLights[i].color = Color.Lerp(_candleBaselineColor[i], candleEventColor, blend);
 
+            // The flame keeps its own authored colour as the baseline, so nothing is captured
+            // here; asking for a blend of 0 is what puts it back exactly as it was.
             for (int i = 0; i < candleFlames.Length; i++)
-            {
-                if (candleFlames[i] == null)
-                    continue;
-                var main = candleFlames[i].main;
-                Color target = candleEventColor;
-                target.a = _flameBaselineColor[i].a;   // keep the flame's authored opacity
-                main.startColor = Color.Lerp(_flameBaselineColor[i], target, blend);
-            }
+                if (candleFlames[i] != null)
+                    candleFlames[i].ApplyEventColour(candleEventColor, blend);
         }
 
         private void ApplyFog(float k, float emissionPeak, float turbulencePeak)
