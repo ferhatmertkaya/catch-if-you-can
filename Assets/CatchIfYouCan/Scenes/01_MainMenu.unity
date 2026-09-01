@@ -52301,7 +52301,7 @@ MonoBehaviour:
   buildFill: 1
   fillLocalPosition: {x: 0, y: 2.15, z: 0.12}
   fillIntensity: 3
-  fillRange: 6
+  fillRange: 4
 --- !u!1 &7311221300000010
 GameObject:
   m_ObjectHideFlags: 0

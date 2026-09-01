@@ -98,7 +98,11 @@ namespace CatchIfYouCan.Art
 
         [SerializeField] private Vector3 fillLocalPosition = new Vector3(0f, 2.15f, 0.12f);
         [SerializeField] private float fillIntensity = 3f;
-        [SerializeField] private float fillRange = 6f;
+
+        [Tooltip("Kept small deliberately. This light's job is the metre or so in front of the " +
+                 "glass; a range that reaches across the room is a light that has to be " +
+                 "considered for every object in it, for no visible gain.")]
+        [SerializeField] private float fillRange = 4f;
 
         private Transform _surface;
         private Camera _mirrorCamera;
