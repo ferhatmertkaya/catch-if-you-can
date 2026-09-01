@@ -4,14 +4,17 @@ using UnityEngine;
 namespace CatchIfYouCan.Equipment
 {
     /// <summary>
-    /// The stand-in torch: a capsule with a real spot light, carried in the character's hand,
-    /// and droppable while still burning.
+    /// The torch: a modelled body with a real spot light, carried in the character's hand, and
+    /// droppable while still burning.
     ///
     /// <para>
-    /// Deliberately a capsule. There is no torch model yet, and a placeholder's job is to answer
-    /// the questions a model cannot be designed without - is it the right size in the hand, does
-    /// it read at all with the body in the way, does the beam land where you expect - none of
-    /// which need geometry. Swapping it for a real mesh later is one field.
+    /// The mesh is loaded from Resources and <b>measured</b> rather than assumed. Its long axis,
+    /// its length and where its grip ends are all read off the renderer bounds at spawn and used
+    /// to scale it to <see cref="torchLength"/> and to place the lens and the beam at the end of
+    /// it. That is why swapping the model is a matter of dropping a different FBX in: nothing
+    /// here knows how big this one is, only which way along it the beam points. If the model is
+    /// missing entirely it falls back to a capsule, which is what this was before there was a
+    /// model, and everything else still works.
     /// </para>
     ///
     /// <para>
@@ -39,8 +42,8 @@ namespace CatchIfYouCan.Equipment
     /// what gives it the swing when the player turns.
     /// </para>
     /// </summary>
-    [AddComponentMenu("Catch If You Can/Placeholder Flashlight")]
-    public sealed class PlaceholderFlashlight : EquipmentBase
+    [AddComponentMenu("Catch If You Can/Held Flashlight")]
+    public sealed class HeldFlashlight : EquipmentBase
     {
         [Header("Carry")]
         [Tooltip("Bone the torch is held by, matched by name suffix. Falls back to the anchor " +
@@ -56,14 +59,35 @@ namespace CatchIfYouCan.Equipment
         [SerializeField] private PlayerController playerController;
 
         [Header("Body")]
-        [Tooltip("Torch size in metres: diameter, length, diameter.")]
-        [SerializeField] private Vector3 size = new Vector3(0.052f, 0.21f, 0.052f);
+        [Tooltip("Resources path of the torch mesh. Empty, or missing, falls back to a capsule.")]
+        [SerializeField] private string modelResourcePath = "Props/CIYC_Flashlight";
+
+        [Tooltip("How long the torch is in the hand, in metres. The model is scaled to this " +
+                 "whatever units it was exported in - this one is two units end to end, which " +
+                 "would be a two metre torch taken at face value.")]
+        [SerializeField, Min(0.05f)] private float torchLength = 0.24f;
+
+        [Tooltip("Which way along the model the beam points, in the model's own axes. Measured " +
+                 "from this FBX: it lies along X and its head - the fat end - is at +X.")]
+        [SerializeField] private Vector3 modelBeamAxis = Vector3.right;
+
+        [Tooltip("Fallback capsule size in metres: diameter, length, diameter.")]
+        [SerializeField] private Vector3 size = new Vector3(0.052f, 0.24f, 0.052f);
 
         [Tooltip("Offset from the hand, in the player's own axes: right, up, forward.")]
         [SerializeField] private Vector3 gripOffset = new Vector3(0.02f, 0.01f, 0.06f);
 
         [SerializeField] private Color bodyColor = new Color(0.18f, 0.19f, 0.2f);
         [SerializeField] private Color lensColor = new Color(0.85f, 0.82f, 0.66f);
+
+        [Tooltip("How wide the glowing lens is, as a fraction of the torch's length.")]
+        [SerializeField, Range(0.05f, 0.6f)] private float lensFraction = 0.19f;
+
+        [Tooltip("Emission of the lens while lit. This is what makes the front of the torch " +
+                 "read as switched on from the outside, rather than only the beam it throws.")]
+        [SerializeField] private Color lensEmission = new Color(1f, 0.93f, 0.78f);
+
+        [SerializeField, Min(0f)] private float lensEmissionStrength = 4.5f;
 
         [Header("Aim")]
         [Tooltip("Downward tilt of the beam from level, degrees. A torch carried at chest height " +
@@ -108,6 +132,7 @@ namespace CatchIfYouCan.Equipment
         private float _bobPhase;
         private Material _bodyMaterial;
         private Material _lensMaterial;
+        private Renderer _lensRenderer;
         private bool _lit;
         private bool _onGround;
 
@@ -282,13 +307,33 @@ namespace CatchIfYouCan.Equipment
 
             // Held or lying in the room it burns; stowed in a slot it does not. A torch in a bag
             // is the one case where going dark is right.
-            _light.enabled = _lit && (IsEquipped || _onGround);
+            bool burning = _lit && (IsEquipped || _onGround);
+            _light.enabled = burning;
+
+            // The front of the torch lights up too, not just the beam it throws. Without this a
+            // torch lying lit on the floor is a cone of light coming from an unlit object.
+            if (_lensMaterial != null)
+            {
+                _lensMaterial.SetColor("_EmissionColor",
+                    burning ? lensEmission * lensEmissionStrength : Color.black);
+            }
 
             Input.MobileInputController.Instance?.ReportFlashlightState(_lit);
         }
 
         // ---- construction --------------------------------------------------------------------
 
+        /// <summary>
+        /// Builds the torch: a pivot at the grip, the body along its local +Y, and the lens and
+        /// beam at the far end of it.
+        ///
+        /// <para>
+        /// The pivot's origin is the grip, not the middle, which is what lets the aiming code
+        /// simply put the pivot in the hand and point its +Y down the beam. The model is turned
+        /// so its own long axis becomes that +Y and slid so its near end sits at the origin, so
+        /// none of the aiming has to know anything about the mesh.
+        /// </para>
+        /// </summary>
         private void Build()
         {
             if (_barrel != null)
@@ -298,13 +343,92 @@ namespace CatchIfYouCan.Equipment
             if (shader == null)
                 shader = Shader.Find("Standard");
 
-            var barrel = GameObject.CreatePrimitive(PrimitiveType.Capsule);
-            barrel.name = "Barrel";
-            DestroyCollider(barrel);
-
-            _barrel = barrel.transform;
+            var pivot = new GameObject("Torch");
+            _barrel = pivot.transform;
             _barrel.SetParent(transform, false);
-            _barrel.localScale = new Vector3(size.x, size.y * 0.5f, size.z);
+
+            float length = BuildBody(shader);
+
+            BuildLens(shader, length);
+            BuildBeam(length);
+        }
+
+        /// <summary>
+        /// Puts the mesh on the pivot and returns how long the torch ended up, in metres.
+        /// Falls back to a capsule when there is no model to load.
+        /// </summary>
+        private float BuildBody(Shader shader)
+        {
+            var prefab = string.IsNullOrEmpty(modelResourcePath)
+                ? null
+                : Resources.Load<GameObject>(modelResourcePath);
+
+            if (prefab == null)
+            {
+                if (!string.IsNullOrEmpty(modelResourcePath))
+                {
+                    Debug.LogWarning("[CIYC] No torch model at Resources/" + modelResourcePath +
+                                     "; falling back to a capsule.", this);
+                }
+                return BuildCapsule(shader);
+            }
+
+            var model = Instantiate(prefab, _barrel);
+            model.name = "Body";
+            model.transform.localPosition = Vector3.zero;
+            model.transform.localRotation = Quaternion.identity;
+            model.transform.localScale = Vector3.one;
+
+            var renderers = model.GetComponentsInChildren<Renderer>(true);
+            if (renderers.Length == 0)
+            {
+                Destroy(model);
+                return BuildCapsule(shader);
+            }
+
+            // Measured, never assumed. The bounds are read while the pivot is at the identity,
+            // so world and local agree and the numbers below are the model's own.
+            var bounds = renderers[0].bounds;
+            for (int i = 1; i < renderers.Length; i++)
+                bounds.Encapsulate(renderers[i].bounds);
+
+            Vector3 axis = modelBeamAxis.sqrMagnitude < 0.0001f ? Vector3.right : modelBeamAxis.normalized;
+            float along = Mathf.Abs(Vector3.Dot(bounds.size, Abs(axis)));
+            if (along < 0.0001f)
+                along = Mathf.Max(bounds.size.x, Mathf.Max(bounds.size.y, bounds.size.z));
+
+            float scale = torchLength / along;
+            model.transform.localScale = Vector3.one * scale;
+
+            // Turn the model's own long axis into the pivot's +Y, so everything downstream -
+            // aiming, the lens, the beam, the capsule fallback - shares one convention.
+            model.transform.localRotation = Quaternion.FromToRotation(axis, Vector3.up);
+
+            // And slide it so the grip end sits on the pivot rather than its middle.
+            Vector3 centre = model.transform.localRotation * (bounds.center * scale);
+            model.transform.localPosition = new Vector3(-centre.x, torchLength * 0.5f - centre.y, -centre.z);
+
+            for (int i = 0; i < renderers.Length; i++)
+            {
+                renderers[i].shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.On;
+                renderers[i].receiveShadows = true;
+            }
+
+            return torchLength;
+        }
+
+        private static Vector3 Abs(Vector3 v) =>
+            new Vector3(Mathf.Abs(v.x), Mathf.Abs(v.y), Mathf.Abs(v.z));
+
+        /// <summary>The torch as it was before there was a model: a capsule with a pale cap.</summary>
+        private float BuildCapsule(Shader shader)
+        {
+            var barrel = GameObject.CreatePrimitive(PrimitiveType.Capsule);
+            barrel.name = "Body";
+            DestroyCollider(barrel);
+            barrel.transform.SetParent(_barrel, false);
+            barrel.transform.localScale = new Vector3(size.x, size.y * 0.5f, size.z);
+            barrel.transform.localPosition = new Vector3(0f, size.y * 0.5f, 0f);
 
             if (shader != null)
             {
@@ -313,28 +437,44 @@ namespace CatchIfYouCan.Equipment
                 barrel.GetComponent<Renderer>().sharedMaterial = _bodyMaterial;
             }
 
-            // A pale cap at the business end, so which way it is pointing is readable at a
-            // glance. Without it a grey pill has no front.
+            return size.y;
+        }
+
+        /// <summary>
+        /// The glowing lens. A small disc of its own rather than emission on the body material:
+        /// the model is one mesh with one atlas, so lighting up "the front" through the material
+        /// would light up the whole torch.
+        /// </summary>
+        private void BuildLens(Shader shader, float length)
+        {
             var lens = GameObject.CreatePrimitive(PrimitiveType.Sphere);
             lens.name = "Lens";
             DestroyCollider(lens);
             lens.transform.SetParent(_barrel, false);
-            lens.transform.localScale = new Vector3(0.92f, 0.42f, 0.92f);
-            lens.transform.localPosition = new Vector3(0f, 1f, 0f);
 
-            if (shader != null)
-            {
-                _lensMaterial = new Material(shader) { name = "Flashlight_Lens_Runtime" };
-                _lensMaterial.color = lensColor;
-                lens.GetComponent<Renderer>().sharedMaterial = _lensMaterial;
-            }
+            float width = torchLength * lensFraction;
+            lens.transform.localScale = new Vector3(width, width * 0.45f, width);
+            lens.transform.localPosition = new Vector3(0f, length - width * 0.18f, 0f);
 
+            if (shader == null)
+                return;
+
+            _lensMaterial = new Material(shader) { name = "Flashlight_Lens_Runtime" };
+            _lensMaterial.color = lensColor;
+            _lensMaterial.EnableKeyword("_EMISSION");
+            _lensRenderer = lens.GetComponent<Renderer>();
+            _lensRenderer.sharedMaterial = _lensMaterial;
+            _lensRenderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+        }
+
+        private void BuildBeam(float length)
+        {
             var lightGo = new GameObject("Beam");
             lightGo.transform.SetParent(_barrel, false);
-            // The capsule's long axis is local Y and a spot light shines down local Z, so the
-            // light is turned a quarter turn to agree with the barrel it sits in.
+            // The torch runs along local Y and a spot light shines down local Z, so the light is
+            // turned a quarter turn to agree with the body it sits in.
             lightGo.transform.localRotation = Quaternion.Euler(-90f, 0f, 0f);
-            lightGo.transform.localPosition = new Vector3(0f, 1f, 0f);
+            lightGo.transform.localPosition = new Vector3(0f, length, 0f);
 
             _light = lightGo.AddComponent<Light>();
             _light.type = LightType.Spot;

@@ -131,6 +131,27 @@ namespace CatchIfYouCan.Player
         [Tooltip("Slow weight shift while standing still, degrees.")]
         [SerializeField] private float idleSwayDegrees = 1.1f;
 
+        [Header("Grip")]
+        [Tooltip("Curl the right hand's fingers while the player is carrying something, so a " +
+                 "torch is held rather than balanced on a flat palm.")]
+        [SerializeField] private bool gripWhenCarrying = true;
+
+        [Tooltip("Curl of the knuckle, the middle joint and the fingertip at a full grip, in " +
+                 "degrees. Spread across three joints rather than folded at one, which is what " +
+                 "stops the fingers reading as a hinge.")]
+        [SerializeField] private Vector3 gripDegrees = new Vector3(42f, 52f, 36f);
+
+        [Tooltip("The thumb, which closes less and later than the fingers.")]
+        [SerializeField] private Vector3 thumbGripDegrees = new Vector3(24f, 20f, 14f);
+
+        [Tooltip("Which way the fingers fold. The axis itself is measured from the rig every " +
+                 "frame - across the knuckles, from the index finger's own direction and the " +
+                 "line to the little finger - so it is correct whatever the bones' local axes " +
+                 "are. Only the sign cannot be derived; flip it if the hand opens backwards.")]
+        [SerializeField] private float gripSign = 1f;
+
+        [SerializeField, Min(0.01f)] private float gripSmoothing = 0.12f;
+
         [Header("Blink")]
         [Tooltip("How far the eyelids swing to close.")]
         [SerializeField] private float blinkDegrees = 34f;
@@ -149,6 +170,15 @@ namespace CatchIfYouCan.Player
         private Transform _spine01, _spine02, _spine03, _neck, _head;
         private Transform _upperLegL, _upperLegR, _lowerLegL, _lowerLegR, _footL, _footR;
         private Transform _eyelidL, _eyelidR;
+
+        // Right hand only: it is the hand the torch and every other item are held in.
+        private readonly Transform[][] _fingers = new Transform[4][];
+        private Transform[] _thumb;
+        private Transform _indexRoot, _pinkyRoot;
+        private PlayerInventory _inventory;
+        private float _grip;
+        private float _gripVelocity;
+
         private bool _bound;
 
         // Measured from the rig at bind time, so the crouch drop is the rig's own leg length
@@ -231,6 +261,14 @@ namespace CatchIfYouCan.Player
             _eyelidL = Find(all, "_eyelid_l");
             _eyelidR = Find(all, "_eyelid_r");
 
+            _fingers[0] = FindChain(all, "index");
+            _fingers[1] = FindChain(all, "middle");
+            _fingers[2] = FindChain(all, "ring");
+            _fingers[3] = FindChain(all, "pinky");
+            _thumb = FindChain(all, "thumb");
+            _indexRoot = _fingers[0][0];
+            _pinkyRoot = _fingers[3][0];
+
             MeasureLegs();
             FullCrouchDrop = ComputeCrouchDrop(1f);
 
@@ -274,6 +312,17 @@ namespace CatchIfYouCan.Player
                 _shinLength = Vector3.Distance(_lowerLegL.position, _footL.position);
         }
 
+        /// <summary>The three bones of one right-hand digit, by the rig's naming.</summary>
+        private static Transform[] FindChain(Transform[] all, string digit)
+        {
+            return new[]
+            {
+                Find(all, "_" + digit + "_01_r"),
+                Find(all, "_" + digit + "_02_r"),
+                Find(all, "_" + digit + "_03_r")
+            };
+        }
+
         private static Transform Find(Transform[] all, string suffix)
         {
             for (int i = 0; i < all.Length; i++)
@@ -299,6 +348,13 @@ namespace CatchIfYouCan.Player
             _sprint = Mathf.SmoothDamp(_sprint, sprinting, ref _sprintVelocity, sprintLeanSmoothing);
 
             UpdateBlinkTimer();
+
+            if (_inventory == null)
+                _inventory = GetComponentInParent<PlayerInventory>();
+
+            bool carrying = gripWhenCarrying && _inventory != null &&
+                            _inventory.GetSelectedItem() != null;
+            _grip = Mathf.SmoothDamp(_grip, carrying ? 1f : 0f, ref _gripVelocity, gripSmoothing);
         }
 
         private void UpdateBlinkTimer()
@@ -344,6 +400,7 @@ namespace CatchIfYouCan.Player
             ApplyStrafe(right, up, moving);
             ApplyIdle(right, forward, crouch, moving);
             ApplyHeadPitch(right);
+            ApplyGrip();
             ApplyBlink(right);
         }
 
@@ -474,6 +531,49 @@ namespace CatchIfYouCan.Player
             float applied = Mathf.Clamp(pitch * headPitchFollow, -headPitchLimit, headPitchLimit);
             RotateWorld(_neck, right, applied * 0.4f);
             RotateWorld(_head, right, applied * 0.6f);
+        }
+
+        /// <summary>
+        /// Folds the right hand round whatever it is holding.
+        ///
+        /// <para>
+        /// The fold axis is measured from the rig each frame rather than assumed: the index
+        /// finger's own direction crossed with the line across the knuckles to the little finger
+        /// is the axis the fingers actually bend about, whatever the exporter called the bones'
+        /// local axes. That is the same reasoning as everything else here, and it is why this
+        /// works on a rig nobody opened.
+        /// </para>
+        /// </summary>
+        private void ApplyGrip()
+        {
+            if (_grip < 0.01f || _indexRoot == null || _pinkyRoot == null)
+                return;
+
+            Transform indexMid = _fingers[0][1];
+            if (indexMid == null)
+                return;
+
+            Vector3 along = indexMid.position - _indexRoot.position;
+            Vector3 across = _pinkyRoot.position - _indexRoot.position;
+            Vector3 axis = Vector3.Cross(along, across);
+            if (axis.sqrMagnitude < 0.0000001f)
+                return;
+
+            axis = axis.normalized * Mathf.Sign(gripSign == 0f ? 1f : gripSign);
+
+            for (int f = 0; f < _fingers.Length; f++)
+            {
+                RotateWorld(_fingers[f][0], axis, gripDegrees.x * _grip);
+                RotateWorld(_fingers[f][1], axis, gripDegrees.y * _grip);
+                RotateWorld(_fingers[f][2], axis, gripDegrees.z * _grip);
+            }
+
+            if (_thumb == null)
+                return;
+
+            RotateWorld(_thumb[0], axis, thumbGripDegrees.x * _grip);
+            RotateWorld(_thumb[1], axis, thumbGripDegrees.y * _grip);
+            RotateWorld(_thumb[2], axis, thumbGripDegrees.z * _grip);
         }
 
         private void ApplyBlink(Vector3 right)

@@ -48730,6 +48730,7 @@ GameObject:
   - component: {fileID: 7311221000000033}
   - component: {fileID: 7311221000000032}
   - component: {fileID: 7311221000000031}
+  - component: {fileID: 7311221000000035}
   m_Layer: 0
   m_Name: InteractiveRoom_Door
   m_TagString: Untagged
@@ -48830,6 +48831,32 @@ BoxCollider:
   serializedVersion: 3
   m_Size: {x: 1, y: 1, z: 1}
   m_Center: {x: 0, y: 0, z: 0}
+--- !u!114 &7311221000000035
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 7311221000000030}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 1f6a30c874bd4e59b2078ce5d419a6f3, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::CatchIfYouCan.Interaction.DoorHandle
+  lockedPrompt: Locked
+  interactDistance: 2.2
+  locked: 1
+  handleLocalPosition: {x: -0.36, y: -0.06, z: -0.62}
+  handleLocalNormal: {x: 0, y: 0, z: -1}
+  leverLocalDirection: {x: 1, y: 0, z: 0}
+  rosetteRadius: 0.032
+  rosetteDepth: 0.014
+  spindleLength: 0.05
+  leverLength: 0.115
+  leverThickness: 0.019
+  pressedDegrees: 32
+  pressTime: 0.08
+  releaseTime: 0.16
 --- !u!1 &7311221000000040
 GameObject:
   m_ObjectHideFlags: 0

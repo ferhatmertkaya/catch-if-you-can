@@ -344,7 +344,7 @@ namespace CatchIfYouCan.Player
             collider.radius = 0.14f;
             collider.isTrigger = true;
 
-            var torch = go.AddComponent<Equipment.PlaceholderFlashlight>();
+            var torch = go.AddComponent<Equipment.HeldFlashlight>();
             var definition = Equipment.EquipmentDefinitionFactory.GetById("flashlight");
             if (definition != null)
                 torch.BindDefinition(definition);
