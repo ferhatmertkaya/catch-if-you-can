@@ -73,7 +73,7 @@ namespace CatchIfYouCan.Art
             if (ghostCloserEvent != null) _events.Add(ghostCloserEvent);
 
             _rng = new System.Random(
-                unchecked((int)System.DateTime.UtcNow.Ticks) ^ (GetInstanceID() * 397));
+                unchecked((int)System.DateTime.UtcNow.Ticks) ^ (GetEntityId().GetHashCode() * 397));
         }
 
         private void OnEnable()
