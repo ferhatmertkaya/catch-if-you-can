@@ -10,8 +10,8 @@ namespace CatchIfYouCan.Art
     /// <para>
     /// The phone used to schedule itself and drag the red lighting along with it, so the menu
     /// only ever had one thing to show and it always arrived the same way. Scheduling lives here
-    /// instead: the phone event and the red room event are peers, either can be picked, and the
-    /// wait before each is rolled fresh so the menu never falls into an audible rhythm.
+    /// instead: the phone, red room and ghost closer events are peers, any can be picked, and
+    /// the wait before each is rolled fresh so the menu never falls into an audible rhythm.
     /// </para>
     ///
     /// <para>
@@ -27,6 +27,7 @@ namespace CatchIfYouCan.Art
         [Header("Events (any may be left empty)")]
         [SerializeField] private MainMenuPhoneHorrorEvent phoneEvent;
         [SerializeField] private MainMenuRedRoomEvent redEvent;
+        [SerializeField] private MainMenuGhostCloserEvent ghostCloserEvent;
 
         [Header("Random Horror Events")]
         [Tooltip("Shortest wait between one event finishing and the next beginning.")]
@@ -59,6 +60,9 @@ namespace CatchIfYouCan.Art
             // MonoBehaviours that may or may not implement the right thing.
             if (phoneEvent != null) _events.Add(phoneEvent);
             if (redEvent != null) _events.Add(redEvent);
+            // Ghost Closer carries its own cooldown and simply declines when it is too soon,
+            // which makes it the rarer beat without needing per-event weights here.
+            if (ghostCloserEvent != null) _events.Add(ghostCloserEvent);
         }
 
         private void OnEnable()
@@ -180,6 +184,14 @@ namespace CatchIfYouCan.Art
         {
             if (redEvent != null && !AnyEventPlaying())
                 redEvent.TryBegin();
+        }
+
+        /// <summary>Runs the ghost closer beat now, ignoring schedule and cooldown. For testing.</summary>
+        [ContextMenu("Trigger Ghost Closer Event")]
+        public void TriggerGhostCloserEvent()
+        {
+            if (ghostCloserEvent != null && !AnyEventPlaying())
+                ghostCloserEvent.ForceBegin();
         }
 
 #if UNITY_EDITOR

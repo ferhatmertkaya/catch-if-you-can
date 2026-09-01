@@ -41620,6 +41620,7 @@ GameObject:
   - component: {fileID: 7311220200000012}
   - component: {fileID: 7311220400000020}
   - component: {fileID: 7311220400000021}
+  - component: {fileID: 7311220600000010}
   m_Layer: 0
   m_Name: MainMenu_HorrorEvent
   m_TagString: Untagged
@@ -41737,10 +41738,49 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   phoneEvent: {fileID: 7311220200000012}
   redEvent: {fileID: 7311220400000020}
+  ghostCloserEvent: {fileID: 7311220600000010}
   minEventInterval: 10
   maxEventInterval: 25
   preventImmediateRepeat: 1
   firstEventDelay: 6
+  logEvents: 1
+--- !u!114 &7311220600000010
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 7311220200000010}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: f4d0a3b5c7e96c2dd3a6b8c0d2e4f6a8, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  ghostFloat: {fileID: 7311220500000012}
+  menuCamera: {fileID: 200003}
+  dimmedLights:
+  - {fileID: 24644816}
+  - {fileID: 655823766}
+  - {fileID: 1054892508}
+  - {fileID: 1949104168}
+  - {fileID: 595639481}
+  candleFlicker: {fileID: 7311220100000013}
+  enableGhostCloserEvent: 1
+  ghostCloserStepDistance: 0.3
+  ghostCloserSteps: 2
+  ghostCloserInitialDelay: 0.5
+  ghostCloserFirstHold: 1
+  ghostCloserSecondHold: 1.2
+  ghostCloserDarkDuration: 0.15
+  ghostCloserFlickerDuration: 0.5
+  ghostCloserFinalHold: 0.4
+  ghostCloserMinimumCameraDistance: 0.65
+  ghostCloserCooldown: 60
+  ghostCloserDarkLevel: 0.02
+  ghostCloserRevealLevel: 1
+  ghostCloserRevealDuration: 0.12
+  candleEventIntensity: {x: 0.25, y: 0.55}
+  candleTurbulence: 4
   logEvents: 1
 --- !u!1 &7311220200000020
 GameObject:

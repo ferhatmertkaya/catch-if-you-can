@@ -49,10 +49,64 @@ namespace CatchIfYouCan.Art
         private Transform _target;
         private Vector3 _baseGhostLocalPosition;
         private Quaternion _baseGhostLocalRotation;
+
+        // Set by a horror event that needs the ghost somewhere else for a while; zero means
+        // "stand where you were authored". It is assigned, never accumulated, so an event that
+        // is interrupted cannot leave the ghost permanently displaced, and running the same
+        // event any number of times always lands back on the same base position.
+        private Vector3 _eventOffset;
         private float _phaseY;
         private float _phaseX;
         private float _phaseRoll;
         private bool _ready;
+
+        /// <summary>The transform this component drives. Null until Awake has run.</summary>
+        public Transform GhostTransform => _target;
+
+        /// <summary>
+        /// Where the ghost stands with no event running, in world space. Events measure from
+        /// this rather than from the live transform, which is always a centimetre or two off
+        /// while the float is running.
+        /// </summary>
+        public Vector3 BaseWorldPosition
+        {
+            get
+            {
+                if (_target == null)
+                    return Vector3.zero;
+                var parent = _target.parent;
+                return parent != null
+                    ? parent.TransformPoint(_baseGhostLocalPosition)
+                    : _baseGhostLocalPosition;
+            }
+        }
+
+        /// <summary>
+        /// Displaces the ghost by a world-space offset until it is cleared. The float keeps
+        /// running on top of it, so the ghost still breathes while it is standing somewhere
+        /// else — the two are added, never fought over.
+        ///
+        /// <para>
+        /// This component stays the single writer of the ghost's transform. An event that moved
+        /// the transform itself would be overwritten by the next float frame, and the two would
+        /// take turns clobbering each other.
+        /// </para>
+        /// </summary>
+        public void SetEventWorldOffset(Vector3 worldOffset)
+        {
+            if (_target == null)
+                return;
+
+            // Converted once, here, because this component is the one that knows which space
+            // the transform is written in.
+            var parent = _target.parent;
+            _eventOffset = parent != null
+                ? parent.InverseTransformVector(worldOffset)
+                : worldOffset;
+        }
+
+        /// <summary>Returns the ghost to its authored position. Safe to call when idle.</summary>
+        public void ClearEventOffset() => _eventOffset = Vector3.zero;
 
         private void Awake()
         {
@@ -72,7 +126,10 @@ namespace CatchIfYouCan.Art
 
         private void OnDisable()
         {
-            // Leave the ghost exactly where it was authored rather than frozen mid-drift.
+            // Leave the ghost exactly where it was authored rather than frozen mid-drift, and
+            // drop any event displacement: a component disabled part way through Ghost Closer
+            // must not leave the ghost standing closer to the camera than it was authored.
+            ClearEventOffset();
             if (_ready && _target != null)
             {
                 _target.localPosition = _baseGhostLocalPosition;
@@ -82,7 +139,12 @@ namespace CatchIfYouCan.Art
 
         private void Update()
         {
-            if (!_ready || !enableGhostFloat || _target == null)
+            if (!_ready || _target == null)
+                return;
+
+            // Nothing to do at all: keeps the original early-out when the float is switched off
+            // and no event is displacing the ghost.
+            if (!enableGhostFloat && _eventOffset == Vector3.zero)
                 return;
 
             float t = Time.time;
@@ -98,7 +160,16 @@ namespace CatchIfYouCan.Art
             float roll = Mathf.Sin(_phaseRoll + t * ghostFloatFrequency * 0.37f * Mathf.PI * 2f)
                          * ghostFloatRotationAmount;
 
-            _target.localPosition = _baseGhostLocalPosition + new Vector3(x, y, 0f);
+            // base + event offset + float offset. The event moves the ghost; the float keeps
+            // breathing on top of wherever the event put it.
+            if (!enableGhostFloat)
+            {
+                x = 0f;
+                y = 0f;
+                roll = 0f;
+            }
+
+            _target.localPosition = _baseGhostLocalPosition + _eventOffset + new Vector3(x, y, 0f);
             _target.localRotation = _baseGhostLocalRotation * Quaternion.Euler(0f, 0f, roll);
         }
 
