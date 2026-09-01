@@ -40,9 +40,11 @@ namespace CatchIfYouCan.Player
             player.tag = "Player";
 
             var controller = player.AddComponent<CharacterController>();
-            controller.height = 1.8f;
+            // PlayerController owns these at Awake; matched here so the capsule is never briefly
+            // the wrong size on the frame it is built.
+            controller.height = CapsuleHeight;
             controller.radius = 0.35f;
-            controller.center = new Vector3(0f, 0.9f, 0f);
+            controller.center = new Vector3(0f, CapsuleHeight * 0.5f, 0f);
 
             var cameraRoot = new GameObject("CameraRoot");
             cameraRoot.transform.SetParent(player.transform, false);
@@ -53,6 +55,10 @@ namespace CatchIfYouCan.Player
 
             var visualRoot = new GameObject("VisualRoot");
             visualRoot.transform.SetParent(player.transform, false);
+            // Scaled here rather than on the player, so collision, movement and the camera keep
+            // their own numbers. The character's feet are at its local origin and this sits at
+            // the player's, so scaling about it leaves the feet on the floor.
+            visualRoot.transform.localScale = Vector3.one * VisualScale;
 
             var handAnchor = new GameObject("HandAnchor");
             handAnchor.transform.SetParent(cameraRoot.transform, false);
@@ -115,9 +121,24 @@ namespace CatchIfYouCan.Player
         /// </summary>
         public const string CharacterVisualResourcePath = "Characters/Player_CharacterVisual";
 
-        /// <summary>Where the camera sits, matching the character's eye bones rather than the
-        /// top of the capsule.</summary>
-        public const float EyeHeight = 1.7f;
+        /// <summary>
+        /// Where the camera sits: the character's eye bones at 1.719 m, scaled by
+        /// <see cref="VisualScale"/>, which lands at about 1.79 m.
+        /// </summary>
+        public const float EyeHeight = 1.78f;
+
+        /// <summary>
+        /// Character scale. 1.04 takes the measured 1.86 m model to about 1.93 m — the small
+        /// lift that stops the viewpoint feeling short, well short of anything that reads as a
+        /// giant.
+        /// </summary>
+        public const float VisualScale = 1.04f;
+
+        /// <summary>
+        /// Collision capsule height. Deliberately a little under the character's full height,
+        /// the same way it was before: the top of the head does not need to be in the capsule.
+        /// </summary>
+        public const float CapsuleHeight = 1.86f;
 
         /// <summary>Placeholder wood footsteps, replaced by dropping real recordings in.</summary>
         public const string FootstepClipResourcePath = "Audio/SFX/Footsteps";

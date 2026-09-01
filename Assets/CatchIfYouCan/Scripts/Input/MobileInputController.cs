@@ -12,7 +12,15 @@ namespace CatchIfYouCan.Input
     {
         [Header("References")]
         [SerializeField] private VirtualJoystick moveJoystick;
-        [SerializeField] private float lookSensitivity = 0.15f;
+
+        [Tooltip("Device scale on look input. Left at 1 so the degrees-per-pixel figure lives in " +
+                 "one place, on PlayerLook, rather than being the product of two fields.")]
+        [SerializeField] private float lookSensitivity = 1f;
+
+        [Tooltip("Look input is normalised to this screen height in pixels, so the same thumb " +
+                 "swipe turns the same amount on a 720p phone and a 1440p one.")]
+        [SerializeField] private float lookReferenceHeight = 1080f;
+
         [SerializeField] private float lookScreenSplit = 0.5f;
 
         public Vector2 MoveInput
@@ -44,7 +52,30 @@ namespace CatchIfYouCan.Input
 #endif
             }
         }
-        public Vector2 LookDelta { get; private set; }
+        private Vector2 _lookAccumulator;
+        private int _lookAccumulatorFrame = -1;
+
+        /// <summary>
+        /// Look movement gathered this frame, in reference pixels.
+        ///
+        /// <para>
+        /// Stamped with the frame it was gathered in rather than cleared at the top of Update.
+        /// That distinction is the whole fix: the only writer for touch is a UI drag callback,
+        /// which Unity dispatches from the EventSystem's own Update, and the order of two
+        /// MonoBehaviour Updates is not defined. Clearing here meant the accumulated delta could
+        /// be wiped after the drag had already added it and before PlayerLook read it in
+        /// LateUpdate, which killed looking outright while leaving movement working — the
+        /// joystick reports persistent state, so nothing could erase it.
+        /// </para>
+        ///
+        /// <para>
+        /// Reading on any later frame yields zero, which is what stops the camera coasting after
+        /// the finger lifts. LateUpdate always follows every Update, so a consumer there always
+        /// sees the frame's full delta no matter which order the Updates ran in.
+        /// </para>
+        /// </summary>
+        public Vector2 LookDelta =>
+            _lookAccumulatorFrame == Time.frameCount ? _lookAccumulator : Vector2.zero;
         public bool SprintHeld { get; private set; }
         public bool CrouchHeld { get; private set; }
         public bool InteractPressed { get; private set; }
@@ -74,7 +105,14 @@ namespace CatchIfYouCan.Input
         /// </summary>
         public void AddLookDelta(Vector2 pixelDelta)
         {
-            LookDelta += pixelDelta * lookSensitivity;
+            if (_lookAccumulatorFrame != Time.frameCount)
+            {
+                _lookAccumulator = Vector2.zero;
+                _lookAccumulatorFrame = Time.frameCount;
+            }
+
+            float scale = lookReferenceHeight / Mathf.Max(1, Screen.height);
+            _lookAccumulator += pixelDelta * scale * lookSensitivity;
         }
 
         public event Action OnInteractTap;
@@ -84,7 +122,6 @@ namespace CatchIfYouCan.Input
 
         private void Update()
         {
-            LookDelta = Vector2.zero;
             InteractPressed = false;
             UsePressed = false;
             JournalPressed = false;
@@ -118,7 +155,7 @@ namespace CatchIfYouCan.Input
 
             Vector2 mouseDelta = Mouse.current.delta.ReadValue();
             if (mouseDelta.sqrMagnitude > 0.001f)
-                LookDelta += mouseDelta * lookSensitivity * 0.05f;
+                AddLookDelta(mouseDelta);
 #else
             if (_blockMouseLookThisFrame || UnityEngine.Input.touchCount > 0 || _lookFingerId >= 0)
                 return;
@@ -126,7 +163,7 @@ namespace CatchIfYouCan.Input
             float mouseX = UnityEngine.Input.GetAxis("Mouse X");
             float mouseY = UnityEngine.Input.GetAxis("Mouse Y");
             if (Mathf.Abs(mouseX) > 0.001f || Mathf.Abs(mouseY) > 0.001f)
-                LookDelta += new Vector2(mouseX, mouseY) * lookSensitivity * 10f;
+                AddLookDelta(new Vector2(mouseX, mouseY) * 10f);
 #endif
         }
 
@@ -198,9 +235,9 @@ namespace CatchIfYouCan.Input
                     if (touchId != _lookFingerId)
                         continue;
 
-                    Vector2 delta = touchControl.delta.ReadValue() * lookSensitivity;
+                    Vector2 delta = touchControl.delta.ReadValue();
                     if (delta.sqrMagnitude > 0.001f)
-                        LookDelta = delta;
+                        AddLookDelta(delta);
 
                     return;
                 }
@@ -247,8 +284,7 @@ namespace CatchIfYouCan.Input
 
                     if (touch.phase == TouchPhase.Moved)
                     {
-                        Vector2 delta = touch.deltaPosition * lookSensitivity;
-                        LookDelta = new Vector2(delta.x, delta.y);
+                        AddLookDelta(touch.deltaPosition);
                     }
                     return;
                 }

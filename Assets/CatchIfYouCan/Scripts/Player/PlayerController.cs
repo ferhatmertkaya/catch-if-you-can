@@ -22,8 +22,10 @@ namespace CatchIfYouCan.Player
         [SerializeField] private float jumpHeight = 0f;
 
         [Header("Crouch")]
-        [SerializeField] private float standingHeight = 1.8f;
-        [SerializeField] private float crouchHeight = 1.0f;
+        // Matches PlayerFactory.CapsuleHeight. Raised with the character so the capsule, the
+        // camera and the visible body stay in proportion rather than one drifting from the rest.
+        [SerializeField] private float standingHeight = 1.86f;
+        [SerializeField] private float crouchHeight = 1.03f;
         [SerializeField] private float crouchTransitionSpeed = 8f;
 
         [Header("References")]

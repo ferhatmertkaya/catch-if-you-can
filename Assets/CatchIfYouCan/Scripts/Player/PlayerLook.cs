@@ -23,19 +23,22 @@ namespace CatchIfYouCan.Player
         [SerializeField] private Transform playerBody;
 
         [Header("Sensitivity")]
-        [Tooltip("Degrees of yaw per unit of look input.")]
-        [SerializeField] private float sensitivityX = 1.2f;
+        [Tooltip("Degrees of yaw per reference pixel of drag. At 0.28 a 500 px thumb swipe - a " +
+                 "comfortable one on a 1080p landscape phone - turns about 140 degrees.")]
+        [SerializeField] private float sensitivityX = 0.28f;
 
-        [Tooltip("Degrees of pitch per unit of look input. Slightly below horizontal on purpose: " +
-                 "vertical aim needs less travel than turning around does.")]
-        [SerializeField] private float sensitivityY = 1.0f;
+        [Tooltip("Degrees of pitch per reference pixel. Held at about 0.8 of the yaw figure: " +
+                 "the pitch range is only 160 degrees end to end, so matching horizontal would " +
+                 "make the whole range too easy to cross by accident.")]
+        [SerializeField] private float sensitivityY = 0.22f;
 
         [SerializeField] private bool invertY;
 
         [Header("Feel")]
-        [Tooltip("Seconds of smoothing. Small values take the stair-stepping off a low frame rate " +
-                 "without the aim feeling like it is on a spring; zero disables it entirely.")]
-        [SerializeField, Range(0f, 0.12f)] private float lookSmoothing = 0.035f;
+        [Tooltip("Seconds of smoothing. Whatever is not applied this frame is carried to the " +
+                 "next, so smoothing changes when the rotation arrives but never how much of it " +
+                 "does. Zero disables it entirely.")]
+        [SerializeField, Range(0f, 0.12f)] private float lookSmoothing = 0.02f;
 
         [Header("Limits")]
         [SerializeField] private float minPitch = -80f;
@@ -45,8 +48,12 @@ namespace CatchIfYouCan.Player
 
         private MobileInputController _input;
         private float _pitch;
-        private Vector2 _smoothed;
-        private Vector2 _smoothVelocity;
+
+        // Rotation that has arrived but not yet been applied. Draining a buffer rather than
+        // smoothing towards a target is what keeps the smoothing honest: SmoothDamp chases a
+        // per-frame delta that drops back to zero the moment the thumb stops, so it never
+        // catches up and quietly swallows part of every short swipe.
+        private Vector2 _pending;
 
         public bool AllowLook
         {
@@ -56,10 +63,9 @@ namespace CatchIfYouCan.Player
                 allowLook = value;
                 if (!value)
                 {
-                    // Drop any in-flight smoothing, otherwise re-enabling look replays the last
+                    // Drop anything still queued, otherwise re-enabling look replays the last
                     // flick as a lurch.
-                    _smoothed = Vector2.zero;
-                    _smoothVelocity = Vector2.zero;
+                    _pending = Vector2.zero;
                 }
             }
         }
@@ -113,20 +119,26 @@ namespace CatchIfYouCan.Player
             }
 
             Vector2 raw = _input.LookDelta;
-            raw = new Vector2(raw.x * sensitivityX, raw.y * sensitivityY);
+            _pending += new Vector2(raw.x * sensitivityX, raw.y * sensitivityY);
 
-            if (lookSmoothing > 0f)
-                _smoothed = Vector2.SmoothDamp(_smoothed, raw, ref _smoothVelocity, lookSmoothing);
-            else
-                _smoothed = raw;
+            // Exponential drain, so the rate is the same whatever the frame rate. The delta is
+            // already per-frame, so it is deliberately NOT multiplied by deltaTime again here;
+            // doing that is what turns a working look into one that barely moves.
+            Vector2 step = lookSmoothing > 0f
+                ? _pending * (1f - Mathf.Exp(-Time.deltaTime / lookSmoothing))
+                : _pending;
 
-            if (_smoothed.sqrMagnitude < 0.000001f)
+            _pending -= step;
+            if (_pending.sqrMagnitude < 0.000001f)
+                _pending = Vector2.zero;
+
+            if (step.sqrMagnitude < 0.0000001f)
                 return;
 
             if (playerBody != null)
-                playerBody.Rotate(Vector3.up, _smoothed.x, Space.World);
+                playerBody.Rotate(Vector3.up, step.x, Space.World);
 
-            float pitchDelta = invertY ? _smoothed.y : -_smoothed.y;
+            float pitchDelta = invertY ? step.y : -step.y;
             _pitch = Mathf.Clamp(_pitch + pitchDelta, minPitch, maxPitch);
             transform.localRotation = Quaternion.Euler(_pitch, 0f, 0f);
         }
@@ -138,8 +150,7 @@ namespace CatchIfYouCan.Player
 
             _pitch = Mathf.Clamp(pitch, minPitch, maxPitch);
             transform.localRotation = Quaternion.Euler(_pitch, 0f, 0f);
-            _smoothed = Vector2.zero;
-            _smoothVelocity = Vector2.zero;
+            _pending = Vector2.zero;
         }
     }
 }

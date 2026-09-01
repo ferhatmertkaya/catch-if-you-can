@@ -38,14 +38,16 @@ namespace CatchIfYouCan.Audio
         [SerializeField] private float sphereRadius = 0.15f;
 
         [Header("Stride length (metres of travel per step)")]
-        [Tooltip("A walking human covers roughly this much ground between footfalls. At the " +
-                 "player's 1.9 m/s that lands a step about every 0.43 s.")]
-        [SerializeField, Min(0.1f)] private float walkStride = 0.82f;
+        [Tooltip("Ground covered between footfalls while walking. At 1.9 m/s this lands a step " +
+                 "every 0.35 s, which is close to the 0.38 s the legs actually take at the walk " +
+                 "clip's 1.48x playback; the previous 0.82 m read as half speed against them.")]
+        [SerializeField, Min(0.1f)] private float walkStride = 0.66f;
 
-        [Tooltip("Running strides are longer. At 3.8 m/s this gives a step about every 0.30 s.")]
-        [SerializeField, Min(0.1f)] private float runStride = 1.15f;
+        [Tooltip("Running strides are longer, but not proportionally: at 3.8 m/s this gives a " +
+                 "step every 0.24 s, clearly quicker than walking without turning into a rattle.")]
+        [SerializeField, Min(0.1f)] private float runStride = 0.92f;
 
-        [SerializeField, Min(0.1f)] private float crouchStride = 0.62f;
+        [SerializeField, Min(0.1f)] private float crouchStride = 0.52f;
 
         [Header("Gate")]
         [Tooltip("Planar speed below which the player counts as standing still. Large enough to " +

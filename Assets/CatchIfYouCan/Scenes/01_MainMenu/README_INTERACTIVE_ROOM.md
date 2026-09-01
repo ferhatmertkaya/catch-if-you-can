@@ -26,9 +26,9 @@ Every box collider is a unit cube scaled by its transform, so resizing the geome
 collision with it — there is no second set of numbers to keep in step. Ten surfaces collide: floor,
 ceiling, four wall pieces, the header, the door, and the safety floor.
 
-Spawn clearance, with the CharacterController's 1.8 m height, 0.35 m radius and (0, 0.9, 0) centre:
-the capsule bottom starts 5 cm above the floor, 5 m from either side wall, 1.5 m from the wall
-behind, 1.8 m below the ceiling. Nothing to push out of.
+Spawn clearance, with the CharacterController's 1.86 m height, 0.35 m radius and (0, 0.93, 0)
+centre: the capsule bottom starts 5 cm above the floor, 5 m from either side wall, 1.5 m from the
+wall behind, 1.74 m below the ceiling. Nothing to push out of.
 
 ## Materials
 
@@ -164,8 +164,28 @@ the cursor being over UI, which is what you want on desktop.
 |---|---|
 | stick dead zone / radius | 0.14 / 96 px of a 300 px touch square |
 | walk / run | 1.9 m/s / 3.8 m/s, hold the button |
-| look sensitivity | 1.2 yaw, 1.0 pitch, 0.035 s smoothing |
+| look sensitivity | 0.28°/px yaw, 0.22°/px pitch, at a 1080 px reference height |
+| look smoothing | 0.02 s, carrying the remainder forward |
 | pitch clamp | −80° to +80°, yaw unrestricted |
+
+A 500 px thumb swipe — a comfortable one on a landscape phone — turns about 140°. Input is
+normalised to a 1080 px reference height, so the same swipe turns the same amount on a 720p device
+and a 1440p one.
+
+**Look was dead on device before this, and the reason is worth writing down.** `LookDelta` was a
+per-frame accumulator cleared at the top of `MobileInputController.Update`. Its only writer for
+touch is a UI drag callback, which Unity dispatches from the *EventSystem's* `Update` — and the
+order of two MonoBehaviour `Update`s is undefined. When the EventSystem ran first, the delta was
+added and then wiped before `PlayerLook` read it in `LateUpdate`. Movement was immune because the
+joystick reports persistent state that nothing can erase, which is exactly why the symptom was
+"moving works, looking does not". The accumulator is now stamped with the frame it was gathered in
+and never cleared: reading it on a later frame yields zero, and since `LateUpdate` always follows
+every `Update`, the consumer sees the whole frame's delta whatever order the Updates ran in.
+
+A second, quieter bug rode along with it. `PlayerLook` smoothed with `SmoothDamp` towards the raw
+delta — but a per-frame delta drops back to zero the instant the thumb stops, so the filter never
+caught up and swallowed part of every short swipe. It now drains a pending buffer instead, which
+changes *when* rotation arrives but never *how much*.
 
 Walk speed came down from 2.8. Nathan's only clip is authored at a measured 1.283 m/s, and at 2.8
 the walk cycle had to play at 2.2× to keep the feet on the floor, which reads as a scurry. At 1.9
@@ -180,8 +200,10 @@ pushing into a wall stops them dead, because the controller reports the movement
 than the movement you asked for. The previous version read `PlayerController.CurrentSpeed`, which is
 `input × speed` and stays at full walking pace while you lean on a wall.
 
-Strides are 0.82 m walking and 1.15 m running, so at the speeds above a step lands about every
-0.43 s and 0.30 s. Four placeholder wood clips are generated — synthesised from a low board thud, a
+Strides are 0.66 m walking and 0.92 m running, so at the speeds above a step lands about every
+0.35 s and 0.24 s. The first values, 0.82 m and 1.15 m, sounded half-speed against the legs: the
+walk clip plays at 1.48× and its gait cycle carries two steps, so the visible cadence is about
+0.38 s, which the old 0.43 s lagged behind. Four placeholder wood clips are generated — synthesised from a low board thud, a
 mid knock and a short scuff, not taken from anywhere — and are chosen without repeating the last
 one, with ±4% pitch and ±8% volume. Replace them by dropping real recordings into
 `Resources/Audio/SFX/Footsteps`. One AudioSource is reused for every step.
@@ -194,8 +216,16 @@ silently resolved anything unrecognised to wood anyway.
 off. `LocalPlayerBodyVisibility` collapses the head *bone* on the local instance instead: the skull,
 jaw, eyes and hair fold into a point at the top of the neck and everything below the collar draws
 normally, which is what puts a chest, hips, legs and shoes under the camera when the player looks
-down. The camera sits at 1.70 m, matching Nathan's eye bones at 1.719 m, with a 5 cm near plane —
-the closest the camera gets to its own shoulder looking straight down is about 25 cm.
+down. The camera sits at 1.78 m with a 5 cm near plane — the closest it gets to its own shoulder
+looking straight down is about 25 cm.
+
+The character stands about **1.93 m**: the measured 1.86 m model with a 1.04 scale on `VisualRoot`,
+a 4% lift that stops the viewpoint feeling short without reading as a giant. The scale goes on the
+visual root and nowhere else, so movement and collision keep their own numbers; the feet are at the
+character's local origin and that sits at the player's, so scaling about it leaves them on the
+floor. The capsule went to 1.86 m with its centre at 0.93, and the camera to 1.78 m to stay at the
+scaled eye bones — the three move together, or the camera ends up in the chest. Ceiling clearance
+is still 1.74 m.
 
 Nothing about the shared prefab, mesh or skeleton changes; it is a runtime scale on one instance, so
 a remote player's copy simply never enables the component and draws in full, head included. The cost

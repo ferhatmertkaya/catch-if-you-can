@@ -54,7 +54,11 @@ namespace CatchIfYouCan.Input
             if (_graphic == null)
                 return;
 
-            _graphic.raycastTarget = !onlyRaycastWithTouch || UnityEngine.Input.touchSupported;
+            // isMobilePlatform as well as touchSupported: the zone going dead is the difference
+            // between looking around and not, so it should not hinge on one flag being reported
+            // correctly by every device and build configuration.
+            bool touch = UnityEngine.Input.touchSupported || Application.isMobilePlatform;
+            _graphic.raycastTarget = !onlyRaycastWithTouch || touch;
         }
 
         public void OnPointerDown(PointerEventData eventData)
