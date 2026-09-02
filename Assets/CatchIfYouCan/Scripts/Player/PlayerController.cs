@@ -74,6 +74,7 @@ namespace CatchIfYouCan.Player
         private float _speedBlendVelocity;
         private float _standingCameraHeight;
         private bool _hasCameraRoot;
+        private PlayerBodyMotion _bodyMotion;
 
         public bool IsSprinting { get; private set; }
 
@@ -131,6 +132,9 @@ namespace CatchIfYouCan.Player
         private void Start()
         {
             _input = MobileInputController.Instance;
+            // Looked up here rather than in Awake: PlayerFactory adds this component before it
+            // adds the body motion, so in Awake there is nothing to find yet. Once, and cached.
+            _bodyMotion = GetComponent<PlayerBodyMotion>();
         }
 
         private void Update()
@@ -180,8 +184,17 @@ namespace CatchIfYouCan.Player
 
             // Only Y. The forward offset that puts the camera in front of the character's own
             // neck is not a crouch concern and must survive it untouched.
+            //
+            // The drop is the character's own head bone where there is one to read, and the
+            // leg-length figure only as a fallback. Those are not the same number: the crouch
+            // folds the legs, which drops the hips, and then leans the torso forward over the
+            // knees, which drops the head again. Dropping the camera by the first alone left the
+            // view hanging several centimetres above the eyes of the body it belongs to.
             Vector3 local = cameraRoot.localPosition;
-            local.y = _standingCameraHeight - cameraCrouchDrop * CrouchAmount01;
+            float drop = _bodyMotion != null && _bodyMotion.MeasuredHeadDrop > 0.001f
+                ? _bodyMotion.MeasuredHeadDrop
+                : cameraCrouchDrop * CrouchAmount01;
+            local.y = _standingCameraHeight - drop;
             cameraRoot.localPosition = local;
         }
 

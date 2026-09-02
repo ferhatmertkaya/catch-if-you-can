@@ -19,10 +19,7 @@ namespace CatchIfYouCan.Art
     /// sampled with ordinary 0-1 UVs: the usual planar-reflection setup needs a shader that
     /// samples in screen space, and this project has no custom shaders. The cost is that an
     /// off-axis frustum renders a window rather than a mirror - it does not swap left and right -
-    /// so the glass is built with its UVs mirrored. That is done in the mesh rather than in the
-    /// material because the reflection is fed to the shader as an emission map, and in URP an
-    /// emission map is sampled with the base map's tiling; flipping it there would flip the
-    /// grime with it and depend on a detail of somebody else's shader.
+    /// so the glass is built with its UVs mirrored, in the mesh rather than in the material.
     /// </para>
     ///
     /// <para>
@@ -85,21 +82,10 @@ namespace CatchIfYouCan.Art
         [SerializeField, Min(1f)] private float farPlane = 40f;
 
         [Header("Glass")]
-        [Tooltip("Tint of the glass itself, under the reflection. Dark and slightly warm: a " +
-                 "hundred-year-old mirror is not a clean one.")]
-        [SerializeField] private Color glassTint = new Color(0.1f, 0.1f, 0.095f);
-
-        [Tooltip("What the reflection is multiplied by on its way onto the glass. Slightly under " +
-                 "one and slightly warm, so the reflection reads as seen through old glass " +
-                 "rather than as a second window.")]
-        [SerializeField] private Color reflectionTint = new Color(0.8f, 0.78f, 0.73f);
-
-        [Tooltip("How dirty the glass is: 0 is spotless, 1 is barely see-through. This is a " +
-                 "generated mottle in the base map, so it darkens the glass unevenly without " +
-                 "touching the reflection's shape.")]
-        [SerializeField, Range(0f, 1f)] private float grimeStrength = 0.55f;
-
-        [SerializeField, Range(0f, 1f)] private float glassSmoothness = 0.82f;
+        [Tooltip("What the reflection is multiplied by on its way onto the glass. Under one and " +
+                 "slightly warm, so it reads as a hundred-year-old mirror rather than as a " +
+                 "second window: darker than the room, and a little browner.")]
+        [SerializeField] private Color glassTint = new Color(0.72f, 0.69f, 0.63f);
 
         [Header("Frame")]
         [SerializeField] private float frameBorder = 0.06f;
@@ -139,13 +125,6 @@ namespace CatchIfYouCan.Art
                  "considered for every object in it, for no visible gain.")]
         [SerializeField] private float fillRange = 4f;
 
-        private static readonly int BaseMapId = Shader.PropertyToID("_BaseMap");
-        private static readonly int BaseColorId = Shader.PropertyToID("_BaseColor");
-        private static readonly int MetallicId = Shader.PropertyToID("_Metallic");
-        private static readonly int SmoothnessId = Shader.PropertyToID("_Smoothness");
-        private static readonly int EmissionMapId = Shader.PropertyToID("_EmissionMap");
-        private static readonly int EmissionColorId = Shader.PropertyToID("_EmissionColor");
-
         /// <summary>How far behind the glass the frame sits, in metres. Enough to not z-fight.</summary>
         private const float FrameSetback = 0.006f;
 
@@ -158,7 +137,6 @@ namespace CatchIfYouCan.Art
 
         private Transform _surface;
         private Camera _mirrorCamera;
-        private Texture2D _grime;
         private RenderTexture _texture;
         private Material _glassMaterial;
         private bool _built;
@@ -180,9 +158,6 @@ namespace CatchIfYouCan.Art
 
             if (_glassMaterial != null)
                 Destroy(_glassMaterial);
-
-            if (_grime != null)
-                Destroy(_grime);
         }
 
         // ---- construction --------------------------------------------------------------------
@@ -194,11 +169,10 @@ namespace CatchIfYouCan.Art
             _built = true;
 
             var lit = Shader.Find("Universal Render Pipeline/Lit");
-            if (lit == null)
-                lit = Shader.Find("Standard");
+            var unlit = Shader.Find("Universal Render Pipeline/Unlit");
 
             BuildFrame(lit);
-            BuildGlass(lit);
+            BuildGlass(unlit);
             BuildCamera();
 
             if (buildLamp)
@@ -233,7 +207,7 @@ namespace CatchIfYouCan.Art
         /// own way and carries its own UVs, and both of those matter to a mirror; four vertices
         /// written out are four things that cannot be wrong.
         /// </summary>
-        private void BuildGlass(Shader lit)
+        private void BuildGlass(Shader unlit)
         {
             var go = new GameObject("Mirror_Glass");
             _surface = go.transform;
@@ -284,71 +258,21 @@ namespace CatchIfYouCan.Art
             };
             _texture.Create();
 
-            if (lit == null)
+            if (unlit == null)
                 return;
 
-            // The reflection arrives as emission, not as albedo, and that is the whole of what
-            // makes this read as a mirror rather than as a poster of one: emission is not lit, so
-            // the reflected room keeps its own brightness in a corner that is itself dark, while
-            // the base map underneath - a generated mottle, tinted nearly black - is lit, and so
-            // catches the standing lamp as a sheen across dirty glass.
-            _grime = BuildGrime();
-
-            _glassMaterial = new Material(lit) { name = "Mirror_Glass_Runtime" };
-            _glassMaterial.SetTexture(BaseMapId, _grime);
-            _glassMaterial.SetColor(BaseColorId, glassTint);
-            _glassMaterial.SetFloat(MetallicId, 0f);
-            _glassMaterial.SetFloat(SmoothnessId, glassSmoothness);
-            _glassMaterial.EnableKeyword("_EMISSION");
-            _glassMaterial.SetTexture(EmissionMapId, _texture);
-            _glassMaterial.SetColor(EmissionColorId, reflectionTint);
+            // Unlit, and deliberately so twice over. A mirror is not lit by the room it is in -
+            // the reflection carries its own light, and a Lit surface would darken it with the
+            // corner's own shadow. And it is the one shader this material is known to survive a
+            // player build with: fed to a Lit material as an emission map, with _EMISSION turned
+            // on at runtime, the glass came back magenta on device, which is what a URP build
+            // shows when a shader variant nobody asked for at build time is asked for at run
+            // time. Age is a tint on the base colour instead, which is a plain property and
+            // needs no variant of anything.
+            _glassMaterial = new Material(unlit) { name = "Mirror_Glass_Runtime" };
+            _glassMaterial.mainTexture = _texture;
+            _glassMaterial.color = glassTint;
             renderer.sharedMaterial = _glassMaterial;
-        }
-
-        /// <summary>
-        /// The dirt on the glass: a small mottled greyscale map, generated rather than authored
-        /// so the mirror stays one file and one component with nothing to import.
-        ///
-        /// <para>
-        /// Perlin rather than a random number generator on purpose. This project seeds its
-        /// randomness deliberately and hashes the result, and a texture nobody can see the
-        /// difference in is not worth drawing a number from a stream somebody else is counting.
-        /// </para>
-        /// </summary>
-        private Texture2D BuildGrime()
-        {
-            const int size = 96;
-            var texture = new Texture2D(size, size, TextureFormat.RGB24, true)
-            {
-                name = "Mirror_Grime",
-                wrapMode = TextureWrapMode.Clamp,
-                filterMode = FilterMode.Bilinear
-            };
-
-            var pixels = new Color[size * size];
-            for (int y = 0; y < size; y++)
-            {
-                for (int x = 0; x < size; x++)
-                {
-                    float u = x / (float)size;
-                    float v = y / (float)size;
-
-                    float n = Mathf.PerlinNoise(u * 3.1f, v * 3.1f) * 0.6f +
-                              Mathf.PerlinNoise(u * 9.7f + 11.3f, v * 9.7f + 7.1f) * 0.28f +
-                              Mathf.PerlinNoise(u * 26f + 31.7f, v * 26f + 17.9f) * 0.12f;
-
-                    // Heavier towards the edges, where a mirror in a frame actually goes first.
-                    float edge = Mathf.Max(Mathf.Abs(u - 0.5f), Mathf.Abs(v - 0.5f)) * 2f;
-                    n = Mathf.Lerp(n, n * 0.55f, Mathf.SmoothStep(0.72f, 1f, edge));
-
-                    float value = Mathf.Clamp01(Mathf.Lerp(1f, Mathf.Clamp01(n * 1.35f), grimeStrength));
-                    pixels[y * size + x] = new Color(value, value, value, 1f);
-                }
-            }
-
-            texture.SetPixels(pixels);
-            texture.Apply();
-            return texture;
         }
 
         private void BuildCamera()

@@ -131,17 +131,39 @@ namespace CatchIfYouCan.Equipment
         [SerializeField] private bool litOnSpawn;
 
         [Header("Dropped")]
-        [Tooltip("How far in front of the player it lands, and how far above the floor it comes " +
-                 "to rest.")]
-        [SerializeField] private float dropForward = 0.75f;
+        [Tooltip("How far in front of the player it leaves the hand, and how far above chest " +
+                 "height, in metres. Where the throw starts, not where it ends up - where it ends " +
+                 "up is physics' business.")]
+        [SerializeField] private float dropForward = 0.42f;
         [SerializeField] private float dropHeight = 0.06f;
 
-        [Tooltip("Layers the drop probe treats as floor.")]
-        [SerializeField] private LayerMask groundMask = ~0;
+        [Tooltip("Mass of the torch once it leaves the hand, in kilograms.")]
+        [SerializeField, Min(0.02f)] private float dropMass = 0.32f;
+
+        [Tooltip("How hard it is thrown, in newton-seconds: forward along the player's look, and " +
+                 "up. Small - it is put down, not hurled.")]
+        [SerializeField] private Vector2 dropImpulse = new Vector2(1.1f, 0.35f);
+
+        [Tooltip("Spin given to the throw, in newton-metre-seconds. This is what decides whether " +
+                 "it lands and stays or lands and rolls a hand's width.")]
+        [SerializeField] private float dropSpin = 0.09f;
+
+        [SerializeField, Min(0f)] private float dropLinearDamping = 0.4f;
+        [SerializeField, Min(0f)] private float dropAngularDamping = 3.2f;
+
+        [Tooltip("Radius of the physics collider it lands on, in metres. A torch is a cylinder, " +
+                 "so this is a capsule down its own length: it can roll a little across itself " +
+                 "and cannot roll along itself, which is exactly what a dropped torch does.")]
+        [SerializeField, Min(0.005f)] private float dropRadius = 0.026f;
 
         private Transform _handBone;
         private Transform _barrel;
         private Transform _head;
+        private Transform _view;
+        private PlayerBodyMotion _bodyMotion;
+        private CapsuleCollider _dropCollider;
+        private Rigidbody _dropBody;
+        private int _placedFrame = -1;
         private Light _light;
         private Vector3 _aim = Vector3.forward;
         private Vector3 _aimVelocity;
@@ -185,6 +207,12 @@ namespace CatchIfYouCan.Equipment
                 playerController = Object.FindAnyObjectByType<PlayerController>();
             if (playerBody == null && playerController != null)
                 playerBody = playerController.transform;
+
+            // Cached once. The beam follows the look rather than the body, so this is read every
+            // frame and must never be a search.
+            var main = Camera.main;
+            if (main != null)
+                _view = main.transform;
 
             Build();
             _lit = litOnSpawn;
@@ -233,6 +261,13 @@ namespace CatchIfYouCan.Equipment
             if (body != null)
                 playerBody = body;
             ResolveHandBone();
+
+            // The body motion poses the arm that carries this, and both run in LateUpdate, where
+            // the order between two components is whatever Unity feels like. Rather than guess,
+            // the torch is placed from the end of the pose itself.
+            _bodyMotion = playerBody != null ? playerBody.GetComponent<PlayerBodyMotion>() : null;
+            if (_bodyMotion != null)
+                _bodyMotion.SetPoseListener(PlaceInHand);
         }
 
         private void ResolveHandBone()
@@ -257,6 +292,9 @@ namespace CatchIfYouCan.Equipment
 
         public override void Equip(Transform handAnchor)
         {
+            // Physics first: the base implementation reparents, and reparenting a body that is
+            // still simulating is how an item ends up flying across the room as it is picked up.
+            ReleasePhysics();
             base.Equip(handAnchor);
             _onGround = false;
             ApplyLight();
@@ -271,13 +309,23 @@ namespace CatchIfYouCan.Equipment
         }
 
         /// <summary>
-        /// Lays the torch down in front of the player, still burning if it was.
+        /// Throws the torch out of the hand and lets physics decide where it comes to rest,
+        /// still burning if it was.
         ///
         /// <para>
         /// The base implementation refuses without a definition that allows dropping, and
         /// switches the device off on the way out. This does neither: a torch you cannot put down
         /// is not a torch, and one that goes dark the moment it leaves your hand is the opposite
         /// of what a dropped torch does.
+        /// </para>
+        ///
+        /// <para>
+        /// It used to be placed: a ray straight down and the torch set on whatever it hit,
+        /// pointing along the floor. That is tidy and reads as nothing having happened. This
+        /// gives it a body, a capsule down its own length, a small shove and a little spin, and
+        /// lets it land how it lands - which is the whole point, because a capsule dropped on its
+        /// side rolls a few centimetres and stops, and one dropped on its end does not roll at
+        /// all. The beam goes with it, so where it finishes pointing is where it lights.
         /// </para>
         /// </summary>
         public override void Drop(Vector3 position, Quaternion rotation)
@@ -286,42 +334,86 @@ namespace CatchIfYouCan.Equipment
                 Unequip();
 
             transform.SetParent(null, true);
-            transform.SetPositionAndRotation(FindRestingPlace(position), rotation);
-            IsPlaced = false;
-            _onGround = true;
 
-            // Lying down, so the beam runs along the floor rather than pointing wherever the
-            // hand last was.
+            Vector3 throwDirection = rotation * Vector3.forward;
+            throwDirection.y = 0f;
+            if (throwDirection.sqrMagnitude < 0.0001f)
+                throwDirection = playerBody != null ? playerBody.forward : Vector3.forward;
+            throwDirection.Normalize();
+
+            Vector3 from = position;
+            if (playerBody != null)
+                from = playerBody.position + Vector3.up * (1.1f + dropHeight) +
+                       throwDirection * dropForward;
+
+            // The root carries the torch now rather than the other way round, so the body can
+            // move one transform and take the mesh, the lens and the beam with it.
+            transform.SetPositionAndRotation(
+                from, Quaternion.LookRotation(throwDirection, Vector3.up) *
+                      Quaternion.Euler(90f, 0f, 0f));
+
             if (_barrel != null)
             {
-                Vector3 along = rotation * Vector3.forward;
-                along.y = 0f;
-                if (along.sqrMagnitude < 0.0001f)
-                    along = Vector3.forward;
-                _barrel.rotation = Quaternion.LookRotation(along.normalized, Vector3.up) *
-                                   Quaternion.Euler(90f, 0f, 0f);
-                _barrel.position = transform.position;
+                _barrel.localRotation = Quaternion.identity;
+                _barrel.localPosition = new Vector3(0f, -torchLength * 0.5f, 0f);
             }
+
+            IsPlaced = false;
+            _onGround = true;
+            _placedFrame = Time.frameCount;
+
+            StartPhysics(throwDirection);
 
             ApplyLight();
             Core.GameEvents.EquipmentChanged();
         }
 
-        /// <summary>
-        /// Drops the torch to the floor under the intended spot, so it does not hang in the air
-        /// over a stairwell or sink into a rug.
-        /// </summary>
-        private Vector3 FindRestingPlace(Vector3 intended)
+        /// <summary>Gives the torch a body and throws it.</summary>
+        private void StartPhysics(Vector3 throwDirection)
         {
-            Vector3 from = intended;
-            if (playerBody != null)
-                from = playerBody.position + Vector3.up * 1.1f + playerBody.forward * dropForward;
+            if (_dropCollider != null)
+                _dropCollider.enabled = true;
 
-            if (Physics.Raycast(from, Vector3.down, out RaycastHit hit, 3f, groundMask,
-                                QueryTriggerInteraction.Ignore))
-                return hit.point + Vector3.up * dropHeight;
+            if (_dropBody == null)
+                _dropBody = gameObject.AddComponent<Rigidbody>();
 
-            return new Vector3(from.x, intended.y, from.z);
+            _dropBody.isKinematic = false;
+            _dropBody.useGravity = true;
+            _dropBody.mass = dropMass;
+            _dropBody.linearDamping = dropLinearDamping;
+            _dropBody.angularDamping = dropAngularDamping;
+            _dropBody.interpolation = RigidbodyInterpolation.Interpolate;
+            _dropBody.collisionDetectionMode = CollisionDetectionMode.ContinuousDynamic;
+
+            _dropBody.AddForce(throwDirection * dropImpulse.x + Vector3.up * dropImpulse.y,
+                               ForceMode.Impulse);
+
+            // About its own long axis and across it, so it tumbles rather than spinning flat.
+            Vector3 spin = transform.right * dropSpin + transform.forward * (dropSpin * 0.4f);
+            _dropBody.AddTorque(spin, ForceMode.Impulse);
+        }
+
+        /// <summary>Takes the body back off, so the hand can carry it again.</summary>
+        private void ReleasePhysics()
+        {
+            if (_dropBody != null)
+            {
+                // Stopped before it is destroyed. Destroy is deferred to the end of the frame,
+                // and a body still simulating while the transform it owns is being reparented
+                // into a hand is how a picked-up item shoots across the room.
+                _dropBody.isKinematic = true;
+                Destroy(_dropBody);
+                _dropBody = null;
+            }
+
+            if (_dropCollider != null)
+                _dropCollider.enabled = false;
+
+            if (_barrel != null)
+            {
+                _barrel.localPosition = Vector3.zero;
+                _barrel.localRotation = Quaternion.identity;
+            }
         }
 
         private void ApplyLight()
@@ -375,6 +467,22 @@ namespace CatchIfYouCan.Equipment
 
             BuildLens(shader, length);
             BuildBeam(length);
+            BuildDropCollider(length);
+        }
+
+        /// <summary>
+        /// The shape the torch lands on: a capsule down its own length, switched off while it is
+        /// being carried so a thing in the player's hand is not also a thing in the player's way.
+        /// The trigger sphere the pickup ray uses is a separate collider and stays on.
+        /// </summary>
+        private void BuildDropCollider(float length)
+        {
+            _dropCollider = gameObject.AddComponent<CapsuleCollider>();
+            _dropCollider.direction = 1;                       // down the torch's own Y
+            _dropCollider.radius = dropRadius;
+            _dropCollider.height = length + dropRadius * 2f;
+            _dropCollider.center = Vector3.zero;
+            _dropCollider.enabled = false;
         }
 
         /// <summary>
@@ -532,8 +640,45 @@ namespace CatchIfYouCan.Equipment
 
         private void LateUpdate()
         {
+            // Normally already done from the body motion's pose callback; this is the path for a
+            // character with no procedural body layer at all.
+            if (_placedFrame != Time.frameCount)
+                PlaceInHand();
+        }
+
+        /// <summary>
+        /// Puts the torch in the hand for this frame.
+        ///
+        /// <para>
+        /// Where the rig can be measured, it is: the fist's own knuckles say which axis a
+        /// cylinder held in it lies along and where the middle of the palm is, and the torch is
+        /// laid on that. Nothing here decides where the hand points - the arm pose does that, and
+        /// it aims the hand down the player's own line of sight - so the barrel, the lens and the
+        /// beam all end up facing wherever the player is looking without any of them being told
+        /// to.
+        /// </para>
+        ///
+        /// <para>
+        /// The fallback below is the old behaviour, for a player with no character visual: aimed
+        /// off the camera, hung off whatever anchor the inventory equipped it to.
+        /// </para>
+        /// </summary>
+        public void PlaceInHand()
+        {
+            _placedFrame = Time.frameCount;
+
             if (_barrel == null || !IsEquipped || playerBody == null)
                 return;
+
+            if (_bodyMotion != null &&
+                _bodyMotion.TryGetGrip(out Vector3 palm, out Vector3 barrel, out Vector3 palmNormal))
+            {
+                _barrel.rotation = Quaternion.LookRotation(barrel, palmNormal) *
+                                   Quaternion.Euler(90f, 0f, 0f) *
+                                   Quaternion.Euler(gripRotationOffset);
+                _barrel.position = palm - barrel * gripBackset;
+                return;
+            }
 
             Transform anchor = _handBone != null ? _handBone : HandAnchor;
             if (anchor == null)
@@ -541,8 +686,10 @@ namespace CatchIfYouCan.Equipment
 
             // Aim, lagged. Smoothing the direction rather than the angle keeps the swing even
             // when the player spins right past 180 degrees, where an angle would unwind the long
-            // way round.
-            Vector3 target = Quaternion.AngleAxis(aimPitch, playerBody.right) * playerBody.forward;
+            // way round. Taken from the camera rather than the body so the beam goes where the
+            // player is looking rather than only where they are facing.
+            Vector3 look = _view != null ? _view.forward : playerBody.forward;
+            Vector3 target = Quaternion.AngleAxis(aimPitch, playerBody.right) * look;
             _aim = Vector3.SmoothDamp(_aim, target, ref _aimVelocity, aimLag);
             if (_aim.sqrMagnitude < 0.0001f)
                 _aim = target;
@@ -554,7 +701,7 @@ namespace CatchIfYouCan.Equipment
             Vector3 aim = Quaternion.AngleAxis(bob, playerBody.right) * _aim.normalized;
 
             // LookRotation points local +Z along the aim; the extra quarter turn puts local +Y -
-            // the capsule's length - there instead.
+            // the torch's length - there instead.
             _barrel.rotation = Quaternion.LookRotation(aim, playerBody.up) *
                                Quaternion.Euler(90f, 0f, 0f) *
                                Quaternion.Euler(gripRotationOffset);

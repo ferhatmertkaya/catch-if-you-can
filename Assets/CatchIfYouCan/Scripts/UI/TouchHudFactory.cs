@@ -59,33 +59,38 @@ namespace CatchIfYouCan.UI
         // the bottom of its own. Nothing is a disc of colour: at these alphas the controls are
         // an outline and a symbol, and the room shows through all of them.
 
-        private static readonly Color Glass = new Color(0.60f, 0.66f, 0.63f, 0.10f);
-        private static readonly Color GlassBorder = new Color(0.86f, 0.92f, 0.89f, 0.22f);
-        private static readonly Color IconTint = new Color(0.91f, 0.94f, 0.92f, 0.74f);
+        private static readonly Color Glass = new Color(0.60f, 0.66f, 0.63f, 0.07f);
+        private static readonly Color GlassBorder = new Color(0.86f, 0.92f, 0.89f, 0.16f);
+        private static readonly Color IconTint = new Color(0.91f, 0.94f, 0.92f, 0.58f);
 
-        private static readonly Color StickGlass = new Color(0.55f, 0.62f, 0.58f, 0.07f);
-        private static readonly Color StickBorder = new Color(0.84f, 0.90f, 0.87f, 0.18f);
-        private static readonly Color KnobGlass = new Color(0.80f, 0.87f, 0.83f, 0.13f);
-        private static readonly Color KnobBorder = new Color(0.90f, 0.95f, 0.92f, 0.22f);
+        private static readonly Color StickGlass = new Color(0.55f, 0.62f, 0.58f, 0.05f);
+        private static readonly Color StickBorder = new Color(0.84f, 0.90f, 0.87f, 0.13f);
+        private static readonly Color KnobGlass = new Color(0.80f, 0.87f, 0.83f, 0.10f);
+        private static readonly Color KnobBorder = new Color(0.90f, 0.95f, 0.92f, 0.16f);
 
         // Down from a third to a tenth. At the old alpha the four arrows were the loudest thing
         // on the screen and the stick read as an arcade pad; this leaves them as a hint of which
         // way the thumb may go, visible when looked at and invisible when not.
-        private static readonly Color StickChevron = new Color(0.90f, 0.94f, 0.92f, 0.10f);
+        private static readonly Color StickChevron = new Color(0.90f, 0.94f, 0.92f, 0.07f);
 
-        private static readonly Color ReticleTint = new Color(0.88f, 0.92f, 0.90f, 0.18f);
+        private static readonly Color ReticleTint = new Color(0.88f, 0.92f, 0.90f, 0.15f);
 
         // Barely there, and only visible where the scene behind is bright. Against the dark it
         // does nothing, which is the point: a drop shadow that reads in a lit corridor and
         // disappears in a black room.
-        private static readonly Color Shade = new Color(0f, 0f, 0f, 0.10f);
+        private static readonly Color Shade = new Color(0f, 0f, 0f, 0.06f);
 
-        // Active states are a lift in brightness with the faintest wash of the project's green
-        // through the icon and the border, and nothing else: no fill, no halo. A torch that is on
-        // should look like a switch that is down, not like a button someone has lit up.
-        private static readonly Color IconActive = new Color(0.90f, 1f, 0.92f, 0.88f);
-        private static readonly Color RingActive = new Color(0.78f, 0.95f, 0.81f, 0.34f);
-        private static readonly Color GlowActive = new Color(0.80f, 0.95f, 0.84f, 0.05f);
+        // On is the icon, and only the icon: solid white at full opacity while everything around
+        // it stays the same sheet of glass it was. No halo, no fill, no lit ring. The eye reads
+        // one symbol going from faint to solid far faster than it reads a circle changing
+        // colour, and it costs the HUD nothing in weight.
+        private static readonly Color IconActive = new Color(1f, 1f, 1f, 1f);
+        private static readonly Color GlowActive = new Color(0f, 0f, 0f, 0f);
+
+        // The crouch latch has no icon state of its own to change - the same figure means both
+        // "crouch" and "crouching" - so that one keeps a border that brightens, kept as faint as
+        // it can be and still be seen.
+        private static readonly Color RingActive = new Color(0.92f, 0.96f, 0.94f, 0.30f);
 
         // ---- layout ------------------------------------------------------------------------
 
@@ -272,8 +277,10 @@ namespace CatchIfYouCan.UI
             SetPrivateField(flashlight, "glow", glow);
             SetPrivateField(flashlight, "iconIdle", IconTint);
             SetPrivateField(flashlight, "iconActive", IconActive);
+            // Idle and active are the same colour on purpose: the ring is glass, and glass does
+            // not light up because a torch is on.
             SetPrivateField(flashlight, "ringIdle", GlassBorder);
-            SetPrivateField(flashlight, "ringActive", RingActive);
+            SetPrivateField(flashlight, "ringActive", GlassBorder);
             SetPrivateField(flashlight, "glowActive", GlowActive);
         }
 
