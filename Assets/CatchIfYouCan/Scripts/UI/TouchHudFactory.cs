@@ -50,32 +50,42 @@ namespace CatchIfYouCan.UI
         // ---- palette -----------------------------------------------------------------------
         // Smoked glass: a pale tint at very low alpha rather than a dark one. Over a dark horror
         // scene a dark fill is simply invisible, so what reads as "smoked glass" here is a faint
-        // lift, not a shade. Alphas are the brief's: body 10-18%, border 20-30%, icon 70-85%.
+        // lift, not a shade.
+        //
+        // Every alpha below is one of the brief's numbers, and they are the whole of the style:
+        // button body 0.08-0.13, border 0.20-0.28, icon 0.65-0.80, stick body 0.06-0.10, knob
+        // 0.12-0.18. The icon is the only thing here meant to be read at a glance, so it sits at
+        // the top of its band while everything that is only there to say where to press sits at
+        // the bottom of its own. Nothing is a disc of colour: at these alphas the controls are
+        // an outline and a symbol, and the room shows through all of them.
 
-        private static readonly Color Glass = new Color(0.60f, 0.66f, 0.63f, 0.14f);
-        private static readonly Color GlassBorder = new Color(0.86f, 0.92f, 0.89f, 0.26f);
-        private static readonly Color IconTint = new Color(0.91f, 0.94f, 0.92f, 0.80f);
+        private static readonly Color Glass = new Color(0.60f, 0.66f, 0.63f, 0.10f);
+        private static readonly Color GlassBorder = new Color(0.86f, 0.92f, 0.89f, 0.22f);
+        private static readonly Color IconTint = new Color(0.91f, 0.94f, 0.92f, 0.74f);
 
-        private static readonly Color StickGlass = new Color(0.55f, 0.62f, 0.58f, 0.12f);
-        private static readonly Color StickBorder = new Color(0.84f, 0.90f, 0.87f, 0.22f);
-        private static readonly Color KnobGlass = new Color(0.80f, 0.87f, 0.83f, 0.16f);
-        private static readonly Color KnobBorder = new Color(0.90f, 0.95f, 0.92f, 0.30f);
-        private static readonly Color StickChevron = new Color(0.90f, 0.94f, 0.92f, 0.34f);
+        private static readonly Color StickGlass = new Color(0.55f, 0.62f, 0.58f, 0.07f);
+        private static readonly Color StickBorder = new Color(0.84f, 0.90f, 0.87f, 0.18f);
+        private static readonly Color KnobGlass = new Color(0.80f, 0.87f, 0.83f, 0.13f);
+        private static readonly Color KnobBorder = new Color(0.90f, 0.95f, 0.92f, 0.22f);
 
-        private static readonly Color ReticleTint = new Color(0.88f, 0.92f, 0.90f, 0.22f);
+        // Down from a third to a tenth. At the old alpha the four arrows were the loudest thing
+        // on the screen and the stick read as an arcade pad; this leaves them as a hint of which
+        // way the thumb may go, visible when looked at and invisible when not.
+        private static readonly Color StickChevron = new Color(0.90f, 0.94f, 0.92f, 0.10f);
+
+        private static readonly Color ReticleTint = new Color(0.88f, 0.92f, 0.90f, 0.18f);
 
         // Barely there, and only visible where the scene behind is bright. Against the dark it
         // does nothing, which is the point: a drop shadow that reads in a lit corridor and
         // disappears in a black room.
-        private static readonly Color Shade = new Color(0f, 0f, 0f, 0.18f);
+        private static readonly Color Shade = new Color(0f, 0f, 0f, 0.10f);
 
-        // Active states are a brighter white, not a colour. The HUD is deliberately monochrome:
-        // a green ring is the one thing on screen that could not be part of the room, and in a
-        // game whose whole look is a dark room lit by one torch that reads as a menu, not as a
-        // torch being on.
-        private static readonly Color IconActive = new Color(1f, 1f, 1f, 0.98f);
-        private static readonly Color RingActive = new Color(0.96f, 0.98f, 0.97f, 0.5f);
-        private static readonly Color GlowActive = new Color(0.94f, 0.97f, 0.96f, 0.1f);
+        // Active states are a lift in brightness with the faintest wash of the project's green
+        // through the icon and the border, and nothing else: no fill, no halo. A torch that is on
+        // should look like a switch that is down, not like a button someone has lit up.
+        private static readonly Color IconActive = new Color(0.90f, 1f, 0.92f, 0.88f);
+        private static readonly Color RingActive = new Color(0.78f, 0.95f, 0.81f, 0.34f);
+        private static readonly Color GlowActive = new Color(0.80f, 0.95f, 0.84f, 0.05f);
 
         // ---- layout ------------------------------------------------------------------------
 
@@ -91,7 +101,7 @@ namespace CatchIfYouCan.UI
         private const float ClusterArcDegrees = 142f;
         private static readonly Vector2 FlashlightCentre = new Vector2(-160f, 250f);
 
-        private const float ChevronSize = 46f;
+        private const float ChevronSize = 38f;
         private const float ChevronRadius = 112f;   // between the knob and the ring
 
         private const float IconFraction = 0.5f;
@@ -184,7 +194,7 @@ namespace CatchIfYouCan.UI
             padImage.raycastTarget = true;
             pad.gameObject.AddComponent<LookTransparentUI>();
 
-            AddSprite(pad, "Shade", HudSprites.Glow, Shade, StickRingSize * 1.5f);
+            AddSprite(pad, "Shade", HudSprites.Glow, Shade, StickRingSize * 1.25f);
 
             var background = CreateRect("Background", pad, Half, Half);
             background.sizeDelta = new Vector2(StickRingSize, StickRingSize);
@@ -214,9 +224,9 @@ namespace CatchIfYouCan.UI
         }
 
         /// <summary>
-        /// Four arrows around the knob, so the stick reads as a direction pad at a glance rather
-        /// than as an empty ring. One sprite, rotated: a separate asset per direction would be
-        /// four things to keep looking identical.
+        /// Four marks around the knob, so the ring is not simply empty. Faint and small on
+        /// purpose - they are a hint, not a direction pad. One sprite, rotated: a separate asset
+        /// per direction would be four things to keep looking identical.
         /// </summary>
         private static void AddChevrons(RectTransform background)
         {
@@ -329,8 +339,8 @@ namespace CatchIfYouCan.UI
             button.gameObject.AddComponent<LookTransparentUI>();
 
             // Behind everything, and transparent until something fades it up.
-            glow = AddSprite(button, "Glow", HudSprites.Glow, new Color(0f, 0f, 0f, 0f), size * 1.75f);
-            AddSprite(button, "Shade", HudSprites.Glow, Shade, size * 1.5f);
+            glow = AddSprite(button, "Glow", HudSprites.Glow, new Color(0f, 0f, 0f, 0f), size * 1.3f);
+            AddSprite(button, "Shade", HudSprites.Glow, Shade, size * 1.25f);
             AddSprite(button, "Glass", HudSprites.Disc, Glass, size);
             ring = AddSprite(button, "Border", HudSprites.Ring, GlassBorder, size);
             icon = AddSprite(button, "Icon", iconSprite, IconTint, size * IconFraction);

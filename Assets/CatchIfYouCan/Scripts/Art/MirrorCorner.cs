@@ -19,8 +19,23 @@ namespace CatchIfYouCan.Art
     /// sampled with ordinary 0-1 UVs: the usual planar-reflection setup needs a shader that
     /// samples in screen space, and this project has no custom shaders. The cost is that an
     /// off-axis frustum renders a window rather than a mirror - it does not swap left and right -
-    /// so the texture is flipped horizontally on the way onto the glass. That flip is a field, in
-    /// case the handedness ever needs to go the other way.
+    /// so the glass is built with its UVs mirrored. That is done in the mesh rather than in the
+    /// material because the reflection is fed to the shader as an emission map, and in URP an
+    /// emission map is sampled with the base map's tiling; flipping it there would flip the
+    /// grime with it and depend on a detail of somebody else's shader.
+    /// </para>
+    ///
+    /// <para>
+    /// <b>The near plane is the mirror plane.</b> The reflection camera sits behind the glass
+    /// looking out through it, so everything between it and the room - the frame, the wall the
+    /// mirror hangs on, and the glass itself - is in front of the lens. The frame alone is a
+    /// solid slab wider and taller than the glass sitting exactly on the image plane, which fills
+    /// the frustum completely: that is a mirror that renders one flat rectangle of dark wood and
+    /// nothing else. Worse, the glass is textured with the very render texture being drawn, so
+    /// what little got past the frame was a texture sampling itself. Pushing the near plane out
+    /// to the mirror plane removes all three at once, and costs nothing: an off-axis frustum is
+    /// built from the corners of a rectangle at a known distance, so moving the near plane
+    /// rescales the four edges and leaves the image identical.
     /// </para>
     ///
     /// <para>
@@ -54,17 +69,37 @@ namespace CatchIfYouCan.Art
         [SerializeField, Min(64)] private int resolution = 512;
 
         [Tooltip("Flip the reflection left to right. On, because an off-axis frustum renders the " +
-                 "view through a window rather than the view in a mirror.")]
+                 "view through a window rather than the view in a mirror. Built into the glass " +
+                 "mesh's UVs, so it is read once when the mirror is built.")]
         [SerializeField] private bool mirrorImage = true;
 
         [Tooltip("Stop rendering beyond this. The reflection is a second pass over the room, so " +
                  "it should not run while the player is on the other side of the house.")]
         [SerializeField, Min(1f)] private float renderDistance = 7f;
 
-        [Tooltip("Near plane of the reflection camera.")]
+        [Tooltip("Smallest near plane the reflection camera may use. The near plane is normally " +
+                 "the mirror plane itself, which is always further than this; this is only a " +
+                 "floor for the moment the player's face is against the glass.")]
         [SerializeField, Min(0.01f)] private float nearPlane = 0.05f;
 
         [SerializeField, Min(1f)] private float farPlane = 40f;
+
+        [Header("Glass")]
+        [Tooltip("Tint of the glass itself, under the reflection. Dark and slightly warm: a " +
+                 "hundred-year-old mirror is not a clean one.")]
+        [SerializeField] private Color glassTint = new Color(0.1f, 0.1f, 0.095f);
+
+        [Tooltip("What the reflection is multiplied by on its way onto the glass. Slightly under " +
+                 "one and slightly warm, so the reflection reads as seen through old glass " +
+                 "rather than as a second window.")]
+        [SerializeField] private Color reflectionTint = new Color(0.8f, 0.78f, 0.73f);
+
+        [Tooltip("How dirty the glass is: 0 is spotless, 1 is barely see-through. This is a " +
+                 "generated mottle in the base map, so it darkens the glass unevenly without " +
+                 "touching the reflection's shape.")]
+        [SerializeField, Range(0f, 1f)] private float grimeStrength = 0.55f;
+
+        [SerializeField, Range(0f, 1f)] private float glassSmoothness = 0.82f;
 
         [Header("Frame")]
         [SerializeField] private float frameBorder = 0.06f;
@@ -104,8 +139,26 @@ namespace CatchIfYouCan.Art
                  "considered for every object in it, for no visible gain.")]
         [SerializeField] private float fillRange = 4f;
 
+        private static readonly int BaseMapId = Shader.PropertyToID("_BaseMap");
+        private static readonly int BaseColorId = Shader.PropertyToID("_BaseColor");
+        private static readonly int MetallicId = Shader.PropertyToID("_Metallic");
+        private static readonly int SmoothnessId = Shader.PropertyToID("_Smoothness");
+        private static readonly int EmissionMapId = Shader.PropertyToID("_EmissionMap");
+        private static readonly int EmissionColorId = Shader.PropertyToID("_EmissionColor");
+
+        /// <summary>How far behind the glass the frame sits, in metres. Enough to not z-fight.</summary>
+        private const float FrameSetback = 0.006f;
+
+        /// <summary>
+        /// How far past the mirror plane the near plane is pushed, as a fraction of the distance
+        /// to it. Two parts in a thousand - a couple of millimetres at arm's length - which is
+        /// enough to clip the glass itself and far too little to clip anything in the room.
+        /// </summary>
+        private const float NearPlaneInset = 1.002f;
+
         private Transform _surface;
         private Camera _mirrorCamera;
+        private Texture2D _grime;
         private RenderTexture _texture;
         private Material _glassMaterial;
         private bool _built;
@@ -127,6 +180,9 @@ namespace CatchIfYouCan.Art
 
             if (_glassMaterial != null)
                 Destroy(_glassMaterial);
+
+            if (_grime != null)
+                Destroy(_grime);
         }
 
         // ---- construction --------------------------------------------------------------------
@@ -138,12 +194,11 @@ namespace CatchIfYouCan.Art
             _built = true;
 
             var lit = Shader.Find("Universal Render Pipeline/Lit");
-            var unlit = Shader.Find("Universal Render Pipeline/Unlit");
-            if (unlit == null)
-                unlit = Shader.Find("Unlit/Texture");
+            if (lit == null)
+                lit = Shader.Find("Standard");
 
             BuildFrame(lit);
-            BuildGlass(unlit);
+            BuildGlass(lit);
             BuildCamera();
 
             if (buildLamp)
@@ -157,7 +212,10 @@ namespace CatchIfYouCan.Art
             var frame = GameObject.CreatePrimitive(PrimitiveType.Cube);
             frame.name = "Mirror_Frame";
             frame.transform.SetParent(transform, false);
-            frame.transform.localPosition = glassLocalPosition - new Vector3(0f, 0f, frameDepth * 0.5f);
+            // Set back from the glass rather than flush with it. Flush is two opaque surfaces on
+            // one plane, which is a z-fight that reads as the mirror flickering.
+            frame.transform.localPosition = glassLocalPosition -
+                                            new Vector3(0f, 0f, frameDepth * 0.5f + FrameSetback);
             frame.transform.localScale = new Vector3(glassSize.x + frameBorder * 2f,
                                                      glassSize.y + frameBorder * 2f,
                                                      frameDepth);
@@ -175,7 +233,7 @@ namespace CatchIfYouCan.Art
         /// own way and carries its own UVs, and both of those matter to a mirror; four vertices
         /// written out are four things that cannot be wrong.
         /// </summary>
-        private void BuildGlass(Shader unlit)
+        private void BuildGlass(Shader lit)
         {
             var go = new GameObject("Mirror_Glass");
             _surface = go.transform;
@@ -194,10 +252,15 @@ namespace CatchIfYouCan.Art
                 new Vector3(-hx,  hy, 0f),
                 new Vector3( hx,  hy, 0f)
             };
+            // Mirrored here rather than in the material. An off-axis frustum renders the view
+            // through a window, and a window is a mirror with left and right the wrong way
+            // round; swapping U is the whole of the difference.
+            float u0 = mirrorImage ? 1f : 0f;
+            float u1 = mirrorImage ? 0f : 1f;
             mesh.uv = new[]
             {
-                new Vector2(0f, 0f), new Vector2(1f, 0f),
-                new Vector2(0f, 1f), new Vector2(1f, 1f)
+                new Vector2(u0, 0f), new Vector2(u1, 0f),
+                new Vector2(u0, 1f), new Vector2(u1, 1f)
             };
             // Wound clockwise as seen from local +Z, which is Unity's front-facing order and
             // the side that faces the room. Worked out on paper rather than by rotating a Quad
@@ -221,22 +284,71 @@ namespace CatchIfYouCan.Art
             };
             _texture.Create();
 
-            if (unlit == null)
+            if (lit == null)
                 return;
 
-            _glassMaterial = new Material(unlit) { name = "Mirror_Glass_Runtime" };
-            _glassMaterial.mainTexture = _texture;
-            ApplyMirrorFlip();
+            // The reflection arrives as emission, not as albedo, and that is the whole of what
+            // makes this read as a mirror rather than as a poster of one: emission is not lit, so
+            // the reflected room keeps its own brightness in a corner that is itself dark, while
+            // the base map underneath - a generated mottle, tinted nearly black - is lit, and so
+            // catches the standing lamp as a sheen across dirty glass.
+            _grime = BuildGrime();
+
+            _glassMaterial = new Material(lit) { name = "Mirror_Glass_Runtime" };
+            _glassMaterial.SetTexture(BaseMapId, _grime);
+            _glassMaterial.SetColor(BaseColorId, glassTint);
+            _glassMaterial.SetFloat(MetallicId, 0f);
+            _glassMaterial.SetFloat(SmoothnessId, glassSmoothness);
+            _glassMaterial.EnableKeyword("_EMISSION");
+            _glassMaterial.SetTexture(EmissionMapId, _texture);
+            _glassMaterial.SetColor(EmissionColorId, reflectionTint);
             renderer.sharedMaterial = _glassMaterial;
         }
 
-        private void ApplyMirrorFlip()
+        /// <summary>
+        /// The dirt on the glass: a small mottled greyscale map, generated rather than authored
+        /// so the mirror stays one file and one component with nothing to import.
+        ///
+        /// <para>
+        /// Perlin rather than a random number generator on purpose. This project seeds its
+        /// randomness deliberately and hashes the result, and a texture nobody can see the
+        /// difference in is not worth drawing a number from a stream somebody else is counting.
+        /// </para>
+        /// </summary>
+        private Texture2D BuildGrime()
         {
-            if (_glassMaterial == null)
-                return;
+            const int size = 96;
+            var texture = new Texture2D(size, size, TextureFormat.RGB24, true)
+            {
+                name = "Mirror_Grime",
+                wrapMode = TextureWrapMode.Clamp,
+                filterMode = FilterMode.Bilinear
+            };
 
-            _glassMaterial.mainTextureScale = new Vector2(mirrorImage ? -1f : 1f, 1f);
-            _glassMaterial.mainTextureOffset = new Vector2(mirrorImage ? 1f : 0f, 0f);
+            var pixels = new Color[size * size];
+            for (int y = 0; y < size; y++)
+            {
+                for (int x = 0; x < size; x++)
+                {
+                    float u = x / (float)size;
+                    float v = y / (float)size;
+
+                    float n = Mathf.PerlinNoise(u * 3.1f, v * 3.1f) * 0.6f +
+                              Mathf.PerlinNoise(u * 9.7f + 11.3f, v * 9.7f + 7.1f) * 0.28f +
+                              Mathf.PerlinNoise(u * 26f + 31.7f, v * 26f + 17.9f) * 0.12f;
+
+                    // Heavier towards the edges, where a mirror in a frame actually goes first.
+                    float edge = Mathf.Max(Mathf.Abs(u - 0.5f), Mathf.Abs(v - 0.5f)) * 2f;
+                    n = Mathf.Lerp(n, n * 0.55f, Mathf.SmoothStep(0.72f, 1f, edge));
+
+                    float value = Mathf.Clamp01(Mathf.Lerp(1f, Mathf.Clamp01(n * 1.35f), grimeStrength));
+                    pixels[y * size + x] = new Color(value, value, value, 1f);
+                }
+            }
+
+            texture.SetPixels(pixels);
+            texture.Apply();
+            return texture;
         }
 
         private void BuildCamera()
@@ -397,8 +509,15 @@ namespace CatchIfYouCan.Art
             if (distance <= 0.001f)
                 return;
 
-            float n = Mathf.Max(0.01f, nearPlane);
+            // The near plane is the mirror plane, nudged a hair past it. Everything behind the
+            // glass - the frame, the wall, and the glass itself with this very texture on it -
+            // is between the reflection camera and the room, and clipping it here is what stops
+            // the mirror rendering a slab of frame or a texture sampling itself. The off-axis
+            // frustum absorbs the move: the edges below are scaled to whatever near plane it is
+            // built at, so the image does not change.
+            float n = Mathf.Max(nearPlane, distance * NearPlaneInset);
             float scale = n / distance;
+            _mirrorCamera.nearClipPlane = n;
 
             float left = Vector3.Dot(right, va) * scale;
             float rightEdge = Vector3.Dot(right, vb) * scale;

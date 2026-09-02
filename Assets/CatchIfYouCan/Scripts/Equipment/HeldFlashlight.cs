@@ -67,15 +67,30 @@ namespace CatchIfYouCan.Equipment
                  "would be a two metre torch taken at face value.")]
         [SerializeField, Min(0.05f)] private float torchLength = 0.24f;
 
-        [Tooltip("Which way along the model the beam points, in the model's own axes. Measured " +
-                 "from this FBX: it lies along X and its head - the fat end - is at +X.")]
-        [SerializeField] private Vector3 modelBeamAxis = Vector3.right;
+        [Tooltip("Which way along the model the beam points, in the model's own axes as Unity " +
+                 "imports them. Measured from the mesh: the barrel lies along X at a radius of " +
+                 "0.096 and flares to 0.19 over the last quarter, so the head is at the FBX's " +
+                 "+X - which is Unity's -X, because the importer negates X on the way in from " +
+                 "the file's right-handed axes.")]
+        [SerializeField] private Vector3 modelBeamAxis = Vector3.left;
 
         [Tooltip("Fallback capsule size in metres: diameter, length, diameter.")]
         [SerializeField] private Vector3 size = new Vector3(0.052f, 0.24f, 0.052f);
 
         [Tooltip("Offset from the hand, in the player's own axes: right, up, forward.")]
         [SerializeField] private Vector3 gripOffset = new Vector3(0.02f, 0.01f, 0.06f);
+
+        [Tooltip("How far back along the barrel the fist closes, in metres. The pivot is the " +
+                 "tail of the torch, so without this the hand grips thin air at the very end of " +
+                 "the handle and the whole torch hangs off the front of it. A fist is about " +
+                 "eight centimetres across, which puts the tail behind the little finger and the " +
+                 "head well clear of the thumb.")]
+        [SerializeField, Min(0f)] private float gripBackset = 0.085f;
+
+        [Tooltip("Turn applied to the torch after it has been aimed, in degrees about its own " +
+                 "axes. Zero is the torch level and pointing down the aim; this is here so the " +
+                 "pose can be tuned against the hand without touching the aiming.")]
+        [SerializeField] private Vector3 gripRotationOffset = Vector3.zero;
 
         [SerializeField] private Color bodyColor = new Color(0.18f, 0.19f, 0.2f);
         [SerializeField] private Color lensColor = new Color(0.85f, 0.82f, 0.66f);
@@ -126,6 +141,7 @@ namespace CatchIfYouCan.Equipment
 
         private Transform _handBone;
         private Transform _barrel;
+        private Transform _head;
         private Light _light;
         private Vector3 _aim = Vector3.forward;
         private Vector3 _aimVelocity;
@@ -152,6 +168,14 @@ namespace CatchIfYouCan.Equipment
 
         /// <summary>True while it is lying in the room rather than carried.</summary>
         public bool IsOnGround => _onGround;
+
+        /// <summary>
+        /// The lamp end of the torch, and the one thing the beam is allowed to come out of. It
+        /// is a child of the barrel at the far end of the measured mesh, so the light and the
+        /// visible head cannot disagree about which way the torch is pointing however the grip
+        /// is tuned.
+        /// </summary>
+        public Transform BeamOrigin => _head;
 
         protected override void Awake()
         {
@@ -373,11 +397,15 @@ namespace CatchIfYouCan.Equipment
                 return BuildCapsule(shader);
             }
 
-            var model = Instantiate(prefab, _barrel);
+            // Spawned loose, at the world origin with no rotation and no scale, so that the
+            // renderer bounds read below are the model's own numbers. Spawned into the hand
+            // instead - which is what this did - they are the model's bounds plus wherever in
+            // the level the player happens to be standing, and the slide at the end of this
+            // method then pushes the torch that whole distance away: at the room's spawn point
+            // it put the mesh two and a quarter metres behind the player, which is exactly the
+            // "the button works but there is no torch" this is here to fix.
+            var model = Instantiate(prefab);
             model.name = "Body";
-            model.transform.localPosition = Vector3.zero;
-            model.transform.localRotation = Quaternion.identity;
-            model.transform.localScale = Vector3.one;
 
             var renderers = model.GetComponentsInChildren<Renderer>(true);
             if (renderers.Length == 0)
@@ -386,11 +414,14 @@ namespace CatchIfYouCan.Equipment
                 return BuildCapsule(shader);
             }
 
-            // Measured, never assumed. The bounds are read while the pivot is at the identity,
-            // so world and local agree and the numbers below are the model's own.
             var bounds = renderers[0].bounds;
             for (int i = 1; i < renderers.Length; i++)
                 bounds.Encapsulate(renderers[i].bounds);
+
+            model.transform.SetParent(_barrel, false);
+            model.transform.localPosition = Vector3.zero;
+            model.transform.localRotation = Quaternion.identity;
+            model.transform.localScale = Vector3.one;
 
             Vector3 axis = modelBeamAxis.sqrMagnitude < 0.0001f ? Vector3.right : modelBeamAxis.normalized;
             float along = Mathf.Abs(Vector3.Dot(bounds.size, Abs(axis)));
@@ -469,7 +500,8 @@ namespace CatchIfYouCan.Equipment
 
         private void BuildBeam(float length)
         {
-            var lightGo = new GameObject("Beam");
+            var lightGo = new GameObject("FlashlightHead");
+            _head = lightGo.transform;
             lightGo.transform.SetParent(_barrel, false);
             // The torch runs along local Y and a spot light shines down local Z, so the light is
             // turned a quarter turn to agree with the body it sits in.
@@ -524,12 +556,17 @@ namespace CatchIfYouCan.Equipment
             // LookRotation points local +Z along the aim; the extra quarter turn puts local +Y -
             // the capsule's length - there instead.
             _barrel.rotation = Quaternion.LookRotation(aim, playerBody.up) *
-                               Quaternion.Euler(90f, 0f, 0f);
+                               Quaternion.Euler(90f, 0f, 0f) *
+                               Quaternion.Euler(gripRotationOffset);
 
+            // Slid back down its own barrel so the hand closes around the handle rather than
+            // around the very end of it. The pivot is the tail of the torch, so this is the one
+            // number that decides how much of it sticks out of the front of the fist.
             _barrel.position = anchor.position +
                                playerBody.right * gripOffset.x +
                                playerBody.up * gripOffset.y +
-                               playerBody.forward * gripOffset.z;
+                               playerBody.forward * gripOffset.z -
+                               aim * gripBackset;
         }
 
         private void OnDestroy()
