@@ -183,28 +183,59 @@ namespace CatchIfYouCan.Player
                  "carried. Off leaves the arm entirely to the walk clip.")]
         [SerializeField] private bool poseFlashlightArm = true;
 
-        [Tooltip("Where the hand ends up, in the camera's own axes, measured from the head bone: " +
-                 "out to the right, up, and forward, in metres. About twenty centimetres out " +
-                 "puts the fist a hand's width clear of the temple.")]
-        [SerializeField] private Vector3 handOffset = new Vector3(0.2f, 0.02f, 0.07f);
+        [Tooltip("The hand's goal. Created under the camera pivot at start-up if it is empty, " +
+                 "named FlashlightHandTarget, and left in the hierarchy so it can be dragged and " +
+                 "turned in Play Mode. Its position is where the fist goes; its rotation is the " +
+                 "wrist, and therefore the torch and the beam: forward is the barrel, up is the " +
+                 "back of the hand.")]
+        [SerializeField] private Transform flashlightHandTarget;
 
-        [Tooltip("Where the elbow is pulled towards, in the player's own axes, measured from the " +
-                 "shoulder. Down and out, so the arm makes a triangle with the ribs instead of " +
-                 "flaring sideways like a chicken wing.")]
-        [SerializeField] private Vector3 elbowHint = new Vector3(0.24f, -0.36f, 0.02f);
+        [Tooltip("The elbow's goal, roughly where the point of the elbow should sit. Created " +
+                 "under the player root if it is empty, named FlashlightElbowHint. Only its " +
+                 "position is used - it decides which way the arm bends, nothing else.")]
+        [SerializeField] private Transform flashlightElbowHint;
+
+        [Tooltip("Where the hand target starts, in the camera pivot's own axes. This is the " +
+                 "value the created target is built with, and the one to overwrite once a better " +
+                 "one has been found in Play Mode.")]
+        [SerializeField] private Vector3 handTargetLocalPosition = new Vector3(0.2f, -0.02f, 0.06f);
+
+        [Tooltip("Where the hand target starts turned to, in the camera pivot's own axes. Zero " +
+                 "points the barrel exactly where the player is looking; the roll is what turns " +
+                 "the palm down and inwards instead of leaving it flat.")]
+        [SerializeField] private Vector3 handTargetLocalEuler = new Vector3(0f, 0f, -35f);
+
+        [Tooltip("Where the elbow hint starts, in the player root's own axes: out to the right, " +
+                 "up from the floor, forward. Below the shoulder and outside the ribs.")]
+        [SerializeField] private Vector3 elbowHintLocalPosition = new Vector3(0.42f, 1.02f, 0.06f);
 
         [Tooltip("Lift of the right collarbone, degrees. Small: the shoulder should follow the " +
                  "arm, not shrug into the ear.")]
         [SerializeField, Range(0f, 14f)] private float clavicleLift = 5f;
 
-        [Tooltip("How much of the look's pitch the whole arm follows. One means the hand orbits " +
-                 "the head with the view, which is what keeps the wrist straight when the player " +
-                 "looks up: the arm moves rather than the hand bending back.")]
-        [SerializeField, Range(0f, 1f)] private float armFollowPitch = 1f;
+        [Tooltip("Hold the elbow inside this bend, in degrees of flexion, by pulling the hand " +
+                 "target in or out along its own direction from the shoulder. The direction the " +
+                 "target is dragged to is always obeyed; only how far away it is gets clamped.")]
+        [SerializeField] private bool enforceElbowRange = true;
 
-        [Tooltip("Largest turn the wrist may make to line the torch up with the look, degrees. " +
-                 "Past this the beam gives way rather than the wrist breaking.")]
-        [SerializeField, Range(0f, 90f)] private float wristAlignLimit = 52f;
+        [SerializeField] private Vector2 elbowFlexionRange = new Vector2(95f, 110f);
+
+        [Tooltip("How much of the twist between forearm and hand the forearm takes, rather than " +
+                 "the wrist. This is what stops the arm looking wrung out: a two-bone solve only " +
+                 "says which way the forearm points, so without this every degree of roll the " +
+                 "grip needs is paid for at the wrist.")]
+        [SerializeField, Range(0f, 1f)] private float forearmRollShare = 0.65f;
+
+        [Tooltip("How far the wrist may turn away from simply following the forearm, in degrees. " +
+                 "Past this the grip gives way rather than the wrist breaking.")]
+        [SerializeField, Range(0f, 90f)] private float wristLimitDegrees = 55f;
+
+        [Tooltip("Draw the hand target and elbow hint in the scene view, so they can be found " +
+                 "and grabbed while the game is running.")]
+        [SerializeField] private bool drawArmGizmos = true;
+
+        [Tooltip("Write the right arm's resolved bone paths to the log once at start-up.")]
+        [SerializeField] private bool logArmBones = true;
 
         [Header("Blink")]
         [Tooltip("How far the eyelids swing to close.")]
@@ -405,6 +436,9 @@ namespace CatchIfYouCan.Player
             _indexRoot = _fingers[0][0];
             _pinkyRoot = _fingers[3][0];
 
+            BuildArmTargets();
+            LogArmBones();
+
             MeasureLegs();
             FullCrouchDrop = ComputeCrouchDrop(1f);
 
@@ -415,6 +449,141 @@ namespace CatchIfYouCan.Player
                 playerController.SetCrouchDepth(FullCrouchDrop);
 
             _bound = true;
+        }
+
+        /// <summary>
+        /// Makes the two handles the arm is posed from, if they are not already assigned.
+        ///
+        /// <para>
+        /// Real objects in the hierarchy, deliberately: they can be found, selected, dragged and
+        /// turned while the game is running, and what the arm does follows immediately. The hand
+        /// target hangs off the camera pivot, so it keeps its place beside the head as the player
+        /// looks around and its numbers stay meaningful; the elbow hint hangs off the player
+        /// root, because where an elbow should point is a fact about the body and not about the
+        /// view.
+        /// </para>
+        ///
+        /// <para>
+        /// Values found in Play Mode are kept with <c>Copy live arm targets into defaults</c> on
+        /// this component's context menu, then Copy Component on the header, Play Mode off, Paste
+        /// Component Values. The two Vector3s below it are what the handles are rebuilt from.
+        /// </para>
+        /// </summary>
+        private void BuildArmTargets()
+        {
+            Transform viewParent = cameraRoot != null ? cameraRoot : playerBody;
+
+            if (flashlightHandTarget == null && viewParent != null)
+            {
+                var go = new GameObject("FlashlightHandTarget");
+                flashlightHandTarget = go.transform;
+                flashlightHandTarget.SetParent(viewParent, false);
+                // Only on the frame it is made. Re-binding must never quietly undo a pose that
+                // has just been dragged out by hand.
+                flashlightHandTarget.localPosition = handTargetLocalPosition;
+                flashlightHandTarget.localRotation = Quaternion.Euler(handTargetLocalEuler);
+            }
+            else if (flashlightHandTarget != null && viewParent != null &&
+                     flashlightHandTarget.parent != viewParent)
+            {
+                flashlightHandTarget.SetParent(viewParent, false);
+            }
+
+            if (flashlightElbowHint == null && playerBody != null)
+            {
+                var go = new GameObject("FlashlightElbowHint");
+                flashlightElbowHint = go.transform;
+                flashlightElbowHint.SetParent(playerBody, false);
+                flashlightElbowHint.localPosition = elbowHintLocalPosition;
+            }
+            else if (flashlightElbowHint != null && playerBody != null &&
+                     flashlightElbowHint.parent != playerBody)
+            {
+                flashlightElbowHint.SetParent(playerBody, false);
+            }
+        }
+
+        /// <summary>
+        /// Copies whatever the two handles are currently at back into the serialized defaults, so
+        /// a pose found by dragging them in Play Mode can be kept.
+        /// </summary>
+        [ContextMenu("Copy live arm targets into defaults")]
+        public void CaptureArmTargets()
+        {
+            if (flashlightHandTarget != null)
+            {
+                handTargetLocalPosition = flashlightHandTarget.localPosition;
+                handTargetLocalEuler = flashlightHandTarget.localEulerAngles;
+            }
+
+            if (flashlightElbowHint != null)
+                elbowHintLocalPosition = flashlightElbowHint.localPosition;
+
+            Debug.Log("[CIYC] Arm defaults captured. handTargetLocalPosition=" +
+                      handTargetLocalPosition.ToString("F4") +
+                      " handTargetLocalEuler=" + handTargetLocalEuler.ToString("F2") +
+                      " elbowHintLocalPosition=" + elbowHintLocalPosition.ToString("F4"), this);
+        }
+
+        /// <summary>
+        /// Says once, in the log, exactly which four transforms the arm is being driven through -
+        /// so "which bones is it actually using" is never a question again. The twist bones are
+        /// named too, to make it plain that they are not in the chain.
+        /// </summary>
+        private void LogArmBones()
+        {
+            if (!logArmBones)
+                return;
+
+            Debug.Log("[CIYC] Right arm chain:" +
+                      "\n  clavicle : " + Path(_clavicleR) +
+                      "\n  root     : " + Path(_upperArmR) +
+                      "\n  mid      : " + Path(_lowerArmR) +
+                      "\n  tip      : " + Path(_handR) +
+                      "\n  index/pinky/middle roots: " + Path(_indexRoot) + " | " +
+                      Path(_pinkyRoot) + " | " + Path(_fingers[1] != null ? _fingers[1][0] : null) +
+                      "\n  twist bones are not driven.", this);
+        }
+
+        private static string Path(Transform bone)
+        {
+            if (bone == null)
+                return "<missing>";
+
+            string path = bone.name;
+            for (Transform t = bone.parent; t != null; t = t.parent)
+                path = t.name + "/" + path;
+            return path;
+        }
+
+        private void OnDrawGizmos()
+        {
+            if (!drawArmGizmos)
+                return;
+
+            if (flashlightHandTarget != null)
+            {
+                Gizmos.color = new Color(0.35f, 0.9f, 1f);
+                Gizmos.DrawWireSphere(flashlightHandTarget.position, 0.035f);
+                Gizmos.DrawLine(flashlightHandTarget.position,
+                                flashlightHandTarget.position + flashlightHandTarget.forward * 0.18f);
+                Gizmos.color = new Color(1f, 0.8f, 0.3f);
+                Gizmos.DrawLine(flashlightHandTarget.position,
+                                flashlightHandTarget.position + flashlightHandTarget.up * 0.08f);
+            }
+
+            if (flashlightElbowHint != null)
+            {
+                Gizmos.color = new Color(1f, 0.45f, 0.35f);
+                Gizmos.DrawWireSphere(flashlightElbowHint.position, 0.03f);
+            }
+
+            if (_upperArmR != null && _lowerArmR != null && _handR != null)
+            {
+                Gizmos.color = new Color(0.6f, 1f, 0.6f);
+                Gizmos.DrawLine(_upperArmR.position, _lowerArmR.position);
+                Gizmos.DrawLine(_lowerArmR.position, _handR.position);
+            }
         }
 
         /// <summary>
@@ -715,40 +884,19 @@ namespace CatchIfYouCan.Player
         {
             if (!poseFlashlightArm || _grip < 0.01f)
                 return;
-            if (_upperArmR == null || _lowerArmR == null || _handR == null || _head == null)
+            if (_upperArmR == null || _lowerArmR == null || _handR == null)
+                return;
+            if (flashlightHandTarget == null || flashlightElbowHint == null)
                 return;
 
             float weight = Mathf.Clamp01(_grip);
 
-            Transform view = cameraRoot != null ? cameraRoot : playerBody;
-            Vector3 camForward = view.forward;
-            Vector3 camRight = view.right;
-            Vector3 camUp = view.up;
-
-            if (armFollowPitch < 0.999f)
-            {
-                Vector3 flat = Vector3.ProjectOnPlane(camForward, up);
-                if (flat.sqrMagnitude > 1e-6f)
-                {
-                    Quaternion level = Quaternion.LookRotation(flat.normalized, up);
-                    Quaternion full = Quaternion.LookRotation(camForward, camUp);
-                    Quaternion blend = Quaternion.Slerp(level, full, armFollowPitch);
-                    camForward = blend * Vector3.forward;
-                    camRight = blend * Vector3.right;
-                    camUp = blend * Vector3.up;
-                }
-            }
-
-            Vector3 target = _head.position +
-                             camRight * handOffset.x +
-                             camUp * handOffset.y +
-                             camForward * handOffset.z;
-
             Vector3 shoulder = _upperArmR.position;
-            Vector3 pole = shoulder +
-                           right * elbowHint.x +
-                           up * elbowHint.y +
-                           forward * elbowHint.z;
+            Vector3 target = flashlightHandTarget.position;
+            Vector3 pole = flashlightElbowHint.position;
+
+            if (enforceElbowRange)
+                target = ClampToElbowRange(shoulder, target);
 
             // Positive about the player's forward axis lifts the right collarbone: turning the
             // bone's own outward direction, +X, towards up.
@@ -769,25 +917,129 @@ namespace CatchIfYouCan.Player
             _upperArmR.rotation = Quaternion.Slerp(upperBefore, upperSolved, weight);
             _lowerArmR.rotation = Quaternion.Slerp(lowerBefore, lowerSolved, weight);
 
-            AlignGripToBeam(camForward, weight);
+            ApplyGripOrientation(weight);
         }
 
         /// <summary>
-        /// Turns the hand so the axis the fingers close around points down the beam, within a
-        /// limit past which the wrist gives up rather than breaking.
+        /// Turns the hand to the target's own rotation, and gives the forearm its share of the
+        /// twist first.
+        ///
+        /// <para>
+        /// This is what the arm was being wrung out by. A two-bone solve only decides which
+        /// <em>way</em> the forearm points; how it is rolled about its own length is left over
+        /// from the walk clip. Matching only the barrel axis then left the roll wherever it
+        /// happened to be, and matching the whole grip afterwards made the wrist pay for all of
+        /// it at once. Here the whole orientation is solved - barrel down the target's forward,
+        /// back of the hand along its up, both at once, so nothing is left free - and the part of
+        /// the correction that is a twist about the forearm is handed to the forearm, which is
+        /// the joint that actually does it in an arm.
+        /// </para>
+        ///
+        /// <para>
+        /// The two hand axes are measured off the knuckles rather than assumed from the bone's
+        /// own orientation, for the same reason everything else here is: a bone's local axes are
+        /// the exporter's business. Pinky to index is the axis a held cylinder lies along; the
+        /// cross of that with the line of the fingers is the back of the hand.
+        /// </para>
         /// </summary>
-        private void AlignGripToBeam(Vector3 beam, float weight)
+        private void ApplyGripOrientation(float weight)
         {
             if (_indexRoot == null || _pinkyRoot == null)
                 return;
 
-            Vector3 barrel = _indexRoot.position - _pinkyRoot.position;
-            if (barrel.sqrMagnitude < 1e-8f)
+            Transform middleRoot = _fingers[1] != null ? _fingers[1][0] : null;
+            if (middleRoot == null)
                 return;
 
-            Quaternion align = Quaternion.FromToRotation(barrel.normalized, beam);
-            align = Quaternion.RotateTowards(Quaternion.identity, align, wristAlignLimit);
-            _handR.rotation = Quaternion.Slerp(_handR.rotation, align * _handR.rotation, weight);
+            Vector3 barrel = _indexRoot.position - _pinkyRoot.position;
+            Vector3 fingers = middleRoot.position - _handR.position;
+            if (barrel.sqrMagnitude < 1e-8f || fingers.sqrMagnitude < 1e-8f)
+                return;
+
+            barrel.Normalize();
+            Vector3 backOfHand = Vector3.Cross(barrel, fingers.normalized);
+            if (backOfHand.sqrMagnitude < 1e-8f)
+                return;
+
+            var current = Quaternion.LookRotation(barrel, backOfHand.normalized);
+            var wanted = Quaternion.LookRotation(flashlightHandTarget.forward,
+                                                 flashlightHandTarget.up);
+
+            // The whole correction, as one turn, and how much of it is a roll about the forearm.
+            Quaternion delta = wanted * Quaternion.Inverse(current);
+            delta.ToAngleAxis(out float degrees, out Vector3 axis);
+            if (degrees > 180f)
+                degrees -= 360f;
+
+            Vector3 forearmAxis = _handR.position - _lowerArmR.position;
+            if (forearmAxis.sqrMagnitude > 1e-8f && axis.sqrMagnitude > 1e-8f)
+            {
+                forearmAxis.Normalize();
+                float roll = degrees * Vector3.Dot(axis.normalized, forearmAxis);
+
+                // About an axis through the elbow and along the forearm, so the wrist itself does
+                // not move - only the twist the hand would otherwise have had to make.
+                RotateWorld(_lowerArmR, forearmAxis, roll * forearmRollShare * weight);
+
+                // The hand is a child of what just turned, so where its knuckles point has
+                // changed. Measured again rather than reused: the whole point of the line above
+                // is that the wrist now has less to do, and reusing the old measurement would
+                // hand it the same amount twice.
+                barrel = (_indexRoot.position - _pinkyRoot.position).normalized;
+                fingers = middleRoot.position - _handR.position;
+                backOfHand = Vector3.Cross(barrel, fingers.normalized);
+                if (backOfHand.sqrMagnitude > 1e-8f)
+                    current = Quaternion.LookRotation(barrel, backOfHand.normalized);
+            }
+
+            // Whatever the forearm did not take, the wrist takes, up to its limit. Measured from
+            // where the hand sits now - which after the solve is the hand simply following the
+            // forearm - so the limit is a real wrist angle and not a distance from some pose the
+            // walk clip happened to be in.
+            Quaternion following = _handR.rotation;
+            Quaternion desired = wanted * Quaternion.Inverse(current) * following;
+            desired = Quaternion.RotateTowards(following, desired, wristLimitDegrees);
+            _handR.rotation = Quaternion.Slerp(following, desired, weight);
+        }
+
+        /// <summary>
+        /// Pulls the hand target in or out along its own line from the shoulder until the elbow
+        /// bend lands inside <see cref="elbowFlexionRange"/>. The direction is never touched, so
+        /// dragging the target still puts the hand where it was dragged; only how far it reaches
+        /// is held to something an elbow can do.
+        /// </summary>
+        private Vector3 ClampToElbowRange(Vector3 shoulder, Vector3 target)
+        {
+            float upperLength = Vector3.Distance(shoulder, _lowerArmR.position);
+            float lowerLength = Vector3.Distance(_lowerArmR.position, _handR.position);
+            if (upperLength < 1e-5f || lowerLength < 1e-5f)
+                return target;
+
+            Vector3 toTarget = target - shoulder;
+            float reach = toTarget.magnitude;
+            if (reach < 1e-5f)
+                return target;
+
+            // Flexion is the angle away from straight, so more flexion is a shorter reach.
+            float minFlexion = Mathf.Min(elbowFlexionRange.x, elbowFlexionRange.y);
+            float maxFlexion = Mathf.Max(elbowFlexionRange.x, elbowFlexionRange.y);
+            float longest = ReachAtFlexion(upperLength, lowerLength, minFlexion);
+            float shortest = ReachAtFlexion(upperLength, lowerLength, maxFlexion);
+
+            float clamped = Mathf.Clamp(reach, shortest, longest);
+            if (Mathf.Approximately(clamped, reach))
+                return target;
+
+            return shoulder + toTarget / reach * clamped;
+        }
+
+        /// <summary>Shoulder-to-hand distance at a given elbow flexion, by the law of cosines.</summary>
+        private static float ReachAtFlexion(float upperLength, float lowerLength, float flexionDegrees)
+        {
+            float interior = (180f - flexionDegrees) * Mathf.Deg2Rad;
+            float squared = upperLength * upperLength + lowerLength * lowerLength -
+                            2f * upperLength * lowerLength * Mathf.Cos(interior);
+            return Mathf.Sqrt(Mathf.Max(0.0001f, squared));
         }
 
         /// <summary>
