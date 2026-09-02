@@ -16,23 +16,41 @@ namespace CatchIfYouCan.Art
     /// <para>
     /// The reflection is a virtual camera at the player's mirrored eye, with an <em>off-axis</em>
     /// frustum whose image plane is exactly the mirror rectangle. That is what lets the result be
-    /// sampled with ordinary 0-1 UVs: the usual planar-reflection setup needs a shader that
-    /// samples in screen space, and this project has no custom shaders. The cost is that an
-    /// off-axis frustum renders a window rather than a mirror - it does not swap left and right -
-    /// so the glass is built with its UVs mirrored, in the mesh rather than in the material.
+    /// sampled with ordinary 0-1 UVs: the usual planar-reflection setup folds a reflection matrix
+    /// into the view matrix and then has to sample the result in screen space, which needs a
+    /// shader this project does not have.
     /// </para>
     ///
     /// <para>
-    /// <b>The near plane is the mirror plane.</b> The reflection camera sits behind the glass
+    /// <b>It is a mirror already, and that is where this went wrong for a long time.</b> The ray
+    /// from the mirrored eye through any point of the glass <em>is</em> the reflected ray from
+    /// the real eye through that same point - the two differ by the reflection, which fixes every
+    /// point of the plane - so the camera renders the reflected world without anything being
+    /// reflected. It is not a window: a window would need a camera on the player's side looking
+    /// through the hole at what lies beyond. And the one flip a mirror needs is supplied by the
+    /// geometry, because the player looks at the glass from the side opposite the one the camera
+    /// shot it from. Flipping the UVs on top of that, which this used to do, put the sideways
+    /// parallax the wrong way round: strafe left and the reflected room slid left with you, which
+    /// reads exactly like a portal swinging about a pivot.
+    /// </para>
+    ///
+    /// <para>
+    /// For the same reason there is no <c>GL.invertCulling</c> here and there must not be. The
+    /// camera's basis is the glass's own right, up and forward - a perfectly ordinary
+    /// right-handed camera - and the room it renders is the room as authored. Nothing is turned
+    /// inside out, so nothing needs turning back.
+    /// </para>
+    ///
+    /// <para>
+    /// <b>The near plane is moved onto the glass.</b> The reflection camera sits behind the glass
     /// looking out through it, so everything between it and the room - the frame, the wall the
     /// mirror hangs on, and the glass itself - is in front of the lens. The frame alone is a
     /// solid slab wider and taller than the glass sitting exactly on the image plane, which fills
     /// the frustum completely: that is a mirror that renders one flat rectangle of dark wood and
     /// nothing else. Worse, the glass is textured with the very render texture being drawn, so
-    /// what little got past the frame was a texture sampling itself. Pushing the near plane out
-    /// to the mirror plane removes all three at once, and costs nothing: an off-axis frustum is
-    /// built from the corners of a rectangle at a known distance, so moving the near plane
-    /// rescales the four edges and leaves the image identical.
+    /// what little got past the frame was a texture sampling itself. An oblique projection puts
+    /// the near plane on the mirror surface exactly, which removes all three at once and is what
+    /// stops the reflection ever feeding back into itself.
     /// </para>
     ///
     /// <para>
@@ -65,21 +83,39 @@ namespace CatchIfYouCan.Art
                  "cheaper than matching the screen.")]
         [SerializeField, Min(64)] private int resolution = 512;
 
-        [Tooltip("Flip the reflection left to right. On, because an off-axis frustum renders the " +
-                 "view through a window rather than the view in a mirror. Built into the glass " +
-                 "mesh's UVs, so it is read once when the mirror is built.")]
-        [SerializeField] private bool mirrorImage = true;
+        [Tooltip("Flip the reflection left to right, in the glass mesh's own UVs. OFF, and that " +
+                 "is the whole of what made the reflection swing about like a portal: it was on, " +
+                 "and it was a second flip on top of one the geometry already provides. A " +
+                 "reflection camera at the mirrored eye already renders the mirror's content - " +
+                 "the ray from it through any point of the glass is the reflected ray from the " +
+                 "player through that same point - and the player then looks at that image from " +
+                 "the opposite side of the glass to the side the camera shot it from, which is " +
+                 "the one flip a mirror needs. Flipping the UVs as well undid it, and inverting " +
+                 "the sideways parallax is precisely what reads as the room swinging round a " +
+                 "pivot when you strafe. Left as a field only in case a future glass mesh is " +
+                 "wound the other way.")]
+        [SerializeField] private bool mirrorImage;
 
         [Tooltip("Stop rendering beyond this. The reflection is a second pass over the room, so " +
                  "it should not run while the player is on the other side of the house.")]
         [SerializeField, Min(1f)] private float renderDistance = 7f;
 
-        [Tooltip("Smallest near plane the reflection camera may use. The near plane is normally " +
-                 "the mirror plane itself, which is always further than this; this is only a " +
-                 "floor for the moment the player's face is against the glass.")]
+        [Tooltip("Near plane the off-axis frustum is built at. It does not decide what the " +
+                 "reflection sees - the oblique clip below moves the real near plane onto the " +
+                 "glass - and it does not change the image, because the frustum's four edges are " +
+                 "scaled to whatever distance it is built at.")]
         [SerializeField, Min(0.01f)] private float nearPlane = 0.05f;
 
         [SerializeField, Min(1f)] private float farPlane = 40f;
+
+        [Tooltip("How far past the glass the oblique clip plane sits, in metres. Just enough " +
+                 "that the glass itself, which carries the very texture being drawn, falls on " +
+                 "the far side of it.")]
+        [SerializeField, Range(0.001f, 0.05f)] private float clipPlaneOffset = 0.01f;
+
+        [Tooltip("Draw the mirror plane, both eye positions and the four glass corners in the " +
+                 "scene view. Off for shipping; on when the reflection is misbehaving.")]
+        [SerializeField] private bool drawDebug;
 
         [Header("Glass")]
         [Tooltip("What the reflection is multiplied by on its way onto the glass. Near white and " +
@@ -135,14 +171,8 @@ namespace CatchIfYouCan.Art
         /// <summary>How far behind the glass the frame sits, in metres. Enough to not z-fight.</summary>
         private const float FrameSetback = 0.006f;
 
-        /// <summary>
-        /// How far past the mirror plane the near plane is pushed, as a fraction of the distance
-        /// to it. Two parts in a thousand - a couple of millimetres at arm's length - which is
-        /// enough to clip the glass itself and far too little to clip anything in the room.
-        /// </summary>
-        private const float NearPlaneInset = 1.002f;
-
         private Transform _surface;
+        private Vector3 _cornerBottomLeft, _cornerBottomRight, _cornerTopLeft;
         private Camera _mirrorCamera;
         private RenderTexture _texture;
         private Material _glassMaterial;
@@ -282,6 +312,15 @@ namespace CatchIfYouCan.Art
             // the side that faces the room. Worked out on paper rather than by rotating a Quad
             // until it looked right: a mirror that is invisible from the front and solid from
             // behind is a five-minute mystery every time.
+            // Kept, in the glass's own space, as the frustum's four corners. Taken from the
+            // mesh that is actually drawn rather than from the size field and a lossy scale:
+            // those two agree only while nothing above this transform is rotated or scaled
+            // unevenly, and a frustum built from corners the player cannot see is a reflection
+            // that slides against its own frame.
+            _cornerBottomLeft = new Vector3(-hx, -hy, 0f);
+            _cornerBottomRight = new Vector3(hx, -hy, 0f);
+            _cornerTopLeft = new Vector3(-hx, hy, 0f);
+
             mesh.triangles = new[] { 0, 1, 2, 2, 1, 3 };
             mesh.normals = new[] { Vector3.forward, Vector3.forward, Vector3.forward, Vector3.forward };
             mesh.RecalculateBounds();
@@ -494,23 +533,29 @@ namespace CatchIfYouCan.Art
             if (!visible)
                 return;
 
+            // The reflected eye. This is the one thing that has always been right here and is
+            // worth stating plainly: it is the player's camera mirrored across the glass plane,
+            // so a step of half a metre towards the mirror moves it half a metre the other way
+            // and the parallax comes out symmetric on its own.
             Vector3 reflected = eye - 2f * inFront * normal;
 
-            // The camera's own axes are made to match the mirror's, which is what reduces the
-            // off-axis frustum to four numbers: with right, up and forward already equal to the
-            // glass's, the view matrix the transform produces is exactly the one the projection
-            // below is built against.
+            // The camera is turned to face straight out of the glass, and that is not a
+            // simplification - it is the whole point of an off-axis frustum. Where the camera
+            // looks does not decide what a mirror shows; the four corners of the glass do. With
+            // the camera's own right, up and forward equal to the glass's, the frustum below
+            // reduces to four numbers in that same basis, and the image it renders lands on the
+            // mirror rectangle exactly, which is what lets it be sampled with plain 0-1 UVs
+            // instead of a screen-space shader this project does not have.
             _mirrorCamera.transform.SetPositionAndRotation(
                 reflected, Quaternion.LookRotation(normal, _surface.up));
 
-            // The three corners the frustum is built from, in world space.
-            Vector3 right = _surface.right;
-            Vector3 up = _surface.up;
-            Vector3 bottomLeft = _surface.position
-                                 - right * (GlassWorldWidth * 0.5f)
-                                 - up * (GlassWorldHeight * 0.5f);
-            Vector3 bottomRight = bottomLeft + right * GlassWorldWidth;
-            Vector3 topLeft = bottomLeft + up * GlassWorldHeight;
+            // Corners of the glass as it is actually drawn, in world space.
+            Vector3 bottomLeft = _surface.TransformPoint(_cornerBottomLeft);
+            Vector3 bottomRight = _surface.TransformPoint(_cornerBottomRight);
+            Vector3 topLeft = _surface.TransformPoint(_cornerTopLeft);
+
+            Vector3 right = _mirrorCamera.transform.right;
+            Vector3 up = _mirrorCamera.transform.up;
 
             Vector3 va = bottomLeft - reflected;
             Vector3 vb = bottomRight - reflected;
@@ -520,26 +565,86 @@ namespace CatchIfYouCan.Art
             if (distance <= 0.001f)
                 return;
 
-            // The near plane is the mirror plane, nudged a hair past it. Everything behind the
-            // glass - the frame, the wall, and the glass itself with this very texture on it -
-            // is between the reflection camera and the room, and clipping it here is what stops
-            // the mirror rendering a slab of frame or a texture sampling itself. The off-axis
-            // frustum absorbs the move: the edges below are scaled to whatever near plane it is
-            // built at, so the image does not change.
-            float n = Mathf.Max(nearPlane, distance * NearPlaneInset);
-            float scale = n / distance;
-            _mirrorCamera.nearClipPlane = n;
+            // Kooima's generalised perspective projection: the frustum's edges are where the
+            // rays from the eye to the glass corners cross the near plane, so the image plane is
+            // the mirror rectangle whatever the near plane is set to. Rebuilt every frame from
+            // the moved eye, which is what makes the reflection shift the way a wall mirror does
+            // rather than swinging like a camera on a bracket.
+            float near = Mathf.Max(0.01f, nearPlane);
+            float scale = near / distance;
+            _mirrorCamera.nearClipPlane = near;
+            _mirrorCamera.farClipPlane = farPlane;
+            _mirrorCamera.projectionMatrix = Matrix4x4.Frustum(
+                Vector3.Dot(right, va) * scale,
+                Vector3.Dot(right, vb) * scale,
+                Vector3.Dot(up, va) * scale,
+                Vector3.Dot(up, vc) * scale,
+                near, farPlane);
 
-            float left = Vector3.Dot(right, va) * scale;
-            float rightEdge = Vector3.Dot(right, vb) * scale;
-            float bottom = Vector3.Dot(up, va) * scale;
-            float top = Vector3.Dot(up, vc) * scale;
-
+            // And then the near plane is moved onto the glass itself. The camera sits behind the
+            // mirror looking out through it, so the frame, the wall it hangs on and the glass -
+            // which carries the very texture being drawn into - are all in front of the lens.
+            // An oblique near plane removes all three exactly, at the surface, rather than
+            // approximately, at whatever depth a near-plane number happens to land on.
             _mirrorCamera.projectionMatrix =
-                Matrix4x4.Frustum(left, rightEdge, bottom, top, n, farPlane);
+                _mirrorCamera.CalculateObliqueMatrix(CameraSpacePlane(_surface.position, normal));
         }
 
-        private float GlassWorldWidth => glassSize.x * transform.lossyScale.x;
-        private float GlassWorldHeight => glassSize.y * transform.lossyScale.y;
+        /// <summary>
+        /// The mirror plane written in the reflection camera's own space, which is the form
+        /// <see cref="Camera.CalculateObliqueMatrix"/> takes. The offset pushes it a centimetre
+        /// out into the room so the glass falls on the clipped side of it rather than exactly on
+        /// the boundary.
+        /// </summary>
+        private Vector4 CameraSpacePlane(Vector3 point, Vector3 normal)
+        {
+            Vector3 offsetPoint = point + normal * clipPlaneOffset;
+            Matrix4x4 view = _mirrorCamera.worldToCameraMatrix;
+
+            Vector3 viewPoint = view.MultiplyPoint(offsetPoint);
+            Vector3 viewNormal = view.MultiplyVector(normal).normalized;
+
+            return new Vector4(viewNormal.x, viewNormal.y, viewNormal.z,
+                               -Vector3.Dot(viewPoint, viewNormal));
+        }
+
+        /// <summary>
+        /// The plane, both eye positions and the glass rectangle, drawn while the mirror is
+        /// selected. Off by default; the one thing worth seeing when a reflection misbehaves is
+        /// whether the mirrored eye is really the mirror image of the real one.
+        /// </summary>
+        private void OnDrawGizmosSelected()
+        {
+            if (!drawDebug || _surface == null)
+                return;
+
+            Gizmos.color = new Color(0.4f, 0.85f, 1f);
+            Gizmos.DrawLine(_surface.position, _surface.position + _surface.forward * 0.5f);
+
+            Vector3 bl = _surface.TransformPoint(_cornerBottomLeft);
+            Vector3 br = _surface.TransformPoint(_cornerBottomRight);
+            Vector3 tl = _surface.TransformPoint(_cornerTopLeft);
+            Vector3 tr = tl + (br - bl);
+            Gizmos.color = new Color(1f, 0.85f, 0.3f);
+            Gizmos.DrawLine(bl, br);
+            Gizmos.DrawLine(br, tr);
+            Gizmos.DrawLine(tr, tl);
+            Gizmos.DrawLine(tl, bl);
+
+            Camera source = Camera.main;
+            if (source == null)
+                return;
+
+            Vector3 eye = source.transform.position;
+            Vector3 mirrored = eye - 2f * Vector3.Dot(eye - _surface.position, _surface.forward) *
+                               _surface.forward;
+
+            Gizmos.color = new Color(0.5f, 1f, 0.5f);
+            Gizmos.DrawWireSphere(eye, 0.05f);
+            Gizmos.DrawLine(eye, _surface.position);
+            Gizmos.color = new Color(1f, 0.5f, 0.5f);
+            Gizmos.DrawWireSphere(mirrored, 0.05f);
+            Gizmos.DrawLine(mirrored, _surface.position);
+        }
     }
 }
