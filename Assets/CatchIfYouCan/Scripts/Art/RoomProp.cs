@@ -79,6 +79,18 @@ namespace CatchIfYouCan.Art
         [Header("Rendering")]
         [SerializeField] private bool castShadows = true;
 
+        [Tooltip("Force this material onto every renderer in the model. For models whose own " +
+                 "materials cannot be relied on - a generated FBX whose material description " +
+                 "points at textures that were never delivered, or a remap that quietly did not " +
+                 "take - this is the difference between a prop and an invisible one. Left empty " +
+                 "the model keeps whatever it imported with.")]
+        [SerializeField] private Material materialOverride;
+
+        [Tooltip("Log once what this prop actually ended up as: whether the model loaded, how " +
+                 "many renderers it has, what shader they are on, and the box it occupies. On " +
+                 "for anything that has been reported missing.")]
+        [SerializeField] private bool logState;
+
         private Transform _model;
         private bool _built;
 
@@ -119,11 +131,34 @@ namespace CatchIfYouCan.Art
 
             var renderers = go.GetComponentsInChildren<Renderer>(true);
             if (renderers.Length == 0)
+            {
+                Debug.LogError("[CIYC] " + name + " loaded Resources/" + modelResourcePath +
+                               " but it has no renderers, so there is nothing to show.", this);
                 return;
+            }
 
-            Bounds bounds = renderers[0].bounds;
-            for (int i = 1; i < renderers.Length; i++)
-                bounds.Encapsulate(renderers[i].bounds);
+            // Anything the importer decided was hidden is made visible again, and the material is
+            // pinned where one has been given. An imported object that arrives inactive, or a
+            // renderer that arrives disabled, or a material whose textures were never in the
+            // delivery, all look identical from the player's side: a hole where a prop should be.
+            for (int i = 0; i < renderers.Length; i++)
+            {
+                if (!renderers[i].gameObject.activeSelf)
+                    renderers[i].gameObject.SetActive(true);
+                renderers[i].enabled = true;
+
+                if (materialOverride != null)
+                {
+                    var slots = new Material[renderers[i].sharedMaterials.Length == 0
+                        ? 1
+                        : renderers[i].sharedMaterials.Length];
+                    for (int m = 0; m < slots.Length; m++)
+                        slots[m] = materialOverride;
+                    renderers[i].sharedMaterials = slots;
+                }
+            }
+
+            Bounds bounds = Measure(renderers);
 
             float source = fitAxis switch
             {
@@ -146,9 +181,7 @@ namespace CatchIfYouCan.Art
             }
 
             // Re-measured after scaling and turning: this is the box the furniture now occupies.
-            bounds = renderers[0].bounds;
-            for (int i = 1; i < renderers.Length; i++)
-                bounds.Encapsulate(renderers[i].bounds);
+            bounds = Measure(renderers);
             FittedSize = bounds.size;
 
             Vector3 shift = Vector3.zero;
@@ -166,6 +199,87 @@ namespace CatchIfYouCan.Art
 
             if (addCollider)
                 AddBox(bounds);
+
+            if (logState)
+            {
+                var shader = renderers[0].sharedMaterial != null
+                    ? renderers[0].sharedMaterial.shader
+                    : null;
+                Debug.Log("[CIYC] " + name + ": renderers=" + renderers.Length +
+                          " active=" + go.activeInHierarchy +
+                          " shader=" + (shader != null ? shader.name : "<none>") +
+                          " supported=" + (shader != null && shader.isSupported) +
+                          " size=" + FittedSize.ToString("F3") +
+                          " min=" + bounds.min.ToString("F3") +
+                          " max=" + bounds.max.ToString("F3"), this);
+            }
+        }
+
+        /// <summary>
+        /// The world box of every renderer together, taken from the meshes rather than from
+        /// <see cref="Renderer.bounds"/> where it can be. A renderer that has not been through a
+        /// frame yet - which is exactly where this runs - can report an empty box, and an empty
+        /// box measured here becomes a scale of nothing and a prop left at its imported size.
+        /// </summary>
+        private static Bounds Measure(Renderer[] renderers)
+        {
+            bool any = false;
+            var total = new Bounds();
+
+            for (int i = 0; i < renderers.Length; i++)
+            {
+                Bounds b;
+                var filter = renderers[i].GetComponent<MeshFilter>();
+                if (filter != null && filter.sharedMesh != null)
+                {
+                    Bounds local = filter.sharedMesh.bounds;
+                    b = TransformBounds(renderers[i].transform, local);
+                }
+                else
+                {
+                    b = renderers[i].bounds;
+                }
+
+                if (b.size.sqrMagnitude < 1e-10f)
+                    continue;
+
+                if (!any)
+                {
+                    total = b;
+                    any = true;
+                }
+                else
+                {
+                    total.Encapsulate(b);
+                }
+            }
+
+            if (any)
+                return total;
+
+            // Nothing measurable: fall back to whatever the renderers claim, empty or not, so the
+            // caller's guards see a zero rather than a lie.
+            var fallback = renderers[0].bounds;
+            for (int i = 1; i < renderers.Length; i++)
+                fallback.Encapsulate(renderers[i].bounds);
+            return fallback;
+        }
+
+        /// <summary>The world box of a local box, from its eight corners.</summary>
+        private static Bounds TransformBounds(Transform transform, Bounds local)
+        {
+            Vector3 c = local.center;
+            Vector3 e = local.extents;
+            var result = new Bounds(transform.TransformPoint(c + new Vector3(-e.x, -e.y, -e.z)), Vector3.zero);
+
+            result.Encapsulate(transform.TransformPoint(c + new Vector3(e.x, -e.y, -e.z)));
+            result.Encapsulate(transform.TransformPoint(c + new Vector3(-e.x, e.y, -e.z)));
+            result.Encapsulate(transform.TransformPoint(c + new Vector3(e.x, e.y, -e.z)));
+            result.Encapsulate(transform.TransformPoint(c + new Vector3(-e.x, -e.y, e.z)));
+            result.Encapsulate(transform.TransformPoint(c + new Vector3(e.x, -e.y, e.z)));
+            result.Encapsulate(transform.TransformPoint(c + new Vector3(-e.x, e.y, e.z)));
+            result.Encapsulate(transform.TransformPoint(c + new Vector3(e.x, e.y, e.z)));
+            return result;
         }
 
         private void AddBox(Bounds worldBounds)

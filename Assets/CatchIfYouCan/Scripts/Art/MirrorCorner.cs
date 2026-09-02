@@ -82,10 +82,17 @@ namespace CatchIfYouCan.Art
         [SerializeField, Min(1f)] private float farPlane = 40f;
 
         [Header("Glass")]
-        [Tooltip("What the reflection is multiplied by on its way onto the glass. Under one and " +
-                 "slightly warm, so it reads as a hundred-year-old mirror rather than as a " +
-                 "second window: darker than the room, and a little browner.")]
-        [SerializeField] private Color glassTint = new Color(0.72f, 0.69f, 0.63f);
+        [Tooltip("What the reflection is multiplied by on its way onto the glass. Near white and " +
+                 "slightly warm: the glass is a lit surface, so the room's own light is already " +
+                 "taking a bite out of the reflection and a dark tint on top of that leaves " +
+                 "nothing to see. The age is in the warmth, not in the darkness.")]
+        [SerializeField] private Color glassTint = new Color(0.93f, 0.9f, 0.85f);
+
+        [SerializeField, Range(0f, 1f)] private float glassSmoothness = 0.75f;
+
+        [Tooltip("Log what the glass material ended up as, once, on build. Left on: it is one " +
+                 "line and it is the difference between seeing a magenta mirror and knowing why.")]
+        [SerializeField] private bool logState = true;
 
         [Header("Frame")]
         [SerializeField] private float frameBorder = 0.06f;
@@ -168,17 +175,52 @@ namespace CatchIfYouCan.Art
                 return;
             _built = true;
 
-            var lit = Shader.Find("Universal Render Pipeline/Lit");
-            var unlit = Shader.Find("Universal Render Pipeline/Unlit");
+            // One shader, and it is deliberately the one the rest of the room is built from.
+            //
+            // <para>
+            // This is the whole of the magenta mirror. Shader.Find only returns what is actually
+            // in the build, and a player build only contains the shaders its materials ask for:
+            // twenty-eight of this project's materials are Universal Render Pipeline/Lit and not
+            // one is Universal Render Pipeline/Unlit, so Unlit exists in the editor and does not
+            // exist on the device. The old fallback then reached for Unlit/Texture - a Built-in
+            // Render Pipeline shader, which is in Always Included Shaders and so does resolve -
+            // and a built-in shader under URP draws solid magenta. It worked every time in the
+            // editor and was magenta every time on the phone.
+            // </para>
+            var lit = FindSupported("Universal Render Pipeline/Lit");
 
             BuildFrame(lit);
-            BuildGlass(unlit);
+            BuildGlass(lit);
             BuildCamera();
 
             if (buildLamp)
                 BuildLamp(lit);
             if (buildFill)
                 BuildFill();
+        }
+
+        /// <summary>
+        /// A shader by name, or null - never a shader from the wrong render pipeline. Anything
+        /// that is not in the build or not supported on this device is a magenta rectangle, and a
+        /// missing mirror is better than a magenta one.
+        /// </summary>
+        private static Shader FindSupported(string name)
+        {
+            var shader = Shader.Find(name);
+            if (shader == null)
+            {
+                Debug.LogError("[CIYC] Shader '" + name + "' is not in this build. Nothing in " +
+                               "the project uses it, so it was stripped.");
+                return null;
+            }
+
+            if (!shader.isSupported)
+            {
+                Debug.LogError("[CIYC] Shader '" + name + "' is not supported on this device.");
+                return null;
+            }
+
+            return shader;
         }
 
         private void BuildFrame(Shader lit)
@@ -207,7 +249,7 @@ namespace CatchIfYouCan.Art
         /// own way and carries its own UVs, and both of those matter to a mirror; four vertices
         /// written out are four things that cannot be wrong.
         /// </summary>
-        private void BuildGlass(Shader unlit)
+        private void BuildGlass(Shader lit)
         {
             var go = new GameObject("Mirror_Glass");
             _surface = go.transform;
@@ -258,21 +300,66 @@ namespace CatchIfYouCan.Art
             };
             _texture.Create();
 
-            if (unlit == null)
+            if (lit == null)
                 return;
 
-            // Unlit, and deliberately so twice over. A mirror is not lit by the room it is in -
-            // the reflection carries its own light, and a Lit surface would darken it with the
-            // corner's own shadow. And it is the one shader this material is known to survive a
-            // player build with: fed to a Lit material as an emission map, with _EMISSION turned
-            // on at runtime, the glass came back magenta on device, which is what a URP build
-            // shows when a shader variant nobody asked for at build time is asked for at run
-            // time. Age is a tint on the base colour instead, which is a plain property and
-            // needs no variant of anything.
-            _glassMaterial = new Material(unlit) { name = "Mirror_Glass_Runtime" };
-            _glassMaterial.mainTexture = _texture;
-            _glassMaterial.color = glassTint;
+            // The reflection goes in as the base map of a plain lit opaque material. No emission,
+            // no keyword turned on at run time, no property that this shader might not have: the
+            // base map and base colour of URP/Lit are the two things every other material in this
+            // room already uses, so they are the two things that cannot be missing from the
+            // build. Every write is guarded anyway, because a silently ignored SetTexture is how
+            // a mirror ends up showing the tint and nothing else.
+            //
+            // Being lit does cost something - the reflection is dimmed by whatever falls on the
+            // glass - and that is what the standing lamp beside it is for. The tint is therefore
+            // near white and slightly warm rather than dark: it ages the reflection without
+            // taking it away.
+            _glassMaterial = new Material(lit) { name = "Mirror_Glass_Runtime" };
+            SetTextureIfPresent(_glassMaterial, "_BaseMap", _texture);
+            SetColorIfPresent(_glassMaterial, "_BaseColor", glassTint);
+            SetFloatIfPresent(_glassMaterial, "_Metallic", 0f);
+            SetFloatIfPresent(_glassMaterial, "_Smoothness", glassSmoothness);
             renderer.sharedMaterial = _glassMaterial;
+
+            LogState(renderer);
+        }
+
+        private static void SetTextureIfPresent(Material material, string property, Texture value)
+        {
+            if (material.HasProperty(property))
+                material.SetTexture(property, value);
+            else
+                Debug.LogWarning("[CIYC] Mirror glass shader has no '" + property + "'.");
+        }
+
+        private static void SetColorIfPresent(Material material, string property, Color value)
+        {
+            if (material.HasProperty(property))
+                material.SetColor(property, value);
+        }
+
+        private static void SetFloatIfPresent(Material material, string property, float value)
+        {
+            if (material.HasProperty(property))
+                material.SetFloat(property, value);
+        }
+
+        /// <summary>
+        /// One line, once, saying what the mirror actually ended up being. Cheap to leave in and
+        /// the difference between "it is magenta" and knowing why in one look at a device log.
+        /// </summary>
+        private void LogState(Renderer renderer)
+        {
+            if (!logState)
+                return;
+
+            Shader shader = _glassMaterial != null ? _glassMaterial.shader : null;
+            Debug.Log("[CIYC] Mirror glass: shader=" + (shader != null ? shader.name : "<none>") +
+                      " supported=" + (shader != null && shader.isSupported) +
+                      " hasBaseMap=" + (_glassMaterial != null && _glassMaterial.HasProperty("_BaseMap")) +
+                      " rtCreated=" + (_texture != null && _texture.IsCreated()) +
+                      " rt=" + resolution + "x" + resolution +
+                      " rendererEnabled=" + renderer.enabled, this);
         }
 
         private void BuildCamera()
