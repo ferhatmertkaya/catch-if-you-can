@@ -96,6 +96,9 @@ namespace CatchIfYouCan.Art
                  "wound the other way.")]
         [SerializeField] private bool mirrorImage;
 
+        private bool _appliedFlip;
+        private bool _hasAppliedFlip;
+
         [Tooltip("Stop rendering beyond this. The reflection is a second pass over the room, so " +
                  "it should not run while the player is on the other side of the house.")]
         [SerializeField, Min(1f)] private float renderDistance = 7f;
@@ -298,15 +301,12 @@ namespace CatchIfYouCan.Art
                 new Vector3(-hx,  hy, 0f),
                 new Vector3( hx,  hy, 0f)
             };
-            // Mirrored here rather than in the material. An off-axis frustum renders the view
-            // through a window, and a window is a mirror with left and right the wrong way
-            // round; swapping U is the whole of the difference.
-            float u0 = mirrorImage ? 1f : 0f;
-            float u1 = mirrorImage ? 0f : 1f;
+            // Plain. The flip lives on the material instead, so it can be switched while the
+            // game is running - see ApplyMirrorFlip.
             mesh.uv = new[]
             {
-                new Vector2(u0, 0f), new Vector2(u1, 0f),
-                new Vector2(u0, 1f), new Vector2(u1, 1f)
+                new Vector2(0f, 0f), new Vector2(1f, 0f),
+                new Vector2(0f, 1f), new Vector2(1f, 1f)
             };
             // Wound clockwise as seen from local +Z, which is Unity's front-facing order and
             // the side that faces the room. Worked out on paper rather than by rotating a Quad
@@ -355,12 +355,37 @@ namespace CatchIfYouCan.Art
             // taking it away.
             _glassMaterial = new Material(lit) { name = "Mirror_Glass_Runtime" };
             SetTextureIfPresent(_glassMaterial, "_BaseMap", _texture);
+            ApplyMirrorFlip();
             SetColorIfPresent(_glassMaterial, "_BaseColor", glassTint);
             SetFloatIfPresent(_glassMaterial, "_Metallic", 0f);
             SetFloatIfPresent(_glassMaterial, "_Smoothness", glassSmoothness);
             renderer.sharedMaterial = _glassMaterial;
 
             LogState(renderer);
+        }
+
+        /// <summary>
+        /// Puts the left-right flip on the material rather than in the mesh, so the tick box can
+        /// be turned on and off in Play Mode and the answer seen immediately.
+        ///
+        /// <para>
+        /// Only one of the two settings is physically right, and which one it is has now been
+        /// argued both ways from first principles and got wrong once. Five seconds of clicking
+        /// beats another page of reasoning: strafe sideways with it off, strafe with it on, and
+        /// keep whichever makes the room slide the way a wall mirror does.
+        /// </para>
+        /// </summary>
+        private void ApplyMirrorFlip()
+        {
+            if (_glassMaterial == null)
+                return;
+            if (_hasAppliedFlip && _appliedFlip == mirrorImage)
+                return;
+
+            _glassMaterial.mainTextureScale = new Vector2(mirrorImage ? -1f : 1f, 1f);
+            _glassMaterial.mainTextureOffset = new Vector2(mirrorImage ? 1f : 0f, 0f);
+            _appliedFlip = mirrorImage;
+            _hasAppliedFlip = true;
         }
 
         private static void SetTextureIfPresent(Material material, string property, Texture value)
@@ -511,6 +536,8 @@ namespace CatchIfYouCan.Art
         {
             if (_mirrorCamera == null || _surface == null)
                 return;
+
+            ApplyMirrorFlip();
 
             Camera source = Camera.main;
             if (source == null)

@@ -86,6 +86,12 @@ namespace CatchIfYouCan.Art
                  "the model keeps whatever it imported with.")]
         [SerializeField] private Material materialOverride;
 
+        [Tooltip("Skip every measurement and put the model at exactly this uniform scale. Zero " +
+                 "means measure, which is the normal path. This is the escape hatch for a model " +
+                 "whose import cannot be trusted: one number, changeable in the Inspector while " +
+                 "the game runs, with nothing between it and the transform.")]
+        [SerializeField, Min(0f)] private float absoluteScale;
+
         [Tooltip("Hide the one part of the model that wraps all the others - a door's own frame " +
                  "around its own leaf, a cabinet's shell around its drawers - and fit what is " +
                  "left. For a prop going into an opening the room already frames, this is the " +
@@ -173,6 +179,15 @@ namespace CatchIfYouCan.Art
 
             Bounds bounds = Measure(visible);
 
+            if (absoluteScale > 0f)
+            {
+                _model.localScale = Vector3.one * absoluteScale;
+                _model.localRotation = Quaternion.Euler(0f, yawDegrees, 0f);
+                ApplyShadowFlags(renderers);
+                Place(visible, renderers);
+                return;
+            }
+
             float source = FitDimension(bounds.size);
 
             // A measurement that has collapsed is the difference between a door and a door the
@@ -194,14 +209,7 @@ namespace CatchIfYouCan.Art
                 _model.localScale = Vector3.one * (targetSize / source);
 
             _model.localRotation = Quaternion.Euler(0f, yawDegrees, 0f);
-
-            for (int i = 0; i < renderers.Length; i++)
-            {
-                renderers[i].shadowCastingMode = castShadows
-                    ? UnityEngine.Rendering.ShadowCastingMode.On
-                    : UnityEngine.Rendering.ShadowCastingMode.Off;
-                renderers[i].receiveShadows = true;
-            }
+            ApplyShadowFlags(renderers);
 
             // Re-measured after scaling and turning: this is the box the furniture now occupies.
             bounds = Measure(visible);
@@ -228,15 +236,25 @@ namespace CatchIfYouCan.Art
                 bounds = Measure(visible);
             }
 
-            FittedSize = bounds.size;
-
-            float fitted = FitDimension(FittedSize);
+            float fitted = FitDimension(bounds.size);
             if (Mathf.Abs(fitted - targetSize) > targetSize * 0.05f)
             {
                 Debug.LogError("[CIYC] " + name + " asked for " + targetSize + " m and came out " +
-                               fitted.ToString("F3") + " m (" + FittedSize.ToString("F3") +
+                               fitted.ToString("F3") + " m (" + bounds.size.ToString("F3") +
                                ") even after correction.", this);
             }
+
+            Place(visible, renderers);
+        }
+
+        /// <summary>
+        /// Stands the prop where it belongs, boxes it, and says once what it became. Shared by
+        /// the measured path and the absolute-scale one, so the two cannot drift apart.
+        /// </summary>
+        private void Place(Renderer[] visible, Renderer[] renderers)
+        {
+            Bounds bounds = Measure(visible);
+            FittedSize = bounds.size;
 
             Vector3 shift = Vector3.zero;
             if (centreHorizontally)
@@ -254,19 +272,29 @@ namespace CatchIfYouCan.Art
             if (addCollider)
                 AddBox(bounds);
 
-            if (logState)
+            if (!logState)
+                return;
+
+            var shader = visible[0].sharedMaterial != null ? visible[0].sharedMaterial.shader : null;
+            Debug.Log("[CIYC] " + name + ": renderers=" + renderers.Length +
+                      " visible=" + visible.Length +
+                      " active=" + _model.gameObject.activeInHierarchy +
+                      " shader=" + (shader != null ? shader.name : "<none>") +
+                      " supported=" + (shader != null && shader.isSupported) +
+                      " scale=" + _model.localScale.x.ToString("F4") +
+                      " size=" + FittedSize.ToString("F3") +
+                      " min=" + bounds.min.ToString("F3") +
+                      " max=" + bounds.max.ToString("F3"), this);
+        }
+
+        private void ApplyShadowFlags(Renderer[] renderers)
+        {
+            for (int i = 0; i < renderers.Length; i++)
             {
-                var shader = visible[0].sharedMaterial != null
-                    ? visible[0].sharedMaterial.shader
-                    : null;
-                Debug.Log("[CIYC] " + name + ": renderers=" + renderers.Length +
-                          " visible=" + visible.Length +
-                          " active=" + go.activeInHierarchy +
-                          " shader=" + (shader != null ? shader.name : "<none>") +
-                          " supported=" + (shader != null && shader.isSupported) +
-                          " size=" + FittedSize.ToString("F3") +
-                          " min=" + bounds.min.ToString("F3") +
-                          " max=" + bounds.max.ToString("F3"), this);
+                renderers[i].shadowCastingMode = castShadows
+                    ? UnityEngine.Rendering.ShadowCastingMode.On
+                    : UnityEngine.Rendering.ShadowCastingMode.Off;
+                renderers[i].receiveShadows = true;
             }
         }
 
