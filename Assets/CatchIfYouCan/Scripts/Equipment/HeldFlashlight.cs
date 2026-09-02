@@ -87,8 +87,20 @@ namespace CatchIfYouCan.Equipment
         [Tooltip("Fallback capsule size in metres: diameter, length, diameter.")]
         [SerializeField] private Vector3 size = new Vector3(0.052f, 0.24f, 0.052f);
 
-        [Tooltip("Offset from the hand, in the player's own axes: right, up, forward.")]
+        [Tooltip("Offset from the hand, in the player's own axes: right, up, forward. Only used " +
+                 "on the fallback path, when there is no character whose knuckles can be " +
+                 "measured. The field below is the one that moves the torch in the real hand.")]
         [SerializeField] private Vector3 gripOffset = new Vector3(0.02f, 0.01f, 0.06f);
+
+        [Tooltip("Where the torch sits in the fist, in the hand's own measured axes and in " +
+                 "metres: X along the barrel towards the head, Y out of the back of the hand, Z " +
+                 "towards the fingertips. Drag it in the Inspector while the game is running and " +
+                 "the torch moves in the hand immediately.")]
+        [SerializeField] private Vector3 flashlightGripPositionOffset;
+
+        [Tooltip("Turn added to the torch after it has been laid on the fist, in its own axes. " +
+                 "Live-tunable in the same way.")]
+        [SerializeField] private Vector3 flashlightGripRotationOffset;
 
         [Tooltip("How far back along the barrel the fist closes, in metres. The pivot is the " +
                  "tail of the torch, so without this the hand grips thin air at the very end of " +
@@ -729,8 +741,17 @@ namespace CatchIfYouCan.Equipment
             {
                 _barrel.rotation = Quaternion.LookRotation(barrel, palmNormal) *
                                    Quaternion.Euler(90f, 0f, 0f) *
-                                   Quaternion.Euler(gripRotationOffset);
-                _barrel.position = palm - barrel * gripBackset;
+                                   Quaternion.Euler(gripRotationOffset) *
+                                   Quaternion.Euler(flashlightGripRotationOffset);
+
+                // Slid in the hand's own frame rather than the player's, so "towards the
+                // fingertips" keeps meaning that however the wrist is turned.
+                Vector3 towardsFingers = Vector3.Cross(palmNormal, barrel);
+                _barrel.position = palm
+                                   - barrel * gripBackset
+                                   + barrel * flashlightGripPositionOffset.x
+                                   + palmNormal * flashlightGripPositionOffset.y
+                                   + towardsFingers * flashlightGripPositionOffset.z;
                 return;
             }
 

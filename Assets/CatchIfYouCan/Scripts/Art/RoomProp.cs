@@ -173,12 +173,7 @@ namespace CatchIfYouCan.Art
 
             Bounds bounds = Measure(visible);
 
-            float source = fitAxis switch
-            {
-                FitAxis.Height => bounds.size.y,
-                FitAxis.Width => Mathf.Max(bounds.size.x, bounds.size.z),
-                _ => Mathf.Max(bounds.size.x, Mathf.Max(bounds.size.y, bounds.size.z))
-            };
+            float source = FitDimension(bounds.size);
 
             // A measurement that has collapsed is the difference between a door and a door the
             // size of the room: the scale is targetSize over whatever was measured, so a
@@ -192,12 +187,7 @@ namespace CatchIfYouCan.Art
                                ". Falling back to measuring every renderer.", this);
                 bounds = Measure(renderers);
                 visible = renderers;
-                source = fitAxis switch
-                {
-                    FitAxis.Height => bounds.size.y,
-                    FitAxis.Width => Mathf.Max(bounds.size.x, bounds.size.z),
-                    _ => Mathf.Max(bounds.size.x, Mathf.Max(bounds.size.y, bounds.size.z))
-                };
+                source = FitDimension(bounds.size);
             }
 
             if (source > 0.0001f)
@@ -215,21 +205,37 @@ namespace CatchIfYouCan.Art
 
             // Re-measured after scaling and turning: this is the box the furniture now occupies.
             bounds = Measure(visible);
+
+            // And then corrected against itself until it is the size it was asked to be.
+            //
+            // <para>
+            // Everything above this is an <em>estimate</em> of the scale that will produce the
+            // target: measure the model, divide, apply. That estimate rests on the importer, the
+            // file's units, the node the importer decided to collapse into the prefab root, and
+            // this component overwriting whatever scale that root arrived with - four things
+            // that have to agree, and a prop the size of the room if any one of them does not.
+            // This asks none of them. It measures the object that is now standing in the scene
+            // and, if that is not the size requested, multiplies by the ratio and measures again.
+            // Two passes are one more than a linear scale needs; the second only ever confirms.
+            // </para>
+            for (int pass = 0; pass < 2; pass++)
+            {
+                float actual = FitDimension(bounds.size);
+                if (actual < 0.0001f || Mathf.Abs(actual - targetSize) <= targetSize * 0.01f)
+                    break;
+
+                _model.localScale *= targetSize / actual;
+                bounds = Measure(visible);
+            }
+
             FittedSize = bounds.size;
 
-            // Said out loud rather than assumed. If the thing that came out is not the size it
-            // was asked to be, the sizing pipeline is wrong and the log is where that shows.
-            float fitted = fitAxis switch
-            {
-                FitAxis.Height => FittedSize.y,
-                FitAxis.Width => Mathf.Max(FittedSize.x, FittedSize.z),
-                _ => Mathf.Max(FittedSize.x, Mathf.Max(FittedSize.y, FittedSize.z))
-            };
+            float fitted = FitDimension(FittedSize);
             if (Mathf.Abs(fitted - targetSize) > targetSize * 0.05f)
             {
                 Debug.LogError("[CIYC] " + name + " asked for " + targetSize + " m and came out " +
-                               fitted.ToString("F3") + " m (" + FittedSize.ToString("F3") + ").",
-                               this);
+                               fitted.ToString("F3") + " m (" + FittedSize.ToString("F3") +
+                               ") even after correction.", this);
             }
 
             Vector3 shift = Vector3.zero;
@@ -319,6 +325,14 @@ namespace CatchIfYouCan.Art
             if (shell >= 0 && held > 0)
                 renderers[shell].enabled = false;
         }
+
+        /// <summary>The one dimension of a box that <see cref="fitAxis"/> is about.</summary>
+        private float FitDimension(Vector3 size) => fitAxis switch
+        {
+            FitAxis.Height => size.y,
+            FitAxis.Width => Mathf.Max(size.x, size.z),
+            _ => Mathf.Max(size.x, Mathf.Max(size.y, size.z))
+        };
 
         private static float Volume(Bounds bounds) =>
             bounds.size.x * bounds.size.y * bounds.size.z;
