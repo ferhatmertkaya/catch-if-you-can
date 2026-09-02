@@ -222,7 +222,12 @@ namespace CatchIfYouCan.Player
             if (playerBody == null && playerController != null)
                 playerBody = playerController.transform;
 
-            _rng = new System.Random(GetInstanceID() ^ System.Environment.TickCount);
+            // A stream of its own per instance, so two of these never blink or glance in
+            // lockstep. Seeded from a Guid rather than the instance id: the id was only ever
+            // a convenient unique number, it is not identity that matters here, and Unity 6.5
+            // made GetInstanceID an error in favour of an API that does not exist in older
+            // versions. A Guid is unique, needs no engine call, and cannot be deprecated.
+            _rng = new System.Random(System.Guid.NewGuid().GetHashCode());
             _blinkTimer = Range(blinkInterval);
 
             Bind();
