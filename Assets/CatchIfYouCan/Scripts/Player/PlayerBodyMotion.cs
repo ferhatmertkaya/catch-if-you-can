@@ -119,14 +119,46 @@ namespace CatchIfYouCan.Player
 
         [SerializeField, Min(0.01f)] private float sprintLeanSmoothing = 0.25f;
 
+        [Header("Look follow")]
+        [Tooltip("Let the head lead the turn and the body come after it. Off leaves the whole " +
+                 "character welded to the camera's yaw, which is what it was.")]
+        [SerializeField] private bool followLook = true;
+
+        [SerializeField, Range(0f, 1f)] private float neckYawWeight = 0.4f;
+        [SerializeField, Range(0f, 1f)] private float headYawWeight = 0.6f;
+
+        [Tooltip("Anatomical stops, in degrees each way. Past their sum the shoulders have to " +
+                 "come round, which is what the spine share below is for.")]
+        [SerializeField, Range(0f, 60f)] private float maxNeckYaw = 25f;
+
+        [SerializeField, Range(0f, 80f)] private float maxHeadYaw = 55f;
+
+        [Tooltip("How far the head may be ahead of the shoulders, in degrees, before the chest " +
+                 "starts helping.")]
+        [SerializeField, Range(0f, 80f)] private float upperSpineContributionThreshold = 45f;
+
+        [SerializeField, Range(0f, 1f)] private float upperSpineWeight = 0.15f;
+
+        [Tooltip("Seconds the shoulders take to catch up with the head while the player is " +
+                 "turning, and the slower time they take to settle once the turning stops.")]
+        [SerializeField, Min(0.01f)] private float lookSmoothing = 0.1f;
+
+        [SerializeField, Min(0.01f)] private float lookReturnSmoothing = 0.14f;
+
         [Header("Head")]
         [Tooltip("Fraction of the camera's pitch the head and neck take on. Not 1: the eyes lead " +
                  "the head, so a character whose skull follows the camera exactly looks like it " +
                  "is being steered rather than looking.")]
-        [SerializeField, Range(0f, 1f)] private float headPitchFollow = 0.55f;
+        [SerializeField, Range(0f, 1f)] private float headPitchFollow = 0.6f;
 
-        [Tooltip("Ceiling on that, degrees. A neck does not bend as far as a camera pitches.")]
-        [SerializeField] private float headPitchLimit = 38f;
+        [SerializeField, Range(0f, 1f)] private float neckPitchWeight = 0.4f;
+        [SerializeField, Range(0f, 1f)] private float headPitchWeight = 0.6f;
+
+        [Tooltip("How far the head may tip, in degrees. A neck goes further down than up.")]
+        [SerializeField, Range(0f, 60f)] private float maxPitchUp = 30f;
+
+        [SerializeField, Range(0f, 60f)] private float maxPitchDown = 40f;
+
 
         [Header("Idle life")]
         [Tooltip("Breath rate at rest, cycles per second. About twelve breaths a minute.")]
@@ -344,6 +376,9 @@ namespace CatchIfYouCan.Player
         }
 
         private Vector3 _visualBasePosition;
+        private Quaternion _visualBaseRotation = Quaternion.identity;
+        private float _bodyYaw = float.NaN;
+        private float _bodyYawVelocity;
         private bool _hasVisualRoot;
 
         private float _strafe;
@@ -404,7 +439,10 @@ namespace CatchIfYouCan.Player
 
             _hasVisualRoot = visualRoot != null;
             if (_hasVisualRoot)
+            {
                 _visualBasePosition = visualRoot.localPosition;
+                _visualBaseRotation = visualRoot.localRotation;
+            }
 
             var all = animator.GetComponentsInChildren<Transform>(true);
 
@@ -711,6 +749,10 @@ namespace CatchIfYouCan.Player
             // drop and not a breath or a sprint lean.
             MeasureHeadDrop(crouch);
 
+            // Before everything that reads a bone's world position - the arm solve above all -
+            // because this moves the shoulders.
+            ApplyLookYaw(up);
+
             ApplySprintLean(right);
             ApplyStrafe(right, up, moving);
             ApplyIdle(right, forward, crouch, moving);
@@ -798,6 +840,82 @@ namespace CatchIfYouCan.Player
             Vector3 local = _visualBasePosition;
             local.y -= ComputeCrouchDrop(crouch, thighDegrees, shinDegrees);
             visualRoot.localPosition = local;
+        }
+
+        /// <summary>
+        /// Lets the head lead the turn and the shoulders come after it.
+        ///
+        /// <para>
+        /// The look's yaw is not missing from the character - it never was. It is written onto
+        /// the player root, so turning the camera turns Nathan bodily, all of him, instantly.
+        /// That is why he reads as stiff rather than as looking away: a person turning to look at
+        /// something moves their eyes, then their head, then their shoulders, and the whole thing
+        /// takes a moment. What was missing is the moment.
+        /// </para>
+        ///
+        /// <para>
+        /// So the body is held back rather than the head pushed forward. A smoothed yaw chases
+        /// the root's, the visual is turned back by however far it is behind, and the neck, head
+        /// and - past the point where a neck would complain - the upper chest take that same
+        /// angle in the other direction, which leaves the face pointing exactly where the camera
+        /// does while the shoulders are still coming round. It settles to nothing the instant the
+        /// player stops turning, so it costs the game nothing: the collider, the movement and the
+        /// camera never see it, and what it changes is only what the mirror and the shadow show.
+        /// </para>
+        ///
+        /// <para>
+        /// The catch-up is clamped as well as smoothed, so a fast spin drags the shoulders round
+        /// with it rather than winding the neck up past its stops.
+        /// </para>
+        /// </summary>
+        private void ApplyLookYaw(Vector3 up)
+        {
+            if (!_hasVisualRoot)
+                return;
+
+            if (!followLook)
+            {
+                if (visualRoot.localRotation != _visualBaseRotation)
+                    visualRoot.localRotation = _visualBaseRotation;
+                return;
+            }
+
+            float target = playerBody.eulerAngles.y;
+            if (float.IsNaN(_bodyYaw))
+                _bodyYaw = target;
+
+            // Quicker while the turn is happening than while it is settling, which is the shape
+            // the movement actually has.
+            float behind = Mathf.Abs(Mathf.DeltaAngle(_bodyYaw, target));
+            float smoothing = behind > 0.75f ? lookSmoothing : lookReturnSmoothing;
+            _bodyYaw = Mathf.SmoothDampAngle(_bodyYaw, target, ref _bodyYawVelocity, smoothing);
+
+            float limit = maxNeckYaw + maxHeadYaw;
+            float lag = Mathf.Clamp(Mathf.DeltaAngle(_bodyYaw, target), -limit, limit);
+            // Written back, so the shoulders are dragged along rather than left behind by a spin
+            // the neck could never have followed.
+            _bodyYaw = target - lag;
+
+            visualRoot.localRotation = _visualBaseRotation * Quaternion.Euler(0f, -lag, 0f);
+
+            if (Mathf.Abs(lag) < 0.01f)
+                return;
+
+            // Past the threshold the chest starts turning too, so the neck is not asked to do all
+            // of a large angle on its own.
+            float spine = 0f;
+            float beyond = Mathf.Abs(lag) - upperSpineContributionThreshold;
+            if (beyond > 0f)
+                spine = Mathf.Sign(lag) * beyond * upperSpineWeight;
+
+            float remainder = lag - spine;
+            float neck = Mathf.Clamp(remainder * neckYawWeight, -maxNeckYaw, maxNeckYaw);
+            float head = Mathf.Clamp(remainder * headYawWeight, -maxHeadYaw, maxHeadYaw);
+
+            RotateWorld(_spine02, up, spine * 0.45f);
+            RotateWorld(_spine03, up, spine * 0.55f);
+            RotateWorld(_neck, up, neck);
+            RotateWorld(_head, up, head);
         }
 
         /// <summary>
@@ -1132,9 +1250,10 @@ namespace CatchIfYouCan.Player
             if (pitch > 180f)
                 pitch -= 360f;
 
-            float applied = Mathf.Clamp(pitch * headPitchFollow, -headPitchLimit, headPitchLimit);
-            RotateWorld(_neck, right, applied * 0.4f);
-            RotateWorld(_head, right, applied * 0.6f);
+            // Positive pitch is looking down, which is the way a neck bends furthest.
+            float applied = Mathf.Clamp(pitch * headPitchFollow, -maxPitchUp, maxPitchDown);
+            RotateWorld(_neck, right, applied * neckPitchWeight);
+            RotateWorld(_head, right, applied * headPitchWeight);
         }
 
         /// <summary>
@@ -1207,7 +1326,10 @@ namespace CatchIfYouCan.Player
         {
             // Never leave the character folded into a crouch it can no longer come out of.
             if (_hasVisualRoot && visualRoot != null)
+            {
                 visualRoot.localPosition = _visualBasePosition;
+                visualRoot.localRotation = _visualBaseRotation;
+            }
         }
     }
 }
