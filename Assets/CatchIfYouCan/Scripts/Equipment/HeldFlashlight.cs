@@ -62,6 +62,16 @@ namespace CatchIfYouCan.Equipment
         [Tooltip("Resources path of the torch mesh. Empty, or missing, falls back to a capsule.")]
         [SerializeField] private string modelResourcePath = "Props/CIYC_Flashlight";
 
+        [Tooltip("Resources path of the material to pin onto the torch mesh. The FBX carries its " +
+                 "own material remap, and a remap that quietly did not take is a torch that is " +
+                 "there and cannot be seen; loading the real one by path removes that whole class " +
+                 "of failure. Empty leaves the model with whatever it imported with.")]
+        [SerializeField] private string modelMaterialPath = "Props/MAT_Flashlight";
+
+        [Tooltip("Log once what the torch actually ended up being: whether the mesh loaded, how " +
+                 "many renderers it has, what shader they are on and how big it came out.")]
+        [SerializeField] private bool logState = true;
+
         [Tooltip("How long the torch is in the hand, in metres. The model is scaled to this " +
                  "whatever units it was exported in - this one is two units end to end, which " +
                  "would be a two metre torch taken at face value.")]
@@ -499,8 +509,9 @@ namespace CatchIfYouCan.Equipment
             {
                 if (!string.IsNullOrEmpty(modelResourcePath))
                 {
-                    Debug.LogWarning("[CIYC] No torch model at Resources/" + modelResourcePath +
-                                     "; falling back to a capsule.", this);
+                    Debug.LogError("[CIYC] No torch model at Resources/" + modelResourcePath +
+                                   ". What you are seeing in the hand is the fallback capsule and " +
+                                   "its lens, not the flashlight.", this);
                 }
                 return BuildCapsule(shader);
             }
@@ -531,6 +542,36 @@ namespace CatchIfYouCan.Equipment
             model.transform.localRotation = Quaternion.identity;
             model.transform.localScale = Vector3.one;
 
+            // Made visible and given a material that is known to exist. An object the importer
+            // decided was hidden, a renderer that arrived switched off, and a material whose
+            // textures were never in the delivery all look the same from the player's side: a
+            // hand holding nothing.
+            Material pinned = string.IsNullOrEmpty(modelMaterialPath)
+                ? null
+                : Resources.Load<Material>(modelMaterialPath);
+
+            if (pinned == null && !string.IsNullOrEmpty(modelMaterialPath))
+            {
+                Debug.LogWarning("[CIYC] No torch material at Resources/" + modelMaterialPath +
+                                 "; keeping whatever the model imported with.", this);
+            }
+
+            for (int i = 0; i < renderers.Length; i++)
+            {
+                if (!renderers[i].gameObject.activeSelf)
+                    renderers[i].gameObject.SetActive(true);
+                renderers[i].enabled = true;
+
+                if (pinned == null)
+                    continue;
+
+                int slots = Mathf.Max(1, renderers[i].sharedMaterials.Length);
+                var materials = new Material[slots];
+                for (int m = 0; m < slots; m++)
+                    materials[m] = pinned;
+                renderers[i].sharedMaterials = materials;
+            }
+
             Vector3 axis = modelBeamAxis.sqrMagnitude < 0.0001f ? Vector3.right : modelBeamAxis.normalized;
             float along = Mathf.Abs(Vector3.Dot(bounds.size, Abs(axis)));
             if (along < 0.0001f)
@@ -551,6 +592,19 @@ namespace CatchIfYouCan.Equipment
             {
                 renderers[i].shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.On;
                 renderers[i].receiveShadows = true;
+            }
+
+            if (logState)
+            {
+                var used = renderers[0].sharedMaterial != null
+                    ? renderers[0].sharedMaterial.shader
+                    : null;
+                Debug.Log("[CIYC] Torch model: renderers=" + renderers.Length +
+                          " active=" + model.activeInHierarchy +
+                          " shader=" + (used != null ? used.name : "<none>") +
+                          " measured=" + bounds.size.ToString("F3") +
+                          " scale=" + scale.ToString("F4") +
+                          " length=" + torchLength.ToString("F3"), this);
             }
 
             return torchLength;

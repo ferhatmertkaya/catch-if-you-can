@@ -269,6 +269,18 @@ namespace CatchIfYouCan.Player
         [Tooltip("Write the right arm's resolved bone paths to the log once at start-up.")]
         [SerializeField] private bool logArmBones = true;
 
+        [Header("Flashlight arm trim")]
+        [Tooltip("Turns added to each arm bone after it has been solved, in its own local axes " +
+                 "and in degrees. All zero is the solve untouched. These are here to be dragged " +
+                 "in the Inspector while the game is running: the pose follows immediately, so a " +
+                 "wrist that curls the wrong way can be dialled straight and the numbers kept, " +
+                 "rather than guessed at in code by someone who cannot see the screen.")]
+        [SerializeField] private Vector3 rightShoulderRotationOffset;
+
+        [SerializeField] private Vector3 rightUpperArmRotationOffset;
+        [SerializeField] private Vector3 rightLowerArmRotationOffset;
+        [SerializeField] private Vector3 rightHandRotationOffset;
+
         [Header("Blink")]
         [Tooltip("How far the eyelids swing to close.")]
         [SerializeField] private float blinkDegrees = 34f;
@@ -377,6 +389,7 @@ namespace CatchIfYouCan.Player
 
         private Vector3 _visualBasePosition;
         private Quaternion _visualBaseRotation = Quaternion.identity;
+        private Transform _view;
         private float _bodyYaw = float.NaN;
         private float _bodyYawVelocity;
         private bool _hasVisualRoot;
@@ -473,6 +486,16 @@ namespace CatchIfYouCan.Player
             _thumb = FindChain(all, "thumb");
             _indexRoot = _fingers[0][0];
             _pinkyRoot = _fingers[3][0];
+
+            // The camera the player actually looks through, not the pivot it hangs under. The
+            // idle scan and the breathing are applied on a transform *between* the two, so
+            // anything read off the pivot cannot see them - which is exactly why the head sat
+            // still while the view wandered.
+            if (cameraRoot != null)
+            {
+                var camera = cameraRoot.GetComponentInChildren<Camera>();
+                _view = camera != null ? camera.transform : cameraRoot;
+            }
 
             BuildArmTargets();
             LogArmBones();
@@ -898,6 +921,13 @@ namespace CatchIfYouCan.Player
 
             visualRoot.localRotation = _visualBaseRotation * Quaternion.Euler(0f, -lag, 0f);
 
+            // And whatever the view is doing on its own. The idle scan turns the camera without
+            // turning the player, so none of it reaches the root yaw above; measured here as the
+            // angle between where the body faces and where the eyes actually point, it reaches
+            // the neck and the head the same way a real glance does - without the shoulders
+            // moving at all, which is the point of a glance.
+            lag += ViewGlanceYaw(up);
+
             if (Mathf.Abs(lag) < 0.01f)
                 return;
 
@@ -916,6 +946,25 @@ namespace CatchIfYouCan.Player
             RotateWorld(_spine03, up, spine * 0.55f);
             RotateWorld(_neck, up, neck);
             RotateWorld(_head, up, head);
+        }
+
+        /// <summary>
+        /// How far the view is turned away from the body, on the level, in degrees. Zero while
+        /// the player is only turning - that yaw is written onto the root and the body carries
+        /// it - and non-zero whenever something moves the camera and not the player, which in
+        /// practice is the idle scan.
+        /// </summary>
+        private float ViewGlanceYaw(Vector3 up)
+        {
+            if (_view == null)
+                return 0f;
+
+            Vector3 bodyForward = Vector3.ProjectOnPlane(playerBody.forward, up);
+            Vector3 viewForward = Vector3.ProjectOnPlane(_view.forward, up);
+            if (bodyForward.sqrMagnitude < 1e-6f || viewForward.sqrMagnitude < 1e-6f)
+                return 0f;
+
+            return Vector3.SignedAngle(bodyForward, viewForward, up);
         }
 
         /// <summary>
@@ -1036,6 +1085,22 @@ namespace CatchIfYouCan.Player
             _lowerArmR.rotation = Quaternion.Slerp(lowerBefore, lowerSolved, weight);
 
             ApplyGripOrientation(weight);
+
+            // Last, and in each bone's own axes, so a value dialled in against what is on screen
+            // means the same thing next frame whatever the solve did.
+            AddLocal(_clavicleR, rightShoulderRotationOffset, weight);
+            AddLocal(_upperArmR, rightUpperArmRotationOffset, weight);
+            AddLocal(_lowerArmR, rightLowerArmRotationOffset, weight);
+            AddLocal(_handR, rightHandRotationOffset, weight);
+        }
+
+        private static void AddLocal(Transform bone, Vector3 degrees, float weight)
+        {
+            if (bone == null || degrees == Vector3.zero)
+                return;
+
+            bone.localRotation *= Quaternion.Slerp(Quaternion.identity,
+                                                   Quaternion.Euler(degrees), weight);
         }
 
         /// <summary>
@@ -1246,9 +1311,14 @@ namespace CatchIfYouCan.Player
             if (cameraRoot == null || headPitchFollow <= 0f)
                 return;
 
-            float pitch = cameraRoot.localEulerAngles.x;
-            if (pitch > 180f)
-                pitch -= 360f;
+            // Taken off the camera itself rather than the pivot, and measured against the body,
+            // so the idle breathing and the scan's own tilt are in it as well as the player's
+            // deliberate look.
+            Transform view = _view != null ? _view : cameraRoot;
+            float pitch = -Vector3.SignedAngle(
+                Vector3.ProjectOnPlane(view.forward, playerBody.up),
+                view.forward,
+                playerBody.right);
 
             // Positive pitch is looking down, which is the way a neck bends furthest.
             float applied = Mathf.Clamp(pitch * headPitchFollow, -maxPitchUp, maxPitchDown);

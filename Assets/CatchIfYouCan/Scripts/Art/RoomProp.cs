@@ -180,6 +180,26 @@ namespace CatchIfYouCan.Art
                 _ => Mathf.Max(bounds.size.x, Mathf.Max(bounds.size.y, bounds.size.z))
             };
 
+            // A measurement that has collapsed is the difference between a door and a door the
+            // size of the room: the scale is targetSize over whatever was measured, so a
+            // measurement a hundredth of what it should be is a prop a hundred times too big.
+            // Anything under a twentieth of the target is not a small prop, it is a failed
+            // measurement, and the whole model is measured again rather than trusted.
+            if (source < targetSize * 0.05f)
+            {
+                Debug.LogError("[CIYC] " + name + " measured only " + source.ToString("F4") +
+                               " m on its fit axis against a target of " + targetSize +
+                               ". Falling back to measuring every renderer.", this);
+                bounds = Measure(renderers);
+                visible = renderers;
+                source = fitAxis switch
+                {
+                    FitAxis.Height => bounds.size.y,
+                    FitAxis.Width => Mathf.Max(bounds.size.x, bounds.size.z),
+                    _ => Mathf.Max(bounds.size.x, Mathf.Max(bounds.size.y, bounds.size.z))
+                };
+            }
+
             if (source > 0.0001f)
                 _model.localScale = Vector3.one * (targetSize / source);
 
@@ -196,6 +216,21 @@ namespace CatchIfYouCan.Art
             // Re-measured after scaling and turning: this is the box the furniture now occupies.
             bounds = Measure(visible);
             FittedSize = bounds.size;
+
+            // Said out loud rather than assumed. If the thing that came out is not the size it
+            // was asked to be, the sizing pipeline is wrong and the log is where that shows.
+            float fitted = fitAxis switch
+            {
+                FitAxis.Height => FittedSize.y,
+                FitAxis.Width => Mathf.Max(FittedSize.x, FittedSize.z),
+                _ => Mathf.Max(FittedSize.x, Mathf.Max(FittedSize.y, FittedSize.z))
+            };
+            if (Mathf.Abs(fitted - targetSize) > targetSize * 0.05f)
+            {
+                Debug.LogError("[CIYC] " + name + " asked for " + targetSize + " m and came out " +
+                               fitted.ToString("F3") + " m (" + FittedSize.ToString("F3") + ").",
+                               this);
+            }
 
             Vector3 shift = Vector3.zero;
             if (centreHorizontally)
@@ -254,6 +289,9 @@ namespace CatchIfYouCan.Art
                 if (outer.size.sqrMagnitude < 1e-10f)
                     continue;
 
+                // Counted by centres rather than by whole boxes. A door leaf sits inside its own
+                // casing but its handle pokes out of both, so asking whether every corner is
+                // contained answers "no" for the very piece the test exists to find.
                 int count = 0;
                 for (int j = 0; j < renderers.Length; j++)
                 {
@@ -263,11 +301,15 @@ namespace CatchIfYouCan.Art
                     Bounds inner = RendererBounds(renderers[j]);
                     if (inner.size.sqrMagnitude < 1e-10f)
                         continue;
-                    if (outer.Contains(inner.min) && outer.Contains(inner.max))
+                    if (outer.Contains(inner.center))
                         count++;
                 }
 
-                if (count > held)
+                // Ties broken by volume, so which of two equally-containing pieces is the shell
+                // is never decided by the order the renderers happened to come back in.
+                if (count > held ||
+                    (count == held && count > 0 && shell >= 0 &&
+                     Volume(outer) > Volume(RendererBounds(renderers[shell]))))
                 {
                     held = count;
                     shell = i;
@@ -277,6 +319,9 @@ namespace CatchIfYouCan.Art
             if (shell >= 0 && held > 0)
                 renderers[shell].enabled = false;
         }
+
+        private static float Volume(Bounds bounds) =>
+            bounds.size.x * bounds.size.y * bounds.size.z;
 
         /// <summary>The renderers still switched on, which is the prop as anyone will see it.</summary>
         private static Renderer[] Visible(Renderer[] renderers)
