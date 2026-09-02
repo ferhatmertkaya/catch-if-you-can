@@ -39,6 +39,11 @@ namespace CatchIfYouCan.Interaction
                  "rewrite.")]
         [SerializeField] private bool locked = true;
 
+        [Tooltip("Build the lever. Off for a door whose own model already has a handle on it: " +
+                 "the interaction, the prompt and the locked door all still work, there is simply " +
+                 "no second handle drawn on top of the first.")]
+        [SerializeField] private bool buildLever = true;
+
         [Header("Placement")]
         [Tooltip("Where the handle sits on the door, in the door's own local space. The default " +
                  "is the room-facing side, latch edge, at handle height.")]
@@ -111,7 +116,7 @@ namespace CatchIfYouCan.Interaction
 
         private void Build()
         {
-            if (_lever != null)
+            if (_lever != null || !buildLever)
                 return;
 
             // The door's own material, so the handle is the same wood. Reading it beats authoring

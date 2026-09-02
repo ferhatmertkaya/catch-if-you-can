@@ -86,6 +86,12 @@ namespace CatchIfYouCan.Art
                  "the model keeps whatever it imported with.")]
         [SerializeField] private Material materialOverride;
 
+        [Tooltip("Hide the one part of the model that wraps all the others - a door's own frame " +
+                 "around its own leaf, a cabinet's shell around its drawers - and fit what is " +
+                 "left. For a prop going into an opening the room already frames, this is the " +
+                 "difference between one frame and two nested ones.")]
+        [SerializeField] private bool hideOuterShell;
+
         [Tooltip("Log once what this prop actually ended up as: whether the model loaded, how " +
                  "many renderers it has, what shader they are on, and the box it occupies. On " +
                  "for anything that has been reported missing.")]
@@ -158,7 +164,14 @@ namespace CatchIfYouCan.Art
                 }
             }
 
-            Bounds bounds = Measure(renderers);
+            if (hideOuterShell)
+                HideOuterShell(renderers);
+
+            // Everything from here on is about what can actually be seen. A hidden shell must not
+            // decide how big the rest is scaled to, where it stands, or how big its collider is.
+            Renderer[] visible = Visible(renderers);
+
+            Bounds bounds = Measure(visible);
 
             float source = fitAxis switch
             {
@@ -181,7 +194,7 @@ namespace CatchIfYouCan.Art
             }
 
             // Re-measured after scaling and turning: this is the box the furniture now occupies.
-            bounds = Measure(renderers);
+            bounds = Measure(visible);
             FittedSize = bounds.size;
 
             Vector3 shift = Vector3.zero;
@@ -202,10 +215,11 @@ namespace CatchIfYouCan.Art
 
             if (logState)
             {
-                var shader = renderers[0].sharedMaterial != null
-                    ? renderers[0].sharedMaterial.shader
+                var shader = visible[0].sharedMaterial != null
+                    ? visible[0].sharedMaterial.shader
                     : null;
                 Debug.Log("[CIYC] " + name + ": renderers=" + renderers.Length +
+                          " visible=" + visible.Length +
                           " active=" + go.activeInHierarchy +
                           " shader=" + (shader != null ? shader.name : "<none>") +
                           " supported=" + (shader != null && shader.isSupported) +
@@ -213,6 +227,74 @@ namespace CatchIfYouCan.Art
                           " min=" + bounds.min.ToString("F3") +
                           " max=" + bounds.max.ToString("F3"), this);
             }
+        }
+
+        /// <summary>
+        /// Switches off the renderer whose box holds the most of the others.
+        ///
+        /// <para>
+        /// Found by shape rather than by name, on purpose. Which child of a generated FBX is the
+        /// casing and which is the leaf is a fact about the geometry, and the names - Plane.002
+        /// wrapping Plane.001 wrapping Circle.002 - carry no meaning and change with every
+        /// re-export. What does not change is that the piece that contains all the others is the
+        /// shell around them.
+        /// </para>
+        /// </summary>
+        private static void HideOuterShell(Renderer[] renderers)
+        {
+            if (renderers.Length < 2)
+                return;
+
+            int shell = -1;
+            int held = 0;
+
+            for (int i = 0; i < renderers.Length; i++)
+            {
+                Bounds outer = RendererBounds(renderers[i]);
+                if (outer.size.sqrMagnitude < 1e-10f)
+                    continue;
+
+                int count = 0;
+                for (int j = 0; j < renderers.Length; j++)
+                {
+                    if (j == i)
+                        continue;
+
+                    Bounds inner = RendererBounds(renderers[j]);
+                    if (inner.size.sqrMagnitude < 1e-10f)
+                        continue;
+                    if (outer.Contains(inner.min) && outer.Contains(inner.max))
+                        count++;
+                }
+
+                if (count > held)
+                {
+                    held = count;
+                    shell = i;
+                }
+            }
+
+            if (shell >= 0 && held > 0)
+                renderers[shell].enabled = false;
+        }
+
+        /// <summary>The renderers still switched on, which is the prop as anyone will see it.</summary>
+        private static Renderer[] Visible(Renderer[] renderers)
+        {
+            int count = 0;
+            for (int i = 0; i < renderers.Length; i++)
+                if (renderers[i].enabled)
+                    count++;
+
+            if (count == 0 || count == renderers.Length)
+                return renderers;
+
+            var visible = new Renderer[count];
+            int at = 0;
+            for (int i = 0; i < renderers.Length; i++)
+                if (renderers[i].enabled)
+                    visible[at++] = renderers[i];
+            return visible;
         }
 
         /// <summary>
@@ -228,17 +310,7 @@ namespace CatchIfYouCan.Art
 
             for (int i = 0; i < renderers.Length; i++)
             {
-                Bounds b;
-                var filter = renderers[i].GetComponent<MeshFilter>();
-                if (filter != null && filter.sharedMesh != null)
-                {
-                    Bounds local = filter.sharedMesh.bounds;
-                    b = TransformBounds(renderers[i].transform, local);
-                }
-                else
-                {
-                    b = renderers[i].bounds;
-                }
+                Bounds b = RendererBounds(renderers[i]);
 
                 if (b.size.sqrMagnitude < 1e-10f)
                     continue;
@@ -263,6 +335,18 @@ namespace CatchIfYouCan.Art
             for (int i = 1; i < renderers.Length; i++)
                 fallback.Encapsulate(renderers[i].bounds);
             return fallback;
+        }
+
+        /// <summary>
+        /// One renderer's world box, from its mesh rather than from <see cref="Renderer.bounds"/>
+        /// where it can be, for the reason given above.
+        /// </summary>
+        private static Bounds RendererBounds(Renderer renderer)
+        {
+            var filter = renderer.GetComponent<MeshFilter>();
+            if (filter != null && filter.sharedMesh != null)
+                return TransformBounds(renderer.transform, filter.sharedMesh.bounds);
+            return renderer.bounds;
         }
 
         /// <summary>The world box of a local box, from its eight corners.</summary>
