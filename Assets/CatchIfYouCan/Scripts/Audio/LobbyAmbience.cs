@@ -4,7 +4,7 @@ using UnityEngine;
 namespace CatchIfYouCan.Audio
 {
     /// <summary>
-    /// Everything the interactive room is supposed to sound like, driven from one place.
+    /// Everything the lobby is supposed to sound like, driven from one place.
     ///
     /// <para>
     /// Four layers, deliberately ranked. A looping night outside the window sits underneath
@@ -30,8 +30,8 @@ namespace CatchIfYouCan.Audio
     /// </para>
     /// </summary>
     [DisallowMultipleComponent]
-    [AddComponentMenu("Catch If You Can/Interactive Room Ambience")]
-    public sealed class InteractiveRoomAmbience : MonoBehaviour
+    [AddComponentMenu("Catch If You Can/Lobby Ambience")]
+    public sealed class LobbyAmbience : MonoBehaviour
     {
         // ---- authored data ------------------------------------------------------------------
 

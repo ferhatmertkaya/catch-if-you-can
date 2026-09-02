@@ -47112,7 +47112,7 @@ GameObject:
   m_Component:
   - component: {fileID: 7311220700000011}
   m_Layer: 0
-  m_Name: MainMenu_InteractiveRoom
+  m_Name: MainMenu_Lobby
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -47171,6 +47171,7 @@ Transform:
   - {fileID: 7311221400000011}
   - {fileID: 7311221500000011}
   - {fileID: 7311221500000021}
+  - {fileID: 7311221600000011}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &7311220700000020
@@ -47183,7 +47184,7 @@ GameObject:
   m_Component:
   - component: {fileID: 7311220700000021}
   m_Layer: 0
-  m_Name: InteractiveRoom_PlayerSpawn
+  m_Name: Lobby_PlayerSpawn
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -47218,7 +47219,7 @@ GameObject:
   - component: {fileID: 7311220700000101}
   - component: {fileID: 7311221000000200}
   m_Layer: 0
-  m_Name: InteractiveRoom_Floor
+  m_Name: Lobby_Floor
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -47330,7 +47331,7 @@ GameObject:
   - component: {fileID: 7311220700000112}
   - component: {fileID: 7311220700000111}
   m_Layer: 0
-  m_Name: InteractiveRoom_Ceiling
+  m_Name: Lobby_Ceiling
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -47442,7 +47443,7 @@ GameObject:
   - component: {fileID: 7311220700000122}
   - component: {fileID: 7311220700000121}
   m_Layer: 0
-  m_Name: InteractiveRoom_Wall_West
+  m_Name: Lobby_Wall_West
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -47554,7 +47555,7 @@ GameObject:
   - component: {fileID: 7311220700000132}
   - component: {fileID: 7311220700000131}
   m_Layer: 0
-  m_Name: InteractiveRoom_Wall_East_South
+  m_Name: Lobby_Wall_East_South
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -47666,7 +47667,7 @@ GameObject:
   - component: {fileID: 7311220700000142}
   - component: {fileID: 7311220700000141}
   m_Layer: 0
-  m_Name: InteractiveRoom_Wall_South
+  m_Name: Lobby_Wall_South
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -47778,7 +47779,7 @@ GameObject:
   - component: {fileID: 7311220700000152}
   - component: {fileID: 7311220700000151}
   m_Layer: 0
-  m_Name: InteractiveRoom_Wall_North_Left
+  m_Name: Lobby_Wall_North_Left
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -47890,7 +47891,7 @@ GameObject:
   - component: {fileID: 7311220700000162}
   - component: {fileID: 7311220700000161}
   m_Layer: 0
-  m_Name: InteractiveRoom_SafetyFloor
+  m_Name: Lobby_SafetyFloor
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -48078,7 +48079,7 @@ GameObject:
   - component: {fileID: 7311220900000012}
   - component: {fileID: 7311220900000013}
   m_Layer: 0
-  m_Name: InteractiveRoom_KeyLight
+  m_Name: Lobby_KeyLight
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -48205,7 +48206,7 @@ GameObject:
   - component: {fileID: 7311220900000022}
   - component: {fileID: 7311220900000023}
   m_Layer: 0
-  m_Name: InteractiveRoom_LampWarm
+  m_Name: Lobby_LampWarm
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -48332,7 +48333,7 @@ GameObject:
   - component: {fileID: 7311220900000032}
   - component: {fileID: 7311220900000033}
   m_Layer: 0
-  m_Name: InteractiveRoom_FillCool
+  m_Name: Lobby_FillCool
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -48458,7 +48459,7 @@ GameObject:
   - component: {fileID: 7311220900000041}
   - component: {fileID: 7311220900000042}
   m_Layer: 0
-  m_Name: InteractiveRoom_PostProcessing
+  m_Name: Lobby_PostProcessing
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -48509,7 +48510,7 @@ GameObject:
   - component: {fileID: 7311221000000012}
   - component: {fileID: 7311221000000011}
   m_Layer: 0
-  m_Name: InteractiveRoom_Wall_North_Right
+  m_Name: Lobby_Wall_North_Right
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -48621,7 +48622,7 @@ GameObject:
   - component: {fileID: 7311221000000022}
   - component: {fileID: 7311221000000021}
   m_Layer: 0
-  m_Name: InteractiveRoom_Wall_North_Header
+  m_Name: Lobby_Wall_North_Header
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -48734,7 +48735,7 @@ GameObject:
   - component: {fileID: 7311221000000031}
   - component: {fileID: 7311221000000035}
   m_Layer: 0
-  m_Name: InteractiveRoom_Door
+  m_Name: Lobby_Door
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -48770,7 +48771,7 @@ MeshRenderer:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 7311221000000030}
-  m_Enabled: 1
+  m_Enabled: 0
   m_CastShadows: 1
   m_ReceiveShadows: 1
   m_DynamicOccludee: 1
@@ -48871,7 +48872,7 @@ GameObject:
   - component: {fileID: 7311221000000043}
   - component: {fileID: 7311221000000042}
   m_Layer: 0
-  m_Name: InteractiveRoom_DoorJamb_Left
+  m_Name: Lobby_DoorJamb_Left
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -48961,7 +48962,7 @@ GameObject:
   - component: {fileID: 7311221000000053}
   - component: {fileID: 7311221000000052}
   m_Layer: 0
-  m_Name: InteractiveRoom_DoorJamb_Right
+  m_Name: Lobby_DoorJamb_Right
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -49051,7 +49052,7 @@ GameObject:
   - component: {fileID: 7311221000000063}
   - component: {fileID: 7311221000000062}
   m_Layer: 0
-  m_Name: InteractiveRoom_DoorLintel
+  m_Name: Lobby_DoorLintel
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -49141,7 +49142,7 @@ GameObject:
   - component: {fileID: 7311221000000073}
   - component: {fileID: 7311221000000072}
   m_Layer: 0
-  m_Name: InteractiveRoom_Skirting_West
+  m_Name: Lobby_Skirting_West
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -49231,7 +49232,7 @@ GameObject:
   - component: {fileID: 7311221000000083}
   - component: {fileID: 7311221000000082}
   m_Layer: 0
-  m_Name: InteractiveRoom_Skirting_East
+  m_Name: Lobby_Skirting_East
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -49321,7 +49322,7 @@ GameObject:
   - component: {fileID: 7311221000000093}
   - component: {fileID: 7311221000000092}
   m_Layer: 0
-  m_Name: InteractiveRoom_Skirting_South
+  m_Name: Lobby_Skirting_South
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -49411,7 +49412,7 @@ GameObject:
   - component: {fileID: 7311221000000103}
   - component: {fileID: 7311221000000102}
   m_Layer: 0
-  m_Name: InteractiveRoom_Skirting_North_L
+  m_Name: Lobby_Skirting_North_L
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -49501,7 +49502,7 @@ GameObject:
   - component: {fileID: 7311221000000113}
   - component: {fileID: 7311221000000112}
   m_Layer: 0
-  m_Name: InteractiveRoom_Skirting_North_R
+  m_Name: Lobby_Skirting_North_R
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -49606,7 +49607,7 @@ GameObject:
   - component: {fileID: 7311221100000012}
   - component: {fileID: 7311221100000011}
   m_Layer: 0
-  m_Name: InteractiveRoom_Wall_East_North
+  m_Name: Lobby_Wall_East_North
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -49718,7 +49719,7 @@ GameObject:
   - component: {fileID: 7311221100000022}
   - component: {fileID: 7311221100000021}
   m_Layer: 0
-  m_Name: InteractiveRoom_Wall_East_Sill
+  m_Name: Lobby_Wall_East_Sill
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -49830,7 +49831,7 @@ GameObject:
   - component: {fileID: 7311221100000032}
   - component: {fileID: 7311221100000031}
   m_Layer: 0
-  m_Name: InteractiveRoom_Wall_East_Header
+  m_Name: Lobby_Wall_East_Header
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -49942,7 +49943,7 @@ GameObject:
   - component: {fileID: 7311221100000042}
   - component: {fileID: 7311221100000041}
   m_Layer: 0
-  m_Name: InteractiveRoom_Window_Blocker
+  m_Name: Lobby_Window_Blocker
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -50053,7 +50054,7 @@ GameObject:
   - component: {fileID: 7311221100000053}
   - component: {fileID: 7311221100000052}
   m_Layer: 0
-  m_Name: InteractiveRoom_Window_Glass
+  m_Name: Lobby_Window_Glass
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -50143,7 +50144,7 @@ GameObject:
   - component: {fileID: 7311221100000063}
   - component: {fileID: 7311221100000062}
   m_Layer: 0
-  m_Name: InteractiveRoom_Window_JambS
+  m_Name: Lobby_Window_JambS
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -50233,7 +50234,7 @@ GameObject:
   - component: {fileID: 7311221100000073}
   - component: {fileID: 7311221100000072}
   m_Layer: 0
-  m_Name: InteractiveRoom_Window_JambN
+  m_Name: Lobby_Window_JambN
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -50323,7 +50324,7 @@ GameObject:
   - component: {fileID: 7311221100000083}
   - component: {fileID: 7311221100000082}
   m_Layer: 0
-  m_Name: InteractiveRoom_Window_Head
+  m_Name: Lobby_Window_Head
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -50413,7 +50414,7 @@ GameObject:
   - component: {fileID: 7311221100000093}
   - component: {fileID: 7311221100000092}
   m_Layer: 0
-  m_Name: InteractiveRoom_Window_Sill
+  m_Name: Lobby_Window_Sill
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -50503,7 +50504,7 @@ GameObject:
   - component: {fileID: 7311221100000103}
   - component: {fileID: 7311221100000102}
   m_Layer: 0
-  m_Name: InteractiveRoom_Window_MullionV
+  m_Name: Lobby_Window_MullionV
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -50593,7 +50594,7 @@ GameObject:
   - component: {fileID: 7311221100000113}
   - component: {fileID: 7311221100000112}
   m_Layer: 0
-  m_Name: InteractiveRoom_Window_MullionH
+  m_Name: Lobby_Window_MullionH
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -50682,7 +50683,7 @@ GameObject:
   - component: {fileID: 7311221100000204}
   - component: {fileID: 7311221100000205}
   m_Layer: 0
-  m_Name: InteractiveRoom_Exterior
+  m_Name: Lobby_Exterior
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -50719,7 +50720,7 @@ GameObject:
   - component: {fileID: 7311221100000212}
   - component: {fileID: 7311221100000213}
   m_Layer: 0
-  m_Name: InteractiveRoom_WindowMoonlight
+  m_Name: Lobby_WindowMoonlight
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -52146,7 +52147,7 @@ GameObject:
   - component: {fileID: 7311221200000101}
   - component: {fileID: 7311221200000102}
   m_Layer: 0
-  m_Name: InteractiveRoom_Ambience
+  m_Name: Lobby_Ambience
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -52277,7 +52278,7 @@ GameObject:
   - component: {fileID: 7311221500000011}
   - component: {fileID: 7311221500000012}
   m_Layer: 0
-  m_Name: InteractiveRoom_Armchair
+  m_Name: Lobby_Armchair
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -52331,7 +52332,7 @@ GameObject:
   - component: {fileID: 7311221500000021}
   - component: {fileID: 7311221500000022}
   m_Layer: 0
-  m_Name: InteractiveRoom_AntiqueTable
+  m_Name: Lobby_AntiqueTable
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -52374,6 +52375,61 @@ MonoBehaviour:
   colliderInset: 0.03
   colliderHeightFraction: 1
   castShadows: 1
+--- !u!1 &7311221600000010
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 7311221600000011}
+  - component: {fileID: 7311221600000012}
+  m_Layer: 0
+  m_Name: Lobby_Door_Model
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &7311221600000011
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 7311221600000010}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: 20, y: 0, z: 5.1}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 7311220700000011}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &7311221600000012
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 7311221600000010}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 3a80f52d7c194e6bb1d90c47e2f6538a, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::CatchIfYouCan.Art.RoomProp
+  modelResourcePath: Props/CIYC_RoomDoor
+  fitAxis: 0
+  targetSize: 2.69
+  yawDegrees: 0
+  standOnFloor: 0
+  centreHorizontally: 0
+  verticalOffset: 0
+  addCollider: 0
+  colliderInset: 0
+  colliderHeightFraction: 1
+  castShadows: 1
 --- !u!1 &7311221400000010
 GameObject:
   m_ObjectHideFlags: 0
@@ -52385,7 +52441,7 @@ GameObject:
   - component: {fileID: 7311221400000011}
   - component: {fileID: 7311221400000012}
   m_Layer: 0
-  m_Name: InteractiveRoom_MirrorCorner
+  m_Name: Lobby_MirrorCorner
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -52452,7 +52508,7 @@ GameObject:
   - component: {fileID: 7311221300000013}
   - component: {fileID: 7311221300000014}
   m_Layer: 0
-  m_Name: InteractiveRoom_MoonShaft
+  m_Name: Lobby_MoonShaft
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0

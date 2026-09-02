@@ -110,7 +110,7 @@ namespace CatchIfYouCan.Art
 
         private void OnEnable()
         {
-            // Never restarts once the menu has handed over to the interactive room.
+            // Never restarts once the menu has handed over to the lobby.
             if (_events.Count > 0 && !CinematicModeEnded)
                 _loop = StartCoroutine(EventLoop());
         }

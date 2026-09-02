@@ -144,6 +144,12 @@ namespace CatchIfYouCan.Player
         [Tooltip("The thumb, which closes less and later than the fingers.")]
         [SerializeField] private Vector3 thumbGripDegrees = new Vector3(24f, 20f, 14f);
 
+        [Tooltip("How much of the grip the index finger takes. Less than the rest, because a " +
+                 "torch is held with the index lying along the barrel near the switch rather " +
+                 "than wrapped round it like the other three - which is most of the difference " +
+                 "between holding a torch and making a fist round one.")]
+        [SerializeField, Range(0.2f, 1f)] private float gripIndexFraction = 0.62f;
+
         [Tooltip("Which way the fingers fold. The axis itself is measured from the rig every " +
                  "frame - across the knuckles, from the index finger's own direction and the " +
                  "line to the little finger - so it is correct whatever the bones' local axes " +
@@ -563,9 +569,11 @@ namespace CatchIfYouCan.Player
 
             for (int f = 0; f < _fingers.Length; f++)
             {
-                RotateWorld(_fingers[f][0], axis, gripDegrees.x * _grip);
-                RotateWorld(_fingers[f][1], axis, gripDegrees.y * _grip);
-                RotateWorld(_fingers[f][2], axis, gripDegrees.z * _grip);
+                // Index is _fingers[0]; it stays straighter than the rest.
+                float amount = _grip * (f == 0 ? gripIndexFraction : 1f);
+                RotateWorld(_fingers[f][0], axis, gripDegrees.x * amount);
+                RotateWorld(_fingers[f][1], axis, gripDegrees.y * amount);
+                RotateWorld(_fingers[f][2], axis, gripDegrees.z * amount);
             }
 
             if (_thumb == null)

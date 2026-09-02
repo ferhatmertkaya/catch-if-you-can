@@ -30,8 +30,8 @@ namespace CatchIfYouCan.Art
     /// </para>
     /// </summary>
     [DisallowMultipleComponent]
-    [AddComponentMenu("Catch If You Can/Interactive Room Exterior")]
-    public sealed class InteractiveRoomExterior : MonoBehaviour
+    [AddComponentMenu("Catch If You Can/Lobby Exterior")]
+    public sealed class LobbyExterior : MonoBehaviour
     {
         [Header("Sky")]
         [Tooltip("Skybox material, loaded from Resources so the built-in panoramic shader is " +

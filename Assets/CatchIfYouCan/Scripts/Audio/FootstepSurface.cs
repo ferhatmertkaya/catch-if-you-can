@@ -14,7 +14,7 @@ namespace CatchIfYouCan.Audio
     /// </para>
     ///
     /// <para>
-    /// Put it on the collider, or on any parent of it. Only the interactive room's floor carries
+    /// Put it on the collider, or on any parent of it. Only the lobby's floor carries
     /// one today; everything else falls back to the profile's default, which is what keeps this
     /// from turning into a surface database before there is anything to put in one.
     /// </para>

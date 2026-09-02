@@ -58,6 +58,12 @@ namespace CatchIfYouCan.Art
         [Tooltip("Centre the model horizontally on this object, for the same reason.")]
         [SerializeField] private bool centreHorizontally = true;
 
+        [Tooltip("Nudge up or down after everything else, in metres. For models whose bounds " +
+                 "include something below the part that is supposed to touch the floor - a " +
+                 "threshold, a backing plane - where sitting the bounds on the floor leaves the " +
+                 "visible object hovering above it.")]
+        [SerializeField] private float verticalOffset;
+
         [Header("Collision")]
         [SerializeField] private bool addCollider = true;
 
@@ -153,6 +159,7 @@ namespace CatchIfYouCan.Art
             }
             if (standOnFloor)
                 shift.y = transform.position.y - bounds.min.y;
+            shift.y += verticalOffset;
 
             _model.position += shift;
             bounds.center += shift;

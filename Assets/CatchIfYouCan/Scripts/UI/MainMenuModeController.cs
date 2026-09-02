@@ -8,10 +8,10 @@ using UnityEngine.UI;
 namespace CatchIfYouCan.UI
 {
     /// <summary>
-    /// Owns the one-way handover from the cinematic main menu to the interactive room.
+    /// Owns the one-way handover from the cinematic main menu to the lobby.
     ///
     /// <para>
-    /// The menu is a fixed camera looking at a diorama; the interactive room is a walkable
+    /// The menu is a fixed camera looking at a diorama; the lobby is a walkable
     /// space. This component is the only thing that knows both exist. It does not run either of
     /// them — the horror director still owns its events, the phone still owns its audio, the
     /// player controller still owns movement. It only tells them that cinematic mode is over,
@@ -33,7 +33,7 @@ namespace CatchIfYouCan.UI
         {
             CinematicMainMenu,
             TransitioningToInteractive,
-            InteractiveRoom
+            Lobby
         }
 
         [Header("Cinematic systems handed over")]
@@ -58,7 +58,7 @@ namespace CatchIfYouCan.UI
         [SerializeField] private Camera cinematicCamera;
         [SerializeField] private AudioListener cinematicAudioListener;
 
-        [Header("Interactive room")]
+        [Header("Lobby")]
         [Tooltip("Where the player is placed. A marker in the scene, so the spawn can be moved " +
                  "without touching code.")]
         [SerializeField] private Transform playerSpawn;
@@ -69,16 +69,16 @@ namespace CatchIfYouCan.UI
 
         [Tooltip("Chooses the night outside the window and puts it on the player's camera. The " +
                  "sky is per-camera on purpose, so the cinematic menu never inherits one.")]
-        [SerializeField] private CatchIfYouCan.Art.InteractiveRoomExterior roomExterior;
+        [SerializeField] private CatchIfYouCan.Art.LobbyExterior roomExterior;
 
-        [Tooltip("The interactive room's spatial ambience. Left empty the room is simply silent.")]
-        [SerializeField] private CatchIfYouCan.Audio.InteractiveRoomAmbience roomAmbience;
+        [Tooltip("The lobby's spatial ambience. Left empty the room is simply silent.")]
+        [SerializeField] private CatchIfYouCan.Audio.LobbyAmbience roomAmbience;
 
         [Header("Transition")]
         [Tooltip("Seconds to fade down to black before the swap.")]
         [SerializeField, Min(0f)] private float fadeOutDuration = 0.25f;
 
-        [Tooltip("Seconds to fade the interactive room up.")]
+        [Tooltip("Seconds to fade the lobby up.")]
         [SerializeField, Min(0f)] private float fadeInDuration = 0.3f;
 
         [Tooltip("How long the menu music takes to reach silence. Long enough to read as the " +
@@ -110,7 +110,7 @@ namespace CatchIfYouCan.UI
         public MenuMode Mode { get; private set; } = MenuMode.CinematicMainMenu;
 
         /// <summary>True only while the cinematic menu is up and a tap would do something.</summary>
-        public bool CanEnterInteractiveRoom => Mode == MenuMode.CinematicMainMenu;
+        public bool CanEnterLobby => Mode == MenuMode.CinematicMainMenu;
 
         private void Awake()
         {
@@ -133,9 +133,9 @@ namespace CatchIfYouCan.UI
         /// Starts the one-way handover. Safe to call repeatedly: everything after the first call
         /// is ignored until — and after — the transition completes.
         /// </summary>
-        public void EnterInteractiveRoom()
+        public void EnterLobby()
         {
-            if (!CanEnterInteractiveRoom)
+            if (!CanEnterLobby)
                 return;
 
             Mode = MenuMode.TransitioningToInteractive;
@@ -145,7 +145,7 @@ namespace CatchIfYouCan.UI
         private IEnumerator TransitionRoutine()
         {
             if (logTransition)
-                Debug.Log("[CIYC] Menu: entering interactive room", this);
+                Debug.Log("[CIYC] Menu: entering lobby", this);
 
             // 1. The music starts leaving on the frame of the tap, running alongside everything
             //    below rather than after it. Waiting until the screen is already black to begin
@@ -222,7 +222,7 @@ namespace CatchIfYouCan.UI
             if (cinematicCamera != null)
                 cinematicCamera.enabled = false;
 
-            Mode = MenuMode.InteractiveRoom;
+            Mode = MenuMode.Lobby;
 
             // 10. Reveal, then arm input. Enabling movement and look before the fade finishes is
             //     what would let the tap that started all this carry through as a look delta,
@@ -236,7 +236,7 @@ namespace CatchIfYouCan.UI
             DestroyFadeOverlay();
 
             if (logTransition)
-                Debug.Log("[CIYC] Menu: interactive room live", this);
+                Debug.Log("[CIYC] Menu: lobby live", this);
         }
 
         private void SpawnPlayer()

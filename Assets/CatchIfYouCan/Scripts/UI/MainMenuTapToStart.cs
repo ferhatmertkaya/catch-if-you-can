@@ -44,7 +44,7 @@ namespace CatchIfYouCan.UI
 
         private void Update()
         {
-            if (_consumed || modeController == null || !modeController.CanEnterInteractiveRoom)
+            if (_consumed || modeController == null || !modeController.CanEnterLobby)
                 return;
 
             // The intro owns the screen first; a tap during it is not a menu tap.
@@ -63,7 +63,7 @@ namespace CatchIfYouCan.UI
             // Latched here as well as in the controller: this stops Update doing any further
             // work at all once the handover is under way.
             _consumed = true;
-            modeController.EnterInteractiveRoom();
+            modeController.EnterLobby();
         }
 
         private static bool TapDetected()

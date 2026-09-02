@@ -18,7 +18,7 @@ namespace CatchIfYouCan.Art
     /// <para>
     /// The scene's Sun Source is the Main Menu's own directional, and rewriting that asset field
     /// would change how the menu is lit. So the swap happens here, at runtime, on enable: this
-    /// component lives under the interactive room, which is inactive until the handover, so the
+    /// component lives under the lobby, which is inactive until the handover, so the
     /// menu is never touched and the previous sun is restored the moment the room goes away.
     /// </para>
     ///
