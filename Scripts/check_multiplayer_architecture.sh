@@ -247,6 +247,30 @@ else
   fail "SessionMode or MultiplayerSessionService is missing"
 fi
 
+# An offline session has one player and it is this machine's. A remote presence there is a
+# peer in a session that has no peers, and everything that asks "who is here" would believe
+# it. The capacity check catches a second player; only this catches a single remote one.
+PRESENCE="$SCRIPTS/Player/PlayerPresence.cs"
+if [ -f "$PRESENCE" ]; then
+  grep -q 'AllowsRemotePlayers' "$PRESENCE" \
+    && ok "offline refuses to register a remote player" \
+    || fail "PlayerPresence does not enforce AllowsRemotePlayers; offline can hold a peer"
+fi
+
+# A failed online session must stay online and failed. A bare Reset in a failure handler is
+# exactly how one becomes offline without anybody deciding that it should.
+if [ -f "$SERVICE" ]; then
+  # The declaration, not a mention. A <see cref="EndSession"/> in a doc comment satisfied a
+  # plain grep for the name, so the check passed while the method had been renamed away.
+  grep -qE 'static void EndSession\(' "$SERVICE" \
+    && ok "ending a session on purpose is a named path with a reason" \
+    || fail "there is no named EndSession; failure and deliberate teardown are the same call"
+
+  grep -q 'Refused to reset a live' "$SERVICE" \
+    && ok "Reset refuses to silently downgrade a live online session" \
+    || fail "Reset can silently turn a live online session into an offline one"
+fi
+
 # OfflineSession is what single player is. Losing it means offline has no implementation.
 grep -q 'class OfflineSession' "$SESSION/IMultiplayerSession.cs" 2>/dev/null \
   && ok "OfflineSession is still present" \

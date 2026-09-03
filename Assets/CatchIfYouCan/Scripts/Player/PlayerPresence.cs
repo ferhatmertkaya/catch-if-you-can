@@ -94,6 +94,28 @@ namespace CatchIfYouCan.Player
         /// </summary>
         public void Bind(bool isLocal, int clientId)
         {
+            // An offline session has one player and that player is this machine's. A remote
+            // presence there is not a small inconsistency - it is a peer in a session that has
+            // no peers, and everything downstream that asks "who is here" would believe it.
+            //
+            // The capacity check in OnEnable catches a SECOND player; it cannot catch a single
+            // one that arrives already marked remote, because one is within capacity. This is
+            // the check for that case.
+            if (!isLocal &&
+                !Session.SessionModeRules.AllowsRemotePlayers(
+                    Session.MultiplayerSessionService.Mode))
+            {
+                Core.CIYCLog.Error(
+                    "Refused to bind '" + name + "' as a remote player: the session is " +
+                    Session.MultiplayerSessionService.Mode +
+                    ", which has no remote players. Something is spawning peers offline.");
+
+                // Removed rather than downgraded to local. Quietly promoting somebody else's
+                // character into this machine's player would hand it the camera and the input.
+                Present.Remove(this);
+                return;
+            }
+
             IsLocal = isLocal;
             ClientId = clientId;
         }

@@ -120,22 +120,76 @@ namespace CatchIfYouCan.Session
         }
 
         /// <summary>
-        /// Back to single player: offline session, local authority.
+        /// Ends a session deliberately and returns to offline with local authority.
         ///
         /// <para>
-        /// Called when a session ends for any reason, including badly. A game that has lost its
-        /// connection must still be a game, and the safe state is the one where the local
-        /// player owns everything - not one where nothing in the world will answer.
+        /// <b>The named way, and the only way, to leave a live online session.</b> Ending one
+        /// is a decision somebody made - the host left, the player quit to the menu, the
+        /// mission finished - and it is stated here with a reason that reaches the log.
+        /// </para>
+        ///
+        /// <para>
+        /// This is deliberately not the failure path. An online session that could not
+        /// authenticate, could not allocate a relay or lost its connection stays Online and
+        /// Failed, so the player is told that online failed rather than quietly discovering
+        /// they are in single player. Turning a failure into an offline session is the silent
+        /// fallback the mode contract forbids.
         /// </para>
         /// </summary>
-        public static void Reset()
+        public static void EndSession(string reason)
         {
+            if (_current != null && _current.Mode == SessionMode.Online)
+            {
+                CIYCLog.Info("Online session ended: " +
+                             (string.IsNullOrEmpty(reason) ? "no reason given" : reason));
+            }
+
             _current = new OfflineSession();
             SessionAuthority.Provider = null;
         }
 
+        /// <summary>
+        /// Returns to the starting state: no session, local authority.
+        ///
+        /// <para>
+        /// For a domain reload and for a process that has nothing live. It <b>refuses</b> to
+        /// discard a live online session, because a bare Reset in a failure handler is exactly
+        /// how an online session becomes an offline one without anybody deciding that it
+        /// should. Ending one on purpose goes through <see cref="EndSession"/>, which says why.
+        /// </para>
+        /// </summary>
+        public static void Reset()
+        {
+            if (_current != null &&
+                _current.Mode == SessionMode.Online &&
+                _current.State != SessionState.Offline)
+            {
+                CIYCLog.Error(
+                    "Refused to reset a live " + _current.State + " online session to offline. " +
+                    "A failed online session stays online and failed so the player can be told; " +
+                    "ending one on purpose goes through EndSession(reason).");
+                return;
+            }
+
+            _current = new OfflineSession();
+            SessionAuthority.Provider = null;
+        }
+
+        /// <summary>
+        /// A fresh process has no session, whatever the last one was doing.
+        ///
+        /// <para>
+        /// Assigns directly rather than going through <see cref="Reset"/>, which would refuse
+        /// if a live online session were still held in a static from the previous play session.
+        /// Entering play mode is not a fallback; there is nothing to fall back from.
+        /// </para>
+        /// </summary>
         [UnityEngine.RuntimeInitializeOnLoadMethod(
             UnityEngine.RuntimeInitializeLoadType.SubsystemRegistration)]
-        private static void ResetOnPlay() => Reset();
+        private static void ResetOnPlay()
+        {
+            _current = new OfflineSession();
+            SessionAuthority.Provider = null;
+        }
     }
 }
