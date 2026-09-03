@@ -34,15 +34,31 @@ built — see §8.
 
 ## 2. Topology **[Slice]**
 
-**Host-authoritative, client-predicted movement only.** Not lockstep, not
-deterministic simulation.
+**Two session modes, chosen explicitly, and never inferred.**
+
+- **Offline solo** — exactly one local player, and no dependency on anything
+  outside the device. No Authentication, no Lobby, no Relay, no transport, no
+  backend, no account. The whole mission loop works in airplane mode. See
+  `Docs/MULTIPLAYER_RUNTIME_ARCHITECTURE.md` §10.
+- **Online** — 1 to `MultiplayerProtocol.MaxPlayers` players, one of whom is the
+  host. A host alone at 1/8 is a valid session; it is what waiting for friends
+  looks like. What matchmaking later advertises as a good co-op size (2–8) is a
+  separate question from what the contract permits.
+
+Mode is fixed for a session's lifetime. Connectivity appearing does not promote
+an offline mission; connectivity disappearing does not demote an online one; an
+online setup that fails reports an online failure rather than quietly becoming
+single player.
+
+**Online is host-authoritative, client-predicted movement only.** Not lockstep,
+not deterministic simulation.
 
 | | |
 |---|---|
 | Model | One player is host (server + client in one process) |
 | Transport | Unity Transport (UTP) |
 | Connectivity | Relay for NAT traversal; Lobby for discovery |
-| Max players | 4 |
+| Max players | 8 (1 host + up to 7 clients; the host occupies one of the eight) |
 | Tick | 20 Hz server tick, client-side interpolation |
 
 Determinism buys us exactly one thing: **not having to replicate the house.**
@@ -250,7 +266,9 @@ public lobby. Not a hardened threat model.
 Target: **≤ 8 KB/s per client steady state**, mobile-first, assume cellular.
 
 - House: 0 bytes after `MissionStart`. This is the whole point.
-- Player state: 4 players × 20 Hz × ~20 B quantized ≈ 1.6 KB/s.
+- Player state: 8 players × 20 Hz × ~20 B quantized ≈ 3.2 KB/s.
+  (Was 4 players ≈ 1.6 KB/s before V4.1 raised the capacity. The tick rate did not
+  change; only the number of players being described at it.)
 - Ghost: only when observable by that client.
 - Equipment: on state change, not per tick.
 - Audio: never replicate cosmetic audio. Replicate the *event*; each client

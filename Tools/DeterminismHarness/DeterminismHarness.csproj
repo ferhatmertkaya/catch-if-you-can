@@ -24,6 +24,20 @@
 
   <ItemGroup>
     <Compile Include="../../Assets/CatchIfYouCan/Scripts/Procedural/Deterministic/**/*.cs" />
+
+    <!--
+      One file from the session layer, named individually rather than by wildcard.
+
+      SessionMode carries the offline/online product contract and is deliberately pure - it
+      has no usings at all and reaches the protocol by full name - so it compiles here and
+      the contract becomes testable without Unity, which is the only way it gets tested at
+      all today.
+
+      Including it also enforces that purity: the moment somebody adds a UnityEngine
+      dependency to SessionMode.cs, this build fails and CI says so. The rest of
+      Scripts/Session is not included, because it legitimately uses UnityEngine.
+    -->
+    <Compile Include="../../Assets/CatchIfYouCan/Scripts/Session/SessionMode.cs" />
     <Compile Include="Program.cs" />
     <Compile Include="DeterminismSuite.cs" />
   </ItemGroup>

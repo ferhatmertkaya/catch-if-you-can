@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Text;
 using CatchIfYouCan.Procedural;
 using CatchIfYouCan.Procedural.Deterministic;
+using CatchIfYouCan.Session;
 
 namespace CatchIfYouCan.Tools
 {
@@ -54,6 +55,8 @@ namespace CatchIfYouCan.Tools
             TestValidationHolds();
             TestQuantizationContract();
             TestSessionHandshake();
+            TestSessionCapacity();
+            TestSessionMode();
 
             Console.WriteLine();
             Console.WriteLine($"passed: {_passed}   failed: {_failed}");
@@ -78,8 +81,11 @@ namespace CatchIfYouCan.Tools
             var content = Content();
             var host = MatchConfig.CreateAuthoritative(424242, map, content);
 
-            Check("handshake: capacity has one source and it is 4",
-                MultiplayerProtocol.MaxPlayers == 4);
+            Check("handshake: capacity has one source and it is 8",
+                MultiplayerProtocol.MaxPlayers == 8);
+
+            Check("handshake: a session is viable with the host alone",
+                MultiplayerProtocol.MinPlayers == 1);
 
             Check("handshake: identical configs admit",
                 SessionCompatibility.CheckJoin(host, host, 1) == JoinVerdict.Admit);
@@ -156,6 +162,208 @@ namespace CatchIfYouCan.Tools
         {
             var layout = HouseLayoutBuilder.Generate(seed, Map(), Content(), out _);
             return LayoutHasher.Compute(layout);
+        }
+
+        /// <summary>
+        /// The eight-player capacity contract, at every boundary that matters.
+        ///
+        /// <para>
+        /// Capacity is the kind of rule that is obviously right when written and quietly wrong
+        /// one edit later: an off-by-one admits a ninth player, and a clamp turns a malformed
+        /// count into a silent success. These are the cases, spelled out, so a future change to
+        /// MaxPlayers is either correct or loud.
+        /// </para>
+        ///
+        /// <para>
+        /// Every expectation is derived from <c>MultiplayerProtocol</c> rather than restated,
+        /// except where the point of the check IS the literal - the contract says eight, and a
+        /// test that reads the constant to check the constant proves nothing.
+        /// </para>
+        /// </summary>
+        private static void TestSessionCapacity()
+        {
+            var map = Map();
+            var content = Content();
+            var host = MatchConfig.CreateAuthoritative(20250903, map, content);
+
+            // --- the population ladder -------------------------------------------------
+            //
+            // The current count includes the host, so "current = 7, join one" is the eighth
+            // player arriving and must be admitted.
+            Check("capacity: an empty session admits the host",
+                MultiplayerProtocol.HasCapacityFor(0));
+
+            Check("capacity: 1 admits a second",
+                MultiplayerProtocol.HasCapacityFor(1));
+
+            Check("capacity: 2 admits a third",
+                MultiplayerProtocol.HasCapacityFor(2));
+
+            Check("capacity: 4 admits a fifth - four is no longer the limit",
+                MultiplayerProtocol.HasCapacityFor(4));
+
+            Check("capacity: 6 admits a seventh",
+                MultiplayerProtocol.HasCapacityFor(6));
+
+            Check("capacity: 7 admits the eighth",
+                MultiplayerProtocol.HasCapacityFor(7));
+
+            Check("capacity: 8 is full",
+                !MultiplayerProtocol.HasCapacityFor(8));
+
+            Check("capacity: 9 is full and stays full",
+                !MultiplayerProtocol.HasCapacityFor(9));
+
+            // A negative count cannot come from counting real players, so it means the caller
+            // is confused. Refused rather than clamped: treating -1 as "plenty of room" would
+            // admit peers into a session nobody can describe.
+            Check("capacity: a negative population is refused rather than clamped",
+                !MultiplayerProtocol.HasCapacityFor(-1));
+
+            // --- the same ladder through the real handshake -----------------------------
+            Check("capacity: the handshake admits the 2nd player",
+                SessionCompatibility.CheckJoin(host, host, 1) == JoinVerdict.Admit);
+
+            Check("capacity: the handshake admits the 5th player",
+                SessionCompatibility.CheckJoin(host, host, 4) == JoinVerdict.Admit);
+
+            Check("capacity: the handshake admits the 8th player",
+                SessionCompatibility.CheckJoin(host, host, 7) == JoinVerdict.Admit);
+
+            Check("capacity: the handshake refuses the 9th with LobbyFull",
+                SessionCompatibility.CheckJoin(host, host, 8) == JoinVerdict.LobbyFull);
+
+            // Capacity is tested before anything else, so a full session says it is full
+            // rather than blaming a version the peer cannot do anything about.
+            var wrongProtocol = new MatchConfig(host.ProtocolVersion + 1, host.GenerationVersion,
+                host.Seed, host.MapDefinitionId, host.ContentHash);
+            Check("capacity: a full session reports LobbyFull even when the peer is also incompatible",
+                SessionCompatibility.CheckJoin(host, wrongProtocol, 8) == JoinVerdict.LobbyFull);
+
+            // --- disconnect and rejoin --------------------------------------------------
+            //
+            // Capacity has no memory: it is a function of the current population. Walking the
+            // sequence proves a seat freed by a departure is genuinely reusable.
+            int population = MultiplayerProtocol.MaxPlayers;
+            Check("rejoin: a full session refuses",
+                !MultiplayerProtocol.HasCapacityFor(population));
+
+            population--;
+            Check("rejoin: one player leaves and the session is 7 of 8",
+                population == 7 && MultiplayerProtocol.HasCapacityFor(population));
+
+            Check("rejoin: the freed seat admits a new peer",
+                SessionCompatibility.CheckJoin(host, host, population) == JoinVerdict.Admit);
+
+            population++;
+            Check("rejoin: the session is full again at 8",
+                population == MultiplayerProtocol.MaxPlayers &&
+                !MultiplayerProtocol.HasCapacityFor(population));
+
+            // --- the host occupies a seat -----------------------------------------------
+            //
+            // Eight means one host plus seven clients. Reading it as host-plus-eight is the
+            // single most likely misreading of this contract and it produces nine players.
+            Check("topology: the maximum is 1 host and 7 clients, totalling 8",
+                1 + 7 == MultiplayerProtocol.MaxPlayers);
+
+            Check("topology: a host alone is a valid session, not a degenerate one",
+                MultiplayerProtocol.MinPlayers == 1 && MultiplayerProtocol.HasCapacityFor(1));
+
+            // --- protocol identity ------------------------------------------------------
+            Check("protocol: the capacity change carries a protocol version that reflects it",
+                MultiplayerProtocol.Version >= 2);
+
+            Check("protocol: builds that disagree about the handshake refuse each other",
+                SessionCompatibility.CheckJoin(host, wrongProtocol, 1)
+                    == JoinVerdict.ProtocolMismatch);
+
+            // Player capacity is not procedural generation. If this ever fails because
+            // MaxPlayers moved, something has confused two unrelated contracts.
+            Check("protocol: generation version is untouched by a capacity change",
+                GenerationVersion.Current == host.GenerationVersion);
+
+            Check("protocol: the tick rate is untouched by a capacity change",
+                MultiplayerProtocol.ServerTickHz == 20);
+        }
+
+        /// <summary>
+        /// The offline/online product contract: what each mode permits, and that the mode is a
+        /// choice rather than something read off the weather.
+        ///
+        /// <para>
+        /// These run in the engine-free harness because <c>SessionMode</c> is deliberately pure.
+        /// That is the only reason this contract gets tested at all right now - the rest of the
+        /// session layer needs Unity, and Unity is not available.
+        /// </para>
+        /// </summary>
+        private static void TestSessionMode()
+        {
+            // --- offline is exactly one player, and needs nothing --------------------------
+            Check("offline: exactly one player",
+                SessionModeRules.MaxPlayers(SessionMode.Offline) == 1 &&
+                SessionModeRules.MinPlayers(SessionMode.Offline) == 1);
+
+            Check("offline: one player is a valid population",
+                SessionModeRules.IsValidPopulation(SessionMode.Offline, 1));
+
+            Check("offline: two players is not",
+                !SessionModeRules.IsValidPopulation(SessionMode.Offline, 2));
+
+            Check("offline: zero players is not",
+                !SessionModeRules.IsValidPopulation(SessionMode.Offline, 0));
+
+            // The whole point of the mode. Authentication, Lobby, Relay and the transport all
+            // ask this before doing anything, which is what makes airplane mode a non-event:
+            // the services are never attempted, so they cannot fail.
+            Check("offline: online services are not permitted",
+                !SessionModeRules.AllowsOnlineServices(SessionMode.Offline));
+
+            Check("offline: a remote player cannot exist",
+                !SessionModeRules.AllowsRemotePlayers(SessionMode.Offline));
+
+            // --- online is one to eight ---------------------------------------------------
+            Check("online: capacity is the protocol maximum and nothing else",
+                SessionModeRules.MaxPlayers(SessionMode.Online) == MultiplayerProtocol.MaxPlayers);
+
+            Check("online: a host alone is valid - 1 of 8 is waiting for friends",
+                SessionModeRules.IsValidPopulation(SessionMode.Online, 1));
+
+            Check("online: two through eight are valid",
+                SessionModeRules.IsValidPopulation(SessionMode.Online, 2) &&
+                SessionModeRules.IsValidPopulation(SessionMode.Online, 4) &&
+                SessionModeRules.IsValidPopulation(SessionMode.Online, 7) &&
+                SessionModeRules.IsValidPopulation(SessionMode.Online, 8));
+
+            Check("online: nine is not a valid population",
+                !SessionModeRules.IsValidPopulation(SessionMode.Online, 9));
+
+            Check("online: zero is not a valid population - somebody has to be hosting",
+                !SessionModeRules.IsValidPopulation(SessionMode.Online, 0));
+
+            Check("online: services are permitted",
+                SessionModeRules.AllowsOnlineServices(SessionMode.Online));
+
+            Check("online: remote players may exist",
+                SessionModeRules.AllowsRemotePlayers(SessionMode.Online));
+
+            // --- the modes are actually different -----------------------------------------
+            //
+            // If these ever collapse into each other, mode has stopped meaning anything and
+            // every rule above is decorative.
+            Check("mode: offline and online are distinct capacities",
+                SessionModeRules.MaxPlayers(SessionMode.Offline) !=
+                SessionModeRules.MaxPlayers(SessionMode.Online));
+
+            Check("mode: offline and online disagree about online services",
+                SessionModeRules.AllowsOnlineServices(SessionMode.Offline) !=
+                SessionModeRules.AllowsOnlineServices(SessionMode.Online));
+
+            // Offline capacity is a product decision - one player - and must not silently
+            // follow the protocol maximum if that changes again.
+            Check("mode: offline capacity does not track the online maximum",
+                SessionModeRules.MaxPlayers(SessionMode.Offline) == 1 &&
+                MultiplayerProtocol.MaxPlayers != 1);
         }
 
         private static void Check(string name, bool condition, string detail = null)

@@ -17,6 +17,13 @@ desktop is a development convenience, not the platform being designed for.
 | `Docs/GHOST_EVIDENCE_AUTHORITY.md` | **Normative.** Any change to what counts as evidence, or to who decides it. |
 | `Docs/CROSSPLAY_PLATFORM_MATRIX.md` | Adding a platform, or anything tempted to branch on one. |
 
+**Two session modes, chosen and never inferred.** Offline solo is exactly one
+local player with no dependency on anything outside the device — no
+Authentication, Lobby, Relay, transport or account, and the whole mission loop
+works in airplane mode. Online is 1–8 players: one host plus up to seven clients,
+the host occupying one of the eight. `MultiplayerProtocol.MaxPlayers` is the only
+place that number lives; everything else derives it.
+
 ## The rules that are enforced, not trusted
 
 - `Scripts/check_determinism.sh` — the deterministic set stays pure and the
@@ -28,7 +35,8 @@ desktop is a development convenience, not the platform being designed for.
   frame. 25 checks.
 - `Scripts/check_multiplayer_architecture.sh` — the deterministic assembly stays
   engine-free, gameplay never reaches a Relay API, remote players never read
-  local input, and ghost decisions stay host-only. 12 checks.
+  local input, ghost decisions stay host-only, and online capacity has exactly
+  one source. 17 checks.
 
 Both run in CI (`.github/workflows/determinism.yml`). Run them locally before
 pushing; they need nothing but a shell.

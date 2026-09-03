@@ -6,8 +6,23 @@ namespace CatchIfYouCan.Development.Labs
     [AddComponentMenu("Catch If You Can/Development/NetworkLabInstaller")]
     public sealed class NetworkLabInstaller : DevelopmentLabInstaller
     {
-        [Tooltip("How many player pads to lay out. Four is the intended party size.")]
-        [SerializeField, Min(1)] private int playerPads = 4;
+        /// <summary>
+        /// One pad per place in a full session, derived rather than declared.
+        ///
+        /// <para>
+        /// This was a serialized four with a comment calling it "the intended party size" - a
+        /// second capacity constant, and exactly the kind that goes stale silently. The
+        /// contract moved to eight and this would still have laid out four pads, so the lab
+        /// built to test an eight-player session would have quietly disagreed with it.
+        /// </para>
+        ///
+        /// <para>
+        /// Read as a property rather than cached in a field so it cannot drift from the
+        /// protocol between a domain reload and a scene build.
+        /// </para>
+        /// </summary>
+        private static int PlayerPads =>
+            Procedural.Deterministic.MultiplayerProtocol.MaxPlayers;
 
         public override DevelopmentLab Lab => DevelopmentLab.Network;
 
@@ -27,7 +42,7 @@ namespace CatchIfYouCan.Development.Labs
 
         private Vector3 PadPosition(int index)
         {
-            float angle = index / Mathf.Max(1f, playerPads) * Mathf.PI * 2f;
+            float angle = index / Mathf.Max(1f, PlayerPads) * Mathf.PI * 2f;
             return new Vector3(Mathf.Sin(angle) * 5f, 0.05f, Mathf.Cos(angle) * 5f);
         }
 
@@ -38,12 +53,14 @@ namespace CatchIfYouCan.Development.Labs
         /// </summary>
         private void BuildPads()
         {
-            for (int i = 0; i < playerPads; i++)
+            for (int i = 0; i < PlayerPads; i++)
             {
                 var position = PadPosition(i);
 
                 var pad = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
-                pad.name = "DEV_NetworkSpawn_" + i;
+                // One-based and zero-padded, so the pads sort and read the way the spec names
+                // them: Spawn_01 through Spawn_08.
+                pad.name = "DEV_NetworkSpawn_" + (i + 1).ToString("00");
                 pad.transform.position = new Vector3(position.x, 0.02f, position.z);
                 pad.transform.localScale = new Vector3(1.2f, 0.02f, 1.2f);
 
@@ -51,7 +68,11 @@ namespace CatchIfYouCan.Development.Labs
                 if (collider != null)
                     Destroy(collider);
 
-                BuildLabel("PLAYER " + i, position + new Vector3(0f, 0.3f, 0f));
+                // Pad 1 is the host's place. It is one of the eight, not a ninth - the host
+                // occupies a seat in MaxPlayers rather than sitting outside it.
+                string who = i == 0 ? "HOST" : "CLIENT " + i;
+                BuildLabel(who + "\n" + (i + 1) + " / " + PlayerPads,
+                           position + new Vector3(0f, 0.3f, 0f));
             }
         }
 
@@ -64,8 +85,11 @@ namespace CatchIfYouCan.Development.Labs
             Readout()
                 .Line(() => "NETWORKING NOT INSTALLED")
                 .Line(() => "No NGO, Relay, Lobby, Authentication or Multiplayer Services package")
-                .Line(() => "Local players: " + (Core.LocalPlayerService.HasPlayer ? 1 : 0) +
-                            " of " + playerPads + " pads")
+                .Line(() => "Session mode: " + Session.MultiplayerSessionService.Mode +
+                            "   capacity: " + Session.MultiplayerSessionService.Current.PlayerCount +
+                            " / " + Session.MultiplayerSessionService.MaxPlayers)
+                .Line(() => "Registered players: " + Player.PlayerPresence.Count +
+                            "   pads: " + PlayerPads + " (1 host + " + (PlayerPads - 1) + " clients)")
                 .Line(() => "Transport: none.  Session: none.  Authority: local only.")
                 .Line(() => "Character: " +
                             (Character.CharacterService.LocalCharacterId ?? "default") +
@@ -90,7 +114,8 @@ namespace CatchIfYouCan.Development.Labs
         }
 
         protected override string DescribeState() =>
-            "Floor 24x24, 1 m grid, " + playerPads + " spawn pads in a fixed ring. " +
+            "Floor 24x24, 1 m grid, " + PlayerPads + " spawn pads in a fixed ring " +
+            "(1 host + " + (PlayerPads - 1) + " clients). " +
             "NETWORKING NOT INSTALLED - this lab builds a room, not a session.";
     }
 }

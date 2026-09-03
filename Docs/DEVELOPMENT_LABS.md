@@ -54,7 +54,7 @@ asset is nearly empty, which means:
 | `DEV_LightingLab` | Lighting | An albedo ladder from 3% to 95%, a cluster of overlapping point lights, a shader board with one quad per project shader, the mirror, an empty post-process volume, and a quality-level toggle. |
 | `DEV_EnvironmentLab` | Environment | A size ladder from 0.25 m to 3 m, an axis gnomon, a 1 m grid, a 1.2 × 2.2 m door opening at the generator's own dimensions, every prop under `Resources/Props` at authored scale, and a bounds and triangle-count readout. |
 | `DEV_UIInputLab` | UI / Input | The shipping HUD, heading posts at the four compass points, a 20 degree ramp and 0.18 m steps, and a live readout of move, look, button state, touch count and the safe area — plus a dump of the HUD rect tree. |
-| `DEV_NetworkLab` | Network | A fixed ring of spawn pads, a notice board reading NETWORKING NOT INSTALLED, and a panel stating that there is no transport, no session and no authority beyond local.
+| `DEV_NetworkLab` | Network | A ring of one spawn pad per place in a full session — derived from `MultiplayerProtocol.MaxPlayers`, so it is 8 (1 host + 7 clients) and follows the contract rather than restating it. A notice board reading NETWORKING NOT INSTALLED, and a panel showing the session mode, the population against capacity, and that there is no transport, no session and no authority beyond local.
 
 ---
 

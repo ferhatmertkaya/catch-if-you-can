@@ -1,4 +1,5 @@
 using CatchIfYouCan.Core;
+using CatchIfYouCan.Procedural.Deterministic;
 
 namespace CatchIfYouCan.Session
 {
@@ -30,8 +31,52 @@ namespace CatchIfYouCan.Session
         /// <summary>Shorthand for the question almost every caller is actually asking.</summary>
         public static bool IsHost => _current.IsHost;
 
-        /// <summary>True when there is no session at all. Single player.</summary>
-        public static bool IsOffline => _current.State == SessionState.Offline;
+        /// <summary>
+        /// Which product this is. Chosen, never inferred.
+        ///
+        /// <para>
+        /// Ask this rather than testing the state. An online session that is still connecting,
+        /// or that failed, is Online - and code that decides "offline" from a state that is not
+        /// yet Connected will initialise nothing, show nothing, and blame the wrong thing.
+        /// </para>
+        /// </summary>
+        public static SessionMode Mode => _current.Mode;
+
+        /// <summary>
+        /// True when the player chose offline.
+        ///
+        /// <para>
+        /// This used to read <c>State == SessionState.Offline</c>, which conflated two
+        /// different facts: "the player chose single player" and "no session has connected
+        /// yet". Every online session passes through the second on its way up, so anything
+        /// gated on it would have behaved as offline during connection.
+        /// </para>
+        /// </summary>
+        public static bool IsOffline => _current.Mode == SessionMode.Offline;
+
+        /// <summary>True when the player chose online, whatever the connection is doing.</summary>
+        public static bool IsOnline => _current.Mode == SessionMode.Online;
+
+        /// <summary>
+        /// Whether an online service may be initialised right now.
+        ///
+        /// <para>
+        /// Authentication, Lobby, Relay and the transport all ask this before doing anything.
+        /// Offline it is false, which is what makes airplane mode a non-event: the services are
+        /// not attempted, so they cannot fail.
+        /// </para>
+        /// </summary>
+        public static bool AllowsOnlineServices => SessionModeRules.AllowsOnlineServices(Mode);
+
+        /// <summary>
+        /// The most players this session can hold. One offline, the protocol maximum online.
+        ///
+        /// <para>
+        /// A player-count readout asks for this rather than writing "/ 8". The eight lives in
+        /// <see cref="MultiplayerProtocol.MaxPlayers"/> and nowhere else.
+        /// </para>
+        /// </summary>
+        public static int MaxPlayers => _current.MaxPlayers;
 
         /// <summary>
         /// Installs a live session and the authority that goes with it.
@@ -52,10 +97,26 @@ namespace CatchIfYouCan.Session
                 return;
             }
 
+            // Mode is fixed for a session's life. Replacing a live session with one of the
+            // other mode is the silent fallback this contract forbids - an online session that
+            // failed becoming an offline one, or an offline mission being promoted because a
+            // connection appeared. Ending the session is explicit and goes through Reset.
+            if (_current != null &&
+                _current.State != SessionState.Offline &&
+                _current.Mode != session.Mode)
+            {
+                CIYCLog.Error(
+                    "Refused to replace a live " + _current.Mode + " session with an " +
+                    session.Mode + " one. Session mode is chosen once and does not change; " +
+                    "end the current session first.");
+                return;
+            }
+
             _current = session;
             SessionAuthority.Provider = authority;
 
-            CIYCLog.Info("Session installed: " + session.Role + " (" + session.State + ")");
+            CIYCLog.Info("Session installed: " + session.Mode + " " + session.Role +
+                         " (" + session.State + ")");
         }
 
         /// <summary>

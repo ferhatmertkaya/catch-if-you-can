@@ -45,6 +45,19 @@ keeps its keyboard and does not get a joystick drawn over the game.
 
 ---
 
+## 2b. The player limit is global, not per platform
+
+`MultiplayerProtocol.MaxPlayers = 8` is the whole session, across every platform
+in it. Not eight per platform, and not eight plus a host.
+
+A valid future session is 1 iOS host + 2 Android + 2 Windows + 1 macOS + 1
+PlayStation + 1 Xbox = 8 total, provided every platform compatibility requirement
+is met.
+
+Offline solo is one player and involves no platform negotiation at all.
+
+---
+
 ## 3. The matrix
 
 | Platform | Status | Input | Protocol | What it still needs |

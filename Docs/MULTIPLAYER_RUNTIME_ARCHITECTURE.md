@@ -42,6 +42,61 @@ redesign.
 
 ---
 
+## 1b. Session mode and capacity (V4.1)
+
+**Two products, one game.** The mode is chosen and then fixed.
+
+| | Offline solo | Online |
+|---|---|---|
+| Players | exactly 1 | 1 to 8 |
+| Topology | the local player | 1 host + up to 7 clients |
+| Authentication | never | when implemented |
+| Lobby / Relay / transport | never | when implemented |
+| Internet | not required | required |
+| Authority | local process | host |
+
+`Session.SessionMode` is the choice. `SessionModeRules` answers what it permits —
+capacity, whether online services may be initialised, whether a remote player can
+exist at all.
+
+**Mode is never inferred.** Not from the player count, not from whether a
+NetworkManager exists, not from Relay or Lobby or Authentication state, not from
+the scene, not from the platform, and above all not from whether the device
+currently has a connection. `MultiplayerSessionService.Install` refuses to
+replace a live session with one of the other mode, and says so.
+
+The failure this prevents is specific: if mode followed connectivity, a solo
+player whose Wi-Fi dropped mid-mission would have their session silently
+reclassified, and a player who chose online and lost their connection would be
+quietly told they are playing single player. Both are worse than an error
+message.
+
+`IsOffline` asks the mode, not the state. It previously read
+`State == SessionState.Offline`, which conflated "the player chose single player"
+with "no session has connected yet" — and every online session passes through the
+second on its way up, so anything gated on it would have behaved as offline
+during connection.
+
+### Capacity has exactly one source
+
+`MultiplayerProtocol.MaxPlayers = 8`. Lobby capacity, relay allocation,
+connection approval, the development lab's spawn pads, `PlayerPresence`'s list
+size and any player-count denominator derive from it. A second constant is a
+second answer, and the two disagree the first time one is edited — which is
+precisely what `NetworkLabInstaller` did with a serialized `playerPads = 4`
+described as "the intended party size".
+
+**Eight includes the host.** One host plus seven clients. Reading it as
+host-plus-eight produces nine players and is the single most likely misreading of
+this contract, so the suite asserts `1 + 7 == MaxPlayers` directly.
+
+`HasCapacityFor` refuses a negative population rather than clamping it: a
+negative count cannot come from counting real players, so it means the caller is
+confused, and treating −1 as "plenty of room" would admit peers into a session
+nobody can describe.
+
+---
+
 ## 2. The one authority
 
 `CatchIfYouCan.Core.SessionAuthority` holds exactly one `IAuthorityProvider`.
@@ -179,6 +234,30 @@ ContentHash means, which is a deterministic-contract semantic change that would
 silently make every current build incompatible with itself. Folding it in
 requires a `MultiplayerProtocol.Version` bump, in one place, with the version
 change that makes it honest.
+
+---
+
+## 7b. Offline is not a degraded online
+
+Offline solo is a first-class product path, not multiplayer with the network
+switched off. It does not create a session object that pretends to be a host, it
+does not initialise Authentication, and it never reaches a transport.
+
+**Gameplay has one implementation.** There is no `OfflineGhostController` beside
+an `OnlineGhostController`, no `OfflineDoor` beside a `NetworkDoor`, no second
+evidence manager. The ghost, the evidence, the mission, the objectives, the
+equipment, the interactions, the character and the procedural generation are the
+same code in both modes. Only the authority provider and the session
+implementation differ, which is what §2 exists to make possible.
+
+Offline authority is `SessionAuthority.LocalAuthority`, whose every answer is
+yes — correct rather than a stub, because in a single-player process the local
+player really does own the world. Every gate in the game asks the same question
+it always did and gets the same answer.
+
+Progression is unaffected: the local save path has no online dependency and must
+not acquire one. If cloud sync arrives later it sits above local save, never
+replacing it. No internet must never mean no progression.
 
 ---
 

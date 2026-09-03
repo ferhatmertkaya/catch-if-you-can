@@ -56,6 +56,19 @@ namespace CatchIfYouCan.Session
     /// </summary>
     public interface IMultiplayerSession
     {
+        /// <summary>
+        /// Which product this session is, chosen once and fixed for its lifetime.
+        ///
+        /// <para>
+        /// Distinct from <see cref="State"/> and <see cref="Role"/>, which say what is
+        /// happening. An online session that has not connected yet is
+        /// <see cref="SessionMode.Online"/> in <see cref="SessionState.Connecting"/>, and one
+        /// that failed is Online in <see cref="SessionState.Failed"/> - not offline. Reading
+        /// the mode off the state is the inference this contract exists to forbid.
+        /// </para>
+        /// </summary>
+        SessionMode Mode { get; }
+
         SessionState State { get; }
         SessionRole Role { get; }
 
@@ -64,6 +77,17 @@ namespace CatchIfYouCan.Session
 
         /// <summary>How many players are in the session, including this one. One when offline.</summary>
         int PlayerCount { get; }
+
+        /// <summary>
+        /// The most players this session can hold, derived from the mode.
+        ///
+        /// <para>
+        /// One offline; <see cref="MultiplayerProtocol.MaxPlayers"/> online. It is exposed here
+        /// so that a player-count readout has a denominator to ask for rather than a literal to
+        /// hard-code - "3 / 8" should get its 8 from the session, not from the UI.
+        /// </para>
+        /// </summary>
+        int MaxPlayers { get; }
 
         /// <summary>
         /// The agreed configuration, once there is one. Its seed is what every peer generates
@@ -97,10 +121,25 @@ namespace CatchIfYouCan.Session
     /// </summary>
     public sealed class OfflineSession : IMultiplayerSession
     {
+        /// <summary>
+        /// Offline, always, for this object's whole life.
+        ///
+        /// <para>
+        /// A connection appearing does not turn this into an online session. The player chose
+        /// offline; reclassifying their solo mission because Wi-Fi came back would be a
+        /// surprise, and the reverse - quietly telling someone who chose online that they are
+        /// playing single player - is worse than an error message.
+        /// </para>
+        /// </summary>
+        public SessionMode Mode => SessionMode.Offline;
+
         public SessionState State => SessionState.Offline;
         public SessionRole Role => SessionRole.SinglePlayer;
         public bool IsHost => true;
         public int PlayerCount => 1;
+
+        /// <summary>One. Offline solo is exactly one local player, by contract.</summary>
+        public int MaxPlayers => SessionModeRules.MaxPlayers(SessionMode.Offline);
         public MatchConfig Config => default;
         public string LastError => null;
 

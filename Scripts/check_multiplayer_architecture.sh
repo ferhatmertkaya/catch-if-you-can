@@ -186,6 +186,83 @@ PY
   fi
 fi
 
+# ------------------------------------------------------ capacity and session mode
+
+PROTOCOL="$DETERMINISTIC/MultiplayerProtocol.cs"
+if [ -f "$PROTOCOL" ]; then
+  grep -q 'MaxPlayers = 8' "$PROTOCOL" \
+    && ok "the authoritative online capacity is 8" \
+    || fail "MultiplayerProtocol.MaxPlayers is not 8"
+
+  grep -q 'MinPlayers = 1' "$PROTOCOL" \
+    && ok "a session is viable with the host alone" \
+    || fail "MultiplayerProtocol.MinPlayers is not 1"
+else
+  fail "no MultiplayerProtocol at $PROTOCOL"
+fi
+
+# The number lives in exactly one place. A second constant is a second answer, and the
+# two disagree the first time one is edited - which is what the network lab's
+# "playerPads = 4" did while the contract said something else.
+#
+# Only production capacity declarations count. A test asserting the boundary is doing its
+# job, a comment explaining the old value is history, and unrelated gameplay may use 8 for
+# its own reasons - so this looks for an assignment whose NAME is about player capacity.
+dupes=$(grep -rnE '(int|const int|readonly int)[[:space:]]+[A-Za-z_]*([Mm]ax|[Cc]apacity)[A-Za-z_]*([Pp]layer|[Cc]lient|[Cc]onnection|[Pp]eer)[A-Za-z_]*[[:space:]]*=[[:space:]]*[0-9]+' \
+        "$SCRIPTS" --include='*.cs' 2>/dev/null \
+        | grep -v "$DETERMINISTIC/MultiplayerProtocol.cs" || true)
+if [ -n "$dupes" ]; then
+  fail "a second production player-capacity constant exists; derive it from MultiplayerProtocol"
+  printf '%s\n' "$dupes" | sed 's/^/        /'
+else
+  ok "no production code declares its own player capacity"
+fi
+
+# The development lab must follow the contract rather than restate it.
+LAB="$SCRIPTS/Development/Labs/NetworkLabInstaller.cs"
+if [ -f "$LAB" ]; then
+  grep -q 'MultiplayerProtocol.MaxPlayers' "$LAB" \
+    && ok "the network lab derives its spawn pads from the contract" \
+    || fail "the network lab does not derive its capacity from MultiplayerProtocol"
+fi
+
+# Mode is a choice. Deriving it from the state conflates "the player chose single player"
+# with "no session has connected yet", and every online session passes through the second
+# on its way up.
+MODE="$SESSION/SessionMode.cs"
+SERVICE="$SESSION/MultiplayerSessionService.cs"
+if [ -f "$MODE" ] && [ -f "$SERVICE" ]; then
+  ok "an explicit SessionMode exists"
+
+  grep -q 'Mode == SessionMode.Offline' "$SERVICE" \
+    && ok "IsOffline asks the mode rather than the connection state" \
+    || fail "IsOffline is inferred from something other than the mode"
+
+  # SessionMode carries the product contract and is compiled by the engine-free harness.
+  # A UnityEngine dependency there would break that build and take the offline tests with it.
+  grep -qE '^\s*using UnityEngine|UnityEngine\.' "$MODE" \
+    && fail "SessionMode has gained a UnityEngine dependency and can no longer be tested offline" \
+    || ok "SessionMode stays engine-free and testable without Unity"
+else
+  fail "SessionMode or MultiplayerSessionService is missing"
+fi
+
+# OfflineSession is what single player is. Losing it means offline has no implementation.
+grep -q 'class OfflineSession' "$SESSION/IMultiplayerSession.cs" 2>/dev/null \
+  && ok "OfflineSession is still present" \
+  || fail "OfflineSession is gone; offline solo has no session implementation"
+
+# Two implementations of one system is the mistake this repository keeps making. Offline
+# and online must share gameplay - only the authority and the session differ.
+forked=$(grep -rlnE 'class (Offline|Online|Network)(Ghost|Evidence|Door|Equipment|Mission|Objective)[A-Za-z]*' \
+         "$SCRIPTS" --include='*.cs' 2>/dev/null || true)
+if [ -n "$forked" ]; then
+  fail "gameplay has been forked into offline and online implementations"
+  printf '%s\n' "$forked" | sed 's/^/        /'
+else
+  ok "gameplay has one implementation for both session modes"
+fi
+
 printf '\npassed: %s   failed: %s\n\n' "$passed" "$failed"
 
 if [ "$failed" -gt 0 ]; then

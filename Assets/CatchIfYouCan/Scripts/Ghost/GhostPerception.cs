@@ -41,7 +41,7 @@ namespace CatchIfYouCan.Ghost
         }
 
         [Tooltip("Seconds between re-checking which player is nearest. A ghost does not need " +
-                 "to re-decide who it is looking at sixty times a second, and four players " +
+                 "to re-decide who it is looking at sixty times a second, and eight players " +
                  "make that a real cost rather than a theoretical one.")]
         [SerializeField, Min(0.05f)] private float targetRefreshInterval = 0.25f;
 

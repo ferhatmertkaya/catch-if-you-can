@@ -42,7 +42,11 @@ namespace CatchIfYouCan.Player
         [Tooltip("Height above the root to aim at when there is no eye point, in metres.")]
         [SerializeField, Min(0f)] private float fallbackEyeHeight = 1.55f;
 
-        private static readonly List<PlayerPresence> Present = new List<PlayerPresence>();
+        // Sized from the contract rather than left to grow. A full session is small and known,
+        // so the list never reallocates during play - and the capacity is derived, not a second
+        // copy of the number.
+        private static readonly List<PlayerPresence> Present =
+            new List<PlayerPresence>(Procedural.Deterministic.MultiplayerProtocol.MaxPlayers);
 
         /// <summary>Everyone in the house. Read-only; do not hold it across frames.</summary>
         public static IReadOnlyList<PlayerPresence> All => Present;
@@ -101,12 +105,51 @@ namespace CatchIfYouCan.Player
                 eyePoint = eye;
         }
 
+        /// <summary>
+        /// Joins the registry, once.
+        ///
+        /// <para>
+        /// The Contains guard is what stops a re-enabled player being counted twice. Population
+        /// is what capacity is checked against, so a duplicate entry is a session that reports
+        /// 9 of 8 and starts refusing legitimate peers - and the count would be wrong in a way
+        /// nothing else in the game would notice.
+        /// </para>
+        ///
+        /// <para>
+        /// Registering more than the session's mode permits is refused and said out loud. It
+        /// cannot happen through the normal spawn path; if it does, something is spawning
+        /// players it should not, and a quiet extra entry would hide that.
+        /// </para>
+        /// </summary>
         private void OnEnable()
         {
-            if (!Present.Contains(this))
-                Present.Add(this);
+            if (Present.Contains(this))
+                return;
+
+            int capacity = Session.SessionModeRules.MaxPlayers(
+                Session.MultiplayerSessionService.Mode);
+
+            if (Present.Count >= capacity)
+            {
+                Core.CIYCLog.Error(
+                    "Refused to register '" + name + "': the session already holds " +
+                    Present.Count + " of " + capacity + " players in " +
+                    Session.MultiplayerSessionService.Mode + " mode. Something is spawning " +
+                    "players the session cannot hold.");
+                return;
+            }
+
+            Present.Add(this);
         }
 
+        /// <summary>
+        /// Leaves the registry, freeing the seat.
+        ///
+        /// <para>
+        /// Capacity has no memory - it is a function of the current population - so a departure
+        /// makes room immediately and the seat is genuinely reusable by the next peer.
+        /// </para>
+        /// </summary>
         private void OnDisable() => Present.Remove(this);
 
         /// <summary>
