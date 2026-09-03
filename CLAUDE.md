@@ -13,6 +13,9 @@ desktop is a development convenience, not the platform being designed for.
 | `Docs/DEVELOPMENT_LABS.md` | Working on, or in, one of the nine `DEV_` lab scenes. |
 | `Docs/UNITY_VALIDATION.md` | Claiming that something works. |
 | `Docs/NETWORKING.md` | Anything multiplayer. No netcode package is installed yet. |
+| `Docs/MULTIPLAYER_RUNTIME_ARCHITECTURE.md` | **Normative for the boundaries.** Who owns what, and why the pose is never replicated. |
+| `Docs/GHOST_EVIDENCE_AUTHORITY.md` | **Normative.** Any change to what counts as evidence, or to who decides it. |
+| `Docs/CROSSPLAY_PLATFORM_MATRIX.md` | Adding a platform, or anything tempted to branch on one. |
 
 ## The rules that are enforced, not trusted
 
@@ -20,6 +23,12 @@ desktop is a development convenience, not the platform being designed for.
   layout hash stays stable. 44 checks, all must pass.
 - `Scripts/check_dev_scenes.sh` — no `DEV_` scene is ever enabled in the build
   list.
+- `Scripts/check_equipment_catalog.sh` — the eleven items keep their runtime
+  paths, the journal cannot prove evidence, and nothing sweeps the scene per
+  frame. 25 checks.
+- `Scripts/check_multiplayer_architecture.sh` — the deterministic assembly stays
+  engine-free, gameplay never reaches a Relay API, remote players never read
+  local input, and ghost decisions stay host-only. 12 checks.
 
 Both run in CI (`.github/workflows/determinism.yml`). Run them locally before
 pushing; they need nothing but a shell.
@@ -40,7 +49,16 @@ Repeating one of these is the most likely way to break something.
    `Content.CiycContentRegistry` by reference.
 4. **Reflection into another class's private fields.** It compiles, reviews
    clean, and fails silently on the next rename. Ask for a public method.
-5. **Reading a low compiler error count as success.** The offline typecheck
+5. **A property getter that reads itself.** `GhostSpawnManager.Player` tested
+   the property instead of the backing field. The first read recursed until the
+   stack ran out — an uncatchable crash sitting in the ghost spawn path, which
+   nothing noticed because nothing had spawned a ghost with a player present.
+   `check_multiplayer_architecture.sh` looks for the shape now.
+6. **Asking `LocalPlayerService` "where is the player".** It holds exactly one:
+   the one on this machine. Correct in single player and silently wrong with a
+   second one. Ask `PlayerPresence` who is here; ask `LocalPlayerService` which
+   one is mine.
+7. **Reading a low compiler error count as success.** The offline typecheck
    harness stops early when its own stub breaks and then reports *zero*
    project errors. Always diff against the recorded baseline; never read a
    drop as good news without finding out which errors went and why.

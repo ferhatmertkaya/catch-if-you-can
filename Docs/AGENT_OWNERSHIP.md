@@ -32,7 +32,7 @@ between folders would otherwise change owner silently.
 
 ## 2. The teams
 
-Twenty teams, mapped to the folders they own. The counts are the number of
+Twenty-one teams, mapped to the folders they own. The counts are the number of
 `.cs` files in the folder at the time of writing, and are here only to say how
 big a surface each team is holding.
 
@@ -58,6 +58,7 @@ big a surface each team is holding.
 | 18 | **Save / Content** | `Scripts/Save/**`, `Scripts/Content/**` | 8 | Save data, the content registry, and what ships. |
 | 19 | **Development** | `Scripts/Development/**`, `Scenes/Development/**` | 11 | The nine labs and the lab framework. See `DEVELOPMENT_LABS.md`. |
 | 20 | **Tooling** | `Editor/**`, `Scripts/Utilities/**`, repo-root `Scripts/*.sh`, `.github/workflows/**` | 27 | Editor menus, asset builders, validators, the CI guards. |
+| 21 | **Session / Networking** | `Scripts/Session/**` | 7 | The join handshake, the match config, the authority provider and the gameplay-facing session API. Owns the boundary that keeps Relay out of gameplay — see `MULTIPLAYER_RUNTIME_ARCHITECTURE.md`. |
 
 Anything not listed is **Core**'s until a team claims it in a change to this
 table.

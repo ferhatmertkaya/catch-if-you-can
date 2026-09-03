@@ -148,7 +148,17 @@ Two notes worth stating explicitly:
   reason the deterministic set in `DETERMINISM.md` §2.1 stays small enough to
   actually verify.
 
-### 4.1 Equipment authority seam **[Slice]**
+### 4.1 Authority seam **[Slice]**
+
+> **V4 update.** The provider moved to `Core.SessionAuthority` and gained
+> `CanSimulateGhost`; `Equipment.EquipmentAuthority` now forwards to it and holds
+> no state. There is one provider for the whole game. The ghost, the
+> interactables and the objectives ask it too — see
+> `Docs/MULTIPLAYER_RUNTIME_ARCHITECTURE.md` §2 for the full call-site table and
+> `Docs/GHOST_EVIDENCE_AUTHORITY.md` §5 for the ghost gates. The section below
+> describes the V3 shape and remains accurate about the three equipment and
+> evidence call sites.
+
 
 There is still **no netcode**, and none of what follows adds any. What exists is
 the *question*, asked at the call sites that will have to ask it, so the answer
