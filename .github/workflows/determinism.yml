@@ -31,3 +31,6 @@ jobs:
 
       - name: Equipment catalog guard
         run: Scripts/check_equipment_catalog.sh
+
+      - name: Multiplayer architecture guard
+        run: Scripts/check_multiplayer_architecture.sh

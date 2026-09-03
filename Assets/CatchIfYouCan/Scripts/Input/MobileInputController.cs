@@ -17,6 +17,10 @@ namespace CatchIfYouCan.Input
                  "one place, on PlayerLook, rather than being the product of two fields.")]
         [SerializeField] private float lookSensitivity = 1f;
 
+        [Tooltip("Gamepad look speed, in reference pixels per second at full stick. A stick is " +
+                 "a rate where a mouse is a displacement, so this converts one into the other.")]
+        [SerializeField, Min(1f)] private float gamepadLookSpeed = 900f;
+
         [Tooltip("Look input is normalised to this screen height in pixels, so the same thumb " +
                  "swipe turns the same amount on a 720p phone and a 1440p one.")]
         [SerializeField] private float lookReferenceHeight = 1080f;
@@ -31,6 +35,17 @@ namespace CatchIfYouCan.Input
                     return moveJoystick.Direction;
 
 #if ENABLE_INPUT_SYSTEM
+                // A stick, if there is one. It arrives here rather than anywhere else on
+                // purpose: a gamepad is another way of saying "walk forward", and every way of
+                // saying that has to end at this one property or the game has two movement
+                // systems that have to agree.
+                if (Gamepad.current != null)
+                {
+                    Vector2 stick = Gamepad.current.leftStick.ReadValue();
+                    if (stick.sqrMagnitude > 0.01f)
+                        return stick.sqrMagnitude > 1f ? stick.normalized : stick;
+                }
+
                 if (Keyboard.current == null)
                     return Vector2.zero;
 
@@ -158,6 +173,7 @@ namespace CatchIfYouCan.Input
 
             ProcessLookTouch();
             ProcessKeyboardLook();
+            ProcessGamepadLook();
             ProcessKeyboardActions();
         }
 
@@ -188,6 +204,35 @@ namespace CatchIfYouCan.Input
             float mouseY = UnityEngine.Input.GetAxis("Mouse Y");
             if (Mathf.Abs(mouseX) > 0.001f || Mathf.Abs(mouseY) > 0.001f)
                 AddLookDelta(new Vector2(mouseX, mouseY) * 10f);
+#endif
+        }
+
+        /// <summary>
+        /// The right stick, into the same look accumulator the mouse and the touch drag feed.
+        ///
+        /// <para>
+        /// A stick is a rate and a mouse is a displacement, so it is scaled by delta time to
+        /// become one - without that, look speed on a pad would depend on frame rate, which is
+        /// the classic gamepad-look bug.
+        /// </para>
+        ///
+        /// <para>
+        /// It goes to the same accumulator rather than to a second look path because a second
+        /// look path is a second sensitivity, a second inversion setting and a second place for
+        /// the pitch clamp to be forgotten.
+        /// </para>
+        /// </summary>
+        private void ProcessGamepadLook()
+        {
+#if ENABLE_INPUT_SYSTEM
+            if (Gamepad.current == null)
+                return;
+
+            Vector2 stick = Gamepad.current.rightStick.ReadValue();
+            if (stick.sqrMagnitude <= 0.01f)
+                return;
+
+            AddLookDelta(stick * (gamepadLookSpeed * Time.unscaledDeltaTime));
 #endif
         }
 

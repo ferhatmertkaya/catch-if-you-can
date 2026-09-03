@@ -201,8 +201,17 @@ namespace CatchIfYouCan.Interaction
             if (_lever == null)
                 return;
 
+            // From the local player, not from a scene sweep.
+            //
+            // This was FindAnyObjectByType, guarded on null - which reads as "resolved once"
+            // and is not: the doors exist before the player spawns, so every handle in the
+            // house walked every object in the scene, every frame, until somebody arrived. In
+            // a scene with no InteractionController at all it never stopped.
+            //
+            // The controller is added to the player root by PlayerRigBuilder, so this is a
+            // lookup among that root's own components rather than the whole house.
             if (_interaction == null)
-                _interaction = Object.FindAnyObjectByType<InteractionController>();
+                _interaction = Core.LocalPlayerService.GetPlayerComponent<InteractionController>();
             if (_input == null)
                 _input = MobileInputController.Instance;
 
