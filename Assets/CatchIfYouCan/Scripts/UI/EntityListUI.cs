@@ -81,6 +81,8 @@ namespace CatchIfYouCan.UI
                 AddEntityRow(ghost);
         }
 
+        private static bool _authoredCatalogMissingReported;
+
         private void LoadCatalog()
         {
             if (ghostCatalog != null && ghostCatalog.Count > 0) return;
@@ -91,6 +93,15 @@ namespace CatchIfYouCan.UI
             {
                 ghostCatalog.AddRange(resources);
                 return;
+            }
+
+            // The authored assets are the intended source; the code factory is the safety
+            // net. Which one is live must not be invisible. Reported once per session.
+            if (!_authoredCatalogMissingReported)
+            {
+                _authoredCatalogMissingReported = true;
+                Core.CIYCLog.Warn("No GhostDefinition assets under Resources/Ghosts. " +
+                                  "Falling back to GhostDefinitionFactory defaults.");
             }
 
             ghostCatalog.AddRange(GhostDefinitionFactory.CreateAllDefaultGhosts());

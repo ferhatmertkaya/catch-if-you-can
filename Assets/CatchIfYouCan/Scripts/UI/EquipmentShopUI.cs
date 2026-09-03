@@ -94,6 +94,8 @@ namespace CatchIfYouCan.UI
             }
         }
 
+        private static bool _authoredCatalogMissingReported;
+
         private void LoadCatalog()
         {
             if (catalog != null && catalog.Count > 0) return;
@@ -103,6 +105,17 @@ namespace CatchIfYouCan.UI
             {
                 catalog.AddRange(loaded);
                 return;
+            }
+
+            // The authored assets are the intended source; the code factory is the safety
+            // net. Which one is live decides whether an icon, a prefab or a hand pose can
+            // exist at all, so it must not be invisible. Reported once per session.
+            if (!_authoredCatalogMissingReported)
+            {
+                _authoredCatalogMissingReported = true;
+                Core.CIYCLog.Warn("No EquipmentDefinition assets under Resources/Equipment. " +
+                                  "Falling back to EquipmentDefinitionFactory, whose definitions " +
+                                  "carry no Icon and no Prefab.");
             }
 
             catalog.AddRange(EquipmentDefinitionFactory.CreateAllDefaultDefinitions());

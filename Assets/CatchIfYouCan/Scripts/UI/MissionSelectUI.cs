@@ -74,6 +74,8 @@ namespace CatchIfYouCan.UI
             }
         }
 
+        private static bool _authoredCatalogMissingReported;
+
         private void LoadMissions()
         {
             missions.Clear();
@@ -93,6 +95,15 @@ namespace CatchIfYouCan.UI
             {
                 missions.AddRange(loaded);
                 return;
+            }
+
+            // The authored assets are the intended source; the code factory is the safety
+            // net. Which one is live must not be invisible. Reported once per session.
+            if (!_authoredCatalogMissingReported)
+            {
+                _authoredCatalogMissingReported = true;
+                Core.CIYCLog.Warn("No MissionDefinition assets under Resources/Missions. " +
+                                  "Falling back to MissionDefinitionFactory defaults.");
             }
 
             missions.AddRange(MissionDefinitionFactory.CreateAllDefaultMissions());

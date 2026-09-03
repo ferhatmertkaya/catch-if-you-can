@@ -244,6 +244,20 @@ namespace CatchIfYouCan.UI
             if (_player != null)
                 return;
 
+            // A missing spawn marker is not a survivable fallback, it only looks like one.
+            // The lobby floor spans x 14.7..25.3, and this controller sits at the world
+            // origin, so falling back to its transform drops the player roughly 15 m outside
+            // the room. On screen that reads as "the lobby did not load", which sends the
+            // reader hunting the wrong bug. Name the real cause before it happens.
+            if (playerSpawn == null)
+            {
+                Core.CIYCLog.Error(
+                    "MainMenuModeController.playerSpawn is not assigned on '" + name + "'. " +
+                    "The player will be created at this object's own position " +
+                    transform.position.ToString("F2") + " instead of the lobby spawn marker, " +
+                    "which is almost certainly outside the room. Assign Lobby_PlayerSpawn.");
+            }
+
             Vector3 position = playerSpawn != null ? playerSpawn.position : transform.position;
             Quaternion rotation = playerSpawn != null ? playerSpawn.rotation : Quaternion.identity;
 
