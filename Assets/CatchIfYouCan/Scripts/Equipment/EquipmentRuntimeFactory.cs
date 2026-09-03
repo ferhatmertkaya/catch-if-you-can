@@ -62,9 +62,9 @@ namespace CatchIfYouCan.Equipment
 
             GameObject prefab = definition.Id switch
             {
-                EquipmentIds.Flashlight => BuildFlashlight(definition),
-                EquipmentIds.EmfDetector => BuildPrimitiveEquipment<EMFDetector>(definition, new Vector3(0.15f, 0.08f, 0.25f)),
-                EquipmentIds.UvLight => BuildUvLight(definition),
+                EquipmentIds.Flashlight => BuildSelfPresenting<HeldFlashlight>(definition),
+                EquipmentIds.EmfDetector => BuildSelfPresenting<EMFDetector>(definition),
+                EquipmentIds.UvLight => BuildSelfPresenting<UVLight>(definition),
                 EquipmentIds.Thermometer => BuildPrimitiveEquipment<ThermometerEquipment>(definition, new Vector3(0.05f, 0.15f, 0.05f)),
                 EquipmentIds.EvpRecorder => BuildPrimitiveEquipment<EVPRecorder>(definition, new Vector3(0.12f, 0.08f, 0.18f)),
                 EquipmentIds.PhotoCamera => BuildPrimitiveEquipment<PhotoCameraEquipment>(definition, new Vector3(0.12f, 0.1f, 0.18f)),
@@ -78,16 +78,23 @@ namespace CatchIfYouCan.Equipment
         }
 
         /// <summary>
-        /// The torch. There is exactly one flashlight implementation now, and it builds its own
-        /// body, lens and beam, so this hands it an empty object and gets out of the way rather
-        /// than wrapping a primitive cube around a second, parallel torch.
+        /// An item that builds its own appearance.
+        ///
+        /// <para>
+        /// Anything on <see cref="HeldEquipmentBase"/> gets its visual from its definition's
+        /// visual profile and adds whatever a mesh cannot be - the torch's beam, the UV lamp's
+        /// cone - itself. So this hands it an empty object and gets out of the way. It used to
+        /// wrap a primitive cube around each of them and then reflect a light into a private
+        /// field, which for the UV lamp meant writing a field that no longer exists.
+        /// </para>
         /// </summary>
-        private static GameObject BuildFlashlight(EquipmentDefinition definition)
+        private static GameObject BuildSelfPresenting<T>(EquipmentDefinition definition)
+            where T : HeldEquipmentBase
         {
             var root = new GameObject(definition.DisplayName);
             root.tag = "Equipment";
 
-            var equipment = root.AddComponent<HeldFlashlight>();
+            var equipment = root.AddComponent<T>();
             equipment.BindDefinition(definition);
             return root;
         }
@@ -115,28 +122,6 @@ namespace CatchIfYouCan.Equipment
             return root;
         }
 
-        private static GameObject BuildUvLight(EquipmentDefinition definition)
-        {
-            var root = BuildBody(definition, new Vector3(0.1f, 0.08f, 0.2f));
-            var equipment = root.GetComponent<UVLight>() ?? root.AddComponent<UVLight>();
-            equipment.BindDefinition(definition);
-
-            var lightGo = new GameObject("UVLight");
-            lightGo.transform.SetParent(root.transform, false);
-            lightGo.transform.localPosition = new Vector3(0f, 0f, 0.12f);
-
-            var light = lightGo.AddComponent<Light>();
-            light.type = LightType.Spot;
-            light.color = new Color(0.45f, 0.2f, 1f);
-            light.range = 8f;
-            light.spotAngle = 40f;
-            light.intensity = 1.5f;
-            light.enabled = false;
-
-            SetPrivateField(equipment, "uvLight", light);
-            return root;
-        }
-
         private static GameObject BuildPrimitiveEquipment<T>(EquipmentDefinition definition, Vector3 scale)
             where T : EquipmentBase
         {
@@ -160,14 +145,5 @@ namespace CatchIfYouCan.Equipment
             return root;
         }
 
-        private static void SetPrivateField(object target, string fieldName, object value)
-        {
-            if (target == null)
-                return;
-
-            var field = target.GetType().GetField(fieldName,
-                System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-            field?.SetValue(target, value);
-        }
     }
 }
