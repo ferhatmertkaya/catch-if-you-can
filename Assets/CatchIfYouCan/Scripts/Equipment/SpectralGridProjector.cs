@@ -21,7 +21,7 @@ namespace CatchIfYouCan.Equipment
     /// </para>
     /// </summary>
     [AddComponentMenu("Catch If You Can/Spectral Grid Projector")]
-    public class SpectralGridProjector : HeldEquipmentBase
+    public class SpectralGridProjector : PlaceableEquipmentBase
     {
         [Header("Projection")]
         [Tooltip("How far the point field reaches, in metres. A room, not a building.")]
@@ -85,7 +85,7 @@ namespace CatchIfYouCan.Equipment
         /// the room. Stowed in a bag it stops, which is what keeps a projector from draining a
         /// battery and paying for a projection nobody can see.
         /// </summary>
-        private void ApplyPower()
+        protected void ApplyPower()
         {
             bool running = _powered &&
                            (LifecycleState == EquipmentLifecycleState.Equipped ||
@@ -103,17 +103,24 @@ namespace CatchIfYouCan.Equipment
         {
         }
 
-        /// <summary>Deliberately no ghost silhouette spawning any more.</summary>
-        /// <remarks>
-        /// The old implementation instantiated a prefab at a random point in a radius and
-        /// called it a spectral reveal - a second object pretending to be the ghost, in a place
-        /// the ghost was not. The reveal has to be the real ghost or it is a lie told to the
-        /// player, so it is built from the real ghost's transform in a later commit. The prefab
-        /// field is gone rather than left dangling; nothing ever assigned it, so the code path
-        /// had never once run.
-        /// </remarks>
-        protected override void TickEquipped(float deltaTime)
+        /// <summary>
+        /// Installed on a wall or a floor, and left running if it was running.
+        ///
+        /// <para>
+        /// Deliberately no ghost silhouette spawning any more. The old implementation
+        /// instantiated a prefab at a random point inside a radius and called it a spectral
+        /// reveal - a second object pretending to be the ghost, in a place the ghost was not. A
+        /// reveal has to be the real ghost or it is a lie told to the player. The prefab field
+        /// is gone rather than left dangling; nothing ever assigned it, so the path had never
+        /// once run.
+        /// </para>
+        /// </summary>
+        protected override void OnPlacedInWorld(in PlacementResult result)
         {
+            // Placing does not switch it on, and does not switch it off. Whatever the player
+            // set in the hand is what is installed - the power is the item's, and the item is
+            // the same object it was a moment ago.
+            ApplyPower();
         }
     }
 }
