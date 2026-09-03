@@ -347,6 +347,13 @@ namespace CatchIfYouCan.Player
             SetPrivateField(pickup, "destroyOnPickup", false);
 
             inventory.AddItem(torch);
+
+            // The fear system asks whether the player is standing in their own light, and the
+            // only light that can answer is the one built two lines up. It is created at
+            // runtime, so nothing can have serialized a reference to it.
+            var fear = player.GetComponent<FearSystem>();
+            if (fear != null && torch.Beam != null)
+                fear.SetFlashlight(torch.Beam);
         }
 
         public static MobileInputController EnsureMobileInput()

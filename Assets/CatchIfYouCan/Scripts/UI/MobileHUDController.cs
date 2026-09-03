@@ -150,14 +150,14 @@ namespace CatchIfYouCan.UI
             for (int i = 0; i < equipmentSlots.Length; i++)
             {
                 if (equipmentSlots[i] == null) continue;
-                Sprite icon = null;
-                if (mgr != null && i < mgr.Loadout.Count && mgr.Loadout[i] != null)
+
+                // What is in the player's hands first, what they packed second. The loadout
+                // used to win, so the HUD showed the kit the player brought rather than the
+                // kit they are carrying - and after picking something up off the floor, or
+                // dropping something, the two stop agreeing.
+                Sprite icon = inventory != null ? inventory.GetSlot(i)?.Definition?.Icon : null;
+                if (icon == null && mgr != null && i < mgr.Loadout.Count && mgr.Loadout[i] != null)
                     icon = mgr.Loadout[i].Icon;
-                else if (inventory != null)
-                {
-                    var item = inventory.GetSlot(i);
-                    icon = item?.Definition?.Icon;
-                }
                 equipmentSlots[i].sprite = icon;
                 equipmentSlots[i].color = icon != null ? Color.white : new Color(1, 1, 1, 0.15f);
                 UITheme.ApplyBorder(equipmentSlots[i].gameObject, 1f);

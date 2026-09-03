@@ -150,6 +150,20 @@ namespace CatchIfYouCan.Equipment
         [SerializeField, Range(0f, 1f)] private float lightInnerFraction = 0.45f;
 
         [SerializeField] private Color lightColor = new Color(1f, 0.95f, 0.85f);
+
+        [Header("Battery")]
+        [Tooltip("Fraction of battery below which the beam browns out and stutters. Only ever " +
+                 "reached by a torch bound to a definition that actually has a battery.")]
+        [SerializeField, Range(0f, 1f)] private float flickerThreshold = 0.12f;
+
+        [Tooltip("How fast the low-battery stutter runs, in noise samples per second.")]
+        [SerializeField, Min(0f)] private float flickerSpeed = 12f;
+
+        [Tooltip("How loudly the torch reads on a detector while it is switched on. Carried " +
+                 "over from the retired FlashlightEquipment, which was the only place a " +
+                 "flashlight's interference was ever tuned; the 0.35 on EquipmentBase is the " +
+                 "generic default for equipment in general, not a value chosen for a torch.")]
+        [SerializeField, Range(0f, 1f)] private float interferenceMultiplier = 0.2f;
         [SerializeField] private bool litOnSpawn;
 
         [Header("Dropped")]
@@ -220,6 +234,14 @@ namespace CatchIfYouCan.Equipment
         /// is tuned.
         /// </summary>
         public Transform BeamOrigin => _head;
+
+        /// <summary>
+        /// The spot light the beam comes out of. Exposed so systems that need the player's
+        /// actual light source - <see cref="Player.FearSystem"/>, which asks whether the player
+        /// is standing in their own light - can be handed it directly instead of reaching in
+        /// through reflection for a private field.
+        /// </summary>
+        public Light Beam => _light;
 
         protected override void Awake()
         {
@@ -311,6 +333,49 @@ namespace CatchIfYouCan.Equipment
         // ---- equipment ---------------------------------------------------------------------
 
         protected override void OnUse() => LightOn = !LightOn;
+
+        protected override float GetInterferenceMultiplier() => interferenceMultiplier;
+
+        protected override void OnBatteryDepleted()
+        {
+            base.OnBatteryDepleted();
+            LightOn = false;
+        }
+
+        /// <summary>
+        /// The low-battery brown-out, and the electrical noise that comes with it.
+        ///
+        /// <para>
+        /// Carried over from the retired FlashlightEquipment, which was the only place
+        /// <see cref="Evidence.EvidenceType.ElectronicDistortion"/> was ever raised by a torch.
+        /// It is gated on the torch having a real battery: <c>BatteryPercent</c> reports 0 when
+        /// no definition is bound, and a torch built without one - the lobby's - would otherwise
+        /// read as permanently flat and stutter a beam that is meant to be steady.
+        /// </para>
+        /// </summary>
+        protected override void TickEquipped(float deltaTime)
+        {
+            if (!_lit || _light == null || definition == null || definition.MaxBattery <= 0f)
+                return;
+
+            float charge = BatteryPercent;
+            if (charge > flickerThreshold)
+            {
+                _light.intensity = lightIntensity;
+                return;
+            }
+
+            // Same 60-100% of full brightness the old implementation stuttered between, stated
+            // as a fraction of this torch's own intensity rather than its hard-coded 2.
+            _light.intensity =
+                lightIntensity * (0.6f + Mathf.PerlinNoise(Time.time * flickerSpeed, 0f) * 0.4f);
+
+            if (charge <= flickerThreshold * 0.5f
+                && Core.ServiceLocator.TryGet<Evidence.EvidenceManager>(out var evidence))
+            {
+                evidence.RegisterEvidence(Evidence.EvidenceType.ElectronicDistortion);
+            }
+        }
 
         public override void Equip(Transform handAnchor)
         {

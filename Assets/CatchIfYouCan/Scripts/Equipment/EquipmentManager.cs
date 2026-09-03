@@ -1,28 +1,33 @@
-using System;
 using System.Collections.Generic;
 using UnityEngine;
-using CatchIfYouCan.Core;
-using CatchIfYouCan.Evidence;
 using CatchIfYouCan.Utilities;
 
 namespace CatchIfYouCan.Equipment
 {
+    /// <summary>
+    /// The loadout: which equipment the player brought, as data. Not what they are holding.
+    ///
+    /// <para>
+    /// This used to be a second held-item state machine running alongside
+    /// <see cref="Player.PlayerInventory"/>. Both owned a hand anchor, both equipped and
+    /// unequipped, both raised EquipmentChanged, and both believed they knew what was in the
+    /// player's hand - while only the inventory was ever given the real torch. Two answers
+    /// to "what am I holding" is not a redundancy, it is a bug waiting for the second item
+    /// to exist.
+    /// </para>
+    ///
+    /// <para>
+    /// The inventory won because it is the one the runtime player actually uses, and it
+    /// already owns slots, hand-anchor binding, selection and dropping. What is left here is
+    /// the part the inventory never did: the shop's and the mission screen's idea of what
+    /// the player owns for this run.
+    /// </para>
+    /// </summary>
     public class EquipmentManager : SingletonBehaviour<EquipmentManager>
     {
-        [SerializeField] private Transform handAnchor;
-        [SerializeField] private KeyCode useKey = KeyCode.Mouse0;
-        [SerializeField] private KeyCode placeKey = KeyCode.G;
-        [SerializeField] private KeyCode dropKey = KeyCode.Q;
-        [SerializeField] private LayerMask placementMask = ~0;
-        [SerializeField] private float placementSurfaceOffset = 0.02f;
-
         private readonly List<EquipmentDefinition> _loadout = new List<EquipmentDefinition>();
-        private readonly Dictionary<string, EquipmentBase> _spawned = new Dictionary<string, EquipmentBase>();
-        private int _activeIndex = -1;
 
-        public IEquipment ActiveEquipment => ActiveInstance;
-        public EquipmentBase ActiveInstance { get; private set; }
-        public Transform HandAnchor => handAnchor;
+        /// <summary>What the player brought on this run, in order. Read-only to callers.</summary>
         public IReadOnlyList<EquipmentDefinition> Loadout => _loadout;
 
         protected override void Awake()
@@ -38,28 +43,6 @@ namespace CatchIfYouCan.Equipment
             base.OnDestroy();
         }
 
-        private void Update()
-        {
-            if (ActiveInstance == null || !ActiveInstance.IsEquipped)
-                return;
-
-            if (UnityEngine.Input.GetKeyDown(useKey))
-                ActiveInstance.Use();
-
-            if (UnityEngine.Input.GetKeyDown(placeKey))
-                TryPlaceActive();
-
-            if (UnityEngine.Input.GetKeyDown(dropKey))
-                DropActive();
-        }
-
-        public void SetHandAnchor(Transform anchor)
-        {
-            handAnchor = anchor;
-            if (ActiveInstance != null && ActiveInstance.IsEquipped && handAnchor != null)
-                ActiveInstance.Equip(handAnchor);
-        }
-
         public void SetLoadout(IEnumerable<EquipmentDefinition> definitions)
         {
             _loadout.Clear();
@@ -73,149 +56,39 @@ namespace CatchIfYouCan.Equipment
             }
         }
 
-        public bool EquipByIndex(int index)
-        {
-            if (index < 0 || index >= _loadout.Count || handAnchor == null)
-                return false;
+        public EquipmentDefinition GetLoadoutSlot(int index) =>
+            index >= 0 && index < _loadout.Count ? _loadout[index] : null;
 
-            var definition = _loadout[index];
-            if (definition == null)
-                return false;
-
-            EquipmentRuntimeFactory.EnsureRuntimePrefab(definition);
-            if (definition.Prefab == null)
-                return false;
-
-            UnequipActive();
-
-            if (!_spawned.TryGetValue(definition.Id, out var instance) || instance == null)
-            {
-                var go = Instantiate(definition.Prefab);
-                instance = go.GetComponent<EquipmentBase>();
-                if (instance == null)
-                {
-                    CIYCLog.Warn($"Equipment prefab missing EquipmentBase component: {definition.Id}");
-                    Destroy(go);
-                    return false;
-                }
-
-                instance.name = definition.DisplayName;
-                _spawned[definition.Id] = instance;
-            }
-
-            ActiveInstance = instance;
-            _activeIndex = index;
-            ActiveInstance.Equip(handAnchor);
-            GameEvents.EquipmentChanged();
-            return true;
-        }
-
-        public bool EquipById(string equipmentId)
+        public bool LoadoutContains(string equipmentId)
         {
             for (int i = 0; i < _loadout.Count; i++)
-            {
-                if (_loadout[i] != null && _loadout[i].Id == equipmentId)
-                    return EquipByIndex(i);
-            }
+                if (_loadout[i] != null &&
+                    string.Equals(_loadout[i].Id, equipmentId, System.StringComparison.Ordinal))
+                    return true;
 
             return false;
         }
 
-        public void UnequipActive()
-        {
-            if (ActiveInstance == null)
-                return;
-
-            ActiveInstance.Unequip();
-            ActiveInstance = null;
-            _activeIndex = -1;
-            GameEvents.EquipmentChanged();
-        }
-
-        public void CycleNext()
-        {
-            if (_loadout.Count == 0)
-                return;
-
-            int next = _activeIndex < 0 ? 0 : (_activeIndex + 1) % _loadout.Count;
-            EquipByIndex(next);
-        }
-
-        public void CyclePrevious()
-        {
-            if (_loadout.Count == 0)
-                return;
-
-            int prev = _activeIndex < 0 ? _loadout.Count - 1 : (_activeIndex - 1 + _loadout.Count) % _loadout.Count;
-            EquipByIndex(prev);
-        }
-
-        public bool TryPlaceActive()
-        {
-            if (ActiveInstance == null || ActiveInstance.Definition == null || !ActiveInstance.Definition.CanPlace)
-                return false;
-
-            if (!TryGetPlacementPose(out var position, out var rotation))
-                return false;
-
-            var placed = ActiveInstance.TryPlace(position, rotation);
-            if (placed)
-            {
-                ActiveInstance = null;
-                _activeIndex = -1;
-            }
-
-            return placed;
-        }
-
-        public void DropActive()
-        {
-            if (ActiveInstance == null || ActiveInstance.Definition == null || !ActiveInstance.Definition.CanDrop)
-                return;
-
-            var dropPos = handAnchor != null ? handAnchor.position + handAnchor.forward * 0.75f : transform.position;
-            var dropRot = handAnchor != null ? handAnchor.rotation : Quaternion.identity;
-            ActiveInstance.Drop(dropPos, dropRot);
-            ActiveInstance = null;
-            _activeIndex = -1;
-        }
-
-        private bool TryGetPlacementPose(out Vector3 position, out Quaternion rotation)
-        {
-            position = Vector3.zero;
-            rotation = Quaternion.identity;
-
-            if (handAnchor == null)
-                return false;
-
-            float range = ActiveInstance.Definition.InteractionRange;
-            var ray = new Ray(hAnchorPosition(), handAnchor.forward);
-            if (Physics.Raycast(ray, out var hit, range, placementMask, QueryTriggerInteraction.Ignore))
-            {
-                position = hit.point + hit.normal * placementSurfaceOffset;
-                rotation = Quaternion.FromToRotation(Vector3.up, hit.normal);
-                return true;
-            }
-
-            position = handAnchor.position + handAnchor.forward * Mathf.Min(range, 1.25f);
-            rotation = Quaternion.LookRotation(handAnchor.forward, Vector3.up);
-            return true;
-        }
-
-        private Vector3 hAnchorPosition() => handAnchor != null ? handAnchor.position : transform.position;
-
+        /// <summary>
+        /// The default kit. Sets the loadout only - it does not put anything in anyone's
+        /// hand, because whose hand that would be is the inventory's business.
+        /// </summary>
         public void GiveStarterLoadout()
         {
-            var flashlight = EquipmentDefinitionFactory.GetById("flashlight");
-            var emf = EquipmentDefinitionFactory.GetById("emf_detector");
-            var uv = EquipmentDefinitionFactory.GetById("uv_light");
+            var starter = new List<EquipmentDefinition>();
 
-            EquipmentRuntimeFactory.EnsureRuntimePrefab(flashlight);
-            EquipmentRuntimeFactory.EnsureRuntimePrefab(emf);
-            EquipmentRuntimeFactory.EnsureRuntimePrefab(uv);
+            AddIfFound(starter, "flashlight");
+            AddIfFound(starter, "emf_detector");
+            AddIfFound(starter, "uv_light");
 
-            SetLoadout(new[] { flashlight, emf, uv });
-            EquipByIndex(0);
+            SetLoadout(starter);
+        }
+
+        private static void AddIfFound(List<EquipmentDefinition> into, string id)
+        {
+            var definition = EquipmentDefinitionFactory.GetById(id);
+            if (definition != null)
+                into.Add(definition);
         }
     }
 }

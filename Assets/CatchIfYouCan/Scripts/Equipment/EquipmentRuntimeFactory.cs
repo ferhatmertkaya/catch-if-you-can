@@ -2,6 +2,18 @@ using UnityEngine;
 
 namespace CatchIfYouCan.Equipment
 {
+    /// <summary>
+    /// Builds throwaway runtime stand-ins for equipment definitions that have no authored
+    /// prefab yet, so a definition is never left with a null <c>Prefab</c>.
+    ///
+    /// <para>
+    /// Nothing calls this at the moment: the loadout is data, and the only equipment the player
+    /// actually carries is built by <see cref="Player.PlayerFactory"/>. It is kept as the seam
+    /// that real authored equipment prefabs will replace, and because leaving its
+    /// unknown-ID fallback in place would have been worse than deleting it - see
+    /// <see cref="BuildDevPlaceholder"/>.
+    /// </para>
+    /// </summary>
     public static class EquipmentRuntimeFactory
     {
         private static readonly System.Collections.Generic.Dictionary<string, GameObject> PrefabCache =
@@ -27,7 +39,7 @@ namespace CatchIfYouCan.Equipment
                 "evp_recorder" => BuildPrimitiveEquipment<EVPRecorder>(definition, new Vector3(0.12f, 0.08f, 0.18f)),
                 "photo_camera" => BuildPrimitiveEquipment<PhotoCameraEquipment>(definition, new Vector3(0.12f, 0.1f, 0.18f)),
                 "salt" => BuildPrimitiveEquipment<SaltEquipment>(definition, new Vector3(0.2f, 0.15f, 0.2f)),
-                _ => BuildPrimitiveEquipment<FlashlightEquipment>(definition, new Vector3(0.12f, 0.08f, 0.2f))
+                _ => BuildDevPlaceholder(definition)
             };
 
             prefab.name = $"Runtime_{definition.Id}";
@@ -35,25 +47,41 @@ namespace CatchIfYouCan.Equipment
             definition.Prefab = prefab;
         }
 
+        /// <summary>
+        /// The torch. There is exactly one flashlight implementation now, and it builds its own
+        /// body, lens and beam, so this hands it an empty object and gets out of the way rather
+        /// than wrapping a primitive cube around a second, parallel torch.
+        /// </summary>
         private static GameObject BuildFlashlight(EquipmentDefinition definition)
         {
-            var root = BuildBody(definition, new Vector3(0.08f, 0.08f, 0.22f));
-            var equipment = root.GetComponent<FlashlightEquipment>() ?? root.AddComponent<FlashlightEquipment>();
+            var root = new GameObject(definition.DisplayName);
+            root.tag = "Equipment";
+
+            var equipment = root.AddComponent<HeldFlashlight>();
             equipment.BindDefinition(definition);
+            return root;
+        }
 
-            var lightGo = new GameObject("Spotlight");
-            lightGo.transform.SetParent(root.transform, false);
-            lightGo.transform.localPosition = new Vector3(0f, 0f, 0.15f);
-            lightGo.transform.localRotation = Quaternion.identity;
+        /// <summary>
+        /// What an unrecognised equipment ID gets: a labelled, inert box and a loud complaint.
+        ///
+        /// <para>
+        /// This branch used to build a flashlight. Every unimplemented item in the catalogue -
+        /// the thermometer, the EVP recorder, the spirit box, the crucifix - therefore came out
+        /// of the factory as a working torch, which reads as "implemented" to anyone testing it
+        /// and hides the fact that the item does not exist.
+        /// </para>
+        /// </summary>
+        private static GameObject BuildDevPlaceholder(EquipmentDefinition definition)
+        {
+            Debug.LogError(
+                $"[Equipment] No runtime implementation for equipment id '{definition.Id}'. " +
+                "Building a DEV_PLACEHOLDER that does nothing. Add a case to " +
+                "EquipmentRuntimeFactory, or author a prefab on the definition.");
 
-            var light = lightGo.AddComponent<Light>();
-            light.type = LightType.Spot;
-            light.range = 14f;
-            light.spotAngle = 55f;
-            light.intensity = 2f;
-            light.enabled = false;
-
-            SetPrivateField(equipment, "spotlight", light);
+            var root = BuildBody(definition, new Vector3(0.12f, 0.12f, 0.12f));
+            root.name = $"DEV_PLACEHOLDER_{definition.Id}";
+            root.AddComponent<DevPlaceholderEquipment>().BindDefinition(definition);
             return root;
         }
 

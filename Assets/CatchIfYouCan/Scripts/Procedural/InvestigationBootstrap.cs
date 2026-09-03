@@ -190,25 +190,14 @@ namespace CatchIfYouCan.Procedural
             var inventory = buildResult.Root.GetComponent<PlayerInventory>();
             inventory?.SetHandAnchor(handAnchor);
 
-            var equipmentManager = EquipmentManager.Instance;
-            if (equipmentManager != null)
-            {
-                equipmentManager.SetHandAnchor(handAnchor);
-                equipmentManager.GiveStarterLoadout();
-            }
+            // Loadout only. What the player is holding is the inventory's answer, and the hand
+            // anchor above is the only one there is now.
+            EquipmentManager.Instance?.GiveStarterLoadout();
 
-            var fear = buildResult.Root.GetComponent<FearSystem>();
-            if (fear != null && equipmentManager?.ActiveInstance is FlashlightEquipment flashlight)
-            {
-                var spotlightField = typeof(FlashlightEquipment).GetField("spotlight",
-                    System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-                if (spotlightField?.GetValue(flashlight) is Light spotlight)
-                {
-                    var fearField = typeof(FearSystem).GetField("playerFlashlight",
-                        System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-                    fearField?.SetValue(fear, spotlight);
-                }
-            }
+            // The fear system's light is wired where the torch is built, in PlayerFactory, so
+            // every spawn path gets it. This used to be done here by reading a private field
+            // off a second, parallel flashlight implementation that the player never carried,
+            // which meant the "am I standing in my own light" check was wired to nothing.
         }
 
         private void SpawnGhost(MissionRuntime mission)

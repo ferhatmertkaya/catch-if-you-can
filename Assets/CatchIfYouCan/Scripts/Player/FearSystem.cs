@@ -91,6 +91,17 @@ namespace CatchIfYouCan.Player
             GameEvents.FearChanged(_fear);
         }
 
+        /// <summary>
+        /// Hands the fear system the light the player is actually carrying, so
+        /// <see cref="IsInDarkness"/> can tell whether they are standing in their own beam.
+        /// Set by whoever builds the player, because the torch is created at runtime and there
+        /// is no serialized reference to give it.
+        /// </summary>
+        public void SetFlashlight(Light light)
+        {
+            playerFlashlight = light;
+        }
+
         private bool IsInDarkness()
         {
             if (playerFlashlight != null && playerFlashlight.enabled && playerFlashlight.intensity > 0.05f)

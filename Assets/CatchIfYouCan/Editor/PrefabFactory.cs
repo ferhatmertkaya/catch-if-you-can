@@ -66,7 +66,7 @@ namespace CatchIfYouCan.EditorTools
         {
             SaveEquipment("EMF_Reader", typeof(EMFDetector), new Vector3(0.15f, 0.08f, 0.25f), created);
             SaveEquipment("Camera", typeof(PhotoCameraEquipment), new Vector3(0.12f, 0.1f, 0.18f), created);
-            SaveEquipment("Flashlight", typeof(FlashlightEquipment), new Vector3(0.08f, 0.08f, 0.22f), created);
+            SaveEquipment("Flashlight", typeof(HeldFlashlight), new Vector3(0.08f, 0.08f, 0.22f), created);
             SaveEquipment("UV_Light", typeof(UVLight), new Vector3(0.1f, 0.08f, 0.2f), created);
             SaveEquipment("Thermometer", typeof(ThermometerEquipment), new Vector3(0.05f, 0.15f, 0.05f), created);
             SaveEquipment("Salt", typeof(SaltEquipment), new Vector3(0.2f, 0.15f, 0.2f), created);

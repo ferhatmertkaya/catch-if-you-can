@@ -158,16 +158,14 @@ namespace CatchIfYouCan.Player
             }
         }
 
+        /// <summary>
+        /// Where held items are parented. The inventory owns this outright now: the loadout
+        /// service used to keep a second hand anchor of its own, and whichever one a caller
+        /// happened to ask decided where the item ended up.
+        /// </summary>
         private Transform ResolveHandAnchor()
         {
-            if (handAnchor != null)
-                return handAnchor;
-
-            var manager = EquipmentManager.Instance;
-            if (manager != null && manager.HandAnchor != null)
-                return manager.HandAnchor;
-
-            return transform;
+            return handAnchor != null ? handAnchor : transform;
         }
 
         private Vector3 GetDropPosition()
