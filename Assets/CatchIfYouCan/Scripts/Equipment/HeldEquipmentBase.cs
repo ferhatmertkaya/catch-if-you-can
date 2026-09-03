@@ -470,11 +470,39 @@ namespace CatchIfYouCan.Equipment
             }
         }
 
+        /// <summary>
+        /// Takes an item off the floor into an inventory.
+        ///
+        /// <para>
+        /// The lifecycle check below is the race resolver, and it is why picking up is an
+        /// authority decision rather than a local one. Two players reaching for the same torch
+        /// on the same frame is not an edge case; the only way one of them loses is if exactly
+        /// one machine decides, and the loser gets WrongState because the item is no longer in
+        /// the world by the time their request is looked at.
+        /// </para>
+        ///
+        /// <para>
+        /// Reach is validated here, against this item's real position, rather than trusted from
+        /// the asker. A client that measures its own reach is a client that can be told to
+        /// measure generously.
+        /// </para>
+        /// </summary>
         public EquipmentActionResult TryPickup(Player.PlayerInventory into)
         {
             if (into == null)
                 return EquipmentActionResult.Fail(
                     EquipmentActionStatus.NoAuthority, "no inventory to pick this up into");
+
+            if (!Session.AuthorityRequests.CanDecide)
+                return EquipmentActionResult.Fail(
+                    EquipmentActionStatus.NoAuthority, "the host decides who picks this up");
+
+            // Checked before the state test, so an out-of-reach request cannot consume the
+            // item's transition and make a legitimate nearer request fail as "already owned".
+            var reach = Session.AuthorityRequests.ValidateReach(into.transform, transform);
+            if (!Session.AuthorityRequests.Allows(reach))
+                return EquipmentActionResult.Fail(
+                    EquipmentActionStatus.OutOfRange, Session.AuthorityRequests.Describe(reach));
 
             if (LifecycleState != EquipmentLifecycleState.World)
                 return EquipmentActionResult.Fail(

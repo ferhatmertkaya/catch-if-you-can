@@ -94,7 +94,7 @@ namespace CatchIfYouCan.Interaction
             if (CurrentTarget.HoldDuration <= 0f)
             {
                 if (_input.InteractPressed)
-                    CurrentTarget.Interact(gameObject);
+                    Request(CurrentTarget);
                 return;
             }
 
@@ -112,11 +112,56 @@ namespace CatchIfYouCan.Interaction
 
             if (_holdTimer >= CurrentTarget.HoldDuration)
             {
-                CurrentTarget.Interact(gameObject);
+                Request(CurrentTarget);
                 _holdTimer = 0f;
                 HoldProgress = 0f;
                 _heldTarget = null;
             }
+        }
+
+        /// <summary>
+        /// Asks for an interaction rather than performing one.
+        ///
+        /// <para>
+        /// A door's open state, a light switch, a breaker: every player sees these, so exactly
+        /// one machine may change them. Both execution sites - tap and hold - go through here,
+        /// so there is one place a networking layer forwards from and one place the reach is
+        /// checked.
+        /// </para>
+        ///
+        /// <para>
+        /// The reach check is against the target's real transform at the moment of the
+        /// decision, not the raycast that found it a frame or two ago. Aiming at a door and
+        /// walking away from it while a hold completes is a real sequence, and it should fail.
+        /// </para>
+        ///
+        /// <para>
+        /// In single player this process is the authority, so the request is validated and
+        /// carried out in the same call and nothing about the feel changes.
+        /// </para>
+        /// </summary>
+        private void Request(IInteractable target)
+        {
+            if (target == null)
+                return;
+
+            if (!Session.AuthorityRequests.CanDecide)
+            {
+                // A client's intent goes to the host, which is a routing job rather than this
+                // component's. Until there is a network there is no client, so this is
+                // unreachable today - and it is where the forward will go.
+                return;
+            }
+
+            var behaviour = target as MonoBehaviour;
+            if (behaviour != null)
+            {
+                var reach = Session.AuthorityRequests.ValidateReach(transform, behaviour.transform);
+                if (!Session.AuthorityRequests.Allows(reach))
+                    return;
+            }
+
+            target.Interact(gameObject);
         }
 
         private void BroadcastPrompt()
