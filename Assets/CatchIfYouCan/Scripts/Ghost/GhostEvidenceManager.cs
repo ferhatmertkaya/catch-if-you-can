@@ -65,6 +65,12 @@ namespace CatchIfYouCan.Ghost
         private void Update()
         {
             if (_ghost?.Definition == null) return;
+
+            // Manifestation is world state: the EMF spot, the UV mark and the orb are objects
+            // every player can find. The host decides they exist; a client that rolled its own
+            // would find evidence nobody else could see.
+            if (!Core.SessionAuthority.CanSimulateGhost) return;
+
             if (Time.time < _nextSpawnTime) return;
 
             SpawnEvidenceForDefinition();

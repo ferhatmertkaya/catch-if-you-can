@@ -40,23 +40,58 @@ namespace CatchIfYouCan.Ghost
             BindPlayer();
         }
 
+        [Tooltip("Seconds between re-checking which player is nearest. A ghost does not need " +
+                 "to re-decide who it is looking at sixty times a second, and four players " +
+                 "make that a real cost rather than a theoretical one.")]
+        [SerializeField, Min(0.05f)] private float targetRefreshInterval = 0.25f;
+
+        private float _targetTimer;
+
+        /// <summary>
+        /// Picks whoever is nearest out of everyone in the house.
+        ///
+        /// <para>
+        /// This used to bind <c>LocalPlayerService.RootTransform</c> once and keep it forever.
+        /// That service holds exactly one player - the one on this machine - so with a second
+        /// player in the house the ghost would roam toward the host, hunt the host and treat
+        /// everybody else as furniture. In single player the registry holds exactly one entry
+        /// and the answer is identical to what it was.
+        /// </para>
+        /// </summary>
         private bool BindPlayer()
         {
-            if (_player != null)
+            _targetTimer -= Time.deltaTime;
+            if (_player != null && _targetTimer > 0f)
                 return true;
 
-            _player = Core.LocalPlayerService.RootTransform;
-            if (_player == null)
-                return false;
+            _targetTimer = targetRefreshInterval;
 
-            LastKnownPlayerPosition = _player.position;
+            var nearest = Player.PlayerPresence.Nearest(eyePoint != null
+                ? eyePoint.position
+                : transform.position);
+
+            if (nearest == null)
+                return _player != null;
+
+            if (_player != nearest.transform)
+            {
+                _player = nearest.transform;
+                LastKnownPlayerPosition = _player.position;
+            }
+
             return true;
         }
 
         private void Update()
         {
-            // Retried every tick until a player exists, so a ghost spawned first is not
-            // blind for the rest of the mission.
+            // Perception is a host decision: it feeds hunting, investigating and who gets
+            // killed. A client running it would reach its own conclusions about its own local
+            // player and act on them.
+            if (!Core.SessionAuthority.CanSimulateGhost)
+                return;
+
+            // Retried until a player exists, so a ghost spawned first is not blind for the
+            // rest of the mission.
             if (!BindPlayer()) return;
 
             UpdateLineOfSight();

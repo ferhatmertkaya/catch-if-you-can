@@ -92,10 +92,23 @@ namespace CatchIfYouCan.Ghost
         private void Update()
         {
             if (definition == null) return;
-            _stateMachine.Tick(Time.deltaTime);
+
+            // Exactly one peer runs the ghost. Everything below the presentation line - the
+            // state machine, room awareness, the footsteps that disturb salt - is a decision,
+            // and four machines each making it independently is four different ghosts wearing
+            // the same transform.
+            //
+            // In single player this is always true, so nothing changes.
+            if (Core.SessionAuthority.CanSimulateGhost)
+            {
+                _stateMachine.Tick(Time.deltaTime);
+                UpdateRoomAwareness();
+                UpdateFootsteps();
+            }
+
+            // Presentation runs on every peer, from whatever state it has. A client still
+            // needs to draw the ghost it can see.
             UpdateManifestationVisibility();
-            UpdateRoomAwareness();
-            UpdateFootsteps();
         }
 
         [Header("Traces")]

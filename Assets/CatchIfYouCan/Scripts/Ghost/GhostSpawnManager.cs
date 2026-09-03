@@ -15,6 +15,11 @@ namespace CatchIfYouCan.Ghost
         [SerializeField] private string playerTag = "Player";
 
         private Transform _player;
+        [Tooltip("Half-angle, in degrees, treated as \"in front of\" for a player whose camera " +
+                 "this machine does not have. Wider than a real frustum on purpose: erring " +
+                 "toward rejecting a spawn is the safe direction.")]
+        [SerializeField, Range(20f, 90f)] private float remoteFacingAngle = 60f;
+
         private Camera _camera;
 
         private void Start()
@@ -27,20 +32,36 @@ namespace CatchIfYouCan.Ghost
         }
 
         /// <summary>
-        /// The player to hunt, resolved late. Prefers the registered local player; falls
-        /// back to the tag search this used to do, so a hand-placed player in a test scene
-        /// still works.
+        /// A player to spawn away from, resolved late.
+        ///
+        /// <para>
+        /// <b>This getter used to call itself.</b> Every branch tested <c>Player</c> rather
+        /// than <c>_player</c>, so the first read - <c>TryFindSpawnPoint</c>, on the first
+        /// ghost spawn of a mission - recursed until the stack ran out. A StackOverflowException
+        /// cannot be caught in .NET and terminates the process immediately, so this was a hard
+        /// crash sitting in the ghost spawn path, reached the moment anything called it with a
+        /// player present.
+        /// </para>
+        ///
+        /// <para>
+        /// Resolved from the presence registry now, so it is a player rather than
+        /// specifically the local one. The tag search stays as the last resort for a
+        /// hand-placed player in a test scene that never registered.
+        /// </para>
         /// </summary>
-        private Transform Player
+        private Transform TargetPlayer
         {
             get
             {
-                if (Player != null)
+                if (_player != null)
                     return _player;
 
-                _player = Core.LocalPlayerService.RootTransform;
-                if (Player != null)
+                var nearest = Player.PlayerPresence.Nearest(transform.position);
+                if (nearest != null)
+                {
+                    _player = nearest.transform;
                     return _player;
+                }
 
                 var tagged = GameObject.FindGameObjectWithTag(playerTag);
                 if (tagged != null)
@@ -94,7 +115,7 @@ namespace CatchIfYouCan.Ghost
         public bool TryFindSpawnPoint(bool allowFrontSpawn, out Vector3 position)
         {
             position = Vector3.zero;
-            var player = Player;
+            var player = TargetPlayer;
             Vector3 playerPos = player != null ? player.position : Vector3.zero;
 
             for (int attempt = 0; attempt < 24; attempt++)
@@ -105,7 +126,7 @@ namespace CatchIfYouCan.Ghost
 
                 candidate = hit.position;
 
-                if (Player != null)
+                if (TargetPlayer != null)
                 {
                     float dist = Vector3.Distance(candidate, playerPos);
                     if (dist < minPlayerDistance || dist > maxPlayerDistance)
@@ -133,7 +154,7 @@ namespace CatchIfYouCan.Ghost
                 return anchor.position + Random.insideUnitSphere * 4f;
             }
 
-            if (Player != null)
+            if (TargetPlayer != null)
             {
                 Vector2 ring = Random.insideUnitCircle.normalized * Random.Range(minPlayerDistance, maxPlayerDistance);
                 return playerPos + new Vector3(ring.x, 0f, ring.y);
@@ -142,17 +163,59 @@ namespace CatchIfYouCan.Ghost
             return Random.insideUnitSphere * 10f;
         }
 
+        /// <summary>
+        /// Whether a spawn point would appear in front of somebody.
+        ///
+        /// <para>
+        /// A ghost must not pop into existence where a player is looking, and on a host
+        /// "a player" is not "the local player". This used to project into the local camera
+        /// only, so with three other people in the house the ghost could appear directly in
+        /// front of any of them.
+        /// </para>
+        ///
+        /// <para>
+        /// Only the local camera can be projected through - a remote player's camera does not
+        /// exist on this machine - so a remote player is tested by facing instead: their root's
+        /// forward and the angle to the candidate. It is a coarser test than a frustum and it
+        /// is the right kind of coarse, because it errs toward rejecting a spawn.
+        /// </para>
+        /// </summary>
         private bool IsInPlayerFOV(Vector3 worldPos)
         {
-            if (_camera == null) _camera = Core.LocalPlayerService.ResolveViewCamera();
-            if (_camera == null) return false;
+            var players = Player.PlayerPresence.All;
+            for (int i = 0; i < players.Count; i++)
+            {
+                var presence = players[i];
+                if (presence == null)
+                    continue;
 
-            Vector3 viewport = _camera.WorldToViewportPoint(worldPos);
-            if (viewport.z <= 0f) return false;
+                if (presence.IsLocal)
+                {
+                    if (_camera == null)
+                        _camera = Core.LocalPlayerService.ResolveViewCamera();
 
-            const float margin = 0.05f;
-            return viewport.x >= -margin && viewport.x <= 1f + margin &&
-                   viewport.y >= -margin && viewport.y <= 1f + margin;
+                    if (_camera != null)
+                    {
+                        Vector3 viewport = _camera.WorldToViewportPoint(worldPos);
+                        const float margin = 0.05f;
+                        if (viewport.z > 0f &&
+                            viewport.x >= -margin && viewport.x <= 1f + margin &&
+                            viewport.y >= -margin && viewport.y <= 1f + margin)
+                            return true;
+
+                        continue;
+                    }
+                }
+
+                Vector3 toCandidate = worldPos - presence.transform.position;
+                if (toCandidate.sqrMagnitude < 0.0001f)
+                    return true;
+
+                if (Vector3.Angle(presence.transform.forward, toCandidate) <= remoteFacingAngle)
+                    return true;
+            }
+
+            return false;
         }
 
         private bool IsHiddenSpawn(Vector3 spawnPos, Vector3 playerPos)

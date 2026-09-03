@@ -24,6 +24,11 @@ namespace CatchIfYouCan.Ghost
         {
             if (_ghost?.Definition == null) return false;
 
+            // Every branch below rolls dice and then changes something every player can see -
+            // a door, a light, a thrown object, a mark on a wall. Host-only, or four machines
+            // roll four different outcomes and the house disagrees with itself.
+            if (!Core.SessionAuthority.CanSimulateGhost) return false;
+
             float roll = Random.value;
             var def = _ghost.Definition;
 

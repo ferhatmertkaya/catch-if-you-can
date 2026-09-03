@@ -78,6 +78,21 @@ namespace CatchIfYouCan.Core
             ViewCamera = viewCamera;
             Listener = listener;
 
+            // Announce the player's existence as well as its ownership. These are two
+            // different questions - "which one is mine" and "who is here" - and conflating
+            // them is what left the ghost able to see only the host: everything that needed a
+            // player position asked this service, which holds exactly one.
+            //
+            // Announced here because this is where a local player appearing is already known.
+            // A remote player is announced by whatever spawns it, and never through this
+            // method: a remote player is present and is emphatically not local.
+            var presence = root.GetComponent<Player.PlayerPresence>()
+                           ?? root.AddComponent<Player.PlayerPresence>();
+            presence.Bind(isLocal: true, clientId: Player.PlayerPresence.LocalOnlyClientId);
+
+            if (viewCamera != null)
+                presence.SetEyePoint(viewCamera.transform);
+
             PlayerRegistered?.Invoke();
         }
 
