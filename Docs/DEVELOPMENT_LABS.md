@@ -58,6 +58,42 @@ asset is nearly empty, which means:
 
 ---
 
+## 3b. Which specialist uses which lab (V6)
+
+Each lab's `preferred_dev_lab` is recorded per role in `Docs/AGENT_ROSTER.json`,
+and `Scripts/check_agent_architecture.sh` fails if a role names a lab that has
+no installer.
+
+| Lab | Specialists |
+|---|---|
+| `DEV_CharacterLab` | 5 Player Controller · 6 Character / Rig · 7 Animation · 8 First-Person Hands / IK |
+| `DEV_EquipmentLab` | 9 Equipment Architecture · 10 Investigation Device · 11 Defensive Equipment · 12 Equipment Presentation |
+| `DEV_GhostLab` | 13 Ghost AI · 14 Hunt System · 15 Ghost Event · 16 Evidence · 17 Ghost Visual |
+| `DEV_InteractionLab` | 19 Interaction |
+| `DEV_LightingLab` | 21 Lighting · 22 Shader / Material · 23 Mirror / Reflection · 24 VFX / Atmosphere |
+| `DEV_AudioLab` | 25 Audio Architecture · 26 Sound Design · 27 Ambience · 28 Footstep / Player Audio |
+| `DEV_UIInputLab` | 29 UI / HUD · 30 Menu / Lobby UX · 31 Journal |
+| `DEV_EnvironmentLab` | 18 Environment / Level · 39 Art / Prop Pipeline |
+| `DEV_NetworkLab` | 34 Multiplayer Architecture · 35 Netcode · 36 Online Services · 37 Crossplay |
+
+`DEV_CharacterLab` is what a "player lab" would have been and `DEV_UIInputLab`
+is what a "UI lab" would have been. Neither was duplicated under a new name.
+
+**One gap, deliberately not filled.** There is no `DEV_ProceduralLab`.
+Generation is exercised by the offline determinism harness (158 checks, no Unity
+needed) and by **Catch If You Can > Tools > House Generator Test**, which is a
+better fit than a scene: the generator produces a different house per seed, and
+a lab that shows one of them shows the least interesting thing about it. If a
+lab is ever wanted, it belongs to **20 Procedural Generation** and **40 Editor
+Tools**. Building one is feature work, not ownership work.
+
+Roles with no lab — 1 Main, 2 Core Architecture, 3 Performance, 4 QA,
+20 Procedural, 32 Progression, 33 Save, 38 Platform / Build — record
+`preferred_dev_lab: null` rather than being pointed at a lab that does not suit
+them.
+
+---
+
 ## 4. Notes on individual labs
 
 **Equipment.** The bench is in catalogue order, which is also the order a

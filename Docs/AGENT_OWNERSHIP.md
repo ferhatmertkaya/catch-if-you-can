@@ -102,6 +102,16 @@ owns the folder. These have **one owner and no shared editing**, ever.
 | `ProjectSettings/**` | Tooling | Render pipeline, input handling, build settings, always-included shaders. A change here is invisible in a diff review and total in effect. |
 | `Assets/CatchIfYouCan/Scenes/**` (`.unity`) | Whoever owns the scene | Scene YAML is a graph of cross-referencing documents. Two agents editing one scene produces a file that merges and does not open. Prefer code-built fixtures — see `DEVELOPMENT_LABS.md` §2. |
 | `.meta` files | The file's owner | A regenerated GUID silently detaches every reference to the asset. Never delete or recreate a `.meta` to "fix" an import. |
+| `Scripts/Equipment/EquipmentPresentation.cs` | Equipment (spec. 12) | Lays every held item on the grip it is handed. It does not recompute the grip, and a second offset applied here is how there came to be three. |
+| `Scripts/Player/PlayerInventory.cs` | Equipment (spec. 9) | Three slots, and the only place equipment ownership is claimed and released. Claiming in a second place hands everybody's spare kit to the first person past. |
+| `Scripts/Ghost/GhostController.cs` | Ghost AI (spec. 13) | Every ghost decision path, each gated on `SessionAuthority.CanSimulateGhost`. Four machines each deciding is four ghosts wearing one transform. |
+| `Scripts/Ghost/GhostStateMachine.cs` | Ghost AI (spec. 13) | Entering a state runs the host's decisions for it. `AdoptReplicatedState` exists so a client can take the state without running them. |
+| `Scripts/Evidence/EvidenceValidator.cs` | Evidence (spec. 16) | What counts as proof. Three back doors round it have already been found and closed. Governed by `GHOST_EVIDENCE_AUTHORITY.md`. |
+| `Scripts/Procedural/Deterministic/MultiplayerProtocol.cs` | Multiplayer (spec. 34) | `MaxPlayers = 8` and the protocol version. The only place the capacity lives; a second constant is a second answer. |
+| `Scripts/Session/MultiplayerSessionService.cs`, `Scripts/Core/SessionAuthority.cs` | Multiplayer (spec. 34) | Installing a session also sets who decides. Two places doing that is two parts of the game disagreeing about who the host is. |
+| `Scripts/Procedural/Deterministic/GenerationVersion.cs` | Procedural (spec. 20) | Changing it makes every existing build incompatible with itself. Never changed for a networking reason. |
+| `Scripts/Art/MirrorCorner.cs`, `Shaders/PlanarMirror.shader` | Mirror (spec. 23) | The mirror plane is captured once and never rotates toward the player. Reverting to an off-axis frustum brings the portal effect back. |
+| `Scripts/Save/SaveManager.cs` | Save (spec. 33) | Local persistence with no online dependency, permanently. A format change without a migration eats a save. |
 
 ---
 
@@ -123,6 +133,57 @@ owns the folder. These have **one owner and no shared editing**, ever.
 - **Claim a Play Mode result without Unity having run.** Say NOT TESTED.
 - **Enable a `DEV_` scene in the build list.** Guarded by
   `Scripts/check_dev_scenes.sh`, which fails CI.
+
+---
+
+## 5b. The specialist layer (V6)
+
+Teams own **folders**. Specialists own **concerns**. Both are real and neither
+replaces the other: three specialists — Equipment Architecture, Investigation
+Device and Equipment Presentation — all work inside the Equipment team's folder.
+
+> The **team** rule says who may write the file.
+> The **specialist** rule says whose judgement the change needs.
+
+Forty specialists are defined in **`Docs/AGENT_ROSTER.json`**, which is the
+machine-readable source and carries, for each one: mission, owns, may_read,
+protected_files, forbidden_changes, required_reviewers, preferred_dev_lab,
+validators and escalation_rules. Every role names the `team` whose folder it
+writes in.
+
+`Scripts/check_agent_architecture.sh` fails if the roster and this document
+drift apart.
+
+| Group | Roles |
+|---|---|
+| Leadership / architecture | 1 Main / Lead Architect · 2 Core Architecture · 3 Performance · 4 QA / Validation |
+| Player / character | 5 Player Controller · 6 Character / Rig · 7 Animation · 8 First-Person Hands / IK |
+| Equipment | 9 Equipment Architecture · 10 Investigation Device · 11 Defensive Equipment · 12 Equipment Presentation |
+| Ghost / horror | 13 Ghost AI · 14 Hunt System · 15 Ghost Event · 16 Evidence · 17 Ghost Visual |
+| World / environment | 18 Environment / Level · 19 Interaction · 20 Procedural Generation · 21 Lighting · 22 Shader / Material · 23 Mirror / Reflection · 24 VFX / Atmosphere |
+| Audio | 25 Audio Architecture · 26 Sound Design · 27 Ambience · 28 Footstep / Player Audio |
+| UI / progression | 29 UI / HUD · 30 Menu / Lobby UX · 31 Journal · 32 Progression / Economy · 33 Save / Settings |
+| Network | 34 Multiplayer Architecture · 35 Netcode / Transport **(BLOCKED)** · 36 Online Services **(BLOCKED)** · 37 Crossplay · 38 Platform / Build |
+| Content / tools | 39 Art / Prop Pipeline · 40 Editor Tools / Dev Lab |
+
+**These are development roles, not runtime objects.** There is no
+`AgentManager`, no `AgentService`, no agent `GameObject`, and there must not
+be. Nothing under `Assets/` reads the roster.
+
+How a task is routed, what a specialist must hand back, and the cross-agent
+review matrix are in **`Docs/AGENT_TASK_ROUTER.md`**.
+
+---
+
+## 5c. A protected hotspot is not "never edit"
+
+It means four things, and all four are required:
+
+1. the **owning specialist participates**;
+2. a cross-domain change gets its **reviewer** from the router's §4 matrix;
+3. the **existing invariant is stated** before the change, not after;
+4. the **relevant guards run**, and the static baseline is diffed rather than
+   counted — a falling error count is early termination, not success.
 
 ---
 
