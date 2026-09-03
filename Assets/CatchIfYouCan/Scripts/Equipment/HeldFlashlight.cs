@@ -136,6 +136,66 @@ namespace CatchIfYouCan.Equipment
         /// <summary>The beam follows the torch wherever it ends up: hand, bag or floor.</summary>
         protected override void OnCarryChanged() => ApplyLight();
 
+        [Header("Aim")]
+        [Tooltip("How far down the crosshair ray the beam is aimed when nothing is hit. Far " +
+                 "enough that the beam reads as parallel to the view rather than converging.")]
+        [SerializeField, Min(1f)] private float aimDistance = 25f;
+
+        private Camera _aimCamera;
+
+        /// <summary>
+        /// Points the beam through the middle of the screen.
+        ///
+        /// <para>
+        /// <b>The torch is held naturally and the light is aimed separately.</b> A torch lies in
+        /// the hand at whatever angle the grip gives it, and a beam bolted rigidly to that
+        /// barrel lands well off the crosshair - which reads as the light being broken rather
+        /// than as the hand being realistic. So the pose is left exactly alone (no hand, arm or
+        /// grip maths is touched anywhere) and only the light's own rotation is solved, from the
+        /// centre of the viewport outward.
+        /// </para>
+        ///
+        /// <para>
+        /// Only while the torch is in the hand. On the floor or in a bag it keeps the barrel's
+        /// own direction, which is what makes a dropped torch light the wall it fell facing.
+        /// </para>
+        /// </summary>
+        private void LateUpdate()
+        {
+            if (_light == null || _head == null)
+                return;
+
+            if (LifecycleState != EquipmentLifecycleState.Equipped &&
+                LifecycleState != EquipmentLifecycleState.Using)
+                return;
+
+            Camera view = ResolveAimCamera();
+            if (view == null)
+                return;
+
+            // The point the player is looking at, at a distance where the parallax between the
+            // eye and the hand no longer reads.
+            Vector3 target = view.transform.position + view.transform.forward * aimDistance;
+            Vector3 toTarget = target - _light.transform.position;
+            if (toTarget.sqrMagnitude < 0.0001f)
+                return;
+
+            _light.transform.rotation = Quaternion.LookRotation(toTarget, view.transform.up);
+        }
+
+        /// <summary>
+        /// The player's camera, cached. Resolved through <see cref="Core.LocalPlayerService"/>
+        /// rather than by searching the scene, and re-asked only when the cached one has gone.
+        /// </summary>
+        private Camera ResolveAimCamera()
+        {
+            if (_aimCamera != null)
+                return _aimCamera;
+
+            _aimCamera = Core.LocalPlayerService.ResolveViewCamera();
+            return _aimCamera;
+        }
+
         private void OnEnable()
         {
             var input = Input.MobileInputController.Instance;

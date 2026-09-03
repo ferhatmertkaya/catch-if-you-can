@@ -146,6 +146,46 @@ namespace CatchIfYouCan.Equipment
             return null;
         }
 
+        /// <summary>
+        /// The visual for an item built in code.
+        ///
+        /// <para>
+        /// <b>Without this every item in the game is a placeholder capsule.</b> The authored
+        /// <c>VisualProfile_*</c> assets are not under Resources, so nothing at runtime can
+        /// load them, and this factory - which IS the live source of definitions - left
+        /// <c>VisualProfile</c> null. <c>EquipmentVisualFactory</c> then substituted its
+        /// honest-placeholder capsule, which is why the finished flashlight model never
+        /// appeared in anybody's hand.
+        /// </para>
+        ///
+        /// <para>
+        /// Only the torch has finished art in the project today. The rest get a placeholder
+        /// that <b>says</b> it is one, which is the honest state and not something to paper
+        /// over: an item that looks finished and is not is worse than an item that looks
+        /// unfinished.
+        /// </para>
+        /// </summary>
+        private static EquipmentVisualProfile BuildVisualProfile(string id, string displayName)
+        {
+            var profile = ScriptableObject.CreateInstance<EquipmentVisualProfile>();
+            profile.name = "VisualProfile_Runtime_" + id;
+            profile.hideFlags = HideFlags.HideAndDontSave;
+
+            if (string.Equals(id, EquipmentIds.Flashlight, System.StringComparison.Ordinal))
+            {
+                // Matches the authored VisualProfile_Flashlight asset exactly, including the
+                // model's own forward axis - the mesh runs along -X, which is why the torch
+                // would otherwise be laid in the hand sideways.
+                profile.ApplyModel("Props/CIYC_Flashlight", "Props/MAT_Flashlight",
+                                   0.24f, new Vector3(-1f, 0f, 0f));
+                return profile;
+            }
+
+            profile.ApplyDevPlaceholder(new Vector3(0.06f, 0.18f, 0.06f),
+                                        new Color(0.55f, 0.2f, 0.5f));
+            return profile;
+        }
+
         private static EquipmentDefinition Create(
             string id,
             string displayName,
@@ -174,6 +214,7 @@ namespace CatchIfYouCan.Equipment
             def.HandLocalPosition = new Vector3(0.08f, -0.05f, 0.22f);
             def.HandLocalRotation = new Vector3(0f, -90f, 0f);
             def.Description = description;
+            def.VisualProfile = BuildVisualProfile(id, displayName);
             return def;
         }
     }

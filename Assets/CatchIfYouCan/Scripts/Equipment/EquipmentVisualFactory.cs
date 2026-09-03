@@ -167,12 +167,17 @@ namespace CatchIfYouCan.Equipment
                 var used = renderers[0].sharedMaterial != null
                     ? renderers[0].sharedMaterial.shader
                     : null;
-                Debug.Log("[CIYC] Equipment visual '" + carried.name + "': renderers=" +
-                          renderers.Length + " active=" + model.activeInHierarchy +
+                string source = profile.VisualPrefab != null
+                    ? profile.VisualPrefab.name
+                    : "Resources/" + profile.ModelResourcePath;
+
+                Debug.Log("[CIYC][Equipment] " + carried.name + " visual = " + source +
+                          ", renderers = " + renderers.Length +
+                          " (active=" + model.activeInHierarchy +
                           " shader=" + (used != null ? used.name : "<none>") +
                           " measured=" + bounds.size.ToString("F3") +
                           " scale=" + scale.ToString("F4") +
-                          " length=" + target.ToString("F3"));
+                          " length=" + target.ToString("F3") + ")");
             }
 
             return target;

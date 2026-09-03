@@ -93,6 +93,36 @@ namespace CatchIfYouCan.Equipment
             isDevPlaceholder = true;
         }
 
+        /// <summary>
+        /// Fills in a profile for an item whose art IS in the project, from code.
+        ///
+        /// <para>
+        /// <b>This is the call that was missing.</b> The authored profiles live under
+        /// <c>Definitions/Equipment/Visual</c>, which is not a Resources folder, so nothing at
+        /// runtime can load them - and <see cref="EquipmentDefinitionFactory"/>, which is the
+        /// live source of every definition in the game, never set <c>VisualProfile</c> at all.
+        /// So every item reached <see cref="EquipmentVisualFactory"/> with a null profile and
+        /// got the placeholder capsule, including the flashlight, whose finished model has been
+        /// sitting in <c>Resources/Props</c> the whole time.
+        /// </para>
+        ///
+        /// <para>
+        /// A method rather than public fields, for the same reason as
+        /// <see cref="ApplyDevPlaceholder"/>: the fields stay inspector-authored, and an
+        /// authored asset remains the source of truth wherever one can actually be reached.
+        /// </para>
+        /// </summary>
+        public void ApplyModel(string resourcePath, string materialPath, float lengthMetres,
+                               Vector3 forwardAxis)
+        {
+            modelResourcePath = resourcePath;
+            modelMaterialPath = materialPath;
+            length = Mathf.Max(0.01f, lengthMetres);
+            modelForwardAxis = forwardAxis.sqrMagnitude < 0.0001f ? Vector3.up : forwardAxis;
+            isDevPlaceholder = false;
+            logState = true;
+        }
+
         private static EquipmentVisualProfile _fallback;
 
         /// <summary>

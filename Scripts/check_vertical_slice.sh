@@ -239,6 +239,65 @@ if re.search(r'"Assets/CatchIfYouCan/Resources/[^"]*Ghosts', integrator):
 else:
     ok("the integrator writes through the shared constant")
 
+
+# ---- runtime visibility: things that were built and could not be seen -----------------------
+
+visual_factory = code("/Assets/CatchIfYouCan/Scripts/Equipment/EquipmentDefinitionFactory.cs")
+if "VisualProfile = BuildVisualProfile(" in visual_factory:
+    ok("every code-built item gets a visual profile")
+else:
+    bad("every code-built item gets a visual profile",
+        "a null profile means the placeholder capsule, for every item in the game")
+
+if re.search(r'ApplyModel\(\s*"Props/CIYC_Flashlight"', visual_factory):
+    ok("the flashlight points at its finished model")
+else:
+    bad("the flashlight points at its finished model",
+        "expected Resources/Props/CIYC_Flashlight")
+
+import os
+for rel in ["Props/CIYC_Flashlight.fbx", "Props/MAT_Flashlight.mat"]:
+    if os.path.exists(root + "/Assets/CatchIfYouCan/Resources/" + rel):
+        ok("Resources/" + rel + " exists")
+    else:
+        bad("Resources/" + rel + " exists", "the profile would load nothing")
+
+portal_surface = code("/Assets/CatchIfYouCan/Scripts/Art/PortalSurface.cs")
+# A renderer with no material draws nothing, and an invisible portal is indistinguishable
+# from a portal that was never created.
+if re.search(r"if \(shader == null\)\s*\n\s*return;", portal_surface):
+    bad("the portal never ends up without a material",
+        "PortalSurface returns early on a missing shader, leaving an invisible quad")
+else:
+    ok("the portal never ends up without a material")
+
+if "SetOpacity(" in portal_surface:
+    ok("the portal opening can fade in")
+else:
+    bad("the portal opening can fade in", "expected PortalSurface.SetOpacity")
+
+shader = io.open(root + "/Assets/CatchIfYouCan/Shaders/Portal.shader", encoding="utf-8").read()
+if "_Opacity" in shader and "Blend SrcAlpha" in shader:
+    ok("the portal shader is blendable")
+else:
+    bad("the portal shader is blendable", "an opaque portal can only be switched on, not opened")
+
+# The HUD is drawn over the game. Nothing on it may be a solid sheet.
+factory = code("/Assets/CatchIfYouCan/Scripts/UI/RuntimeUIFactory.cs")
+hud = factory[factory.index("private static void WireHUD("):] if "private static void WireHUD(" in factory else ""
+if hud and hud.count("MakeOverlay(") >= 2:
+    ok("the HUD's own panels are overlays, not sheets")
+else:
+    bad("the HUD's own panels are overlays, not sheets",
+        "a CreatePanel inside the HUD screen is a near-opaque band across the game")
+
+settings = code("/Assets/CatchIfYouCan/Scripts/UI/SettingsUI.cs")
+if settings.count("ApplyAudioSettings()") >= 7:
+    ok("every volume slider reaches the mixer")
+else:
+    bad("every volume slider reaches the mixer",
+        "a slider that only sets a field moves a number nothing is listening to")
+
 print()
 print("  %d passed, %d failed" % (passed, failed))
 sys.exit(1 if failed else 0)

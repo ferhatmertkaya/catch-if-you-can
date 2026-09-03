@@ -121,7 +121,14 @@ namespace CatchIfYouCan.UI
                     AddToggle("Post Processing", _settings.PostProcessing, v => _settings.PostProcessing = v);
                     break;
                 case SettingsTab.Audio:
-                    AddSlider("Master Volume", 0f, 1f, _settings.MasterVolume, v => _settings.MasterVolume = v);
+                    // Every one of these used to set a field and stop. Only Music reached the
+                    // mixer, so dragging Master, Effects, Ghost or any of the others changed a
+                    // number that nothing was listening to and the volume did not move.
+                    AddSlider("Master Volume", 0f, 1f, _settings.MasterVolume, v =>
+                    {
+                        _settings.MasterVolume = v;
+                        ApplyAudioSettings();
+                    });
                     AddSlider("Music Volume", 0f, 1f, _settings.MusicVolume, v =>
                     {
                         _settings.MusicVolume = v;
@@ -129,12 +136,36 @@ namespace CatchIfYouCan.UI
                         if (AudioManager.Instance != null)
                             AudioManager.Instance.SetMusicVolume(v);
                     });
-                    AddSlider("Ambient Volume", 0f, 1f, _settings.AmbientVolume, v => _settings.AmbientVolume = v);
-                    AddSlider("Effects Volume", 0f, 1f, _settings.EffectsVolume, v => _settings.EffectsVolume = v);
-                    AddSlider("Voice Volume", 0f, 1f, _settings.VoiceVolume, v => _settings.VoiceVolume = v);
-                    AddSlider("Ghost Volume", 0f, 1f, _settings.GhostVolume, v => _settings.GhostVolume = v);
-                    AddSlider("Equipment Volume", 0f, 1f, _settings.EquipmentVolume, v => _settings.EquipmentVolume = v);
-                    AddSlider("UI Volume", 0f, 1f, _settings.UIVolume, v => _settings.UIVolume = v);
+                    AddSlider("Ambient Volume", 0f, 1f, _settings.AmbientVolume, v =>
+                    {
+                        _settings.AmbientVolume = v;
+                        ApplyAudioSettings();
+                    });
+                    AddSlider("Effects Volume", 0f, 1f, _settings.EffectsVolume, v =>
+                    {
+                        _settings.EffectsVolume = v;
+                        ApplyAudioSettings();
+                    });
+                    AddSlider("Voice Volume", 0f, 1f, _settings.VoiceVolume, v =>
+                    {
+                        _settings.VoiceVolume = v;
+                        ApplyAudioSettings();
+                    });
+                    AddSlider("Ghost Volume", 0f, 1f, _settings.GhostVolume, v =>
+                    {
+                        _settings.GhostVolume = v;
+                        ApplyAudioSettings();
+                    });
+                    AddSlider("Equipment Volume", 0f, 1f, _settings.EquipmentVolume, v =>
+                    {
+                        _settings.EquipmentVolume = v;
+                        ApplyAudioSettings();
+                    });
+                    AddSlider("UI Volume", 0f, 1f, _settings.UIVolume, v =>
+                    {
+                        _settings.UIVolume = v;
+                        ApplyAudioSettings();
+                    });
                     AddChoice("Dynamic Range", new[] { "Night", "Normal", "Wide" }, (int)_settings.DynamicRangeMode,
                         i => _settings.DynamicRangeMode = (DynamicRangeMode)i);
                     AddChoice("Headphone Mode", new[] { "Off", "Stereo", "Spatial" }, (int)_settings.HeadphoneMode,
@@ -151,6 +182,25 @@ namespace CatchIfYouCan.UI
             }
 
             AddApplyButton();
+        }
+
+        /// <summary>
+        /// Pushes the whole audio section at the mixer.
+        ///
+        /// <para>
+        /// All of it rather than the one channel that moved: <c>ApplyFromSettings</c> is the
+        /// one call that knows how these eight numbers become a mix, and eight separate setters
+        /// called from eight separate lambdas is eight chances for one of them to be forgotten -
+        /// which is what had already happened to seven of them.
+        /// </para>
+        /// </summary>
+        private void ApplyAudioSettings()
+        {
+            if (_settings == null)
+                return;
+
+            if (AudioManager.Instance != null)
+                AudioManager.Instance.ApplyFromSettings(_settings);
         }
 
         private void AddSlider(string label, float min, float max, float value, System.Action<float> setter)

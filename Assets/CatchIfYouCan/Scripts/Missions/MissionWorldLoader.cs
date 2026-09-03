@@ -110,6 +110,9 @@ namespace CatchIfYouCan.Missions
                 yield break;
             }
 
+            CIYCLog.Info(LogTag + "mission accepted seed=" + mission.Seed +
+                         " case=" + mission.CaseNumber + " location=" + mission.LocationName);
+
             // Set before the load, because a scene's components cannot be configured until they
             // exist and by then their Start has already decided what to do.
             InvestigationBootstrap.PendingStartMode = InvestigationStartMode.Deferred;
@@ -146,6 +149,7 @@ namespace CatchIfYouCan.Missions
                 yield return null;
 
             SceneManager.sceneLoaded -= OnSceneLoaded;
+            CIYCLog.Info(LogTag + "investigation scene loaded");
 
             // The bootstrap builds the world on its own first frame; this waits for it rather
             // than assuming a frame count. The budget exists so a world that never finishes
@@ -167,6 +171,7 @@ namespace CatchIfYouCan.Missions
                 yield break;
             }
 
+            CIYCLog.Info(LogTag + "world prepared after " + frames + " frame(s)");
             onDone?.Invoke(InvestigationBootstrap.Prepared);
         }
 

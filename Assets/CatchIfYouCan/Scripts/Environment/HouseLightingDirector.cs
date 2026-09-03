@@ -27,11 +27,12 @@ namespace CatchIfYouCan.Environment
     /// </para>
     ///
     /// <para>
-    /// <b>Dark is not black.</b> A room with nothing in it but a torch beam is unreadable and
-    /// unnavigable, which is tedious rather than frightening. A cold, very low ambient and a
-    /// thin fog keep silhouettes and doorways legible at the edge of the beam; the horror is in
-    /// what the beam is not pointing at, and that only works if the player can tell there is a
-    /// room there.
+    /// <b>Dark is not black.</b> The first version of these numbers produced a house with
+    /// nothing on screen at all without the torch - unplayable rather than frightening, and
+    /// impossible to test in. Ambient, moonlight, practical intensity and practical range have
+    /// all come up, and half the rooms keep a light rather than a quarter. The house is lit
+    /// enough to walk through and read; the torch is what you point into the half of it that
+    /// is not.
     /// </para>
     /// </summary>
     public static class HouseLightingDirector
@@ -40,24 +41,39 @@ namespace CatchIfYouCan.Environment
 
         // ---- the night --------------------------------------------------------------------
 
-        /// <summary>Ambient. Cold, and barely there.</summary>
-        private static readonly Color NightAmbient = new Color(0.055f, 0.062f, 0.082f);
+        /// <summary>
+        /// Ambient. Cold, and low - but not "barely there".
+        ///
+        /// <para>
+        /// It was 0.055 and the house came out effectively black: without the torch there was
+        /// nothing on screen at all, which is unplayable rather than frightening, and it made
+        /// the mission impossible to test. Raised to a level where walls, doorways and furniture
+        /// read as shapes and the torch is still what you navigate by.
+        /// </para>
+        /// </summary>
+        private static readonly Color NightAmbient = new Color(0.20f, 0.22f, 0.27f);
 
         /// <summary>Fog. The same cold, so distance reads as depth rather than as haze.</summary>
-        private static readonly Color NightFog = new Color(0.045f, 0.05f, 0.068f);
+        private static readonly Color NightFog = new Color(0.12f, 0.13f, 0.17f);
 
-        private const float FogDensity = 0.022f;
+        /// <summary>Thin. Dense fog in a house is a white room, not an atmosphere.</summary>
+        private const float FogDensity = 0.010f;
 
-        /// <summary>Moonlight through the windows. Blue, weak, and the only thing outside.</summary>
+        /// <summary>Moonlight through the windows. Blue, and now strong enough to see by.</summary>
         private static readonly Color Moonlight = new Color(0.62f, 0.71f, 1f);
 
-        private const float MoonIntensity = 0.28f;
+        private const float MoonIntensity = 0.75f;
 
         /// <summary>
-        /// Roughly one room in four keeps a light on. Enough to give the house landmarks and
-        /// somewhere for a flicker event to be seen; not enough to replace the torch.
+        /// Every other room keeps a light on.
+        ///
+        /// <para>
+        /// One in four left long stretches of the house with no practical at all. Half is
+        /// enough for the house to be navigable and to have somewhere for a flicker event to be
+        /// seen, and the rooms in between are still dark enough to need the torch.
+        /// </para>
         /// </summary>
-        private const int LitRoomInverseFrequency = 4;
+        private const int LitRoomInverseFrequency = 2;
 
         /// <summary>
         /// Dresses the whole house. Called once, when the mission goes live - not while it is
@@ -218,13 +234,13 @@ namespace CatchIfYouCan.Environment
             {
                 case RoomCategory.Kitchen:
                 case RoomCategory.Bathroom:
-                    return 0.85f;
+                    return 2.4f;
                 case RoomCategory.Basement:
                 case RoomCategory.Attic:
                 case RoomCategory.Garage:
-                    return 0.35f;
+                    return 1.1f;
                 default:
-                    return 0.6f;
+                    return 1.8f;
             }
         }
 
@@ -233,12 +249,12 @@ namespace CatchIfYouCan.Environment
             switch (category)
             {
                 case RoomCategory.Hallway:
-                    return 6.5f;
+                    return 9f;
                 case RoomCategory.Basement:
                 case RoomCategory.Attic:
-                    return 4.5f;
+                    return 6.5f;
                 default:
-                    return 5.5f;
+                    return 8f;
             }
         }
 

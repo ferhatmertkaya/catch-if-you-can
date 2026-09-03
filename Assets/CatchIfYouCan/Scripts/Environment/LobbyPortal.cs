@@ -90,11 +90,15 @@ namespace CatchIfYouCan.Environment
 
         [SerializeField, Min(0f)] private float openRimIntensity = 2.4f;
 
+        [Tooltip("How much the air bends at the edge once the opening is fully up.")]
+        [SerializeField, Range(0f, 0.06f)] private float openDistortion = 0.02f;
+
         [Header("Threshold")]
         [Tooltip("The volume that counts as walking through. Sits in the opening, not past it.")]
         [SerializeField] private Vector3 entryTriggerSize = new Vector3(1.2f, 2.4f, 0.8f);
 
         private BoxCollider _threshold;
+        private PortalEffects _effects;
         private Coroutine _opening;
         private string _missionName;
         private bool _handedOver;
@@ -202,6 +206,22 @@ namespace CatchIfYouCan.Environment
         }
 
         /// <summary>
+        /// The wisps and the glow at the edge, built once and driven by the opening ramp.
+        /// Restrained on purpose: the portal is a hole, and a hole surrounded by a firework is
+        /// a firework.
+        /// </summary>
+        private void EnsureEffects()
+        {
+            if (_effects != null)
+                return;
+
+            if (surface == null)
+                return;
+
+            _effects = PortalEffects.Build(surface.transform, openingSize);
+        }
+
+        /// <summary>
         /// The volume that counts as stepping through, sitting in the plane of the opening.
         /// A trigger, so it never blocks the player, and it is only listened to while the
         /// portal is Open.
@@ -270,29 +290,59 @@ namespace CatchIfYouCan.Environment
             // The van's own spawn point: where this mission has always begun, so what the player
             // sees through the door is exactly where they will be standing when they step out
             // of it.
+            CIYCLog.Info(LogTag + "preview camera bound to " + world.ArrivalPoint.name +
+                         " at " + world.ArrivalPoint.position.ToString("F1"));
+
             surface.SetDestination(world.ArrivalPoint);
+
+            // Closed, and dark, before anything is shown. The surface is activated at zero
+            // opacity so the first frame of the opening is an empty doorway rather than a
+            // finished portal that then animates for no reason.
+            surface.SetOpacity(0f);
             surface.SetRimIntensity(0f);
+            surface.SetDistortion(0f);
             surface.gameObject.SetActive(true);
 
+            EnsureEffects();
             SetState(LobbyPortalState.Opening);
+            CIYCLog.Info(LogTag + "state Opening");
 
             float t = 0f;
             while (t < openDuration && surface != null)
             {
                 t += Time.deltaTime;
                 float k = openDuration <= 0f ? 1f : Mathf.Clamp01(t / openDuration);
-                // Eased, so it swells rather than ramping linearly.
-                surface.SetRimIntensity(openRimIntensity * (k * k * (3f - 2f * k)));
+
+                // Smoothstep, so it swells rather than ramping linearly.
+                float eased = k * k * (3f - 2f * k);
+
+                // The edge leads and the view follows. The rim is at full by a third of the way
+                // through while the far room is still coming up, which is what makes the
+                // doorway read as tearing open rather than as a picture being switched on.
+                surface.SetRimIntensity(openRimIntensity * Mathf.Clamp01(eased * 3f));
+                surface.SetOpacity(eased);
+                surface.SetDistortion(openDistortion * eased);
+
+                if (_effects != null)
+                    _effects.SetIntensity(eased);
+
                 yield return null;
             }
 
             if (surface != null)
+            {
                 surface.SetRimIntensity(openRimIntensity);
+                surface.SetOpacity(1f);
+                surface.SetDistortion(openDistortion);
+            }
+
+            if (_effects != null)
+                _effects.SetIntensity(1f);
 
             _opening = null;
             SetState(LobbyPortalState.Open);
 
-            CIYCLog.Info(LogTag + "Open for mission '" + _missionName +
+            CIYCLog.Info(LogTag + "state Open - '" + _missionName +
                          "'. Walk through the lobby doorway to begin.");
         }
 

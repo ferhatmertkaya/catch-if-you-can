@@ -24,17 +24,23 @@ Shader "CatchIfYouCan/Portal"
         _Distortion     ("Edge Distortion", Range(0, 0.06)) = 0.014
         _DistortSpeed   ("Distortion Speed", Range(0, 4)) = 0.7
         _Tint           ("View Tint", Color) = (0.92, 0.95, 1.0, 1)
+        _Opacity        ("Opacity", Range(0, 1)) = 1
     }
 
     SubShader
     {
-        Tags { "RenderType"="Opaque" "Queue"="Geometry+10" "RenderPipeline"="UniversalPipeline" }
+        // Transparent, so the opening can come UP rather than appear. An opaque portal can only
+        // be switched on, and a doorway that snaps from wall to window in one frame reads as a
+        // bug. ZWrite is off because this is a single flat quad inside a door frame with
+        // nothing between it and the frame - there is no sorting for it to get wrong.
+        Tags { "RenderType"="Transparent" "Queue"="Transparent" "RenderPipeline"="UniversalPipeline" }
 
         Pass
         {
             Name "Portal"
 
-            ZWrite On
+            Blend SrcAlpha OneMinusSrcAlpha
+            ZWrite Off
             Cull Back
 
             HLSLPROGRAM
@@ -53,6 +59,7 @@ Shader "CatchIfYouCan/Portal"
                 float  _RimIntensity;
                 float  _Distortion;
                 float  _DistortSpeed;
+                float  _Opacity;
             CBUFFER_END
 
             TEXTURE2D(_PortalTex);
@@ -120,7 +127,13 @@ Shader "CatchIfYouCan/Portal"
 
                 half3 col = view + rimColour * rim * _RimIntensity * shimmer;
 
-                return half4(col, 1.0);
+                // The edge comes up before the middle does. While the opening is forming, the
+                // rim is already burning and the view behind it is still fading in, which is
+                // what makes it read as something tearing open rather than as a picture being
+                // switched on.
+                float alpha = saturate(_Opacity + rim * _Opacity * 0.6);
+
+                return half4(col, alpha);
             }
             ENDHLSL
         }

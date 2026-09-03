@@ -89,6 +89,9 @@ namespace CatchIfYouCan.Art
         private Material _material;
         private Camera _cachedSource;
 
+        private bool _usingRealShader;
+        private float opacity = 1f;
+
         private Vector3 _planePoint;
         private Vector3 _planeNormal;
         private int _textureWidth, _textureHeight;
@@ -155,6 +158,25 @@ namespace CatchIfYouCan.Art
             if (_material != null)
                 SetFloat("_Distortion", distortion);
         }
+
+        /// <summary>
+        /// How far open the surface is, 0 to 1. Zero is an empty doorway; one is a hole.
+        ///
+        /// <para>
+        /// Stored as well as pushed, like the rim, because the opening is normally described
+        /// while the object is still inactive - which is exactly when the material does not
+        /// exist yet.
+        /// </para>
+        /// </summary>
+        public void SetOpacity(float value)
+        {
+            opacity = Mathf.Clamp01(value);
+            if (_material != null && _usingRealShader)
+                SetFloat("_Opacity", opacity);
+        }
+
+        /// <summary>True when the finished portal shader is in use rather than the fallback.</summary>
+        public bool UsingRealShader => _usingRealShader;
 
         private void Start()
         {
@@ -230,17 +252,50 @@ namespace CatchIfYouCan.Art
 
             EnsureTexture(Core.LocalPlayerService.ResolveViewCamera());
 
+            // A renderer with no material draws NOTHING. This used to return here when the
+            // portal shader was missing, leaving a correctly built, correctly placed, correctly
+            // sized quad that was simply invisible - and an invisible portal is
+            // indistinguishable from a portal that was never created, which is the hardest kind
+            // of bug to report. If the real shader is unavailable the opening still shows the
+            // far room, through unlit, and says loudly that it is doing so.
             Shader shader = CiycShaders.Find(CiycShaders.Portal);
-            if (shader == null)
-                return;
+            bool real = shader != null;
 
-            _material = new Material(shader) { name = "Portal_Runtime" };
-            SetTexture("_PortalTex", _texture);
-            SetColour("_RimColor", rimColour);
-            SetColour("_RimInner", rimInnerColour);
-            SetFloat("_RimIntensity", rimIntensity);
-            SetFloat("_Distortion", distortion);
+            if (!real)
+            {
+                shader = CiycShaders.Find(CiycShaders.Unlit);
+                Debug.LogError("[CIYC][Portal] The portal shader is not in this build, so the " +
+                               "opening falls back to unlit: the far room is visible but there " +
+                               "is no rim, no distortion and no fade. Put " +
+                               CiycShaders.Portal + " on a material under Resources or in " +
+                               "Always Included Shaders.");
+            }
+
+            if (shader == null)
+            {
+                Debug.LogError("[CIYC][Portal] No usable shader at all. The doorway will be " +
+                               "invisible.");
+                return;
+            }
+
+            _material = new Material(shader) { name = real ? "Portal_Runtime" : "Portal_Unlit_Fallback" };
+            _usingRealShader = real;
+
+            SetTexture(real ? "_PortalTex" : "_BaseMap", _texture);
+            if (real)
+            {
+                SetColour("_RimColor", rimColour);
+                SetColour("_RimInner", rimInnerColour);
+                SetFloat("_RimIntensity", rimIntensity);
+                SetFloat("_Distortion", distortion);
+                SetFloat("_Opacity", opacity);
+            }
+
             renderer.sharedMaterial = _material;
+
+            Debug.Log("[CIYC][Portal] surface built: " + openingSize.x.ToString("F2") + " x " +
+                      openingSize.y.ToString("F2") + " m, shader=" + shader.name +
+                      ", render texture " + _textureWidth + "x" + _textureHeight);
         }
 
         private void BuildCamera()

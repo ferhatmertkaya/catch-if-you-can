@@ -150,8 +150,13 @@ namespace CatchIfYouCan.UI
             var feedback = go.AddComponent<UIButtonFeedback>();
             feedback.BindAccent(accent);
 
-            var text = CreateText(go.transform, "Label", label, 22, TextAnchor.MiddleCenter, true,
-                UITheme.FontRole.Button);
+            // 22 was too small to read at arm's length on a phone, which is the only distance
+            // this game is ever played at. Scaled to the control: a 68-high board entry gets a
+            // caption you can read from the sofa, a 40-high settings tab stays a tab.
+            int labelSize = height >= 64f ? 30 : height >= 52f ? 26 : 22;
+
+            var text = CreateText(go.transform, "Label", label, labelSize, TextAnchor.MiddleCenter,
+                true, UITheme.FontRole.Button);
             Stretch(text.gameObject);
             var labelRect = text.GetComponent<RectTransform>();
             labelRect.offsetMin = new Vector2(UITheme.AccentBarWidth + 12f, 0f);
@@ -597,9 +602,17 @@ namespace CatchIfYouCan.UI
         /// </summary>
         private static void WireHUD(MobileHUDController hud, Transform root)
         {
+            // Every panel CreatePanel makes is UITheme.ApplyPanel - a near-opaque dark sheet,
+            // which is right for a menu that replaces the view and wrong for anything drawn
+            // over the game. The HUD root was cleared for exactly this reason and its CHILDREN
+            // were not, so a solid black band still ran across the top of the screen during
+            // play. Everything on this screen is an overlay now.
             var topBar = CreatePanel(root, "TopBar", false);
             Position(topBar, 0, 0.88f, 1, 1);
+            MakeOverlay(topBar, 0.28f);
+
             var caseIcon = CreatePanel(topBar.transform, "CaseIcon", false);
+            MakeOverlay(caseIcon, 0f);
             caseIcon.GetComponent<RectTransform>().sizeDelta = new Vector2(64, 64);
             var journalBtn = CreateButton(topBar.transform, "JOURNAL", null, false, 48);
 
@@ -615,6 +628,12 @@ namespace CatchIfYouCan.UI
             var selector = BuildInventorySlots(root);
             BuildEquipmentPanel(root);
 
+            // The two controls this screen still owns get their icons. HudSprites already had
+            // them - the touch HUD has used them since V3 - and these two buttons were text-only
+            // for no reason other than nobody having asked for them.
+            AddButtonIcon(interactBtn, HudSprites.Interact);
+            AddButtonIcon(useBtn, HudSprites.Pickup);
+
             // joystickArea, crouchButton and sprintButton are deliberately null. MobileHUDController
             // null-checks every one of them, and the touch HUD owns all three.
             hud.BindRuntime(
@@ -626,6 +645,73 @@ namespace CatchIfYouCan.UI
                 sprintButton: null,
                 inventorySelector: selector,
                 useButton: useBtn);
+        }
+
+        /// <summary>
+        /// Turns a panel built for a menu into one that can sit over the game.
+        ///
+        /// <para>
+        /// Alpha zero means "structure only, draw nothing" - a layout rectangle. Anything above
+        /// that is a readability wash behind text, never a surface.
+        /// </para>
+        /// </summary>
+        private static void MakeOverlay(GameObject panel, float alpha)
+        {
+            if (panel == null)
+                return;
+
+            var image = panel.GetComponent<Image>();
+            if (image == null)
+                return;
+
+            if (alpha <= 0.001f)
+            {
+                image.color = Color.clear;
+                image.raycastTarget = false;
+                return;
+            }
+
+            var c = UITheme.BackgroundDark;
+            c.a = alpha;
+            image.color = c;
+            image.raycastTarget = false;
+        }
+
+        /// <summary>
+        /// Puts an icon on a button beside its caption. Silently does nothing when the sprite
+        /// is missing, because a button with a word on it still works and a magenta square does
+        /// not.
+        /// </summary>
+        private static void AddButtonIcon(Button button, Sprite sprite)
+        {
+            if (button == null || sprite == null)
+                return;
+
+            var go = new GameObject("Icon", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
+            go.transform.SetParent(button.transform, false);
+            go.transform.SetAsFirstSibling();
+
+            var rect = go.GetComponent<RectTransform>();
+            rect.anchorMin = new Vector2(0f, 0.5f);
+            rect.anchorMax = new Vector2(0f, 0.5f);
+            rect.pivot = new Vector2(0f, 0.5f);
+            rect.sizeDelta = new Vector2(34f, 34f);
+            rect.anchoredPosition = new Vector2(UITheme.AccentBarWidth + 12f, 0f);
+
+            var image = go.GetComponent<Image>();
+            image.sprite = sprite;
+            image.color = UITheme.TextPrimary;
+            image.raycastTarget = false;
+            image.preserveAspect = true;
+
+            // The caption steps aside for it rather than being drawn underneath.
+            Component label = FindLabel(button);
+            if (label != null)
+            {
+                var labelRect = label.GetComponent<RectTransform>();
+                if (labelRect != null)
+                    labelRect.offsetMin = new Vector2(UITheme.AccentBarWidth + 54f, 0f);
+            }
         }
 
         /// <summary>
@@ -655,6 +741,7 @@ namespace CatchIfYouCan.UI
             var frames = new Image[count];
 
             var slotRow = CreatePanel(root, "EquipmentSlots", false);
+            MakeOverlay(slotRow, 0.35f);
             Position(slotRow, 0.32f, 0.02f, 0.53f, 0.115f);
             // The row keeps the panel look it always had; only the slots inside it are new.
             // It does not take taps, so a press between two slots falls through rather than
@@ -710,6 +797,7 @@ namespace CatchIfYouCan.UI
         private static EquipmentHudPanel BuildEquipmentPanel(Transform root)
         {
             var panel = CreatePanel(root, "EquipmentPanel", false);
+            MakeOverlay(panel, 0.4f);
             Position(panel, 0.32f, 0.12f, 0.53f, 0.235f);
             // The container does not take taps: a press between two buttons should fall
             // through rather than be swallowed by the panel behind them.

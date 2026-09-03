@@ -103,7 +103,10 @@ place that number lives; everything else derives it.
   house lighting out of generation: the director derives from the seed locally rather than
   from a `CiycRandom` stream, and it runs on entry rather than while the world is only being
   previewed through the portal, and the tool that writes ghost prefabs writes them where the
-  runtime looks. 18 checks.
+  runtime looks. It also keeps things that were built from being invisible: every code-built
+  item carries a visual profile, the flashlight points at its finished model, the portal never
+  ends up with a renderer and no material, the HUD's own panels stay overlays rather than
+  opaque sheets over the game, and every volume slider reaches the mixer. 27 checks.
 
 All seven run in CI (`.github/workflows/determinism.yml`). Run them locally before
 pushing; they need nothing but a shell (and `python3` for the roster checks).
