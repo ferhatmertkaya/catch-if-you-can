@@ -10,6 +10,7 @@ namespace CatchIfYouCan.Equipment
         [SerializeField] protected AudioSource audioSource;
         [SerializeField] protected float durabilityLossPerUse = 1f;
 
+
         protected Transform HandAnchor;
         protected bool DeviceActive;
 
@@ -29,6 +30,12 @@ namespace CatchIfYouCan.Equipment
         public string DeviceId => definition != null ? definition.Id : name;
 
         protected virtual float GetInterferenceMultiplier() => 0.35f;
+
+        /// <summary>
+        /// How much condition one use costs. Virtual because "a use" is not the same act for
+        /// every item: firing a camera wears it, and flicking a torch switch does not.
+        /// </summary>
+        protected virtual float DurabilityLossPerUse => durabilityLossPerUse;
 
         protected virtual void Awake()
         {
@@ -55,12 +62,18 @@ namespace CatchIfYouCan.Equipment
 
         protected virtual void Update()
         {
-            if (!IsEquipped && !IsPlaced)
+            if (!ShouldTick)
                 return;
 
             DrainBattery();
             TickEquipped(Time.deltaTime);
         }
+
+        /// <summary>
+        /// Whether this device is doing anything worth spending a frame on. Held or placed by
+        /// default; a subclass that can be left running somewhere else says so.
+        /// </summary>
+        protected virtual bool ShouldTick => IsEquipped || IsPlaced;
 
         protected virtual void DrainBattery()
         {
@@ -122,7 +135,7 @@ namespace CatchIfYouCan.Equipment
                 return;
 
             PlayClip(definition != null ? definition.UseAudio : null);
-            ApplyDurabilityLoss(durabilityLossPerUse);
+            ApplyDurabilityLoss(DurabilityLossPerUse);
             OnUse();
         }
 

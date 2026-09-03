@@ -97,6 +97,19 @@ namespace CatchIfYouCan.Equipment
 
         public bool IsDeviceActive => DeviceActive;
 
+        /// <summary>
+        /// Also ticks while lying in the room with the device still running.
+        ///
+        /// <para>
+        /// EquipmentBase ticks only what is held or placed, which is right for a device that
+        /// switches itself off when it leaves the hand. A torch does not: it is thrown down
+        /// still burning, on purpose. Without this it burns on a battery that never drains.
+        /// </para>
+        /// </summary>
+        protected override bool ShouldTick =>
+            base.ShouldTick ||
+            (LifecycleState == EquipmentLifecycleState.World && DeviceActive);
+
         public Transform WorldPose => transform;
 
         /// <summary>

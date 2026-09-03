@@ -96,13 +96,17 @@ namespace CatchIfYouCan.Equipment
             get => _lit;
             set
             {
-                if (_lit == value)
+                bool next = value && (IsPowered || !HasBattery);
+                if (_lit == next)
                     return;
 
-                _lit = value;
+                _lit = next;
                 ApplyLight();
             }
         }
+
+        /// <summary>Whether this torch runs off a battery at all. The lobby's does not.</summary>
+        private bool HasBattery => definition != null && definition.MaxBattery > 0f;
 
         /// <summary>
         /// The lamp end of the torch, and the one thing the beam is allowed to come out of. It
@@ -162,13 +166,29 @@ namespace CatchIfYouCan.Equipment
         /// torch stay lit until it is picked back up, without a single line of special-casing.
         /// </para>
         /// </summary>
-        private void OnFlashlightRequested() => Use();
+        private void OnFlashlightRequested()
+        {
+            // Through the lifecycle rather than EquipmentBase.Use, so a refusal has a reason -
+            // flat, broken, or stowed in a bag - and so the torch obeys the same gate as every
+            // other item.
+            var result = TryUse();
+            if (!result.Ok)
+                Core.CIYCLog.Info("Flashlight: " + result);
+        }
 
         // ---- equipment ---------------------------------------------------------------------
 
         protected override void OnUse() => LightOn = !LightOn;
 
         protected override float GetInterferenceMultiplier() => interferenceMultiplier;
+
+        /// <summary>
+        /// Flicking a switch does not wear a torch out. The inherited one point per use, over
+        /// a hundred points of durability, meant a hundred toggles broke the torch permanently
+        /// - and since it refuses to switch on with no durability left, that is a torch that
+        /// can never be turned on again in the same run.
+        /// </summary>
+        protected override float DurabilityLossPerUse => 0f;
 
         protected override void OnBatteryDepleted()
         {
@@ -222,6 +242,18 @@ namespace CatchIfYouCan.Equipment
             // is the one case where going dark is right.
             bool burning = _lit && (IsEquipped || IsOnGround);
             _light.enabled = burning;
+
+            // The device flag is whether the beam is actually emitting, and it is set here
+            // because here is the only place that knows.
+            //
+            // Nothing set it before. EquipmentBase.DrainBattery returns early without it, so
+            // this torch's battery had never drained once - which in turn meant the low-battery
+            // brown-out could not happen and the ElectronicDistortion it raises could not
+            // either, and the torch read as an inert object to the EMF detector because
+            // InterferenceStrength is zero unless the device is active. Deriving it from the
+            // beam rather than from the switch also keeps a stowed lit torch from draining in
+            // a bag, and keeps a re-equipped one draining again.
+            SetDeviceActive(burning);
 
             // The front of the torch lights up too, not just the beam it throws. Without this a
             // torch lying lit on the floor is a cone of light coming from an unlit object.
