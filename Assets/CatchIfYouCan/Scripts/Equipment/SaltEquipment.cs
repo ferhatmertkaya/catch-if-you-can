@@ -62,6 +62,9 @@ namespace CatchIfYouCan.Equipment
         /// <summary>Why the last pour did or did not happen. For the HUD and the lab.</summary>
         public EquipmentActionResult LastPour { get; private set; } = EquipmentActionResult.Success;
 
+        /// <summary>How much salt is left in the container.</summary>
+        public override string HudReadout => RemainingPiles + " / " + maxPiles;
+
         protected override float GetInterferenceMultiplier() => 0f;
 
         /// <summary>Pouring uses the container up. This is what the old version charged.</summary>

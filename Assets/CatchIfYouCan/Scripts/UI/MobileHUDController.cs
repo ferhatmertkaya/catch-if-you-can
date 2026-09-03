@@ -103,27 +103,51 @@ namespace CatchIfYouCan.UI
                 useButton.onClick.AddListener(() => input?.PressUse());
             }
 
-            if (crouchButton != null)
-            {
-                crouchButton.onClick.RemoveAllListeners();
-                var crouchTrigger = crouchButton.gameObject.AddComponent<HoldButton>();
-                crouchTrigger.OnHeldChanged += held => input?.SetCrouch(held);
-            }
+            WireHold(crouchButton, held => MobileInputController.Instance?.SetCrouch(held));
+            WireHold(sprintButton, held => MobileInputController.Instance?.SetSprint(held));
+        }
 
-            if (sprintButton != null)
-            {
-                sprintButton.onClick.RemoveAllListeners();
-                var sprintTrigger = sprintButton.gameObject.AddComponent<HoldButton>();
-                sprintTrigger.OnHeldChanged += held => input?.SetSprint(held);
-            }
+        /// <summary>
+        /// Attaches the hold behaviour to a button once, however many times the HUD is wired.
+        ///
+        /// <para>
+        /// WireButtons runs from BindRuntime, from OnEnable and from Start, and each run used
+        /// to <c>AddComponent&lt;HoldButton&gt;</c> unconditionally. So crouch and sprint
+        /// arrived with three of them before the first frame, each with its own subscriber,
+        /// and every enable of the HUD added two more - one press, three or five or seven
+        /// SetCrouch calls, growing for the life of the session.
+        /// </para>
+        ///
+        /// <para>
+        /// The handler is also read through the singleton at press time rather than captured
+        /// at wire time, because the HUD is built before the input controller exists in every
+        /// scene that spawns one - a captured null stays null.
+        /// </para>
+        /// </summary>
+        private static void WireHold(Button button, System.Action<bool> onHeld)
+        {
+            if (button == null)
+                return;
+
+            button.onClick.RemoveAllListeners();
+
+            var hold = button.GetComponent<HoldButton>();
+            if (hold != null)
+                return;
+
+            hold = button.gameObject.AddComponent<HoldButton>();
+            hold.OnHeldChanged += onHeld;
         }
 
         public void SetInteractAvailable(bool available)
         {
             if (_interactAvailable == available) return;
             _interactAvailable = available;
+            // Was `available || true`, which is true. The interact button is deliberately
+            // always pressable - the pulse is what says whether there is anything to interact
+            // with - so this states that rather than computing it and discarding the answer.
             if (interactButton != null)
-                interactButton.interactable = available || true;
+                interactButton.interactable = true;
 
             if (available)
                 StartPulse();

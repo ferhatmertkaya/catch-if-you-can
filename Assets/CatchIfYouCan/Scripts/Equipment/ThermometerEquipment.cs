@@ -69,6 +69,9 @@ namespace CatchIfYouCan.Equipment
         /// <summary>What it is heading towards, for a lab readout.</summary>
         public float TargetTemperature => _targetTemperature;
 
+        /// <summary>The reading, in Celsius, to one decimal - which is what a display shows.</summary>
+        public override string HudReadout => _displayTemperature.ToString("F1") + "\u00B0C";
+
         protected override float GetInterferenceMultiplier() => 0.2f;
 
         /// <summary>Switching it on does not wear it out.</summary>

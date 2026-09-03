@@ -66,6 +66,10 @@ namespace CatchIfYouCan.Equipment
         /// <summary>How close the ghost must come. Read by the lab and the HUD.</summary>
         public float WardRadius => wardRadius;
 
+        /// <summary>How many breaks are left. There was no way at all to see this.</summary>
+        public override string HudReadout =>
+            IsSpent ? "SPENT" : _charges + " / " + maxCharges;
+
         protected override float GetInterferenceMultiplier() => 0f;
 
         /// <summary>A crystal is spent by warding, not by being switched on.</summary>

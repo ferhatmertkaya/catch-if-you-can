@@ -80,6 +80,28 @@ namespace CatchIfYouCan.Equipment
         /// <summary>What came back last, for a lab readout. Null when it was silence.</summary>
         public string LastResult { get; private set; } = "nothing yet";
 
+        /// <summary>What the recorder is doing, and the question it would ask next.</summary>
+        public override string HudReadout
+        {
+            get
+            {
+                if (_awaitingResponse)
+                    return "RECORDING";
+                if (_cooldownTimer > 0f)
+                    return "WAIT " + _cooldownTimer.ToString("F1") + "s";
+                return CurrentQuestion;
+            }
+        }
+
+        /// <summary>
+        /// Changing the question. It was bound to the Tab key, on a game built for phones.
+        /// </summary>
+        public override void CollectActions(System.Collections.Generic.List<EquipmentAction> into)
+        {
+            into.Add(new EquipmentAction("NEXT Q", NextQuestion,
+                                         !_awaitingResponse && questions != null && questions.Length > 1));
+        }
+
         protected override float GetInterferenceMultiplier() => 0.4f;
 
         /// <summary>Asking a question does not wear the recorder out.</summary>

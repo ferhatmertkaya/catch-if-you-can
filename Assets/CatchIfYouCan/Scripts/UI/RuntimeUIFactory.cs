@@ -441,6 +441,7 @@ namespace CatchIfYouCan.UI
             Position(useBtn.gameObject, 0.85f, 0.05f, 0.98f, 0.14f);
 
             var selector = BuildInventorySlots(root);
+            BuildEquipmentPanel(root);
 
             hud.BindRuntime(
                 caseIcon: caseIcon.GetComponent<Image>(),
@@ -522,6 +523,85 @@ namespace CatchIfYouCan.UI
             var selector = slotRow.AddComponent<InventorySlotSelector>();
             selector.BindRuntime(buttons, icons, frames);
             return selector;
+        }
+
+        /// <summary>
+        /// The held item's name, its readout and its own controls.
+        ///
+        /// <para>
+        /// It sits above the slot row and to the left of the action cluster, in the band the
+        /// HUD leaves empty between the joystick and the crouch button. Nothing here reaches
+        /// the left third of the screen, so the movement stick is never covered, and it stops
+        /// short of 0.55 where crouch begins.
+        /// </para>
+        /// </summary>
+        private static EquipmentHudPanel BuildEquipmentPanel(Transform root)
+        {
+            var panel = CreatePanel(root, "EquipmentPanel", false);
+            Position(panel, 0.32f, 0.12f, 0.53f, 0.235f);
+            // The container does not take taps: a press between two buttons should fall
+            // through rather than be swallowed by the panel behind them.
+            panel.GetComponent<Image>().raycastTarget = false;
+
+            var title = CreateText(panel.transform, "Title", "EMPTY", 20,
+                                   TextAnchor.UpperCenter, true);
+            Position(title.gameObject, 0f, 0.66f, 1f, 1f);
+
+            var readout = CreateText(panel.transform, "Readout", string.Empty, 24,
+                                     TextAnchor.MiddleCenter, false);
+            Position(readout.gameObject, 0f, 0.34f, 1f, 0.66f);
+
+            var row = CreatePanel(panel.transform, "Actions", false);
+            Position(row, 0f, 0f, 1f, 0.32f);
+            row.GetComponent<Image>().raycastTarget = false;
+
+            var layout = row.AddComponent<HorizontalLayoutGroup>();
+            layout.spacing = 6;
+            layout.childAlignment = TextAnchor.MiddleCenter;
+            layout.childForceExpandWidth = true;
+            layout.childForceExpandHeight = true;
+
+            var buttons = new Button[EquipmentHudPanel.ActionCount];
+            var labels = new Component[EquipmentHudPanel.ActionCount];
+
+            for (int i = 0; i < EquipmentHudPanel.ActionCount; i++)
+            {
+                buttons[i] = CreateButton(row.transform, string.Empty, null, false, 36);
+                labels[i] = FindLabel(buttons[i]);
+                // Built hidden. An item with one control should show one button, not one
+                // button and two blanks.
+                buttons[i].gameObject.SetActive(false);
+            }
+
+            var component = panel.AddComponent<EquipmentHudPanel>();
+            component.BindRuntime(title, readout, buttons, labels);
+            return component;
+        }
+
+        /// <summary>
+        /// The text component inside a button built by <see cref="CreateButton"/>.
+        ///
+        /// <para>
+        /// Not <c>GetComponentInChildren&lt;Text&gt;</c>: this project builds its labels as
+        /// TextMeshProUGUI when TMP is present, and that search returns null in exactly the
+        /// configuration the game actually ships in - a label that silently never updates.
+        /// </para>
+        /// </summary>
+        private static Component FindLabel(Button button)
+        {
+            if (button == null)
+                return null;
+
+            var label = button.transform.Find("Label");
+            if (label == null)
+                return null;
+
+#if TMP_PRESENT || UNITY_TEXTMESHPRO
+            var tmp = label.GetComponent<TextMeshProUGUI>();
+            if (tmp != null)
+                return tmp;
+#endif
+            return label.GetComponent<Text>();
         }
 
         private static void EnsureMobileInput(Transform joystickParent)

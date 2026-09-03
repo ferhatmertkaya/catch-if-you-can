@@ -56,6 +56,10 @@ namespace CatchIfYouCan.Equipment
         /// <summary>Whether the last thing it heard came through a wall, for a lab readout.</summary>
         public bool LastSignalOccluded => _lastWasOccluded;
 
+        /// <summary>Signal strength as a percentage, with a note when it came through a wall.</summary>
+        public override string HudReadout =>
+            Mathf.RoundToInt(_signalStrength * 100f) + "%" + (_lastWasOccluded ? " (muffled)" : "");
+
         protected override float GetInterferenceMultiplier() => 0.3f;
 
         /// <summary>Switching it on does not wear it out.</summary>

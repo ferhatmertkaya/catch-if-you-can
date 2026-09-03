@@ -75,6 +75,9 @@ namespace CatchIfYouCan.Equipment
         /// <summary>The field before interference was mixed in, for a lab readout.</summary>
         public float RawReading => _rawReading;
 
+        /// <summary>The needle, as a number. It is the only thing this device says.</summary>
+        public override string HudReadout => "LEVEL " + CurrentLevel;
+
         protected override float GetInterferenceMultiplier() => 0.55f;
 
         /// <summary>Switching a detector on and off does not wear it out.</summary>

@@ -51,6 +51,50 @@ namespace CatchIfYouCan.Equipment
         /// <summary>Which surfaces this item accepts. Read by the lab and the validator.</summary>
         public PlacementSurface AllowedSurfaces => allowedSurfaces;
 
+        /// <summary>
+        /// Aim, commit, or back out. One control that reads as three, because at any moment
+        /// only one of them is the thing the player wants.
+        ///
+        /// <para>
+        /// Installing an item was unreachable on a phone: TryBeginPlacement, TryPlace and
+        /// TryCancelPlacement are all public and nothing on screen called any of them, so the
+        /// projector, the video camera and the relic could be carried and never put down.
+        /// </para>
+        /// </summary>
+        public override void CollectActions(System.Collections.Generic.List<EquipmentAction> into)
+        {
+            bool canPlace = definition != null && definition.CanPlace;
+
+            if (LifecycleState == EquipmentLifecycleState.PlacementPreview)
+            {
+                into.Add(new EquipmentAction("PLACE", () => TryPlace(), HasValidCandidate));
+                into.Add(new EquipmentAction("CANCEL", () => TryCancelPlacement()));
+                return;
+            }
+
+            if (LifecycleState == EquipmentLifecycleState.Placed)
+            {
+                into.Add(new EquipmentAction("PACK UP", PickUpFromRoom));
+                return;
+            }
+
+            into.Add(new EquipmentAction("AIM", () => TryBeginPlacement(),
+                                         canPlace && LifecycleState == EquipmentLifecycleState.Equipped));
+        }
+
+        /// <summary>
+        /// Takes an installed item back off the wall, into the player's own inventory. The
+        /// inventory comes from the local player service rather than being remembered from
+        /// when the item was placed - a remembered one is a reference to a player who may no
+        /// longer be here.
+        /// </summary>
+        private void PickUpFromRoom()
+        {
+            var inventory = Core.LocalPlayerService.GetPlayerComponent<Player.PlayerInventory>();
+            if (inventory != null)
+                TryPickupPlaced(inventory);
+        }
+
         public override EquipmentActionResult TryBeginPlacement()
         {
             var started = base.TryBeginPlacement();

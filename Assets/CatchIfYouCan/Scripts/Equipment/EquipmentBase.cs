@@ -263,6 +263,33 @@ namespace CatchIfYouCan.Equipment
         protected virtual void OnUnequipped() { }
         protected virtual void OnPlaced() { }
         protected virtual void OnUse() { }
+        /// <summary>
+        /// One line of state for the HUD: what this device is showing right now.
+        ///
+        /// <para>
+        /// Battery by default, because most of them run on one. An item overrides this with
+        /// the number that actually matters to it - a temperature, an EMF level, how many
+        /// charges are left - so the player can read the instrument without looking at the
+        /// instrument, which on a small screen is the difference between usable and not.
+        /// </para>
+        /// </summary>
+        public virtual string HudReadout =>
+            definition != null && definition.MaxBattery > 0f
+                ? Mathf.RoundToInt(BatteryPercent * 100f) + "%"
+                : string.Empty;
+
+        /// <summary>
+        /// The item's own controls, beyond Use. Empty by default.
+        ///
+        /// <para>
+        /// The list is filled rather than returned so that showing the HUD costs no
+        /// allocation: it is rebuilt every refresh, and one reused list serves every item.
+        /// </para>
+        /// </summary>
+        public virtual void CollectActions(System.Collections.Generic.List<EquipmentAction> into)
+        {
+        }
+
         protected virtual void OnDeviceActiveChanged(bool active) { }
         protected virtual void OnDurabilityDepleted() { }
         protected virtual void TickEquipped(float deltaTime) { }

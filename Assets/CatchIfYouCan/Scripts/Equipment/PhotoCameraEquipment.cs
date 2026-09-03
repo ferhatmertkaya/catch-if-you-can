@@ -76,6 +76,22 @@ namespace CatchIfYouCan.Equipment
         /// <summary>Seconds until the shutter is ready again.</summary>
         public float ShutterCooldown => Mathf.Max(0f, _shutterTimer);
 
+        /// <summary>Field of view, and whether the lamp is on.</summary>
+        public override string HudReadout =>
+            Mathf.RoundToInt(_currentZoom) + "\u00B0" + (_nightVisionOn ? " NV" : "");
+
+        /// <summary>
+        /// The lens controls. All three were public methods with nothing on screen to call
+        /// them: on a phone there is no scroll wheel and there was no button either, so the
+        /// camera could only ever be fired at whatever it happened to be pointed at.
+        /// </summary>
+        public override void CollectActions(System.Collections.Generic.List<EquipmentAction> into)
+        {
+            into.Add(new EquipmentAction("ZOOM +", ZoomIn, _currentZoom > maxZoom));
+            into.Add(new EquipmentAction("ZOOM -", ZoomOut, _currentZoom < minZoom));
+            into.Add(new EquipmentAction(_nightVisionOn ? "NV OFF" : "NV ON", ToggleNightVision));
+        }
+
         protected override float GetInterferenceMultiplier() => 0.3f;
 
         /// <summary>Taking a photograph does wear the camera, unlike flicking a switch.</summary>

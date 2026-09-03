@@ -54,6 +54,9 @@ namespace CatchIfYouCan.Equipment
         /// </summary>
         public Transform ProjectionOrigin => CarriedRoot != null ? CarriedRoot : transform;
 
+        /// <summary>Whether it is throwing a field.</summary>
+        public override string HudReadout => IsProjecting ? "PROJECTING" : "OFF";
+
         protected override float GetInterferenceMultiplier() => 0.45f;
 
         /// <summary>Flicking the switch does not wear the projector out.</summary>
