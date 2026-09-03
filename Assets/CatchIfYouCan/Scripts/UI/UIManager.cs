@@ -22,6 +22,7 @@ namespace CatchIfYouCan.UI
         CameraMonitor,
         Loading,
         InteractionPrompt,
+        LobbyBoard,
         Debug
     }
 

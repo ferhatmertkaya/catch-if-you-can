@@ -47170,6 +47170,7 @@ Transform:
   - {fileID: 7311221400000011}
   - {fileID: 7311221500000011}
   - {fileID: 7311221500000021}
+  - {fileID: 7311222000000011}
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &7311220700000020
@@ -52478,3 +52479,57 @@ SceneRoots:
   - {fileID: 7311220500000011}
   - {fileID: 7311220700000011}
   - {fileID: 7311220700000031}
+--- !u!1 &7311222000000010
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 7311222000000011}
+  - component: {fileID: 7311222000000012}
+  m_Layer: 0
+  m_Name: Lobby_InvestigationBoard
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!4 &7311222000000011
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 7311222000000010}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0.7071068, z: 0, w: 0.7071068}
+  m_LocalPosition: {x: 15.02, y: 0, z: 2}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 7311220700000011}
+  m_LocalEulerAnglesHint: {x: 0, y: 90, z: 0}
+--- !u!114 &7311222000000012
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 7311222000000010}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 77c4bb6e7b198ff9002447b5f2058426, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::CatchIfYouCan.Interaction.LobbyInvestigationBoard
+  distance: 2.2
+  prompt: Read the investigation board
+  boardPrefab: {fileID: 0}
+  boardSize: {x: 2.2, y: 1.5}
+  boardHeight: 1.55
+  frameColor: {r: 0.13, g: 0.11, b: 0.09, a: 1}
+  surfaceColor: {r: 0.09, g: 0.11, b: 0.1, a: 1}
+  accentColor: {r: 0.34, g: 1, b: 0.41, a: 1}
+  glowWhenInRange: 1
+  glowIntensity: 0.45
