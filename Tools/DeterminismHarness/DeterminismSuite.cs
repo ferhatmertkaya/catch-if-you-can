@@ -59,6 +59,8 @@ namespace CatchIfYouCan.Tools
             TestSessionMode();
             TestCharacterSelection();
             TestEquipmentOwnership();
+            TestConnectionRating();
+            TestReconnectPolicy();
 
             Console.WriteLine();
             Console.WriteLine($"passed: {_passed}   failed: {_failed}");
@@ -70,6 +72,142 @@ namespace CatchIfYouCan.Tools
             }
 
             return _failed == 0;
+        }
+
+        /// <summary>
+        /// The bands a measured round trip falls in, and the two answers that are not
+        /// measurements at all.
+        /// </summary>
+        private static void TestConnectionRating()
+        {
+            // The one thing a diagnostic must never do is report health it did not measure.
+            Check("rating: no measurement is unknown, not good and not zero",
+                ConnectionRating.Rate(ConnectionRating.NoMeasurement) ==
+                ConnectionQuality.Unknown &&
+                ConnectionRating.NoMeasurement < 0);
+
+            Check("rating: an instant round trip is good, and is still a measurement",
+                ConnectionRating.Rate(0) == ConnectionQuality.Good);
+
+            Check("rating: each band ends where the next begins",
+                ConnectionRating.Rate(ConnectionRating.GoodUpToMs) == ConnectionQuality.Good &&
+                ConnectionRating.Rate(ConnectionRating.GoodUpToMs + 1) == ConnectionQuality.Fair &&
+                ConnectionRating.Rate(ConnectionRating.FairUpToMs) == ConnectionQuality.Fair &&
+                ConnectionRating.Rate(ConnectionRating.FairUpToMs + 1) == ConnectionQuality.Poor &&
+                ConnectionRating.Rate(ConnectionRating.PoorUpToMs) == ConnectionQuality.Poor &&
+                ConnectionRating.Rate(ConnectionRating.PoorUpToMs + 1) == ConnectionQuality.Lost);
+
+            Check("rating: the bands are in order and do not overlap",
+                ConnectionRating.GoodUpToMs < ConnectionRating.FairUpToMs &&
+                ConnectionRating.FairUpToMs < ConnectionRating.PoorUpToMs);
+
+            Check("rating: unknown and not-applicable are not measurements",
+                !ConnectionRating.IsMeasured(ConnectionQuality.Unknown) &&
+                !ConnectionRating.IsMeasured(ConnectionQuality.NotApplicable) &&
+                ConnectionRating.IsMeasured(ConnectionQuality.Good) &&
+                ConnectionRating.IsMeasured(ConnectionQuality.Lost));
+
+            // Offline solo has no connection and is not a broken one.
+            Check("rating: only a lost connection is unplayable",
+                ConnectionRating.IsPlayable(ConnectionQuality.NotApplicable) &&
+                ConnectionRating.IsPlayable(ConnectionQuality.Unknown) &&
+                ConnectionRating.IsPlayable(ConnectionQuality.Poor) &&
+                !ConnectionRating.IsPlayable(ConnectionQuality.Lost));
+
+            Check("rating: offline and unmeasured read differently",
+                ConnectionRating.Describe(ConnectionQuality.NotApplicable) !=
+                ConnectionRating.Describe(ConnectionQuality.Unknown));
+
+            var seen = new System.Collections.Generic.HashSet<string>();
+            bool distinct = true;
+            foreach (ConnectionQuality q in System.Enum.GetValues(typeof(ConnectionQuality)))
+                if (!seen.Add(ConnectionRating.Describe(q)))
+                    distinct = false;
+
+            Check("rating: every quality has its own description", distinct);
+        }
+
+        /// <summary>
+        /// When a dropped player tries again and how long their seat is held.
+        ///
+        /// <para>
+        /// NOT PRODUCTION READY, and these checks are why that claim is honest rather than a
+        /// disclaimer: the policy is exercised, the mechanism does not exist.
+        /// </para>
+        /// </summary>
+        private static void TestReconnectPolicy()
+        {
+            Check("reconnect: the backoff doubles and then stops",
+                ReconnectPolicy.BackoffSeconds(1) == 1 &&
+                ReconnectPolicy.BackoffSeconds(2) == 2 &&
+                ReconnectPolicy.BackoffSeconds(3) == 4 &&
+                ReconnectPolicy.BackoffSeconds(4) == 8 &&
+                ReconnectPolicy.BackoffSeconds(9) == ReconnectPolicy.MaxBackoffSeconds);
+
+            Check("reconnect: a nonsensical attempt number does not produce a negative wait",
+                ReconnectPolicy.BackoffSeconds(0) >= 1 &&
+                ReconnectPolicy.BackoffSeconds(-4) >= 1);
+
+            Check("reconnect: attempts run out at the limit",
+                ReconnectPolicy.ShouldRetry(0) &&
+                ReconnectPolicy.ShouldRetry(ReconnectPolicy.MaxAttempts - 1) &&
+                !ReconnectPolicy.ShouldRetry(ReconnectPolicy.MaxAttempts) &&
+                !ReconnectPolicy.ShouldRetry(ReconnectPolicy.MaxAttempts + 10));
+
+            // The whole point of holding a seat: somebody who uses every attempt must still
+            // have somewhere to land when the last one succeeds.
+            Check("reconnect: the seat outlives the whole retry schedule",
+                ReconnectPolicy.TotalBackoffSeconds(ReconnectPolicy.MaxAttempts) <
+                ReconnectPolicy.SeatHeldSeconds);
+
+            Check("reconnect: the seat expires at the limit and not before",
+                !ReconnectPolicy.SeatExpired(ReconnectPolicy.SeatHeldSeconds - 1) &&
+                ReconnectPolicy.SeatExpired(ReconnectPolicy.SeatHeldSeconds));
+
+            // --- the schedule, walked ------------------------------------------------------
+            Check("reconnect: the first moment after a drop is a wait, not an attempt",
+                ReconnectPolicy.Next(0, 0) == ReconnectState.Waiting);
+
+            Check("reconnect: the first attempt comes due after the first backoff",
+                ReconnectPolicy.Next(0, ReconnectPolicy.BackoffSeconds(1)) ==
+                ReconnectState.Retrying);
+
+            Check("reconnect: attempt two waits out its own longer backoff",
+                ReconnectPolicy.Next(1, 1) == ReconnectState.Waiting &&
+                ReconnectPolicy.Next(1, 3) == ReconnectState.Retrying);
+
+            Check("reconnect: running out of attempts gives up",
+                ReconnectPolicy.Next(ReconnectPolicy.MaxAttempts, 20) == ReconnectState.GaveUp);
+
+            // The seat is checked first on purpose: "attempt 3 of 4" is wrong in a way the
+            // player cannot see once the host has filled their place.
+            Check("reconnect: a lost seat outranks having attempts left",
+                ReconnectPolicy.Next(0, ReconnectPolicy.SeatHeldSeconds) ==
+                ReconnectState.SeatLost &&
+                ReconnectPolicy.Next(ReconnectPolicy.MaxAttempts,
+                                     ReconnectPolicy.SeatHeldSeconds) ==
+                ReconnectState.SeatLost);
+
+            Check("reconnect: both failures are terminal and neither is Connected",
+                ReconnectPolicy.IsTerminal(ReconnectState.GaveUp) &&
+                ReconnectPolicy.IsTerminal(ReconnectState.SeatLost) &&
+                !ReconnectPolicy.IsTerminal(ReconnectState.Waiting) &&
+                !ReconnectPolicy.IsTerminal(ReconnectState.Retrying) &&
+                !ReconnectPolicy.IsTerminal(ReconnectState.Connected));
+
+            Check("reconnect: the two failures are not told to the player the same way",
+                ReconnectPolicy.Describe(ReconnectState.GaveUp) !=
+                ReconnectPolicy.Describe(ReconnectState.SeatLost));
+
+            // Nothing in the schedule may stall: every second from the drop to the seat
+            // expiring must produce a state, and it must never go backwards to Connected.
+            bool wellFormed = true;
+            for (int attempts = 0; attempts <= ReconnectPolicy.MaxAttempts; attempts++)
+                for (int t = 0; t <= ReconnectPolicy.SeatHeldSeconds; t++)
+                    if (ReconnectPolicy.Next(attempts, t) == ReconnectState.Connected)
+                        wellFormed = false;
+
+            Check("reconnect: a dropped peer is never reported as connected", wellFormed);
         }
 
         /// <summary>

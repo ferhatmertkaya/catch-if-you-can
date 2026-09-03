@@ -39,6 +39,8 @@ redesign.
 | Character index | **Built.** `Deterministic.CharacterSelection` — §3b |
 | Ghost presentation | **Built.** `Ghost.GhostPresentationState`, `RemoteGhostDriver` — §4b |
 | Equipment ownership | **Built.** `Deterministic.EquipmentOwnership` — §5b |
+| Connection readout | **Seam only.** `Session.ConnectionDiagnostics`, no probe — §8b |
+| Reconnect | **Policy only. NOT PRODUCTION READY** — `Deterministic.ReconnectPolicy` — §8 |
 | Transport | **Not built.** Blocked — §9 |
 | Relay / Lobby / Auth | **Not built.** Blocked — §9 |
 | NGO scene sync | **Not built.** Blocked — §9 |
@@ -443,6 +445,49 @@ serialised anywhere today. It is a real feature, not a flag, and it is not in V4
 
 **Dedicated server is NOT IMPLEMENTED.** The topology is listen-server: one
 player is host.
+
+V5 added `Deterministic.ReconnectPolicy`, which is **the policy, not the
+mechanism, and NOT PRODUCTION READY**: nothing calls it and it has never
+reconnected anything. What it is for is that the policy questions get answered
+once, where they can be tested, rather than invented inside a retry loop later —
+four attempts over ~15 seconds of doubling backoff, a seat held for 45 so a
+player who uses every attempt still has somewhere to land, and two distinct
+failures (`GaveUp`, `SeatLost`) because "the session carried on without you" is
+not "we could not reach the host". The seat is checked before the attempt count:
+telling somebody "attempt 3 of 4" once the host has filled their place is a
+message that is wrong in a way they cannot see. 13 harness checks; the guard
+fails if the NOT PRODUCTION READY warning is deleted.
+
+The list above of what a true mid-mission reconnect would have to restore is
+unchanged, and none of it is serialised yet.
+
+---
+
+## 8b. What the connection readout may claim (V5)
+
+`Session.ConnectionDiagnostics` is the seam a transport plugs into —
+`IConnectionProbe`, one method, which may say no. Nothing implements it.
+
+**It never returns zero milliseconds.** With no probe it reports
+`ConnectionQuality.Unknown`, and an unmeasured round trip is
+`ConnectionRating.NoMeasurement` (−1), not 0. A confident "0 ms" on a game that
+has never sent a packet is worse than no readout at all: it is the readout
+somebody trusts while debugging why nothing arrives. The guard fails if the
+out-parameter is ever initialised to zero.
+
+**Offline and unmeasured are different answers.** Offline solo has no connection
+and never will (`NotApplicable`); an online session that has not measured yet
+will (`Unknown`). One value for both would leave "measuring" in the corner of a
+single-player screen forever.
+
+A host reports `Unknown` for itself rather than `Good` — a host's latency to
+itself is not a fact about the session, and showing it as perfect is how a host
+concludes the network is fine while everybody else is at 900 ms.
+
+The bands live in `Deterministic.ConnectionRating`, pure and tested (8 checks),
+so two readouts cannot end up with two sets of thresholds. They are chosen for a
+co-operative game where nothing is contested frame by frame — what latency costs
+here is a door opening late — and are not the bands a shooter would pick.
 
 ---
 

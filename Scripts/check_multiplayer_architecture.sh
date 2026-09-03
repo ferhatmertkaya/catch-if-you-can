@@ -489,6 +489,96 @@ if [ -f "$INV" ]; then
   fi
 fi
 
+# --------------------------------------------------- honest diagnostics
+
+# A confident "0 ms" on a game that has never sent a packet is worse than no readout: it is
+# the readout somebody trusts while debugging why nothing arrives.
+DIAG="$SESSION/ConnectionDiagnostics.cs"
+if [ -f "$DIAG" ]; then
+  if grep -q 'ConnectionRating.NoMeasurement' "$DIAG" \
+     && ! grep -qE 'roundTripMs\s*=\s*0\s*;' "$DIAG"; then
+    ok "an unmeasured connection reports no measurement, never zero"
+  else
+    fail "ConnectionDiagnostics can report a round trip it never measured"
+  fi
+
+  # Offline solo has no connection and never will. One "unknown" for both would leave
+  # "measuring" in the corner of a single-player screen forever.
+  grep -q 'ConnectionQuality.NotApplicable' "$DIAG" \
+    && ok "offline reports having no connection rather than an unmeasured one" \
+    || fail "ConnectionDiagnostics does not distinguish offline from unmeasured"
+fi
+
+# The reconnect policy has never reconnected anything, and says so. Deleting the warning is
+# how a policy with no mechanism behind it starts being read as a working feature.
+RECON="$DETERMINISTIC/ReconnectPolicy.cs"
+if [ -f "$RECON" ]; then
+  grep -q 'NOT PRODUCTION READY' "$RECON" \
+    && ok "the reconnect policy still says it is not production ready" \
+    || fail "ReconnectPolicy no longer admits that nothing implements it"
+fi
+
+# --------------------------------------------------- offline cannot regress
+
+# Offline solo must work with nothing installed. If either of these stops being the starting
+# value, a build that boots without a networking layer has no session and no authority - and
+# the failure is a null reference somewhere in gameplay, nowhere near the cause.
+if [ -f "$SERVICE" ]; then
+  # The field initialiser, not just any assignment. EndSession, Reset and the play-mode
+  # reset all assign a fresh OfflineSession, so a grep for the assignment passed even with
+  # the declaration's initialiser removed - and the initialiser is the whole invariant:
+  # what the process holds before anything has run.
+  grep -qE 'static IMultiplayerSession _current\s*=\s*new OfflineSession\(\)' "$SERVICE" \
+    && ok "a process with no networking layer still has a session" \
+    || fail "MultiplayerSessionService no longer starts offline; offline solo has no session"
+fi
+
+SESSAUTH="$SCRIPTS/Core/SessionAuthority.cs"
+if [ -f "$SESSAUTH" ]; then
+  grep -qE 'static IAuthorityProvider _provider\s*=\s*new LocalAuthority\(\)' "$SESSAUTH" \
+    && ok "a process with no networking layer still has an authority" \
+    || fail "SessionAuthority no longer starts local; offline solo cannot change anything"
+fi
+
+# No internet must never mean no progression. The local save path has no online dependency
+# and must not acquire one; cloud sync, if it ever arrives, sits above it.
+if [ -d "$SCRIPTS/Save" ]; then
+  online_save=$(grep -rlE 'MultiplayerSessionService|SessionLauncher|Relay|Lobby|Authentication' \
+                "$SCRIPTS/Save" --include='*.cs' 2>/dev/null || true)
+  if [ -n "$online_save" ]; then
+    fail "the save path has acquired an online dependency"
+    printf '%s\n' "$online_save" | sed 's/^/        /'
+  else
+    ok "saving and progression depend on nothing online"
+  fi
+fi
+
+# --------------------------------------------------- which way the dependencies run
+
+# The session layer adapts the deterministic contract and knows Core. It must not know
+# gameplay: a session layer that imports the ghost is a session layer the ghost cannot be
+# tested without, and the direction is the whole reason the interface exists.
+gameplay_in_session=$(grep -rnE '^\s*using CatchIfYouCan\.(Equipment|Ghost|Player|Missions|Evidence|Objectives|UI|AI|Interaction|Procedural)\s*;' \
+                      "$SESSION" --include='*.cs' 2>/dev/null \
+                      | grep -v 'Procedural.Deterministic' || true)
+if [ -n "$gameplay_in_session" ]; then
+  fail "the session layer imports gameplay; the dependency runs the wrong way"
+  printf '%s\n' "$gameplay_in_session" | sed 's/^/        /'
+else
+  ok "the session layer knows the contract and Core, and no gameplay"
+fi
+
+# And nothing flows back the other way. The deterministic assembly is referenced by
+# everything and references nothing, which is what makes it testable without Unity.
+outward=$(grep -rnE 'CatchIfYouCan\.(Session|Core|Equipment|Ghost|Player|Missions|UI)' \
+          "$DETERMINISTIC" --include='*.cs' 2>/dev/null || true)
+if [ -n "$outward" ]; then
+  fail "the deterministic assembly reaches outward"
+  printf '%s\n' "$outward" | sed 's/^/        /'
+else
+  ok "the deterministic assembly still references nothing"
+fi
+
 printf '\npassed: %s   failed: %s\n\n' "$passed" "$failed"
 
 if [ "$failed" -gt 0 ]; then
