@@ -440,18 +440,7 @@ namespace CatchIfYouCan.UI
             var useBtn = CreateButton(root, "USE", null, true, 52);
             Position(useBtn.gameObject, 0.85f, 0.05f, 0.98f, 0.14f);
 
-            var slots = new Image[3];
-            var slotRow = CreatePanel(root, "EquipmentSlots", false);
-            Position(slotRow, 0.35f, 0.02f, 0.65f, 0.12f);
-            var hlg = slotRow.AddComponent<HorizontalLayoutGroup>();
-            hlg.spacing = 8;
-            hlg.childAlignment = TextAnchor.MiddleCenter;
-            for (int i = 0; i < 3; i++)
-            {
-                var slot = CreatePanel(slotRow.transform, "Slot" + (i + 1), false);
-                slot.GetComponent<RectTransform>().sizeDelta = new Vector2(72, 72);
-                slots[i] = slot.GetComponent<Image>();
-            }
+            var selector = BuildInventorySlots(root);
 
             hud.BindRuntime(
                 caseIcon: caseIcon.GetComponent<Image>(),
@@ -460,10 +449,79 @@ namespace CatchIfYouCan.UI
                 interactButton: interactBtn,
                 crouchButton: crouchBtn,
                 sprintButton: sprintBtn,
-                equipmentSlots: slots,
+                inventorySelector: selector,
                 useButton: useBtn);
 
             EnsureMobileInput(joystickArea.transform);
+        }
+
+        /// <summary>
+        /// The three inventory slots, as buttons rather than pictures.
+        ///
+        /// <para>
+        /// The row sits between the joystick and the crouch button, and it stops short of
+        /// both. It used to run from 0.35 to 0.65 across the screen, which overlapped crouch
+        /// at 0.55 - harmless while the slots were pictures and a stolen tap the moment they
+        /// became buttons. Nothing here reaches the left third of the screen, so the stick is
+        /// never covered, and it is a hand's width tall at the very bottom, so a look drag
+        /// that starts anywhere else is unaffected. It is a child of the safe-area root like
+        /// the rest of the HUD, so a notch or a home bar moves it with everything else.
+        /// </para>
+        ///
+        /// <para>
+        /// Each slot is a frame with an icon inside it. Two graphics rather than one because
+        /// the highlight has to be able to say "this slot is selected" while the slot is
+        /// empty, which a tinted icon cannot.
+        /// </para>
+        /// </summary>
+        private static InventorySlotSelector BuildInventorySlots(Transform root)
+        {
+            int count = Player.PlayerInventory.SlotCount;
+            var buttons = new Button[count];
+            var icons = new Image[count];
+            var frames = new Image[count];
+
+            var slotRow = CreatePanel(root, "EquipmentSlots", false);
+            Position(slotRow, 0.32f, 0.02f, 0.53f, 0.115f);
+            // The row keeps the panel look it always had; only the slots inside it are new.
+            // It does not take taps, so a press between two slots falls through rather than
+            // being swallowed by the container.
+            slotRow.GetComponent<Image>().raycastTarget = false;
+
+            var hlg = slotRow.AddComponent<HorizontalLayoutGroup>();
+            hlg.spacing = 8;
+            hlg.childAlignment = TextAnchor.MiddleCenter;
+
+            for (int i = 0; i < count; i++)
+            {
+                var slot = CreatePanel(slotRow.transform, "Slot" + (i + 1), false);
+                slot.GetComponent<RectTransform>().sizeDelta = new Vector2(72, 72);
+
+                frames[i] = slot.GetComponent<Image>();
+                frames[i].raycastTarget = true;
+                UITheme.ApplyBorder(slot, 1f);
+
+                buttons[i] = slot.AddComponent<Button>();
+                buttons[i].targetGraphic = frames[i];
+
+                var iconGo = new GameObject("Icon", typeof(RectTransform), typeof(CanvasRenderer),
+                                            typeof(Image));
+                iconGo.transform.SetParent(slot.transform, false);
+                var iconRect = iconGo.GetComponent<RectTransform>();
+                iconRect.anchorMin = new Vector2(0.16f, 0.16f);
+                iconRect.anchorMax = new Vector2(0.84f, 0.84f);
+                iconRect.offsetMin = iconRect.offsetMax = Vector2.zero;
+
+                icons[i] = iconGo.GetComponent<Image>();
+                icons[i].preserveAspect = true;
+                // The frame takes the tap. An icon that also took it would swallow the press
+                // whenever a slot happened to have a sprite in it.
+                icons[i].raycastTarget = false;
+            }
+
+            var selector = slotRow.AddComponent<InventorySlotSelector>();
+            selector.BindRuntime(buttons, icons, frames);
+            return selector;
         }
 
         private static void EnsureMobileInput(Transform joystickParent)

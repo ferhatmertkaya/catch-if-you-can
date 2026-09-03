@@ -1,6 +1,5 @@
 using System.Collections;
 using CatchIfYouCan.Core;
-using CatchIfYouCan.Equipment;
 using CatchIfYouCan.Input;
 using CatchIfYouCan.Player;
 using UnityEngine;
@@ -16,7 +15,9 @@ namespace CatchIfYouCan.UI
         [SerializeField] private Button interactButton;
         [SerializeField] private Button crouchButton;
         [SerializeField] private Button sprintButton;
-        [SerializeField] private Image[] equipmentSlots = new Image[3];
+        [Tooltip("The three inventory slots. It owns them outright - two components writing " +
+                 "the same Images is how the icon and the highlight end up disagreeing.")]
+        [SerializeField] private InventorySlotSelector inventorySelector;
         [SerializeField] private Button useButton;
         [SerializeField] private RectTransform safeAreaRoot;
         [SerializeField] private float interactPulseSpeed = 3f;
@@ -35,7 +36,7 @@ namespace CatchIfYouCan.UI
             Button interactButton,
             Button crouchButton,
             Button sprintButton,
-            Image[] equipmentSlots,
+            InventorySlotSelector inventorySelector,
             Button useButton)
         {
             this.caseIcon = caseIcon;
@@ -44,7 +45,7 @@ namespace CatchIfYouCan.UI
             this.interactButton = interactButton;
             this.crouchButton = crouchButton;
             this.sprintButton = sprintButton;
-            this.equipmentSlots = equipmentSlots;
+            this.inventorySelector = inventorySelector;
             this.useButton = useButton;
             ApplySafeArea();
             WireButtons();
@@ -56,13 +57,11 @@ namespace CatchIfYouCan.UI
                 UIManager.Instance.Show(UIScreen.HUD, false);
             ApplySafeArea();
             WireButtons();
-            RefreshEquipmentSlots();
-            GameEvents.OnEquipmentChanged += RefreshEquipmentSlots;
+            inventorySelector?.Refresh();
         }
 
         private void OnDisable()
         {
-            GameEvents.OnEquipmentChanged -= RefreshEquipmentSlots;
             StopPulse();
         }
 
@@ -137,31 +136,6 @@ namespace CatchIfYouCan.UI
             if (caseIcon == null) return;
             caseIcon.sprite = sprite;
             caseIcon.color = sprite != null ? Color.white : UITheme.Primary;
-        }
-
-        private void RefreshEquipmentSlots()
-        {
-            if (equipmentSlots == null || equipmentSlots.Length == 0) return;
-            var mgr = EquipmentManager.Instance;
-            // The local player's inventory. FindAnyObjectByType returned an arbitrary
-            // one, which is the wrong answer the moment a second player exists.
-            var inventory = Core.LocalPlayerService.GetPlayerComponent<PlayerInventory>();
-
-            for (int i = 0; i < equipmentSlots.Length; i++)
-            {
-                if (equipmentSlots[i] == null) continue;
-
-                // What is in the player's hands first, what they packed second. The loadout
-                // used to win, so the HUD showed the kit the player brought rather than the
-                // kit they are carrying - and after picking something up off the floor, or
-                // dropping something, the two stop agreeing.
-                Sprite icon = inventory != null ? inventory.GetSlot(i)?.Definition?.Icon : null;
-                if (icon == null && mgr != null && i < mgr.Loadout.Count && mgr.Loadout[i] != null)
-                    icon = mgr.Loadout[i].Icon;
-                equipmentSlots[i].sprite = icon;
-                equipmentSlots[i].color = icon != null ? Color.white : new Color(1, 1, 1, 0.15f);
-                UITheme.ApplyBorder(equipmentSlots[i].gameObject, 1f);
-            }
         }
 
         private void ApplySafeArea()
