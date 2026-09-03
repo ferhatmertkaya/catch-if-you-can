@@ -37,6 +37,7 @@ namespace CatchIfYouCan.Equipment
                 EquipmentIds.UvLight,
                 EquipmentIds.Thermometer,
                 EquipmentIds.EvpRecorder,
+                EquipmentIds.ParabolicMicrophone,
                 EquipmentIds.PhotoCamera,
                 EquipmentIds.Salt,
             };
@@ -65,8 +66,9 @@ namespace CatchIfYouCan.Equipment
                 EquipmentIds.Flashlight => BuildSelfPresenting<HeldFlashlight>(definition),
                 EquipmentIds.EmfDetector => BuildSelfPresenting<EMFDetector>(definition),
                 EquipmentIds.UvLight => BuildSelfPresenting<UVLight>(definition),
-                EquipmentIds.Thermometer => BuildPrimitiveEquipment<ThermometerEquipment>(definition, new Vector3(0.05f, 0.15f, 0.05f)),
-                EquipmentIds.EvpRecorder => BuildPrimitiveEquipment<EVPRecorder>(definition, new Vector3(0.12f, 0.08f, 0.18f)),
+                EquipmentIds.Thermometer => BuildSelfPresenting<ThermometerEquipment>(definition),
+                EquipmentIds.EvpRecorder => BuildSelfPresenting<EVPRecorder>(definition),
+                EquipmentIds.ParabolicMicrophone => BuildSelfPresenting<ParabolicMicrophone>(definition),
                 EquipmentIds.PhotoCamera => BuildPrimitiveEquipment<PhotoCameraEquipment>(definition, new Vector3(0.12f, 0.1f, 0.18f)),
                 EquipmentIds.Salt => BuildPrimitiveEquipment<SaltEquipment>(definition, new Vector3(0.2f, 0.15f, 0.2f)),
                 _ => BuildDevPlaceholder(definition)
