@@ -68,10 +68,13 @@ namespace CatchIfYouCan.Player
                 _slots[i] = item;
                 OnSlotChanged?.Invoke(i, item);
 
+                // Straight into a slot the player is not holding: stow it, do not unequip it.
+                // Unequip unparents to world space, which for an item entering a bag means
+                // leaving it behind in the room the moment it is picked up.
                 if (_selectedIndex == i)
                     EquipSelected();
                 else
-                    item.Unequip();
+                    Holster(item);
 
                 GameEvents.EquipmentChanged();
                 return true;
@@ -98,11 +101,31 @@ namespace CatchIfYouCan.Player
 
         public bool DropSelected() => DropFromSlot(_selectedIndex);
 
-        public bool DropFromSlot(int index)
+        public bool DropFromSlot(int index) => TryDropFromSlot(index).Ok;
+
+        /// <summary>
+        /// Throws an item out of a slot, and says why not when it will not go. The bool
+        /// overloads above are kept because the HUD and the labs call them, but everything new
+        /// should ask for the reason: "cannot be dropped", "the slot is empty" and "the item
+        /// refused" were previously the same false.
+        /// </summary>
+        public EquipmentActionResult TryDropFromSlot(int index)
         {
             EquipmentBase item = GetSlot(index);
             if (item == null)
-                return false;
+                return EquipmentActionResult.Fail(
+                    EquipmentActionStatus.WrongState, "slot " + index + " is empty");
+
+            if (item is IHeldEquipment held)
+            {
+                var allowed = held.TryDrop();
+                if (!allowed.Ok)
+                    return allowed;
+            }
+            else if (item.Definition != null && !item.Definition.CanDrop)
+            {
+                return EquipmentActionResult.Fail(EquipmentActionStatus.NotAllowedByDefinition);
+            }
 
             item.Unequip();
             item.Drop(GetDropPosition(), Quaternion.LookRotation(GetDropDirection()));
@@ -113,7 +136,25 @@ namespace CatchIfYouCan.Player
                 EquipSelected();
 
             GameEvents.EquipmentChanged();
-            return true;
+            return EquipmentActionResult.Success;
+        }
+
+        /// <summary>
+        /// The Use button, applied to whatever is in the selected slot. One entry point, so the
+        /// HUD does not have to know what kind of item it is pressing.
+        /// </summary>
+        public EquipmentActionResult TryUseSelected()
+        {
+            EquipmentBase item = GetSelectedItem();
+            if (item == null)
+                return EquipmentActionResult.Fail(
+                    EquipmentActionStatus.WrongState, "nothing in the selected slot");
+
+            if (item is IHeldEquipment held)
+                return held.TryUse();
+
+            item.Use();
+            return EquipmentActionResult.Success;
         }
 
         public bool RemoveItemFromSlot(int index, bool dropWorldItem)
@@ -141,6 +182,18 @@ namespace CatchIfYouCan.Player
             EquipSelected();
         }
 
+        /// <summary>
+        /// Brings the selected slot into the hand and stows the rest.
+        ///
+        /// <para>
+        /// The unselected items used to be sent through <c>Unequip</c>, which unparents to
+        /// world space - so putting something in slot 2 left it hovering wherever the player
+        /// happened to be standing. With one item in the inventory that never showed. With
+        /// three it is every item but the one being held. Items on the held-equipment contract
+        /// are stowed instead: still owned, still travelling with the player, not rendered and
+        /// not pickable.
+        /// </para>
+        /// </summary>
         private void EquipSelected()
         {
             Transform anchor = ResolveHandAnchor();
@@ -152,10 +205,33 @@ namespace CatchIfYouCan.Player
                     continue;
 
                 if (i == _selectedIndex)
-                    item.Equip(anchor);
+                {
+                    if (item is IHeldEquipment held)
+                        held.TryEquip(anchor);
+                    else
+                        item.Equip(anchor);
+                }
                 else
-                    item.Unequip();
+                {
+                    Holster(item);
+                }
             }
+        }
+
+        /// <summary>
+        /// Stows one item. Items that have been converted to the held-equipment contract know
+        /// how; the rest still fall back to Unequip until their phase converts them, which is
+        /// the pre-existing behaviour and no worse than it was.
+        /// </summary>
+        private void Holster(EquipmentBase item)
+        {
+            if (item is HeldEquipmentBase held)
+            {
+                held.TryHolster(ResolveHandAnchor());
+                return;
+            }
+
+            item.Unequip();
         }
 
         /// <summary>

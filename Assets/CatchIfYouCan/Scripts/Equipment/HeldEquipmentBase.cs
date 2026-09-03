@@ -29,7 +29,7 @@ namespace CatchIfYouCan.Equipment
     /// only the path for a character with no procedural body layer at all.
     /// </para>
     /// </summary>
-    public abstract class HeldEquipmentBase : EquipmentBase
+    public abstract class HeldEquipmentBase : EquipmentBase, IHeldEquipment
     {
         [Header("Carry")]
         [Tooltip("Bone the item is held by, matched by name suffix. Falls back to the anchor " +
@@ -109,13 +109,26 @@ namespace CatchIfYouCan.Equipment
         private Transform _handBone;
         private Transform _view;
         private PlayerBodyMotion _bodyMotion;
-        private CapsuleCollider _dropCollider;
+        protected CapsuleCollider _dropCollider;
         private Rigidbody _dropBody;
         private int _placedFrame = -1;
         private Vector3 _aim = Vector3.forward;
         private Vector3 _aimVelocity;
         private float _bobPhase;
         private bool _onGround;
+        private Collider[] _pickupColliders;
+
+        /// <summary>
+        /// Where this item is. One value rather than the pair of booleans on
+        /// <see cref="EquipmentBase"/>, which could not tell a stowed item from one lying on
+        /// the floor - both were "not equipped, not placed".
+        /// </summary>
+        public EquipmentLifecycleState LifecycleState { get; private set; } =
+            EquipmentLifecycleState.World;
+
+        public bool IsDeviceActive => DeviceActive;
+
+        public Transform WorldPose => transform;
 
         /// <summary>
         /// The transform actually laid in the hand. Built by the subclass, with its local +Y
@@ -203,13 +216,69 @@ namespace CatchIfYouCan.Equipment
             ReleasePhysics();
             base.Equip(handAnchor);
             _onGround = false;
+
+            SetPresentationVisible(true);
+            SetLifecycleState(EquipmentLifecycleState.Equipped);
             OnCarryChanged();
         }
 
+        /// <summary>
+        /// Taken out of the hand. Where it goes next is the caller's business - stowed by
+        /// <see cref="TryHolster"/>, thrown by <see cref="Drop"/> - so this only stops it being
+        /// held and leaves the state alone for them to set.
+        /// </summary>
         public override void Unequip()
         {
             base.Unequip();
             OnCarryChanged();
+        }
+
+        /// <summary>
+        /// Stowed: still owned, no longer in the hand, and not left behind in the room.
+        ///
+        /// <para>
+        /// <see cref="EquipmentBase.Unequip"/> unparents to world space, which for an item
+        /// going into a bag means leaving it hovering wherever the player was standing. With
+        /// one item in the inventory that never showed; with three it is every item but the
+        /// selected one. A stowed item stays parented to the hand so it travels with its
+        /// owner, and its presentation and pickup colliders are switched off so it is neither
+        /// visible nor pickable while it is in a bag.
+        /// </para>
+        /// </summary>
+        public EquipmentActionResult TryHolster() => TryHolster(HandAnchor);
+
+        /// <summary>
+        /// Stows against a named owner anchor. The inventory calls this one, because an item
+        /// picked up straight into an unselected slot has never been in a hand and so has no
+        /// anchor of its own to stow against.
+        /// </summary>
+        public EquipmentActionResult TryHolster(Transform ownerAnchor)
+        {
+            if (LifecycleState == EquipmentLifecycleState.Holstered)
+                return EquipmentActionResult.Success;
+
+            Transform anchor = ownerAnchor != null ? ownerAnchor : HandAnchor;
+            if (anchor == null)
+                return EquipmentActionResult.Fail(
+                    EquipmentActionStatus.NoAuthority,
+                    "nothing to stow against; the owner has no hand anchor");
+
+            ReleasePhysics();
+            _onGround = false;
+
+            CancelPlacementInternal();
+            base.Unequip();
+            SetDeviceActive(false);
+            IsPlaced = false;
+
+            transform.SetParent(anchor, false);
+            transform.localPosition = Vector3.zero;
+            transform.localRotation = Quaternion.identity;
+
+            SetPresentationVisible(false);
+            SetLifecycleState(EquipmentLifecycleState.Holstered);
+            OnCarryChanged();
+            return EquipmentActionResult.Success;
         }
 
         /// <summary>
@@ -263,8 +332,226 @@ namespace CatchIfYouCan.Equipment
             _onGround = true;
             _placedFrame = Time.frameCount;
 
+            SetPresentationVisible(true);
             StartPhysics(throwDirection);
 
+            SetLifecycleState(EquipmentLifecycleState.World);
+            OnCarryChanged();
+            Core.GameEvents.EquipmentChanged();
+        }
+
+        // ---- lifecycle -----------------------------------------------------------------------
+
+        /// <summary>
+        /// Changes the lifecycle state and tells the subclass, so an item that has expensive
+        /// work to switch off has one place to do it.
+        /// </summary>
+        private void SetLifecycleState(EquipmentLifecycleState next)
+        {
+            if (LifecycleState == next)
+                return;
+
+            var previous = LifecycleState;
+            LifecycleState = next;
+            OnLifecycleStateChanged(previous, next);
+        }
+
+        /// <summary>
+        /// Called on every lifecycle change. Anything costly - a projection, a camera feed, a
+        /// scan - is switched off here rather than being left running in a bag.
+        /// </summary>
+        protected virtual void OnLifecycleStateChanged(EquipmentLifecycleState from,
+                                                       EquipmentLifecycleState to) { }
+
+        /// <summary>
+        /// Shows or hides everything this item renders, and stops it being pickable while it is
+        /// stowed. The carried transform is the whole visual, so one SetActive covers the mesh,
+        /// the lens and anything hanging off it.
+        /// </summary>
+        protected virtual void SetPresentationVisible(bool visible)
+        {
+            var carried = Carried;
+            if (carried != null && carried.gameObject.activeSelf != visible)
+                carried.gameObject.SetActive(visible);
+
+            if (_pickupColliders == null)
+                _pickupColliders = GetComponents<Collider>();
+
+            for (int i = 0; i < _pickupColliders.Length; i++)
+            {
+                var collider = _pickupColliders[i];
+                // The drop capsule is owned by the physics path and must not be switched on
+                // here; it is off while carried and on only once the item has been thrown.
+                if (collider == null || collider == _dropCollider)
+                    continue;
+
+                collider.enabled = visible;
+            }
+        }
+
+        public EquipmentActionResult TryPickup(Player.PlayerInventory into)
+        {
+            if (into == null)
+                return EquipmentActionResult.Fail(
+                    EquipmentActionStatus.NoAuthority, "no inventory to pick this up into");
+
+            if (LifecycleState != EquipmentLifecycleState.World)
+                return EquipmentActionResult.Fail(
+                    EquipmentActionStatus.WrongState,
+                    "already owned (" + LifecycleState + ")");
+
+            if (!into.HasFreeSlot)
+                return EquipmentActionResult.Fail(EquipmentActionStatus.NoInventorySpace);
+
+            ReleasePhysics();
+            _onGround = false;
+
+            // The inventory decides which slot, and equips or holsters accordingly - so the
+            // state this item lands in is set by that call, not guessed here.
+            return into.AddItem(this)
+                ? EquipmentActionResult.Success
+                : EquipmentActionResult.Fail(EquipmentActionStatus.NoInventorySpace);
+        }
+
+        public EquipmentActionResult TryEquip(Transform handAnchor)
+        {
+            if (LifecycleState == EquipmentLifecycleState.Placed)
+                return EquipmentActionResult.Fail(
+                    EquipmentActionStatus.WrongState, "placed; pick it up first");
+
+            Equip(handAnchor);
+            return EquipmentActionResult.Success;
+        }
+
+        public EquipmentActionResult TryUse()
+        {
+            if (definition == null)
+                return EquipmentActionResult.Fail(
+                    EquipmentActionStatus.MissingContent, "no definition bound");
+
+            if (!definition.CanUse)
+                return EquipmentActionResult.Fail(EquipmentActionStatus.NotAllowedByDefinition);
+
+            if (Durability <= 0f)
+                return EquipmentActionResult.Fail(EquipmentActionStatus.Broken);
+
+            if (definition.BatteryUsagePerSecond > 0f && BatteryLevel <= 0f)
+                return EquipmentActionResult.Fail(EquipmentActionStatus.NoBattery);
+
+            if (LifecycleState != EquipmentLifecycleState.Equipped &&
+                LifecycleState != EquipmentLifecycleState.Using &&
+                LifecycleState != EquipmentLifecycleState.Placed &&
+                LifecycleState != EquipmentLifecycleState.PlacementPreview)
+            {
+                return EquipmentActionResult.Fail(
+                    EquipmentActionStatus.WrongState, "not held or placed (" + LifecycleState + ")");
+            }
+
+            // Committing a placement is what Use means while a preview is up. Anything else
+            // would need a second button for the one action the player is obviously taking.
+            if (LifecycleState == EquipmentLifecycleState.PlacementPreview)
+                return TryPlace();
+
+            Use();
+            return EquipmentActionResult.Success;
+        }
+
+        public virtual EquipmentActionResult TryBeginPlacement()
+        {
+            if (definition == null || !definition.CanPlace)
+                return EquipmentActionResult.Fail(EquipmentActionStatus.NotAllowedByDefinition);
+
+            if (LifecycleState != EquipmentLifecycleState.Equipped)
+                return EquipmentActionResult.Fail(
+                    EquipmentActionStatus.WrongState, "must be in hand to place");
+
+            SetLifecycleState(EquipmentLifecycleState.PlacementPreview);
+            return EquipmentActionResult.Success;
+        }
+
+        public virtual EquipmentActionResult TryCancelPlacement()
+        {
+            if (LifecycleState != EquipmentLifecycleState.PlacementPreview)
+                return EquipmentActionResult.Fail(
+                    EquipmentActionStatus.WrongState, "no placement in progress");
+
+            CancelPlacementInternal();
+            SetLifecycleState(EquipmentLifecycleState.Equipped);
+            return EquipmentActionResult.Success;
+        }
+
+        /// <summary>Tears down any preview visuals. Subclasses that draw one override this.</summary>
+        protected virtual void CancelPlacementInternal() { }
+
+        /// <summary>
+        /// Commits the current placement. The base cannot know where - that is the placement
+        /// system's and the subclass's - so an item that has not implemented placement says so
+        /// rather than dropping itself at the origin.
+        /// </summary>
+        public virtual EquipmentActionResult TryPlace()
+        {
+            if (definition == null || !definition.CanPlace)
+                return EquipmentActionResult.Fail(EquipmentActionStatus.NotAllowedByDefinition);
+
+            return EquipmentActionResult.Fail(
+                EquipmentActionStatus.NotSupported,
+                GetType().Name + " is placeable by its definition but has no placement " +
+                "implementation");
+        }
+
+        /// <summary>
+        /// Takes a placed item back, with its battery, durability and settings intact. It is
+        /// the same logical item, not a fresh one built from the definition.
+        /// </summary>
+        public EquipmentActionResult TryPickupPlaced(Player.PlayerInventory into)
+        {
+            if (LifecycleState != EquipmentLifecycleState.Placed)
+                return EquipmentActionResult.Fail(
+                    EquipmentActionStatus.WrongState, "not placed");
+
+            if (into == null)
+                return EquipmentActionResult.Fail(
+                    EquipmentActionStatus.NoAuthority, "no inventory to pick this up into");
+
+            if (!into.HasFreeSlot)
+                return EquipmentActionResult.Fail(EquipmentActionStatus.NoInventorySpace);
+
+            IsPlaced = false;
+            OnPickedUpFromPlacement();
+
+            return into.AddItem(this)
+                ? EquipmentActionResult.Success
+                : EquipmentActionResult.Fail(EquipmentActionStatus.NoInventorySpace);
+        }
+
+        /// <summary>Called as a placed item is taken back. Stop whatever placement started.</summary>
+        protected virtual void OnPickedUpFromPlacement() { }
+
+        public EquipmentActionResult TryDrop()
+        {
+            if (definition == null || !definition.CanDrop)
+                return EquipmentActionResult.Fail(EquipmentActionStatus.NotAllowedByDefinition);
+
+            if (LifecycleState == EquipmentLifecycleState.World)
+                return EquipmentActionResult.Fail(
+                    EquipmentActionStatus.WrongState, "already in the world");
+
+            // Where it lands is the inventory's to decide, because the drop origin is on the
+            // player. This is the item agreeing that it can be dropped.
+            return EquipmentActionResult.Success;
+        }
+
+        /// <summary>
+        /// Marks this item as installed in the room. Called by a subclass once it has actually
+        /// put itself somewhere, so the base is never the thing deciding where.
+        /// </summary>
+        protected void EnterPlacedState()
+        {
+            IsPlaced = true;
+            IsEquipped = false;
+            _onGround = false;
+            SetPresentationVisible(true);
+            SetLifecycleState(EquipmentLifecycleState.Placed);
             OnCarryChanged();
             Core.GameEvents.EquipmentChanged();
         }
