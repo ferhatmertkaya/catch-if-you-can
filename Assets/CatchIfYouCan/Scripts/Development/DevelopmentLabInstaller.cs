@@ -33,8 +33,18 @@ namespace CatchIfYouCan.Development
                  "its own state is a lab you cannot trust a measurement from.")]
         [SerializeField] protected bool logLabState = true;
 
+        [Tooltip("Spawn the real player at DEV_PlayerSpawn. Off leaves the bootstrap camera " +
+                 "looking at the room, which is what you want for a screenshot.")]
+        [SerializeField] protected bool spawnPlayer = true;
+
+        [Tooltip("Name of the marker the player is spawned on. Every lab builds one.")]
+        [SerializeField] protected string playerSpawnMarker = PlayerSpawnMarkerName;
+
         /// <summary>Which lab this is, for logging and for the tooling that creates them.</summary>
         public abstract DevelopmentLab Lab { get; }
+
+        /// <summary>The marker name every lab spawns the player on.</summary>
+        public const string PlayerSpawnMarkerName = "DEV_PlayerSpawn";
 
         public sealed override void Install()
         {
@@ -42,6 +52,9 @@ namespace CatchIfYouCan.Development
 
             if (buildFixtures)
                 BuildFixtures();
+
+            if (spawnPlayer)
+                SpawnLabPlayer();
 
             if (logLabState)
                 CIYCLog.Info("Development lab '" + DevelopmentScenes.NameOf(Lab) + "' ready. " +
@@ -55,6 +68,157 @@ namespace CatchIfYouCan.Development
         protected virtual string DescribeState() => "No fixtures declared.";
 
         // ---- shared fixture helpers -------------------------------------------------
+
+        /// <summary>
+        /// Spawns the real player on the lab's spawn marker, through the same
+        /// <see cref="Player.PlayerSpawner"/> the game uses.
+        ///
+        /// <para>
+        /// Deliberately not a lab-local player. The whole value of a lab is that what you are
+        /// looking at is the shipping system with the room taken away; a lab that built its
+        /// own simplified player would answer questions about the lab's player.
+        /// </para>
+        /// </summary>
+        protected GameObject SpawnLabPlayer()
+        {
+            CiycServices.EnsureCore();
+
+            var marker = GameObject.Find(playerSpawnMarker);
+            if (marker == null)
+            {
+                CIYCLog.Warn("Lab '" + DevelopmentScenes.NameOf(Lab) + "' has no '" +
+                             playerSpawnMarker + "', so the player was spawned at the origin.");
+            }
+
+            var result = marker != null
+                ? Player.PlayerSpawner.Spawn(marker.transform)
+                : Player.PlayerSpawner.Spawn(Vector3.zero, Quaternion.identity);
+
+            return result?.Root;
+        }
+
+        /// <summary>
+        /// A wall. Labs are built out of these rather than out of the production room, because
+        /// a lab that shares the production room starts answering questions about it.
+        /// </summary>
+        protected static GameObject BuildWall(string name, Vector3 centre, Vector3 size,
+                                              Transform parent = null)
+        {
+            var wall = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            wall.name = name;
+            wall.transform.SetParent(parent, false);
+            wall.transform.position = centre;
+            wall.transform.localScale = size;
+            return wall;
+        }
+
+        /// <summary>
+        /// Four walls around a floor, with an optional gap in the north wall wide enough to
+        /// walk through. The gap is what makes a two-room lab possible, and a doorway is the
+        /// one piece of geometry audio occlusion and navigation both care about.
+        /// </summary>
+        protected static GameObject BuildRoomShell(string name, Vector3 centre, Vector2 size,
+                                                   float height = 3f, float doorwayWidth = 0f)
+        {
+            var root = new GameObject(name);
+            root.transform.position = centre;
+
+            float halfX = size.x * 0.5f;
+            float halfZ = size.y * 0.5f;
+            var t = new Vector3(0.2f, height, 0f);
+
+            BuildWall(name + "_South", centre + new Vector3(0f, height * 0.5f, -halfZ),
+                      new Vector3(size.x, height, t.x), root.transform);
+            BuildWall(name + "_West", centre + new Vector3(-halfX, height * 0.5f, 0f),
+                      new Vector3(t.x, height, size.y), root.transform);
+            BuildWall(name + "_East", centre + new Vector3(halfX, height * 0.5f, 0f),
+                      new Vector3(t.x, height, size.y), root.transform);
+
+            if (doorwayWidth <= 0f)
+            {
+                BuildWall(name + "_North", centre + new Vector3(0f, height * 0.5f, halfZ),
+                          new Vector3(size.x, height, t.x), root.transform);
+                return root;
+            }
+
+            // Two piers and a header, so the opening is a doorway rather than a missing wall.
+            float pier = (size.x - doorwayWidth) * 0.5f;
+            float pierCentre = (doorwayWidth + pier) * 0.5f;
+            BuildWall(name + "_NorthL", centre + new Vector3(-pierCentre, height * 0.5f, halfZ),
+                      new Vector3(pier, height, t.x), root.transform);
+            BuildWall(name + "_NorthR", centre + new Vector3(pierCentre, height * 0.5f, halfZ),
+                      new Vector3(pier, height, t.x), root.transform);
+            BuildWall(name + "_NorthHeader", centre + new Vector3(0f, height - 0.3f, halfZ),
+                      new Vector3(doorwayWidth, 0.6f, t.x), root.transform);
+
+            return root;
+        }
+
+        /// <summary>
+        /// A floating label. A row of grey boxes tells you nothing about which is which, and a
+        /// lab whose fixtures have to be identified from the hierarchy is a lab you use once.
+        /// </summary>
+        protected static GameObject BuildLabel(string text, Vector3 position, Transform parent = null,
+                                               float size = 0.02f)
+        {
+            var go = new GameObject("DEV_Label_" + text);
+            go.transform.SetParent(parent, false);
+            go.transform.position = position;
+
+            var mesh = go.AddComponent<TextMesh>();
+            mesh.text = text;
+            mesh.characterSize = size;
+            mesh.fontSize = 96;
+            mesh.anchor = TextAnchor.LowerCenter;
+            mesh.alignment = TextAlignment.Center;
+            mesh.color = new Color(0.6f, 1f, 0.7f);
+
+            return go;
+        }
+
+        /// <summary>
+        /// Writes a serialized private field on a component the lab is wiring up.
+        ///
+        /// <para>
+        /// Reflection, and confined to development code on purpose. The alternative is adding
+        /// a public setter to every interactable, light controller and hide spot in the game
+        /// so that a lab can build one - which would change shipping classes to suit a
+        /// harness. If a rename breaks a lab, the lab logs it and the lab is the only thing
+        /// that breaks.
+        /// </para>
+        /// </summary>
+        protected static void WireLabField(object target, string fieldName, object value)
+        {
+            if (target == null)
+                return;
+
+            var field = target.GetType().GetField(fieldName,
+                System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+
+            if (field == null)
+            {
+                CIYCLog.Warn("Lab wiring: " + target.GetType().Name + " has no field '" +
+                             fieldName + "'. It was renamed or removed, and this fixture is " +
+                             "now only half built.");
+                return;
+            }
+
+            field.SetValue(target, value);
+        }
+
+        /// <summary>A labelled stand: a plinth with a caption, for putting one thing on.</summary>
+        protected static Transform BuildPlinth(string label, Vector3 position, Transform parent = null)
+        {
+            var plinth = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            plinth.name = "DEV_Plinth_" + label;
+            plinth.transform.SetParent(parent, false);
+            plinth.transform.position = position + new Vector3(0f, 0.45f, 0f);
+            plinth.transform.localScale = new Vector3(0.5f, 0.9f, 0.5f);
+
+            BuildLabel(label, position + new Vector3(0f, 1.05f, 0f), plinth.transform);
+            return plinth.transform;
+        }
+
 
         /// <summary>
         /// A plain lit box to stand in. Built from primitives on purpose: a lab that shares
