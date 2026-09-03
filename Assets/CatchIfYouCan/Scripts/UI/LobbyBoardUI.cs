@@ -217,6 +217,15 @@ namespace CatchIfYouCan.UI
         /// </summary>
         private void StartSinglePlayer()
         {
+            // Checked BEFORE the launch, not after. Installing a session and then discovering
+            // there is nowhere to send the player leaves a live session behind a closed panel,
+            // with the controls handed back and nothing on screen to say what happened.
+            if (!CanReach(UIScreen.MissionSelect, out string why))
+            {
+                SetStatus(why, UITheme.Warning);
+                return;
+            }
+
             LaunchResult result = SessionLauncher.BeginOfflineSolo();
 
             if (!result.Started)
@@ -229,8 +238,7 @@ namespace CatchIfYouCan.UI
 
             // Toward mission and loadout selection, which is an existing screen. This does not
             // load a scene; picking the mission does.
-            if (UIManager.Instance != null)
-                UIManager.Instance.Show(UIScreen.MissionSelect, false);
+            UIManager.Instance.Show(UIScreen.MissionSelect, false);
         }
 
         /// <summary>
@@ -254,6 +262,15 @@ namespace CatchIfYouCan.UI
                 return;
             }
 
+            // Same order as offline, and it matters more here: an online session that is
+            // installed and then stranded is a LIVE session with no way forward, and the next
+            // press of the board is refused with SessionAlreadyLive.
+            if (!CanReach(UIScreen.MissionSelect, out string why))
+            {
+                SetStatus(why, UITheme.Warning);
+                return;
+            }
+
             LaunchResult result = SessionLauncher.BeginOnline(SessionChoice.OnlineHost, null);
 
             if (!result.Started)
@@ -264,8 +281,7 @@ namespace CatchIfYouCan.UI
 
             Close();
 
-            if (UIManager.Instance != null)
-                UIManager.Instance.Show(UIScreen.MissionSelect, false);
+            UIManager.Instance.Show(UIScreen.MissionSelect, false);
         }
 
         /// <summary>
@@ -275,19 +291,41 @@ namespace CatchIfYouCan.UI
         /// </summary>
         private void OpenSettings()
         {
-            if (UIManager.Instance == null)
+            if (!CanReach(UIScreen.Settings, out string why))
             {
-                SetStatus("Settings are not available in this scene.", UITheme.Warning);
-                return;
-            }
-
-            if (!UIManager.Instance.TryGetScreen(UIScreen.Settings, out _))
-            {
-                SetStatus("Settings screen is not registered in this scene.", UITheme.Warning);
+                SetStatus(why, UITheme.Warning);
                 return;
             }
 
             UIManager.Instance.Show(UIScreen.Settings, false);
+        }
+
+        /// <summary>
+        /// Whether a screen this panel wants to hand the player to actually exists here.
+        ///
+        /// <para>
+        /// <see cref="UIManager.Show"/> on an unregistered screen is silent: it sets the
+        /// current screen and activates nothing, so the caller believes it succeeded and the
+        /// player is left looking at the room. Every destination goes through this, and it is
+        /// asked before anything irreversible happens.
+        /// </para>
+        /// </summary>
+        private static bool CanReach(UIScreen screen, out string why)
+        {
+            if (UIManager.Instance == null)
+            {
+                why = "The interface is not available in this scene.";
+                return false;
+            }
+
+            if (!UIManager.Instance.TryGetScreen(screen, out GameObject root) || root == null)
+            {
+                why = screen + " is not registered in this scene.";
+                return false;
+            }
+
+            why = null;
+            return true;
         }
 
         // ---- one Back action, three input routes -----------------------------------------
