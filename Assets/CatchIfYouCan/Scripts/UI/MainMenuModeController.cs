@@ -102,8 +102,7 @@ namespace CatchIfYouCan.UI
         [Header("Debug")]
         [SerializeField] private bool logTransition = true;
 
-        private Canvas _fadeCanvas;
-        private Image _fadeImage;
+        private TransitionFade _fade;
         private PlayerBuildResult _player;
 
         /// <summary>Which half of the menu is live. Read by the tap handler.</summary>
@@ -387,64 +386,43 @@ namespace CatchIfYouCan.UI
 
         // ---- fade overlay ----------------------------------------------------------------
 
+        /// <summary>
+        /// Takes the shared transition overlay rather than building one.
+        ///
+        /// <para>
+        /// This used to build its own canvas, parented to this controller. That was fine while
+        /// every fade began and ended inside the menu scene, and wrong the moment one had to
+        /// stay up <em>across</em> a scene swap - the overlay would be destroyed with the menu
+        /// halfway through, and the seam it exists to hide would be the one frame everybody
+        /// sees. <see cref="TransitionFade"/> is the same overlay at the same sorting order,
+        /// on an object that outlives the scenes either side of it, and there is now one of
+        /// them rather than two competing for order 500.
+        /// </para>
+        /// </summary>
         private void BuildFadeOverlay()
         {
-            if (_fadeCanvas != null)
-                return;
-
-            var go = new GameObject("MainMenu_TransitionFade");
-            go.transform.SetParent(transform, false);
-
-            _fadeCanvas = go.AddComponent<Canvas>();
-            _fadeCanvas.renderMode = RenderMode.ScreenSpaceOverlay;
-            // Above the menu canvases so nothing shows through mid-swap.
-            _fadeCanvas.sortingOrder = 500;
-
-            var imageGo = new GameObject("Fade", typeof(RectTransform));
-            imageGo.transform.SetParent(go.transform, false);
-            var rect = imageGo.GetComponent<RectTransform>();
-            rect.anchorMin = Vector2.zero;
-            rect.anchorMax = Vector2.one;
-            rect.offsetMin = Vector2.zero;
-            rect.offsetMax = Vector2.zero;
-
-            _fadeImage = imageGo.AddComponent<Image>();
-            _fadeImage.color = new Color(0f, 0f, 0f, 0f);
-            _fadeImage.raycastTarget = true;   // swallows further taps while transitioning
+            _fade = TransitionFade.Ensure();
         }
 
         private IEnumerator Fade(float from, float to, float duration)
         {
-            if (_fadeImage == null)
+            if (_fade == null)
                 yield break;
 
-            if (duration <= 0f)
-            {
-                SetFadeAlpha(to);
-                yield break;
-            }
-
-            for (float e = 0f; e < duration; e += Time.unscaledDeltaTime)
-            {
-                SetFadeAlpha(Mathf.Lerp(from, to, e / duration));
-                yield return null;
-            }
-            SetFadeAlpha(to);
+            _fade.SetAlpha(from);
+            yield return _fade.FadeTo(to, duration);
         }
 
         private void SetFadeAlpha(float a)
         {
-            var c = _fadeImage.color;
-            c.a = Mathf.Clamp01(a);
-            _fadeImage.color = c;
+            if (_fade != null)
+                _fade.SetAlpha(a);
         }
 
         private void DestroyFadeOverlay()
         {
-            if (_fadeCanvas != null)
-                Destroy(_fadeCanvas.gameObject);
-            _fadeCanvas = null;
-            _fadeImage = null;
+            TransitionFade.Dismiss();
+            _fade = null;
         }
     }
 }

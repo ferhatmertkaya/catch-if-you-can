@@ -77,9 +77,13 @@ namespace CatchIfYouCan.Equipment
         {
             var starter = new List<EquipmentDefinition>();
 
-            AddIfFound(starter, "flashlight");
-            AddIfFound(starter, "emf_detector");
-            AddIfFound(starter, "uv_light");
+            // The four the vertical slice is built on. Together they can produce a complete
+            // evidence combination, which is what the mission is scored on - three of them fit
+            // in the inventory at once and the fourth is swapped for at the van.
+            AddIfFound(starter, EquipmentIds.Flashlight);
+            AddIfFound(starter, EquipmentIds.EmfDetector);
+            AddIfFound(starter, EquipmentIds.UvLight);
+            AddIfFound(starter, EquipmentIds.Thermometer);
 
             SetLoadout(starter);
         }

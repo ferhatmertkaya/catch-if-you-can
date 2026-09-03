@@ -15,8 +15,50 @@ using UnityEngine.AI;
 
 namespace CatchIfYouCan.Procedural
 {
+    /// <summary>How much of the investigation runs when its scene finishes loading.</summary>
+    public enum InvestigationStartMode
+    {
+        /// <summary>
+        /// Everything, on Start. What a scene entered directly has always done: build the
+        /// world, spawn the player, spawn the ghost, play the intro, begin the mission.
+        /// </summary>
+        Immediate,
+
+        /// <summary>
+        /// The world only - the van and the house, generated from the mission's seed - and
+        /// nothing that would make it a live game. No player, no ghost, no objectives, no
+        /// audio, no intro, no state change.
+        ///
+        /// <para>
+        /// This is the mode the lobby portal loads it in. The world has to exist while the
+        /// player is still standing in the lobby, because a portal is a second camera
+        /// rendering real geometry - but a world that is merely being looked at must not be
+        /// hunting anybody. <see cref="InvestigationBootstrap.ActivateForEntry"/> runs the
+        /// rest when the player actually walks through.
+        /// </para>
+        /// </summary>
+        Deferred
+    }
+
     public class InvestigationBootstrap : MonoBehaviour
     {
+        /// <summary>
+        /// Which mode the NEXT load of this scene runs in, read once by the instance that
+        /// wakes up and immediately put back to <see cref="InvestigationStartMode.Immediate"/>.
+        ///
+        /// <para>
+        /// A static set before the load, because a scene's components cannot be configured
+        /// until they exist and by then Start has already run. It resets itself so that a
+        /// deferred load which fails halfway cannot leave the next direct load inert.
+        /// </para>
+        /// </summary>
+        public static InvestigationStartMode PendingStartMode = InvestigationStartMode.Immediate;
+
+        /// <summary>
+        /// The bootstrap of a world that has been prepared and not yet entered, or null.
+        /// </summary>
+        public static InvestigationBootstrap Prepared { get; private set; }
+
         [Header("Scene Roots")]
         [SerializeField] private Transform worldRoot;
         [SerializeField] private Transform vanAnchor;
@@ -40,34 +82,152 @@ namespace CatchIfYouCan.Procedural
         private CaseIntroPresenter _introPresenter;
         private GhostController _spawnedGhost;
 
+        private MissionRuntime _mission;
+        private bool _worldPrepared;
+        private bool _activated;
+
+        /// <summary>True once the van and the house exist. The portal waits for this.</summary>
+        public bool WorldPrepared => _worldPrepared;
+
+        /// <summary>The mission this world was built for. Its seed is what built it.</summary>
+        public MissionRuntime Mission => _mission;
+
+        /// <summary>
+        /// Where a player arriving from the lobby stands, and what the portal camera is aimed
+        /// through: the van's own spawn point, which is where this mission has always begun.
+        /// </summary>
+        public Transform ArrivalPoint => _van != null ? _van.PlayerSpawnPoint : null;
+
         private void Start()
         {
+            InvestigationStartMode mode = PendingStartMode;
+            PendingStartMode = InvestigationStartMode.Immediate;
+
+            if (mode == InvestigationStartMode.Deferred)
+            {
+                StartCoroutine(PrepareOnly());
+                return;
+            }
+
             StartCoroutine(BootstrapSequence());
         }
 
+        private void OnDestroy()
+        {
+            if (Prepared == this)
+                Prepared = null;
+        }
+
+        /// <summary>
+        /// The whole thing, in the order it has always run. Prepare then activate, so a direct
+        /// load and a portal entry go through exactly the same code rather than through two
+        /// sequences that drift apart.
+        /// </summary>
         private IEnumerator BootstrapSequence()
         {
-            EnsureManagers();
-            EnsureRuntimeUi();
+            if (!PrepareWorld())
+                yield break;
+
+            yield return ActivateSequence();
+        }
+
+        /// <summary>
+        /// Builds the world and stops. Nothing here spawns a player, wakes a ghost, starts an
+        /// objective, installs audio or changes the game state - the world is scenery until
+        /// somebody walks into it.
+        /// </summary>
+        private IEnumerator PrepareOnly()
+        {
+            // One frame so that the services this scene shares with the lobby have finished
+            // their own Awake before the generator asks for them.
             yield return null;
 
-            var mission = ResolveMission();
-            if (mission == null)
+            if (!PrepareWorld())
+            {
+                CIYCLog.Error("[CIYC][Portal] The mission world could not be prepared, so the " +
+                              "portal has nothing to show. The lobby falls back to a direct " +
+                              "scene load.");
+                yield break;
+            }
+
+            Prepared = this;
+            CIYCLog.Info("[CIYC][Portal] Mission world prepared for CASE #" +
+                         _mission.CaseNumber + " at " + _mission.LocationName +
+                         " (seed " + _mission.Seed + "). Not live until entered.");
+        }
+
+        /// <summary>
+        /// The world: managers, the van, and the house generated from the mission's seed.
+        ///
+        /// <para>
+        /// <b>The seed is not chosen here.</b> It was rolled once, in
+        /// <see cref="MissionManager.StartInvestigation"/>, before the portal opened, and it
+        /// travels on <see cref="MissionRuntime"/>, which outlives the scene load. Both the
+        /// world the portal shows and the world the player ends up in are generated from that
+        /// one number, which is what makes them the same world rather than two similar ones.
+        /// </para>
+        /// </summary>
+        private bool PrepareWorld()
+        {
+            if (_worldPrepared)
+                return true;
+
+            EnsureManagers();
+            EnsureRuntimeUi();
+
+            _mission = ResolveMission();
+            if (_mission == null)
             {
                 CIYCLog.Error("InvestigationBootstrap: unable to resolve mission.");
-                yield break;
+                return false;
             }
 
             if (fadeOverlay != null)
                 fadeOverlay.alpha = 1f;
 
             BuildVan();
-            GenerateHouse(mission.Seed);
+            GenerateHouse(_mission.Seed);
+
+            if (_generatedHouse == null)
+            {
+                CIYCLog.Error("InvestigationBootstrap: the generator returned no house for seed " +
+                              _mission.Seed + ".");
+                return false;
+            }
+
+            _worldPrepared = true;
+            return true;
+        }
+
+        /// <summary>
+        /// Turns a prepared world into a live one. Called by the portal when the player crosses,
+        /// and by <see cref="BootstrapSequence"/> immediately when the scene was entered directly.
+        /// </summary>
+        public IEnumerator ActivateForEntry()
+        {
+            if (_activated)
+                yield break;
+
+            if (!_worldPrepared && !PrepareWorld())
+            {
+                CIYCLog.Error("[CIYC][Portal] Asked to enter a world that could not be built.");
+                yield break;
+            }
+
+            yield return ActivateSequence();
+        }
+
+        private IEnumerator ActivateSequence()
+        {
+            _activated = true;
+            if (Prepared == this)
+                Prepared = null;
+
             SpawnPlayer();
-            SpawnGhost(mission);
-            WireSystems(mission);
+            SpawnGhost(_mission);
+            WireSystems(_mission);
             InstallAudio();
-            PlayIntro(mission);
+            PlayIntro(_mission);
 
             if (_introPresenter == null && fadeOverlay != null)
                 yield return FadeIn();
@@ -176,6 +336,54 @@ namespace CatchIfYouCan.Procedural
 
             _playerInstance = buildResult.Root;
             WirePlayerEquipment(buildResult);
+            SilenceSceneCameraAndListener(buildResult);
+        }
+
+        /// <summary>
+        /// Switches off this scene's own camera and audio listener now that the player has
+        /// brought their own.
+        ///
+        /// <para>
+        /// The scene is authored with a Main Camera carrying an AudioListener, which is what
+        /// lets it be opened and looked at in the editor. Once a player exists there are two of
+        /// each: Unity picks one camera by depth and prints a warning about the listeners that
+        /// is easy to never read, and the audio the player hears is then positioned at whichever
+        /// listener won rather than at their head. One camera, one listener, from here on.
+        /// </para>
+        /// </summary>
+        private void SilenceSceneCameraAndListener(PlayerBuildResult buildResult)
+        {
+            Camera playerCamera = buildResult.ViewCamera;
+
+            foreach (Camera camera in FindObjectsByType<Camera>(FindObjectsSortMode.None))
+            {
+                if (camera == null || camera == playerCamera || !camera.enabled)
+                    continue;
+
+                // The portal's own camera renders into a texture and is not a view of the game;
+                // it manages its own enabled state and must not be touched here.
+                if (camera.targetTexture != null)
+                    continue;
+
+                if (camera.gameObject.scene != gameObject.scene)
+                    continue;
+
+                camera.enabled = false;
+                CIYCLog.Info("InvestigationBootstrap: switched off the scene camera '" +
+                             camera.name + "'; the player brought their own.");
+            }
+
+            foreach (AudioListener listener in FindObjectsByType<AudioListener>(FindObjectsSortMode.None))
+            {
+                if (listener == null || !listener.enabled)
+                    continue;
+                if (buildResult.Root != null && listener.transform.IsChildOf(buildResult.Root.transform))
+                    continue;
+                if (listener.gameObject.scene != gameObject.scene)
+                    continue;
+
+                listener.enabled = false;
+            }
         }
 
         private void WirePlayerEquipment(PlayerBuildResult buildResult)
@@ -190,9 +398,12 @@ namespace CatchIfYouCan.Procedural
             var inventory = buildResult.Root.GetComponent<PlayerInventory>();
             inventory?.SetHandAnchor(handAnchor);
 
-            // Loadout only. What the player is holding is the inventory's answer, and the hand
-            // anchor above is the only one there is now.
+            // The loadout is chosen here and INSTALLED here. Choosing it used to be the whole
+            // of it: the list was filled and nothing ever turned a definition into an object,
+            // so every item but the torch PlayerFactory builds was unreachable, and so was the
+            // evidence they produce.
             EquipmentManager.Instance?.GiveStarterLoadout();
+            MissionEquipmentInstaller.InstallLoadout(inventory);
 
             // The fear system's light is wired where the torch is built, in PlayerFactory, so
             // every spawn path gets it. This used to be done here by reading a private field

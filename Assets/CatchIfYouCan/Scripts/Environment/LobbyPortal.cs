@@ -1,6 +1,8 @@
 using System.Collections;
 using CatchIfYouCan.Art;
 using CatchIfYouCan.Core;
+using CatchIfYouCan.Missions;
+using CatchIfYouCan.Procedural;
 using UnityEngine;
 
 namespace CatchIfYouCan.Environment
@@ -23,7 +25,7 @@ namespace CatchIfYouCan.Environment
         /// <summary>The player has crossed the threshold. Input is theirs no longer.</summary>
         Entering,
 
-        /// <summary>The investigation is loading.</summary>
+        /// <summary>The mission world is taking over.</summary>
         Loading,
 
         /// <summary>Shut deliberately - the mission was cancelled, or the lobby is going away.</summary>
@@ -35,38 +37,31 @@ namespace CatchIfYouCan.Environment
     /// way into a mission.
     ///
     /// <para>
-    /// <b>Why this exists at all.</b> START INVESTIGATION used to call
-    /// <c>SceneLoader.LoadInvestigation()</c> directly. That is a scene load: the lobby, the
-    /// doorway and the player all cease to exist, a loading screen covers the cut, and the
-    /// player arrives somewhere else without ever having walked anywhere. There was no portal
-    /// in that path - not a broken one, not a hidden one, none - which is why pressing the
-    /// button produced no portal no matter what was wrong with the portal code.
-    /// <see cref="PortalSurface"/> and <see cref="ReferenceApartment"/> both existed and were
-    /// referenced by nothing.
-    /// </para>
-    ///
-    /// <para>
     /// <b>Accepting a mission opens the door. Walking through it starts the investigation.</b>
     /// Those are two separate moments on purpose, and the second one is the player's: the
-    /// portal never moves them and never loads anything until they step into the opening.
+    /// portal never moves them and never hands the game over until they step into the opening.
     /// </para>
     ///
     /// <para>
-    /// <b>It renders one apartment, honestly.</b> The far side is
-    /// <see cref="ReferenceApartment"/> - a real, walkable, two-storey interior built off to the
-    /// side of the lobby in the same scene, because a portal is a second camera rendering real
-    /// geometry and a scene that has not been loaded has no geometry to render. It is
-    /// <b>not</b> the generated house the investigation itself builds. What the player sees
-    /// through the door is a true interior of the right scale, lighting and layout language;
-    /// it is not a preview of the specific rooms they are about to search. Making it one means
-    /// running the deterministic generator here, from the mission's seed, and that is a
-    /// separate piece of work - see <c>Docs/TWO_FLOOR_GENERATION.md</c>.
+    /// <b>What is through the door is the mission itself.</b> Not a stand-in for it. The
+    /// investigation scene is loaded additively while the player is still standing in the lobby
+    /// and generates its house from <c>MissionRuntime.Seed</c> - the seed rolled once, by
+    /// <c>MissionManager.StartInvestigation</c>, before this portal opened. The portal camera
+    /// renders that geometry, and crossing the threshold makes that same scene the active one.
+    /// One seed, one world, generated once; see <see cref="MissionWorldLoader"/>.
+    /// </para>
+    ///
+    /// <para>
+    /// This used to show <c>ReferenceApartment</c> - a hand-built flat with nothing to do with
+    /// the mission being started - and then load the real world separately afterwards, so the
+    /// player looked into one place and arrived in another. That is no longer the production
+    /// destination.
     /// </para>
     ///
     /// <para>
     /// <b>Nothing here is silent.</b> Every way this can fail to open says so, at error level,
-    /// with the reason and the fix. A button that appears to do nothing is the failure this
-    /// class was written to end.
+    /// with the reason and the fix, and then falls back to the direct scene load the game
+    /// shipped with rather than leaving the player pressing a button that does nothing.
     /// </para>
     /// </summary>
     [DisallowMultipleComponent]
@@ -88,12 +83,6 @@ namespace CatchIfYouCan.Environment
                  "frame it instead of intersecting it.")]
         [SerializeField] private Vector2 openingSize = new Vector2(1.06f, 2.4f);
 
-        [Header("Destination")]
-        [Tooltip("Where the far apartment is built, relative to this portal. Far enough that " +
-                 "nothing of it can be seen from inside the lobby by any route except the " +
-                 "portal itself.")]
-        [SerializeField] private Vector3 destinationOffset = new Vector3(0f, -400f, 0f);
-
         [Header("Opening")]
         [Tooltip("How long the edge takes to come up to full. The view behind it is live from " +
                  "the first frame; this is the energy at the rim, not a fade of the room.")]
@@ -103,17 +92,17 @@ namespace CatchIfYouCan.Environment
 
         [Header("Threshold")]
         [Tooltip("The volume that counts as walking through. Sits in the opening, not past it.")]
-        [SerializeField] private Vector3 entryTriggerSize = new Vector3(1.4f, 2.4f, 0.8f);
+        [SerializeField] private Vector3 entryTriggerSize = new Vector3(1.2f, 2.4f, 0.8f);
 
-        private ReferenceApartment _destination;
         private BoxCollider _threshold;
         private Coroutine _opening;
         private string _missionName;
+        private bool _handedOver;
 
         /// <summary>What the doorway is doing. Read by the UI to decide what to say.</summary>
         public LobbyPortalState State { get; private set; } = LobbyPortalState.Inactive;
 
-        /// <summary>True while the far room is visible and can be entered.</summary>
+        /// <summary>True while the far world is visible and can be entered.</summary>
         public bool IsOpen => State == LobbyPortalState.Open;
 
         /// <summary>The mission this portal was opened for, or null.</summary>
@@ -125,9 +114,10 @@ namespace CatchIfYouCan.Environment
         /// Opens the lobby doorway onto the accepted mission.
         ///
         /// <para>
-        /// Returns false and says why when it cannot - there is no portal in this scene, or its
-        /// surface could not be built. The caller is expected to tell the player rather than
-        /// close the menu onto an unchanged wall.
+        /// Returns whether the doorway has <em>started</em> opening - the world behind it is
+        /// built asynchronously, and a failure part-way through falls back to the direct scene
+        /// load rather than stranding the player in the lobby. False means there is no portal
+        /// here at all, and the caller should take the older route itself.
         /// </para>
         /// </summary>
         public static bool TryOpenForMission(string missionName)
@@ -175,10 +165,10 @@ namespace CatchIfYouCan.Environment
                 Instance = null;
 
             // Released here because the hold taken in BeginInvestigation has no other end: the
-            // scene load that follows it destroys this object without ever closing a screen.
-            // MenuInputGate is static and outlives the scene, so a hold left behind would keep
-            // the next scene's player locked out of their own controls. Popping something that
-            // is not held is a no-op, so this is safe on every other teardown too.
+            // handover that follows it unloads the lobby and destroys this object without ever
+            // closing a screen. MenuInputGate is static and outlives the scene, so a hold left
+            // behind would keep the mission's player locked out of their own controls. Popping
+            // something that is not held is a no-op, so this is safe on every other teardown.
             UI.MenuInputGate.Pop(nameof(LobbyPortal));
         }
 
@@ -188,8 +178,7 @@ namespace CatchIfYouCan.Environment
         /// <para>
         /// It starts inactive. An idle lobby then costs nothing: no second camera, no render
         /// texture written, no LateUpdate. The buffer and the camera are allocated the first
-        /// time the door opens and are kept for the rest of the session, because a player who
-        /// backs out of mission select and returns should not pay for a reallocation.
+        /// time the door opens and are kept for the rest of the session.
         /// </para>
         /// </summary>
         private void EnsureSurface()
@@ -236,52 +225,57 @@ namespace CatchIfYouCan.Environment
 
         private bool Open(string missionName)
         {
-            _missionName = missionName;
-            SetState(LobbyPortalState.MissionSelected);
-
-            if (!EnsureDestination())
-            {
-                SetState(LobbyPortalState.Inactive);
-                return false;
-            }
-
             if (surface == null)
             {
                 CIYCLog.Error(LogTag + "Mission '" + missionName + "' accepted but the portal " +
                               "has no surface to render. The doorway stays shut.");
-                SetState(LobbyPortalState.Inactive);
                 return false;
             }
 
-            surface.SetDestination(_destination.transform);
-            surface.SetRimIntensity(0f);
-            surface.gameObject.SetActive(true);
-
-            if (!surface.IsBuilt)
-            {
-                // Build happens in the surface's own Start, on the frame after activation. Not
-                // an error - just worth knowing which frame the opening actually appears on.
-                CIYCLog.Info(LogTag + "Surface activated; it builds on its first frame.");
-            }
-
-            SetState(LobbyPortalState.Opening);
+            _missionName = missionName;
+            SetState(LobbyPortalState.MissionSelected);
 
             if (_opening != null)
                 StopCoroutine(_opening);
-            _opening = StartCoroutine(RaiseEdge());
-
-            CIYCLog.Info(LogTag + "Opening for mission '" + missionName + "'. Walk through the " +
-                         "lobby doorway to begin.");
+            _opening = StartCoroutine(OpenRoutine());
             return true;
         }
 
         /// <summary>
-        /// Brings the edge up over <see cref="openDuration"/>. The room behind is live
-        /// throughout; what animates is the energy at the rim, which is what makes the doorway
-        /// read as opening rather than as a picture being switched on.
+        /// Builds the mission world behind the lobby, then brings the edge up over it.
+        ///
+        /// <para>
+        /// The world is loaded before the surface is ever shown. A portal switched on over an
+        /// unbuilt destination renders the skybox, which on screen is a bright hole in a wall
+        /// and reads as a shader bug rather than as loading.
+        /// </para>
         /// </summary>
-        private IEnumerator RaiseEdge()
+        private IEnumerator OpenRoutine()
         {
+            InvestigationBootstrap world = null;
+            yield return MissionWorldLoader.PrepareAsync(w => world = w);
+
+            if (world == null || world.ArrivalPoint == null)
+            {
+                CIYCLog.Error(LogTag + "The mission world could not be prepared" +
+                              (world != null ? " (it has no arrival point)" : "") +
+                              ", so the doorway cannot show it. Falling back to a direct scene " +
+                              "load, which reaches the same mission without the walk.");
+                _opening = null;
+                SetState(LobbyPortalState.Inactive);
+                FallBackToDirectLoad();
+                yield break;
+            }
+
+            // The van's own spawn point: where this mission has always begun, so what the player
+            // sees through the door is exactly where they will be standing when they step out
+            // of it.
+            surface.SetDestination(world.ArrivalPoint);
+            surface.SetRimIntensity(0f);
+            surface.gameObject.SetActive(true);
+
+            SetState(LobbyPortalState.Opening);
+
             float t = 0f;
             while (t < openDuration && surface != null)
             {
@@ -297,48 +291,35 @@ namespace CatchIfYouCan.Environment
 
             _opening = null;
             SetState(LobbyPortalState.Open);
+
+            CIYCLog.Info(LogTag + "Open for mission '" + _missionName +
+                         "'. Walk through the lobby doorway to begin.");
         }
 
         /// <summary>
-        /// Builds the far apartment, once, and keeps it for the session.
+        /// The route this game shipped with: load the investigation, behind a loading screen,
+        /// with no doorway to walk through.
         ///
         /// <para>
-        /// Built on demand rather than left standing in the lobby scene: ten rooms of geometry
-        /// and a lamp each are not something to carry while the player is only reading a
-        /// noticeboard.
+        /// A named alternative rather than a silent fallback. It is worse - the walk is the
+        /// whole point of the portal - but a player who reaches their mission by the old road
+        /// still has a game, and one who presses START and watches nothing happen does not.
         /// </para>
         /// </summary>
-        private bool EnsureDestination()
+        private void FallBackToDirectLoad()
         {
-            if (_destination != null)
-                return true;
-
-            var go = new GameObject("Portal_Destination_Apartment");
-            go.transform.SetParent(null, true);
-
-            // Placed relative to the portal, keeping the portal's own facing, so the pair's
-            // maths does not depend on where the lobby happens to sit in world space.
-            go.transform.SetPositionAndRotation(
-                transform.position + transform.rotation * destinationOffset,
-                transform.rotation * Quaternion.Euler(0f, 180f, 0f));
-
-            _destination = go.AddComponent<ReferenceApartment>();
-
-            // AddComponent runs Awake, which builds the flat, so by this line the geometry
-            // either exists or it does not. Checked rather than assumed: a portal onto an empty
-            // transform renders the skybox and reads as a bright hole in the wall, which looks
-            // like a shader bug and is not one.
-            if (go.GetComponentsInChildren<MeshRenderer>(true).Length == 0)
+            if (SceneLoader.Instance == null)
             {
-                CIYCLog.Error(LogTag + "The destination apartment built no geometry, so the " +
-                              "doorway would open onto an empty skybox. Keeping it shut. Check " +
-                              "ReferenceApartment and ApartmentShell.");
-                Destroy(go);
-                _destination = null;
-                return false;
+                CIYCLog.Error(LogTag + "No portal world AND no SceneLoader: the mission was " +
+                              "accepted and there is no way to reach it. SceneLoader lives on " +
+                              "the boot object and persists; starting from " +
+                              CiycScenes.MainMenu + " directly skips it.");
+                return;
             }
 
-            return true;
+            CIYCLog.Warn(LogTag + "Falling back to a direct scene load for '" +
+                         (_missionName ?? "the mission") + "'.");
+            SceneLoader.Instance.LoadInvestigation();
         }
 
         // ---- crossing ----------------------------------------------------------------------------
@@ -349,7 +330,7 @@ namespace CatchIfYouCan.Environment
         /// </summary>
         internal void ThresholdEntered(Collider other)
         {
-            if (State != LobbyPortalState.Open || other == null)
+            if (State != LobbyPortalState.Open || _handedOver || other == null)
                 return;
 
             GameObject local = LocalPlayerService.Root;
@@ -366,38 +347,47 @@ namespace CatchIfYouCan.Environment
 
         private void BeginInvestigation()
         {
+            _handedOver = true;
             SetState(LobbyPortalState.Entering);
 
-            // The controls go before the load, not after: a player still walking when the
-            // loading screen comes up arrives in the investigation mid-stride.
+            // The controls go before the handover, not after: a player still walking when the
+            // world changes underneath them arrives in the investigation mid-stride.
             UI.MenuInputGate.Push(nameof(LobbyPortal));
 
-            if (SceneLoader.Instance == null)
+            if (!MissionWorldLoader.WorldReady)
             {
-                CIYCLog.Error(LogTag + "Player entered the portal but there is no SceneLoader, " +
-                              "so the investigation cannot be loaded. SceneLoader lives on the " +
-                              "boot object and persists; starting from " +
-                              CiycScenes.MainMenu + " directly skips it.");
-                UI.MenuInputGate.Pop(nameof(LobbyPortal));
-                SetState(LobbyPortalState.Open);
+                CIYCLog.Error(LogTag + "Player crossed the threshold but the mission world is " +
+                              "no longer prepared. Falling back to a direct scene load.");
+                SetState(LobbyPortalState.Loading);
+                FallBackToDirectLoad();
                 return;
             }
 
             SetState(LobbyPortalState.Loading);
-            CIYCLog.Info(LogTag + "Entered. Loading the investigation for '" +
-                         (_missionName ?? "unnamed mission") + "'.");
-            SceneLoader.Instance.LoadInvestigation();
+            CIYCLog.Info(LogTag + "Entered. Handing over to '" +
+                         (_missionName ?? "the mission") + "'.");
+
+            // Driven by the transition overlay, NOT by this component. The handover unloads the
+            // lobby, which destroys this object - and a coroutine dies with the MonoBehaviour
+            // running it, which would leave the screen black at whatever point the unload
+            // happened. The overlay is DontDestroyOnLoad, so it survives to fade itself back out.
+            UI.TransitionFade.Ensure().StartCoroutine(MissionWorldLoader.EnterAsync());
         }
 
         // ---- closing -----------------------------------------------------------------------------
 
         /// <summary>
-        /// Shuts the doorway and takes the far apartment down with it. For a cancelled mission,
-        /// or a lobby that is going away.
+        /// Shuts the doorway and unloads the world behind it. For a cancelled mission, or a
+        /// lobby that is going away.
         /// </summary>
         public void Close(string reason)
         {
             if (State == LobbyPortalState.Inactive || State == LobbyPortalState.Closed)
+                return;
+
+            // Never while handing over: the world being unloaded here is the one the player is
+            // walking into.
+            if (_handedOver)
                 return;
 
             if (_opening != null)
@@ -412,11 +402,7 @@ namespace CatchIfYouCan.Environment
                 surface.gameObject.SetActive(false);
             }
 
-            if (_destination != null)
-            {
-                Destroy(_destination.gameObject);
-                _destination = null;
-            }
+            StartCoroutine(MissionWorldLoader.DiscardAsync(reason));
 
             _missionName = null;
             SetState(LobbyPortalState.Closed);

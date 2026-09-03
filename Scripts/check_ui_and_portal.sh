@@ -178,6 +178,146 @@ for f in "$P" "$G" "$ART/PortalSurface.cs"; do
   fi
 done
 
+
+# ---- V7: exactly one mobile input path --------------------------------------------------
+#
+# RuntimeUIFactory used to build a second MobileInputController and a second MoveJoystick.
+# Which of the two ended up bound to the controller depended on which ran first, so the
+# orphan stayed on screen stealing touches and driving nothing - and it could not be
+# suspended, because MenuInputGate hides the player's TouchHUD and that joystick was not
+# part of it.
+
+if code "$F" | grep -qE 'AddComponent<(MobileInputController|VirtualJoystick)>'; then
+  bad "RuntimeUIFactory builds no movement input" \
+      "the HUD screen is building a second controller or joystick again"
+else
+  ok "RuntimeUIFactory builds no movement input"
+fi
+
+CREATORS=""
+for f in $(grep -rl "AddComponent<MobileInputController>" --include=*.cs \
+             "$ROOT/Assets/CatchIfYouCan" 2>/dev/null); do
+  case "$f" in
+    */PlayerFactory.cs) ;;
+    *) CREATORS="$CREATORS $f" ;;
+  esac
+done
+if [ -n "$CREATORS" ]; then
+  bad "only PlayerFactory creates the MobileInputController" "also created in:$CREATORS"
+else
+  ok "only PlayerFactory creates the MobileInputController"
+fi
+
+STICKS=""
+for f in $(grep -rl "AddComponent<VirtualJoystick>" --include=*.cs \
+             "$ROOT/Assets/CatchIfYouCan" 2>/dev/null); do
+  case "$f" in
+    */TouchHudFactory.cs) ;;
+    *) STICKS="$STICKS $f" ;;
+  esac
+done
+if [ -n "$STICKS" ]; then
+  bad "only TouchHudFactory builds the movement joystick" "also built in:$STICKS"
+else
+  ok "only TouchHudFactory builds the movement joystick"
+fi
+
+# ---- V7: one transition fade -------------------------------------------------------------
+
+TF="$UI/TransitionFade.cs"
+if [ -f "$TF" ] && grep -qE 'public const int SortingOrder = 500;' "$TF"; then
+  ok "TransitionFade owns the transition overlay"
+else
+  bad "TransitionFade owns the transition overlay" "expected $TF"
+fi
+
+FADES=""
+for f in $(grep -rl "sortingOrder = 500" --include=*.cs "$ROOT/Assets/CatchIfYouCan" 2>/dev/null); do
+  case "$f" in
+    */TransitionFade.cs) ;;
+    *) FADES="$FADES $f" ;;
+  esac
+done
+if [ -n "$FADES" ]; then
+  bad "there is one overlay at order 500" "a second one is built in:$FADES"
+else
+  ok "there is one overlay at order 500"
+fi
+
+# ---- V7: the portal shows the real mission world ------------------------------------------
+
+P7="$ENV/LobbyPortal.cs"
+if code "$P7" | grep -qE 'ReferenceApartment'; then
+  bad "the portal destination is the mission world" \
+      "LobbyPortal still builds a ReferenceApartment as its destination"
+else
+  ok "the portal destination is the mission world"
+fi
+
+code "$P7" | grep -qE 'MissionWorldLoader\.PrepareAsync\(' \
+  && ok "the portal prepares the mission world" \
+  || bad "the portal prepares the mission world" "LobbyPortal must call MissionWorldLoader"
+
+W="$ROOT/Assets/CatchIfYouCan/Scripts/Missions/MissionWorldLoader.cs"
+code "$W" | grep -qE 'LoadSceneAsync\(sceneName, LoadSceneMode\.Additive\)' \
+  && ok "the mission world is loaded additively" \
+  || bad "the mission world is loaded additively" "expected an additive load in MissionWorldLoader"
+
+# One seed. The world loader must never roll its own - the seed belongs to MissionRuntime,
+# rolled once in MissionManager.StartInvestigation before the portal opened.
+if code "$W" | grep -qE 'SessionSeedSource\.Next\(|SeedManager\.SetSeed\('; then
+  bad "the mission world rolls no seed of its own" \
+      "MissionWorldLoader must read MissionRuntime.Seed, never roll one"
+else
+  ok "the mission world rolls no seed of its own"
+fi
+
+B="$ROOT/Assets/CatchIfYouCan/Scripts/Procedural/InvestigationBootstrap.cs"
+MISSINGMODE=""
+for M in Immediate Deferred; do
+  grep -qE "^[[:space:]]*$M,?[[:space:]]*$" "$B" 2>/dev/null || MISSINGMODE="$MISSINGMODE $M"
+done
+if [ -n "$MISSINGMODE" ]; then
+  bad "InvestigationBootstrap has both start modes" "missing:$MISSINGMODE"
+else
+  ok "InvestigationBootstrap has both start modes"
+fi
+
+# A prepared world is scenery. PrepareWorld builds the van and the house and nothing that
+# would make it live - the player, the ghost, the objectives and the audio all belong to
+# ActivateSequence, on the far side of the threshold.
+if sed -n '/private bool PrepareWorld()/,/^        }$/p' "$B" \
+     | grep -qE '(SpawnPlayer|SpawnGhost|WireSystems|InstallAudio|PlayIntro)\('; then
+  bad "a prepared world is not a running one" \
+      "PrepareWorld starts gameplay; the ghost would hunt while the player is in the lobby"
+else
+  ok "a prepared world is not a running one"
+fi
+
+code "$W" | grep -qE 'AudioListener' \
+  && ok "the loaded world's audio listener is silenced" \
+  || bad "the loaded world's audio listener is silenced" \
+         "two enabled AudioListeners is a warning nobody reads"
+
+# ---- V7: the loadout reaches the player's hands --------------------------------------------
+
+code "$B" | grep -qE 'MissionEquipmentInstaller\.InstallLoadout\(' \
+  && ok "the mission installs its loadout" \
+  || bad "the mission installs its loadout" \
+         "a loadout that is only data leaves every item but the torch unreachable"
+
+E="$ROOT/Assets/CatchIfYouCan/Scripts/Equipment/EquipmentManager.cs"
+MISSINGKIT=""
+for K in Flashlight EmfDetector UvLight Thermometer; do
+  sed -n '/public void GiveStarterLoadout/,/^        }$/p' "$E" \
+    | grep -q "EquipmentIds.$K" || MISSINGKIT="$MISSINGKIT $K"
+done
+if [ -n "$MISSINGKIT" ]; then
+  bad "the starter loadout carries the four slice items" "missing:$MISSINGKIT"
+else
+  ok "the starter loadout carries the four slice items"
+fi
+
 echo
 echo "  $PASS passed, $FAIL failed"
 if [ "$FAIL" -ne 0 ]; then

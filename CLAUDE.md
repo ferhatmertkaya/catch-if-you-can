@@ -78,7 +78,11 @@ place that number lives; everything else derives it.
   green as an accent, `fadeDuration` stays zero so a button answers a touch on the same
   frame, the branded fonts resolve to files that exist, only `MenuInputGate` suspends the
   player's input and HUD, START INVESTIGATION opens the lobby doorway instead of loading a
-  scene, and the lobby scene actually carries a portal. 21 checks.
+  scene, and the lobby scene actually carries a portal. It also holds the vertical slice
+  together: exactly one `MobileInputController`, one movement joystick and one transition
+  overlay; the portal shows the real mission world rather than a stand-in; the world loader
+  never rolls a seed of its own; a prepared world is scenery until it is entered; and the
+  mission actually puts its loadout in the player's hands. 35 checks.
 
 - `Scripts/check_agent_architecture.sh` — the roster holds 40 unique roles with
   every field, the roster and `AGENT_OWNERSHIP.md` name the same roles, the

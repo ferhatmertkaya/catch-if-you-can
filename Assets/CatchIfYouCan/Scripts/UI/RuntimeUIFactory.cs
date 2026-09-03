@@ -569,6 +569,32 @@ namespace CatchIfYouCan.UI
             ctrl.FlickerOverlay.raycastTarget = false;
         }
 
+        /// <summary>
+        /// The half of the on-screen interface that is NOT a movement control.
+        ///
+        /// <para>
+        /// <b>This used to build a second set of movement controls.</b> It made its own
+        /// <c>MobileInputController</c>, its own <c>MoveJoystick</c> with its own
+        /// <see cref="VirtualJoystick"/>, and its own sprint and crouch buttons - all of which
+        /// <c>TouchHudFactory</c> also builds, per player, as the ones the game actually plays
+        /// with. Which of the two joysticks ended up bound to the controller depended purely on
+        /// which ran first: bind is last-writer-wins, so the orphan stayed on screen, still
+        /// raycasting, still stealing touches, and driving nothing.
+        /// </para>
+        ///
+        /// <para>
+        /// It also could not be suspended. <see cref="MenuInputGate"/> hides the player's
+        /// TouchHUD, which is a per-player object; a joystick parented to the HUD <em>screen</em>
+        /// is not that object, so it stayed on top of every fullscreen menu.
+        /// </para>
+        ///
+        /// <para>
+        /// <b>TouchHudFactory is authoritative for movement, look, sprint, crouch, flashlight
+        /// and carry.</b> What is left here is what it does not build: the case icon, the
+        /// journal, interact, use, the three inventory slots and the equipment panel - and they
+        /// sit above its bottom-right cluster rather than on top of it.
+        /// </para>
+        /// </summary>
         private static void WireHUD(MobileHUDController hud, Transform root)
         {
             var topBar = CreatePanel(root, "TopBar", false);
@@ -577,36 +603,29 @@ namespace CatchIfYouCan.UI
             caseIcon.GetComponent<RectTransform>().sizeDelta = new Vector2(64, 64);
             var journalBtn = CreateButton(topBar.transform, "JOURNAL", null, false, 48);
 
-            var joystickArea = CreatePanel(root, "JoystickArea", false);
-            Position(joystickArea, 0.02f, 0.05f, 0.28f, 0.45f);
-            joystickArea.GetComponent<Image>().color = new Color(1, 1, 1, 0.05f);
-
+            // Above the touch HUD's action cluster, which owns the bottom right corner from
+            // roughly y 0.04 to y 0.30. Interact and use are the two controls this screen still
+            // owns, and neither may sit where a thumb is already reaching for sprint.
             var interactBtn = CreateButton(root, "INTERACT", null, true, 64);
-            Position(interactBtn.gameObject, 0.72f, 0.12f, 0.92f, 0.22f);
-
-            var crouchBtn = CreateButton(root, "CROUCH", null, false, 52);
-            Position(crouchBtn.gameObject, 0.55f, 0.05f, 0.68f, 0.14f);
-
-            var sprintBtn = CreateButton(root, "SPRINT", null, false, 52);
-            Position(sprintBtn.gameObject, 0.7f, 0.05f, 0.83f, 0.14f);
+            Position(interactBtn.gameObject, 0.70f, 0.36f, 0.92f, 0.45f);
 
             var useBtn = CreateButton(root, "USE", null, true, 52);
-            Position(useBtn.gameObject, 0.85f, 0.05f, 0.98f, 0.14f);
+            Position(useBtn.gameObject, 0.70f, 0.26f, 0.92f, 0.34f);
 
             var selector = BuildInventorySlots(root);
             BuildEquipmentPanel(root);
 
+            // joystickArea, crouchButton and sprintButton are deliberately null. MobileHUDController
+            // null-checks every one of them, and the touch HUD owns all three.
             hud.BindRuntime(
                 caseIcon: caseIcon.GetComponent<Image>(),
                 journalButton: journalBtn,
-                joystickArea: joystickArea.GetComponent<RectTransform>(),
+                joystickArea: null,
                 interactButton: interactBtn,
-                crouchButton: crouchBtn,
-                sprintButton: sprintBtn,
+                crouchButton: null,
+                sprintButton: null,
                 inventorySelector: selector,
                 useButton: useBtn);
-
-            EnsureMobileInput(joystickArea.transform);
         }
 
         /// <summary>
@@ -757,39 +776,6 @@ namespace CatchIfYouCan.UI
             return label.GetComponent<Text>();
         }
 
-        private static void EnsureMobileInput(Transform joystickParent)
-        {
-            if (MobileInputController.Instance != null)
-                return;
-
-            var inputGo = new GameObject("MobileInputController");
-            UnityEngine.Object.DontDestroyOnLoad(inputGo);
-            var input = inputGo.AddComponent<MobileInputController>();
-
-            var joystickGo = new GameObject("MoveJoystick", typeof(RectTransform));
-            joystickGo.transform.SetParent(joystickParent, false);
-            Stretch(joystickGo);
-            var bg = CreatePanel(joystickGo.transform, "Background", true);
-            bg.GetComponent<Image>().color = new Color(1f, 1f, 1f, 0.08f);
-            var handle = CreatePanel(joystickGo.transform, "Handle", false);
-            handle.GetComponent<RectTransform>().sizeDelta = new Vector2(72, 72);
-            handle.GetComponent<Image>().color = new Color(1f, 1f, 1f, 0.35f);
-
-            var joystick = joystickGo.AddComponent<VirtualJoystick>();
-            SetPrivateField(joystick, "background", bg.GetComponent<RectTransform>());
-            SetPrivateField(joystick, "handle", handle.GetComponent<RectTransform>());
-            input.BindJoystick(joystick);
-        }
-
-        private static void SetPrivateField(object target, string fieldName, object value)
-        {
-            if (target == null)
-                return;
-
-            var field = target.GetType().GetField(fieldName,
-                System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-            field?.SetValue(target, value);
-        }
 
         /// <summary>
         /// Mission select: the list on the left, the chosen mission on the right, the two
