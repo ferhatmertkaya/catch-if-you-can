@@ -69,7 +69,7 @@ namespace CatchIfYouCan.Equipment
                 EquipmentIds.Thermometer => BuildSelfPresenting<ThermometerEquipment>(definition),
                 EquipmentIds.EvpRecorder => BuildSelfPresenting<EVPRecorder>(definition),
                 EquipmentIds.ParabolicMicrophone => BuildSelfPresenting<ParabolicMicrophone>(definition),
-                EquipmentIds.PhotoCamera => BuildPrimitiveEquipment<PhotoCameraEquipment>(definition, new Vector3(0.12f, 0.1f, 0.18f)),
+                EquipmentIds.PhotoCamera => BuildSelfPresenting<PhotoCameraEquipment>(definition),
                 EquipmentIds.Salt => BuildPrimitiveEquipment<SaltEquipment>(definition, new Vector3(0.2f, 0.15f, 0.2f)),
                 _ => BuildDevPlaceholder(definition)
             };
