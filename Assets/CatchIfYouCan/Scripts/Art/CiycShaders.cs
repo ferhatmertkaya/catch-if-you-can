@@ -33,6 +33,7 @@ namespace CatchIfYouCan.Art
         public const string SpectralGrid = "CatchIfYouCan/SpectralGrid";
         public const string ElectronicGlitch = "CatchIfYouCan/ElectronicGlitch";
         public const string UISlime = "CatchIfYouCan/UI/Slime";
+        public const string PlanarMirror = "CatchIfYouCan/PlanarMirror";
 
         // One complaint per shader per session. A shader that is missing is missing every
         // frame something tries to build with it, and a log line per frame buries the rest.

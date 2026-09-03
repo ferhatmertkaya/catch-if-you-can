@@ -14,31 +14,40 @@ namespace CatchIfYouCan.Art
     /// </para>
     ///
     /// <para>
-    /// The reflection is a virtual camera at the player's mirrored eye, with an <em>off-axis</em>
-    /// frustum whose image plane is exactly the mirror rectangle. That is what lets the result be
-    /// sampled with ordinary 0-1 UVs: the usual planar-reflection setup folds a reflection matrix
-    /// into the view matrix and then has to sample the result in screen space, which needs a
-    /// shader this project does not have.
+    /// <b>THE MIRROR NEVER MOVES.</b> Not its position, not its rotation, not its normal. Nothing
+    /// here reads where the player is and turns the glass towards them; there is no
+    /// <c>LookAt</c>, no <c>LookRotation</c> towards a player, and the glass is not parented to
+    /// anything that follows one. The plane is captured once when the glass is built - see
+    /// <c>_planePoint</c> and <c>_planeNormal</c> - so it cannot start tracking anybody even if
+    /// something later writes to the transform. Only the hidden reflection camera moves.
     /// </para>
     ///
     /// <para>
-    /// <b>It is a mirror already, and that is where this went wrong for a long time.</b> The ray
-    /// from the mirrored eye through any point of the glass <em>is</em> the reflected ray from
-    /// the real eye through that same point - the two differ by the reflection, which fixes every
-    /// point of the plane - so the camera renders the reflected world without anything being
-    /// reflected. It is not a window: a window would need a camera on the player's side looking
-    /// through the hole at what lies beyond. And the one flip a mirror needs is supplied by the
-    /// geometry, because the player looks at the glass from the side opposite the one the camera
-    /// shot it from. Flipping the UVs on top of that, which this used to do, put the sideways
-    /// parallax the wrong way round: strafe left and the reflected room slid left with you, which
-    /// reads exactly like a portal swinging about a pivot.
+    /// The reflection is the player's own camera reflected across that fixed plane: position,
+    /// forward and up each mirrored, and the pose built from the reflected forward and up. It
+    /// then renders with the player's field of view and aspect, and the result is sampled in
+    /// <em>screen space</em>, which is what makes it a mirror rather than a second view of the
+    /// room: the ray through any screen pixel of the glass is the reflection of the player's own
+    /// ray through that same pixel.
     /// </para>
     ///
     /// <para>
-    /// For the same reason there is no <c>GL.invertCulling</c> here and there must not be. The
-    /// camera's basis is the glass's own right, up and forward - a perfectly ordinary
-    /// right-handed camera - and the room it renders is the room as authored. Nothing is turned
-    /// inside out, so nothing needs turning back.
+    /// <b>This replaced an off-axis frustum, and that is what was wrong.</b> The camera used to be
+    /// locked to look straight out along the mirror normal with a frustum pinned to the four glass
+    /// corners. The maths is sound and the mirror plane never rotated even then - but the frustum
+    /// shears further and further as the player moves sideways, and a hard-sheared projection
+    /// keystones the room. That is what read as the reflection swinging round a pivot. Reflecting
+    /// the camera's whole pose instead means the projection stays an ordinary symmetric
+    /// perspective at every player position, and there is nothing left to shear.
+    /// </para>
+    ///
+    /// <para>
+    /// There is no <c>GL.invertCulling</c> here and there must not be. Reflecting forward, right
+    /// and up across a plane gives a <em>left-handed</em> basis, which no Transform can hold;
+    /// building the pose from reflected forward and up gives a proper rotation whose right vector
+    /// is the negative of the reflected one. The shader flips screen u to undo exactly that, which
+    /// is exact for a symmetric frustum. So nothing renders with inverted winding, and nothing can
+    /// be left inverted after an early return.
     /// </para>
     ///
     /// <para>
@@ -79,34 +88,24 @@ namespace CatchIfYouCan.Art
                  "faces, so this object should be turned to face into the room.")]
         [SerializeField] private Vector3 glassLocalPosition = new Vector3(0f, 1.25f, 0.02f);
 
-        [Tooltip("Resolution of the reflection. 512 is plenty for a 70 cm mirror and a great deal " +
-                 "cheaper than matching the screen.")]
-        [SerializeField, Min(64)] private int resolution = 512;
+        [Tooltip("Height of the reflection buffer in pixels, at the top quality level. The width " +
+                 "follows the screen's aspect, because the reflection is sampled in screen " +
+                 "space: a square buffer for a 0.72 x 1.4 glass spent half its pixels on nothing " +
+                 "and stretched what was left. Lower quality levels step this down - see " +
+                 "ResolveTextureSize.")]
+        [SerializeField, Min(128)] private int resolution = 1024;
 
-        [Tooltip("Flip the reflection left to right, in the glass mesh's own UVs. OFF, and that " +
-                 "is the whole of what made the reflection swing about like a portal: it was on, " +
-                 "and it was a second flip on top of one the geometry already provides. A " +
-                 "reflection camera at the mirrored eye already renders the mirror's content - " +
-                 "the ray from it through any point of the glass is the reflected ray from the " +
-                 "player through that same point - and the player then looks at that image from " +
-                 "the opposite side of the glass to the side the camera shot it from, which is " +
-                 "the one flip a mirror needs. Flipping the UVs as well undid it, and inverting " +
-                 "the sideways parallax is precisely what reads as the room swinging round a " +
-                 "pivot when you strafe. Left as a field only in case a future glass mesh is " +
-                 "wound the other way.")]
-        [SerializeField] private bool mirrorImage;
-
-        private bool _appliedFlip;
-        private bool _hasAppliedFlip;
+        [Tooltip("Cap on the reflection buffer height. 2048 is the Ultra tier; it is reached " +
+                 "only when the quality level asks for it, never forced on every platform.")]
+        [SerializeField, Min(128)] private int maxResolution = 2048;
 
         [Tooltip("Stop rendering beyond this. The reflection is a second pass over the room, so " +
                  "it should not run while the player is on the other side of the house.")]
         [SerializeField, Min(1f)] private float renderDistance = 7f;
 
-        [Tooltip("Near plane the off-axis frustum is built at. It does not decide what the " +
-                 "reflection sees - the oblique clip below moves the real near plane onto the " +
-                 "glass - and it does not change the image, because the frustum's four edges are " +
-                 "scaled to whatever distance it is built at.")]
+        [Tooltip("Near plane the reflection camera is built at before the oblique clip moves the " +
+                 "real one onto the glass. Small, because the reflected eye can end up close to " +
+                 "the plane when the player stands against the mirror.")]
         [SerializeField, Min(0.01f)] private float nearPlane = 0.05f;
 
         [SerializeField, Min(1f)] private float farPlane = 40f;
@@ -122,12 +121,28 @@ namespace CatchIfYouCan.Art
 
         [Header("Glass")]
         [Tooltip("What the reflection is multiplied by on its way onto the glass. Near white and " +
-                 "slightly warm: the glass is a lit surface, so the room's own light is already " +
-                 "taking a bite out of the reflection and a dark tint on top of that leaves " +
-                 "nothing to see. The age is in the warmth, not in the darkness.")]
-        [SerializeField] private Color glassTint = new Color(0.93f, 0.9f, 0.85f);
+                 "slightly warm. The glass is unlit now, so this is the only thing between the " +
+                 "reflection and the screen - a dark tint here takes the reflection away and " +
+                 "nothing gives it back.")]
+        [SerializeField] private Color glassTint = new Color(0.94f, 0.92f, 0.88f);
 
-        [SerializeField, Range(0f, 1f)] private float glassSmoothness = 0.75f;
+        [Tooltip("Overall reflection brightness. Slightly under one: old silvering returns a " +
+                 "little less than it receives.")]
+        [SerializeField, Range(0.4f, 1.4f)] private float glassExposure = 0.94f;
+
+        [Tooltip("Uneven silvering, as a fraction. Restrained on purpose - the reflection has to " +
+                 "stay the thing you look at, not the dirt in front of it.")]
+        [SerializeField, Range(0f, 0.5f)] private float glassGrime = 0.13f;
+
+        [Tooltip("Dirt gathered where the glass meets the frame.")]
+        [SerializeField, Range(0f, 0.7f)] private float glassEdgeDirt = 0.34f;
+
+        [Tooltip("Sparse hairline scratches. Very low; anything visible as a pattern is worse " +
+                 "than none.")]
+        [SerializeField, Range(0f, 0.25f)] private float glassScratches = 0.05f;
+
+        [Tooltip("How much colour age has taken out of the reflection.")]
+        [SerializeField, Range(0f, 0.6f)] private float glassDesaturation = 0.12f;
 
         [Tooltip("Log what the glass material ended up as, once, on build. Left on: it is one " +
                  "line and it is the difference between seeing a magenta mirror and knowing why.")]
@@ -181,6 +196,24 @@ namespace CatchIfYouCan.Art
         private Material _glassMaterial;
         private bool _built;
 
+        /// <summary>
+        /// The mirror plane, taken once when the glass is built and never taken again.
+        ///
+        /// <para>
+        /// <b>This is the immutable thing.</b> Reading it from <c>_surface</c> every frame would
+        /// work today and would quietly start tracking the player the day somebody wrote to that
+        /// transform. Captured once, it cannot: the plane the reflection is built from is the
+        /// plane the glass was built on, whatever anything else does afterwards.
+        /// </para>
+        /// </summary>
+        private Vector3 _planePoint;
+        private Vector3 _planeNormal;
+
+        private Camera _cachedSource;
+        private int _textureWidth, _textureHeight;
+
+        private static readonly int ReflectionTexId = Shader.PropertyToID("_ReflectionTex");
+
         private void Start()
         {
             Build();
@@ -223,7 +256,7 @@ namespace CatchIfYouCan.Art
             var lit = CiycShaders.FindLit();
 
             BuildFrame(lit);
-            BuildGlass(lit);
+            BuildGlass();
             BuildCamera();
 
             if (buildLamp)
@@ -258,7 +291,7 @@ namespace CatchIfYouCan.Art
         /// own way and carries its own UVs, and both of those matter to a mirror; four vertices
         /// written out are four things that cannot be wrong.
         /// </summary>
-        private void BuildGlass(Shader lit)
+        private void BuildGlass()
         {
             var go = new GameObject("Mirror_Glass");
             _surface = go.transform;
@@ -277,8 +310,8 @@ namespace CatchIfYouCan.Art
                 new Vector3(-hx,  hy, 0f),
                 new Vector3( hx,  hy, 0f)
             };
-            // Plain. The flip lives on the material instead, so it can be switched while the
-            // game is running - see ApplyMirrorFlip.
+            // Plain 0-1. They are the ageing's coordinates, not the reflection's - the
+            // reflection is sampled in screen space, which is what makes it a mirror.
             mesh.uv = new[]
             {
                 new Vector2(0f, 0f), new Vector2(1f, 0f),
@@ -306,62 +339,37 @@ namespace CatchIfYouCan.Art
             renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
             renderer.receiveShadows = false;
 
-            _texture = new RenderTexture(resolution, resolution, 24, RenderTextureFormat.Default)
-            {
-                name = "Mirror_Reflection",
-                antiAliasing = 1,
-                filterMode = FilterMode.Bilinear,
-                wrapMode = TextureWrapMode.Clamp
-            };
-            _texture.Create();
+            // The plane, taken once, from the glass as it has just been placed. Everything the
+            // reflection does is built from these three vectors and none of them is ever written
+            // again - which is the guarantee that the mirror cannot start following the player.
+            _planePoint = _surface.position;
+            _planeNormal = _surface.forward;
 
-            if (lit == null)
+            EnsureTexture(Core.LocalPlayerService.ResolveViewCamera());
+
+            // The mirror shader, not URP/Lit. A lit mirror is a surface the room's light falls on,
+            // which takes a bite out of the reflection before anybody sees it - the old build
+            // compensated with a very bright lamp and still lost contrast. This one is unlit, so
+            // the tint below is the only thing between the reflection and the screen.
+            var mirrorShader = CiycShaders.Find(CiycShaders.PlanarMirror);
+            if (mirrorShader == null)
                 return;
 
-            // The reflection goes in as the base map of a plain lit opaque material. No emission,
-            // no keyword turned on at run time, no property that this shader might not have: the
-            // base map and base colour of URP/Lit are the two things every other material in this
-            // room already uses, so they are the two things that cannot be missing from the
-            // build. Every write is guarded anyway, because a silently ignored SetTexture is how
-            // a mirror ends up showing the tint and nothing else.
-            //
-            // Being lit does cost something - the reflection is dimmed by whatever falls on the
-            // glass - and that is what the standing lamp beside it is for. The tint is therefore
-            // near white and slightly warm rather than dark: it ages the reflection without
-            // taking it away.
-            _glassMaterial = new Material(lit) { name = "Mirror_Glass_Runtime" };
-            SetTextureIfPresent(_glassMaterial, "_BaseMap", _texture);
-            ApplyMirrorFlip();
-            SetColorIfPresent(_glassMaterial, "_BaseColor", glassTint);
-            SetFloatIfPresent(_glassMaterial, "_Metallic", 0f);
-            SetFloatIfPresent(_glassMaterial, "_Smoothness", glassSmoothness);
+            // Every write is guarded, because a silently ignored SetTexture is how a mirror ends
+            // up showing the tint and nothing else. The ageing lives in the shader rather than in
+            // a texture: a grime map would have to be authored, imported and kept, and this is a
+            // 70 cm mirror.
+            _glassMaterial = new Material(mirrorShader) { name = "Mirror_Glass_Runtime" };
+            SetTextureIfPresent(_glassMaterial, "_ReflectionTex", _texture);
+            SetColorIfPresent(_glassMaterial, "_Tint", glassTint);
+            SetFloatIfPresent(_glassMaterial, "_Exposure", glassExposure);
+            SetFloatIfPresent(_glassMaterial, "_GrimeStrength", glassGrime);
+            SetFloatIfPresent(_glassMaterial, "_EdgeDirt", glassEdgeDirt);
+            SetFloatIfPresent(_glassMaterial, "_ScratchStrength", glassScratches);
+            SetFloatIfPresent(_glassMaterial, "_Desaturate", glassDesaturation);
             renderer.sharedMaterial = _glassMaterial;
 
             LogState(renderer);
-        }
-
-        /// <summary>
-        /// Puts the left-right flip on the material rather than in the mesh, so the tick box can
-        /// be turned on and off in Play Mode and the answer seen immediately.
-        ///
-        /// <para>
-        /// Only one of the two settings is physically right, and which one it is has now been
-        /// argued both ways from first principles and got wrong once. Five seconds of clicking
-        /// beats another page of reasoning: strafe sideways with it off, strafe with it on, and
-        /// keep whichever makes the room slide the way a wall mirror does.
-        /// </para>
-        /// </summary>
-        private void ApplyMirrorFlip()
-        {
-            if (_glassMaterial == null)
-                return;
-            if (_hasAppliedFlip && _appliedFlip == mirrorImage)
-                return;
-
-            _glassMaterial.mainTextureScale = new Vector2(mirrorImage ? -1f : 1f, 1f);
-            _glassMaterial.mainTextureOffset = new Vector2(mirrorImage ? 1f : 0f, 0f);
-            _appliedFlip = mirrorImage;
-            _hasAppliedFlip = true;
         }
 
         private static void SetTextureIfPresent(Material material, string property, Texture value)
@@ -396,9 +404,10 @@ namespace CatchIfYouCan.Art
             Shader shader = _glassMaterial != null ? _glassMaterial.shader : null;
             Debug.Log("[CIYC] Mirror glass: shader=" + (shader != null ? shader.name : "<none>") +
                       " supported=" + (shader != null && shader.isSupported) +
-                      " hasBaseMap=" + (_glassMaterial != null && _glassMaterial.HasProperty("_BaseMap")) +
+                      " hasReflectionTex=" +
+                      (_glassMaterial != null && _glassMaterial.HasProperty("_ReflectionTex")) +
                       " rtCreated=" + (_texture != null && _texture.IsCreated()) +
-                      " rt=" + resolution + "x" + resolution +
+                      " rt=" + _textureWidth + "x" + _textureHeight +
                       " rendererEnabled=" + renderer.enabled, this);
         }
 
@@ -406,6 +415,10 @@ namespace CatchIfYouCan.Art
         {
             var go = new GameObject("Mirror_Camera");
             go.transform.SetParent(transform, false);
+
+            // Explicitly untagged. A second camera that picks up MainCamera is a camera that
+            // Camera.main might answer with, and this one renders the room from inside a wall.
+            go.tag = "Untagged";
 
             _mirrorCamera = go.AddComponent<Camera>();
             _mirrorCamera.targetTexture = _texture;
@@ -427,6 +440,10 @@ namespace CatchIfYouCan.Art
             data.renderPostProcessing = false;
             data.renderShadows = true;
 
+            // Nothing else goes on this object, ever: no AudioListener (two of them is a Unity
+            // warning and a wrong mix), no PlayerLook, no gameplay component. It is built from a
+            // bare GameObject rather than a copy of the player's camera precisely so that none of
+            // those can arrive by inheritance.
             go.SetActive(false);
         }
 
@@ -513,12 +530,10 @@ namespace CatchIfYouCan.Art
             if (_mirrorCamera == null || _surface == null)
                 return;
 
-            ApplyMirrorFlip();
-
-            // The reflection is only correct from the eye it is drawn for. Camera.main
-            // answered "any tagged camera", which in the lobby was the menu camera until
-            // the player spawned, and in a scene with two of them is arbitrary.
-            Camera source = Core.LocalPlayerService.ResolveViewCamera();
+            // The reflection is only correct from the eye it is drawn for. Camera.main answered
+            // "any tagged camera", which in the lobby was the menu camera until the player
+            // spawned. Cached, and only re-resolved when the one we have has gone.
+            Camera source = ResolveSource();
             if (source == null)
             {
                 _mirrorCamera.gameObject.SetActive(false);
@@ -526,74 +541,162 @@ namespace CatchIfYouCan.Art
             }
 
             Vector3 eye = source.transform.position;
-            Vector3 normal = _surface.forward;
-            float inFront = Vector3.Dot(eye - _surface.position, normal);
+            float inFront = Vector3.Dot(eye - _planePoint, _planeNormal);
 
             // Nothing to reflect from behind the glass, and nothing worth a second render of the
             // room from across the house.
             bool visible = inFront > 0.05f &&
-                           Vector3.Distance(eye, _surface.position) <= renderDistance;
+                           Vector3.Distance(eye, _planePoint) <= renderDistance;
 
             if (_mirrorCamera.gameObject.activeSelf != visible)
                 _mirrorCamera.gameObject.SetActive(visible);
             if (!visible)
                 return;
 
-            // The reflected eye. This is the one thing that has always been right here and is
-            // worth stating plainly: it is the player's camera mirrored across the glass plane,
-            // so a step of half a metre towards the mirror moves it half a metre the other way
-            // and the parallax comes out symmetric on its own.
-            Vector3 reflected = eye - 2f * inFront * normal;
+            EnsureTexture(source);
 
-            // The camera is turned to face straight out of the glass, and that is not a
-            // simplification - it is the whole point of an off-axis frustum. Where the camera
-            // looks does not decide what a mirror shows; the four corners of the glass do. With
-            // the camera's own right, up and forward equal to the glass's, the frustum below
-            // reduces to four numbers in that same basis, and the image it renders lands on the
-            // mirror rectangle exactly, which is what lets it be sampled with plain 0-1 UVs
-            // instead of a screen-space shader this project does not have.
-            _mirrorCamera.transform.SetPositionAndRotation(
-                reflected, Quaternion.LookRotation(normal, _surface.up));
+            // ---- the reflected pose ----------------------------------------------------------
+            // Position, forward and up, each mirrored across the fixed plane. The plane comes
+            // from _planePoint and _planeNormal, which were taken once when the glass was built:
+            // nothing in this method reads the mirror's transform, so nothing in this method can
+            // move it.
+            Vector3 reflectedPosition = ReflectPoint(eye);
+            Vector3 reflectedForward = ReflectDirection(source.transform.forward);
+            Vector3 reflectedUp = ReflectDirection(source.transform.up);
 
-            // Corners of the glass as it is actually drawn, in world space.
-            Vector3 bottomLeft = _surface.TransformPoint(_cornerBottomLeft);
-            Vector3 bottomRight = _surface.TransformPoint(_cornerBottomRight);
-            Vector3 topLeft = _surface.TransformPoint(_cornerTopLeft);
-
-            Vector3 right = _mirrorCamera.transform.right;
-            Vector3 up = _mirrorCamera.transform.up;
-
-            Vector3 va = bottomLeft - reflected;
-            Vector3 vb = bottomRight - reflected;
-            Vector3 vc = topLeft - reflected;
-
-            float distance = Vector3.Dot(va, normal);
-            if (distance <= 0.001f)
+            // Degenerate only if the player is looking exactly along the plane's normal with
+            // their up vector parallel to their forward, which cannot happen - but LookRotation
+            // with a zero or parallel pair silently returns identity, and an identity mirror
+            // camera is a reflection pointing at a wall.
+            if (reflectedForward.sqrMagnitude < 1e-8f || reflectedUp.sqrMagnitude < 1e-8f)
                 return;
 
-            // Kooima's generalised perspective projection: the frustum's edges are where the
-            // rays from the eye to the glass corners cross the near plane, so the image plane is
-            // the mirror rectangle whatever the near plane is set to. Rebuilt every frame from
-            // the moved eye, which is what makes the reflection shift the way a wall mirror does
-            // rather than swinging like a camera on a bracket.
-            float near = Mathf.Max(0.01f, nearPlane);
-            float scale = near / distance;
-            _mirrorCamera.nearClipPlane = near;
+            _mirrorCamera.transform.SetPositionAndRotation(
+                reflectedPosition, Quaternion.LookRotation(reflectedForward, reflectedUp));
+
+            // ---- the projection --------------------------------------------------------------
+            // The player's own lens. An ordinary symmetric perspective at every player position,
+            // which is the whole difference from the off-axis frustum this replaced: there is no
+            // shear to grow as the player moves sideways, so there is nothing to keystone.
+            _mirrorCamera.orthographic = false;
+            _mirrorCamera.fieldOfView = source.fieldOfView;
+            _mirrorCamera.aspect = source.aspect;
+            _mirrorCamera.nearClipPlane = Mathf.Max(0.01f, nearPlane);
             _mirrorCamera.farClipPlane = farPlane;
-            _mirrorCamera.projectionMatrix = Matrix4x4.Frustum(
-                Vector3.Dot(right, va) * scale,
-                Vector3.Dot(right, vb) * scale,
-                Vector3.Dot(up, va) * scale,
-                Vector3.Dot(up, vc) * scale,
-                near, farPlane);
+            _mirrorCamera.ResetProjectionMatrix();
 
             // And then the near plane is moved onto the glass itself. The camera sits behind the
             // mirror looking out through it, so the frame, the wall it hangs on and the glass -
-            // which carries the very texture being drawn into - are all in front of the lens.
-            // An oblique near plane removes all three exactly, at the surface, rather than
-            // approximately, at whatever depth a near-plane number happens to land on.
+            // which carries the very texture being drawn into - are all in front of the lens. An
+            // oblique near plane removes all three exactly, at the surface, rather than
+            // approximately, at whatever depth a near-plane number happens to land on. It is also
+            // the whole of the self-reflection prevention: the glass cannot sample itself because
+            // the glass is on the clipped side.
             _mirrorCamera.projectionMatrix =
-                _mirrorCamera.CalculateObliqueMatrix(CameraSpacePlane(_surface.position, normal));
+                _mirrorCamera.CalculateObliqueMatrix(CameraSpacePlane(_planePoint, _planeNormal));
+        }
+
+        /// <summary>
+        /// A point mirrored across the fixed plane. Reads <c>_planePoint</c> and
+        /// <c>_planeNormal</c>, never the mirror's transform.
+        /// </summary>
+        private Vector3 ReflectPoint(Vector3 point) =>
+            point - 2f * Vector3.Dot(point - _planePoint, _planeNormal) * _planeNormal;
+
+        /// <summary>A direction mirrored across the fixed plane. The plane's point is irrelevant.</summary>
+        private Vector3 ReflectDirection(Vector3 direction) =>
+            direction - 2f * Vector3.Dot(direction, _planeNormal) * _planeNormal;
+
+        /// <summary>
+        /// The player's camera, cached.
+        ///
+        /// <para>
+        /// <c>ResolveViewCamera</c> is cheap, but it falls back to <c>Camera.main</c> when nothing
+        /// is registered and that is a scene search. Holding the answer means the fallback runs
+        /// once rather than every frame the player has not spawned yet.
+        /// </para>
+        /// </summary>
+        private Camera ResolveSource()
+        {
+            if (_cachedSource != null)
+                return _cachedSource;
+
+            _cachedSource = Core.LocalPlayerService.ResolveViewCamera();
+            return _cachedSource;
+        }
+
+        /// <summary>
+        /// The reflection buffer, allocated once and reallocated only when the size it should be
+        /// actually changes - a quality level switch, or a window resized on desktop.
+        ///
+        /// <para>
+        /// Sized to the screen's aspect rather than square, because the reflection is sampled in
+        /// screen space. The old square buffer for a 0.72 x 1.4 glass spent half its pixels on
+        /// nothing and stretched what was left, which is what made the edges look pulled.
+        /// </para>
+        /// </summary>
+        private void EnsureTexture(Camera source)
+        {
+            ResolveTextureSize(source, out int width, out int height);
+
+            if (_texture != null && _textureWidth == width && _textureHeight == height &&
+                _texture.IsCreated())
+                return;
+
+            if (_texture != null)
+            {
+                if (_mirrorCamera != null)
+                    _mirrorCamera.targetTexture = null;
+                _texture.Release();
+                Destroy(_texture);
+            }
+
+            _textureWidth = width;
+            _textureHeight = height;
+
+            _texture = new RenderTexture(width, height, 24, RenderTextureFormat.Default)
+            {
+                name = "Mirror_Reflection",
+                antiAliasing = 1,
+                filterMode = FilterMode.Bilinear,
+                wrapMode = TextureWrapMode.Clamp
+            };
+            _texture.Create();
+
+            if (_mirrorCamera != null)
+                _mirrorCamera.targetTexture = _texture;
+
+            if (_glassMaterial != null && _glassMaterial.HasProperty(ReflectionTexId))
+                _glassMaterial.SetTexture(ReflectionTexId, _texture);
+        }
+
+        /// <summary>
+        /// How big the reflection should be at this quality level.
+        ///
+        /// <para>
+        /// Stepped by <see cref="QualitySettings"/> rather than by platform, so the Ultra tier is
+        /// something a machine asks for rather than something forced on every device. The height
+        /// is the number that matters and the width follows the screen, so the reflection has the
+        /// same pixel density in both axes as the view it is a reflection of.
+        /// </para>
+        /// </summary>
+        private void ResolveTextureSize(Camera source, out int width, out int height)
+        {
+            int levels = Mathf.Max(1, QualitySettings.names != null ? QualitySettings.names.Length : 1);
+            int level = Mathf.Clamp(QualitySettings.GetQualityLevel(), 0, levels - 1);
+
+            // Bottom level quarter, top level full, everything between interpolated. A one-level
+            // project gets the full height rather than a quarter of it.
+            float t = levels <= 1 ? 1f : (float)level / (levels - 1);
+            int target = Mathf.RoundToInt(Mathf.Lerp(resolution * 0.5f, resolution, t));
+
+            height = Mathf.Clamp(target, 128, Mathf.Max(128, maxResolution));
+
+            float aspect = source != null && source.aspect > 0.01f
+                ? source.aspect
+                : (Screen.height > 0 ? (float)Screen.width / Screen.height : 1.7778f);
+
+            width = Mathf.Clamp(Mathf.RoundToInt(height * aspect), 128, Mathf.Max(128, maxResolution * 2));
         }
 
         /// <summary>
@@ -624,8 +727,12 @@ namespace CatchIfYouCan.Art
             if (!drawDebug || _surface == null)
                 return;
 
+            // The CAPTURED plane, not the transform. If these two ever disagree, something has
+            // written to the mirror's transform and that is the bug worth seeing.
             Gizmos.color = new Color(0.4f, 0.85f, 1f);
-            Gizmos.DrawLine(_surface.position, _surface.position + _surface.forward * 0.5f);
+            Gizmos.DrawLine(_planePoint, _planePoint + _planeNormal * 0.5f);
+            Gizmos.color = new Color(1f, 0.3f, 0.3f);
+            Gizmos.DrawLine(_surface.position, _surface.position + _surface.forward * 0.35f);
 
             Vector3 bl = _surface.TransformPoint(_cornerBottomLeft);
             Vector3 br = _surface.TransformPoint(_cornerBottomRight);
@@ -642,15 +749,14 @@ namespace CatchIfYouCan.Art
                 return;
 
             Vector3 eye = source.transform.position;
-            Vector3 mirrored = eye - 2f * Vector3.Dot(eye - _surface.position, _surface.forward) *
-                               _surface.forward;
+            Vector3 mirrored = ReflectPoint(eye);
 
             Gizmos.color = new Color(0.5f, 1f, 0.5f);
             Gizmos.DrawWireSphere(eye, 0.05f);
-            Gizmos.DrawLine(eye, _surface.position);
+            Gizmos.DrawRay(eye, source.transform.forward * 0.5f);
             Gizmos.color = new Color(1f, 0.5f, 0.5f);
             Gizmos.DrawWireSphere(mirrored, 0.05f);
-            Gizmos.DrawLine(mirrored, _surface.position);
+            Gizmos.DrawRay(mirrored, ReflectDirection(source.transform.forward) * 0.5f);
         }
     }
 }
