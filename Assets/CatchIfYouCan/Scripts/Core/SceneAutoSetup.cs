@@ -15,16 +15,16 @@ namespace CatchIfYouCan.Core
             var scene = SceneManager.GetActiveScene();
             switch (scene.name)
             {
-                case "00_Boot":
+                case CiycScenes.Boot:
                     EnsureBoot();
                     break;
-                case "01_MainMenu":
+                case CiycScenes.MainMenu:
                     EnsureMainMenu();
                     break;
-                case "02_Training":
+                case CiycScenes.Training:
                     EnsureTraining();
                     break;
-                case "03_Investigation":
+                case CiycScenes.Investigation:
                     EnsureInvestigation();
                     break;
             }

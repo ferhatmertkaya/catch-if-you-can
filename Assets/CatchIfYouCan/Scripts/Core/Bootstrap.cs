@@ -20,7 +20,7 @@ namespace CatchIfYouCan.Core
 
             // Started on the intro object, not on this one. Bootstrap is destroyed with 00_Boot
             // when the menu loads, which would strand the coroutine and leave the screen black.
-            intro.StartCoroutine(intro.Sequence("01_MainMenu", ShowHeadphonesTip));
+            intro.StartCoroutine(intro.Sequence(CiycScenes.MainMenu, ShowHeadphonesTip));
         }
 
         private static void ShowHeadphonesTip()

@@ -39,13 +39,11 @@ namespace CatchIfYouCan.EditorTools
             "Builds/iOS"
         };
 
-        private static readonly string[] RequiredScenes =
-        {
-            Root + "/Scenes/00_Boot.unity",
-            Root + "/Scenes/01_MainMenu.unity",
-            Root + "/Scenes/02_Training.unity",
-            Root + "/Scenes/03_Investigation.unity"
-        };
+        // Derived, never retyped. This list used to be four hard-coded paths, and it is
+        // assigned straight onto EditorBuildSettings.scenes below - so a scene added by
+        // hand and forgotten here was silently deleted from the build the next time anyone
+        // ran Setup Project.
+        private static string[] RequiredScenes => Core.CiycScenes.ProductionPaths();
 
         [MenuItem("Catch If You Can/Setup Project")]
         public static void SetupProject()
@@ -265,21 +263,47 @@ namespace CatchIfYouCan.EditorTools
         private static void EnsureBuildScenes(StringBuilder report)
         {
             var scenes = new List<EditorBuildSettingsScene>();
+            var required = RequiredScenes;
             int missing = 0;
 
-            for (int i = 0; i < RequiredScenes.Length; i++)
+            // Production scenes first and in order, because index 0 is the scene the player
+            // starts in.
+            for (int i = 0; i < required.Length; i++)
             {
-                bool exists = File.Exists(RequiredScenes[i]);
+                bool exists = File.Exists(required[i]);
                 if (!exists)
                     missing++;
 
-                scenes.Add(new EditorBuildSettingsScene(RequiredScenes[i], exists));
+                scenes.Add(new EditorBuildSettingsScene(required[i], exists));
+            }
+
+            // Anything else already registered is kept, disabled or not. This used to be a
+            // wholesale replacement, which quietly removed every scene the production list
+            // did not know about - including, after the lobby split, the lobby itself if
+            // this file had not been updated in the same change.
+            int kept = 0;
+            var existing = EditorBuildSettings.scenes;
+            if (existing != null)
+            {
+                for (int i = 0; i < existing.Length; i++)
+                {
+                    if (existing[i] == null || string.IsNullOrEmpty(existing[i].path))
+                        continue;
+                    if (System.Array.IndexOf(required, existing[i].path) >= 0)
+                        continue;
+
+                    scenes.Add(existing[i]);
+                    kept++;
+                }
             }
 
             EditorBuildSettings.scenes = scenes.ToArray();
+
             report.AppendLine(missing == 0
-                ? "Build Settings: all 4 scenes registered."
-                : $"Build Settings: {missing} scene(s) missing on disk.");
+                ? $"Build Settings: all {required.Length} production scenes registered."
+                : $"Build Settings: {missing} of {required.Length} production scene(s) missing on disk.");
+            if (kept > 0)
+                report.AppendLine($"Build Settings: kept {kept} additional non-production scene(s).");
         }
 
         private static void ValidateUrp(StringBuilder report)

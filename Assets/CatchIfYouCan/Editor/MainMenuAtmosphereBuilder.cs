@@ -44,11 +44,11 @@ namespace CatchIfYouCan.EditorTools
         public static void RebuildDoorAtmosphere()
         {
             var scene = EditorSceneManager.GetActiveScene();
-            if (!scene.IsValid() || scene.name != "01_MainMenu")
+            if (!scene.IsValid() || scene.name != Core.CiycScenes.MainMenu)
             {
                 EditorUtility.DisplayDialog(
                     "Rebuild Door Atmosphere",
-                    "Open Assets/CatchIfYouCan/Scenes/01_MainMenu.unity first.\n\n" +
+                    "Open " + Core.CiycScenes.PathOf(Core.CiycScene.MainMenu) + " first.\n\n" +
                     $"Active scene is '{scene.name}'.",
                     "OK");
                 return;

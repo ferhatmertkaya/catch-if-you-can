@@ -106,7 +106,7 @@ namespace CatchIfYouCan.UI
             if (SceneLoader.Instance != null)
                 SceneLoader.Instance.LoadMainMenu();
             else
-                SceneManager.LoadScene("01_MainMenu");
+                SceneManager.LoadScene(CiycScenes.MainMenu);
         }
     }
 }

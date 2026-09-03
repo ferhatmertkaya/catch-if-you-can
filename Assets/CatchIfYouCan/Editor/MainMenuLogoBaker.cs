@@ -9,8 +9,8 @@ namespace CatchIfYouCan.EditorTools
 {
     public static class MainMenuLogoBaker
     {
-        private const string ScenePath =
-            "Assets/CatchIfYouCan/Scenes/01_MainMenu.unity";
+        private static readonly string ScenePath =
+            Core.CiycScenes.PathOf(Core.CiycScene.MainMenu);
 
         private const string LogoPath =
             "Assets/CatchIfYouCan/Resources/UI/Branding/CatchIfYouCan_Logo.png";

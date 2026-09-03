@@ -181,20 +181,36 @@ namespace CatchIfYouCan.EditorTools
 
         private void ValidateSceneReferences()
         {
-            string[] required = { "00_Boot", "01_MainMenu", "02_Training", "03_Investigation" };
+            string[] required = Core.CiycScenes.ProductionPaths();
             for (int i = 0; i < required.Length; i++)
             {
-                string path = $"Assets/CatchIfYouCan/Scenes/{required[i]}.unity";
-                if (!File.Exists(path))
-                    _issues.Add($"[ERROR] Missing scene file: {path}");
+                if (!File.Exists(required[i]))
+                    _issues.Add($"[ERROR] Missing scene file: {required[i]}");
             }
         }
 
         private void ValidateBuildScenes()
         {
             var scenes = EditorBuildSettings.scenes;
-            if (scenes == null || scenes.Length < 4)
-                _issues.Add("[WARN] Build Settings should include Boot, MainMenu, Training, Investigation.");
+            var required = Core.CiycScenes.ProductionPaths();
+
+            for (int i = 0; i < required.Length; i++)
+            {
+                bool registered = false;
+                for (int s = 0; scenes != null && s < scenes.Length; s++)
+                {
+                    if (scenes[s] != null && scenes[s].path == required[i])
+                    {
+                        registered = true;
+                        break;
+                    }
+                }
+
+                // Naming the missing scene matters more than counting them: a build list
+                // that is one short is a scene that loads in the editor and nowhere else.
+                if (!registered)
+                    _issues.Add($"[WARN] Build Settings does not include {required[i]}.");
+            }
         }
     }
 }
