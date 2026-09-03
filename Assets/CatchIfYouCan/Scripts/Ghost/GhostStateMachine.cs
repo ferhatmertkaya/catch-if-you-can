@@ -31,6 +31,33 @@ namespace CatchIfYouCan.Ghost
             EnterState(newState);
         }
 
+        /// <summary>
+        /// Adopts a state that was decided elsewhere, for presentation only.
+        ///
+        /// <para>
+        /// Deliberately not <see cref="ForceState"/>. Entering a state runs the host's
+        /// decisions for it - picking a roam target, choosing an interaction to perform,
+        /// resetting the path - and a client that ran those would be a second ghost making
+        /// its own choices behind the same transform. This sets what the state <em>is</em>,
+        /// which is all a client needs: the animation, the readouts and the equipment
+        /// responses are read from it.
+        /// </para>
+        ///
+        /// <para>
+        /// The timer restarts on a change so anything measuring how long the ghost has been
+        /// doing this reads something sensible, rather than a number that only ever grows
+        /// because no transition was ever taken here.
+        /// </para>
+        /// </summary>
+        public void AdoptReplicatedState(GhostState replicated)
+        {
+            if (_state == replicated) return;
+
+            _state = replicated;
+            _stateTimer = 0f;
+            _stateDuration = 0f;
+        }
+
         private void EnterState(GhostState newState)
         {
             _state = newState;

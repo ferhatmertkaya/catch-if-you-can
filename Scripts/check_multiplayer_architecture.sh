@@ -391,6 +391,47 @@ if [ -f "$FACTORY" ]; then
   fi
 fi
 
+# --------------------------------------------------- drawing the host's ghost
+
+# A client is told what the ghost is doing, never why. Its destination, its target, what it
+# heard and how long the hunt has left are the reasoning behind the state, and a client that
+# had them could draw an arrow to the ghost - the game is about not knowing.
+GPS="$SCRIPTS/Ghost/GhostPresentationState.cs"
+if [ -f "$GPS" ]; then
+  leak=$(grep -nE '^\s*public [A-Za-z0-9_.<>]+ [A-Za-z0-9_]*(Target|Destination|Path|Waypoint|Noise|Remaining|Threshold)[A-Za-z0-9_]*\s*;' \
+         "$GPS" || true)
+  if [ -n "$leak" ]; then
+    fail "the ghost presentation state carries the ghost's reasoning, not just its appearance"
+    printf '%s\n' "$leak" | sed 's/^/        /'
+  else
+    ok "the ghost presentation state carries appearance only"
+  fi
+fi
+
+# Entering a state runs the host's decisions for it - picking a roam target, performing an
+# interaction, resetting the path. A client that ran those would be a second ghost making its
+# own choices behind the same transform, which is what the authority gate exists to prevent.
+GSM="$SCRIPTS/Ghost/GhostStateMachine.cs"
+if [ -f "$GSM" ]; then
+  if grep -q 'AdoptReplicatedState' "$GSM"; then
+    body=$(sed -n '/public void AdoptReplicatedState/,/^        }/p' "$GSM")
+    if printf '%s' "$body" | grep -qE 'EnterState|OnStateEntered'; then
+      fail "adopting a replicated ghost state runs the host's entry decisions"
+    else
+      ok "a replicated ghost state is adopted without running the host's decisions"
+    fi
+  else
+    fail "GhostStateMachine has no way to adopt a state decided elsewhere"
+  fi
+fi
+
+RGD="$SCRIPTS/Ghost/RemoteGhostDriver.cs"
+if [ -f "$RGD" ]; then
+  grep -q 'ForceState' "$RGD" \
+    && fail "the remote ghost driver forces states, which runs the host's decisions locally" \
+    || ok "the remote ghost driver adopts states rather than forcing them"
+fi
+
 printf '\npassed: %s   failed: %s\n\n' "$passed" "$failed"
 
 if [ "$failed" -gt 0 ]; then

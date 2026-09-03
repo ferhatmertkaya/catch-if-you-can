@@ -29,6 +29,25 @@ namespace CatchIfYouCan.Ghost
         public GhostState CurrentState => _stateMachine != null ? _stateMachine.Current : GhostState.Dormant;
         public NavMeshAgent Agent => _agent;
 
+        /// <summary>Whether the ghost is currently manifested. What a peer is told, not what it guesses.</summary>
+        public bool IsManifestationVisible => _manifestVisible;
+
+        /// <summary>Where this ghost's position and state come from.</summary>
+        public enum GhostDriveMode
+        {
+            /// <summary>This process simulates it, subject to <c>SessionAuthority.CanSimulateGhost</c>.</summary>
+            HostSimulation = 0,
+
+            /// <summary>Another machine decides; this one draws what it is told.</summary>
+            RemoteState,
+        }
+
+        /// <summary>
+        /// How this ghost is driven. <see cref="GhostDriveMode.HostSimulation"/> unless
+        /// something has said otherwise, which is what single player is.
+        /// </summary>
+        public GhostDriveMode Drive { get; private set; }
+
         /// <summary>
         /// Every ghost currently in the scene. There is normally one, and equipment that needs
         /// it was each calling FindAnyObjectByType - the thermometer did it every frame, per
@@ -99,16 +118,19 @@ namespace CatchIfYouCan.Ghost
             // the same transform.
             //
             // In single player this is always true, so nothing changes.
-            if (Core.SessionAuthority.CanSimulateGhost)
+            if (Drive == GhostDriveMode.HostSimulation && Core.SessionAuthority.CanSimulateGhost)
             {
                 _stateMachine.Tick(Time.deltaTime);
                 UpdateRoomAwareness();
                 UpdateFootsteps();
-            }
 
-            // Presentation runs on every peer, from whatever state it has. A client still
-            // needs to draw the ghost it can see.
-            UpdateManifestationVisibility();
+                // When a manifestation ends is a decision as much as when it starts, and it
+                // runs on the same clock as the roll that began it. A remote-driven ghost is
+                // told whether it is visible; expiring it locally would hide a ghost the host
+                // is still showing everybody else, because the end time it would compare
+                // against was never set on this machine.
+                UpdateManifestationVisibility();
+            }
         }
 
         [Header("Traces")]
@@ -324,6 +346,47 @@ namespace CatchIfYouCan.Ghost
                 return;
 
             manifestationRenderers = GetComponentsInChildren<Renderer>(true);
+        }
+
+        /// <summary>
+        /// Hands this ghost over to replicated state, permanently.
+        ///
+        /// <para>
+        /// One-way, like the player's equivalent: a ghost that is somebody else's simulation
+        /// is somebody else's for its whole life. The agent is switched off because a second
+        /// pathfinder fighting a received position is a ghost that stutters between where it
+        /// is and where it thinks it should walk.
+        /// </para>
+        /// </summary>
+        public void DriveFromRemoteState()
+        {
+            Drive = GhostDriveMode.RemoteState;
+
+            if (_agent != null)
+            {
+                if (_agent.isOnNavMesh)
+                    _agent.ResetPath();
+
+                _agent.enabled = false;
+            }
+        }
+
+        /// <summary>
+        /// Takes a state that was decided on another machine, for presentation.
+        ///
+        /// <para>
+        /// Not <c>ForceState</c>, which runs the entry decisions belonging to the state -
+        /// picking a roam target, performing an interaction. A client that ran those would be
+        /// a second ghost making its own choices behind the same transform.
+        /// </para>
+        /// </summary>
+        public void AdoptReplicatedState(GhostState replicated)
+        {
+            if (Drive != GhostDriveMode.RemoteState)
+                return;
+
+            if (_stateMachine != null)
+                _stateMachine.AdoptReplicatedState(replicated);
         }
 
         public void SetManifestationVisible(bool visible)

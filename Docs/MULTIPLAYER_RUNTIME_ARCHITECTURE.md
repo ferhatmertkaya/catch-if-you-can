@@ -37,6 +37,7 @@ redesign.
 | Mode selection | **Built.** `Session.SessionLauncher` — §6b |
 | Online provider | **Seam only.** `IOnlineSessionProvider`, unimplemented — §9 |
 | Character index | **Built.** `Deterministic.CharacterSelection` — §3b |
+| Ghost presentation | **Built.** `Ghost.GhostPresentationState`, `RemoteGhostDriver` — §4b |
 | Transport | **Not built.** Blocked — §9 |
 | Relay / Lobby / Auth | **Not built.** Blocked — §9 |
 | NGO scene sync | **Not built.** Blocked — §9 |
@@ -211,6 +212,42 @@ path that could disagree with the local one.
 properties a local player computes. `PlayerBodyMotion` cannot tell whether a
 thumb or a network produced them, which is why **its pose mathematics has zero
 diff across the whole of V4**.
+
+---
+
+## 4b. The ghost a client draws (V5)
+
+The decisions were already host-only — the state machine, room awareness and the
+footsteps that disturb salt sit behind `SessionAuthority.CanSimulateGhost`. What
+that left on a client was a ghost standing at its spawn point, dormant and
+invisible. `GhostPresentationState` is the other half.
+
+Four fields: position, yaw, `GhostState`, and whether it is manifested. **What is
+not in it is the ghost's reasoning** — no destination, no roam target, no hunt
+target, no remaining hunt time, no perception. Those are why it is doing
+something, and a client that had them could draw an arrow to the ghost. The guard
+fails on a field named for any of them.
+
+The animation is rebuilt, not sent: `GhostRigController` picks its clip from
+`GhostState` and nothing else, so one enum reproduces the whole performance
+everywhere. Same argument as §4.
+
+Visibility is **told rather than inferred**. A manifestation can be refused — the
+roll happens on the host — so a client that derived visibility from
+`Manifesting` would show a ghost the host decided not to show. For the same
+reason, expiring a manifestation moved under the authority gate: the end time it
+compares against is only ever set where the roll happened.
+
+`GhostStateMachine.AdoptReplicatedState` sets what the state *is* without running
+`EnterState`, because entering a state runs the host's decisions for it — picking
+a roam target, performing an interaction, resetting the path. A client that ran
+those would be a second ghost making its own choices behind the same transform.
+The guard reads the method body and fails if it calls `EnterState`, and fails if
+`RemoteGhostDriver` reaches for `ForceState` instead.
+
+The spectral reveal is deliberately **not** replicated: how lit the ghost is by a
+grid projector is a fact about the viewer's own equipment. Two players pointing
+two projectors each see what their own reveals.
 
 ---
 
