@@ -76,7 +76,7 @@ namespace CatchIfYouCan.Equipment
                 EquipmentIds.PhotoCamera => BuildSelfPresenting<PhotoCameraEquipment>(definition),
                 EquipmentIds.VideoCamera => BuildSelfPresenting<VideoCameraEquipment>(definition),
                 EquipmentIds.WardingRelic => BuildSelfPresenting<WardingRelic>(definition),
-                EquipmentIds.Salt => BuildPrimitiveEquipment<SaltEquipment>(definition, new Vector3(0.2f, 0.15f, 0.2f)),
+                EquipmentIds.Salt => BuildSelfPresenting<SaltEquipment>(definition),
                 _ => BuildDevPlaceholder(definition)
             };
 
@@ -127,15 +127,6 @@ namespace CatchIfYouCan.Equipment
             var root = BuildBody(definition, new Vector3(0.12f, 0.12f, 0.12f));
             root.name = $"DEV_PLACEHOLDER_{definition.Id}";
             root.AddComponent<DevPlaceholderEquipment>().BindDefinition(definition);
-            return root;
-        }
-
-        private static GameObject BuildPrimitiveEquipment<T>(EquipmentDefinition definition, Vector3 scale)
-            where T : EquipmentBase
-        {
-            var root = BuildBody(definition, scale);
-            var equipment = root.GetComponent<T>() ?? root.AddComponent<T>();
-            equipment.BindDefinition(definition);
             return root;
         }
 

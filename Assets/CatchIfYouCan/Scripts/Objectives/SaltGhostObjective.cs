@@ -25,8 +25,11 @@ namespace CatchIfYouCan.Objectives
         {
             if (type == EvidenceType.PhysicalDisturbance || type == EvidenceType.UVTraces)
             {
-                var piles = UnityEngine.Object.FindObjectsByType<SaltPile>();
-                for (int i = 0; i < piles.Length; i++)
+                // From the registry rather than a scene sweep. This runs on an evidence
+                // confirmation, which is rare - but FindObjectsByType walks every object in
+                // the house to find at most five piles, and the registry already has them.
+                var piles = SaltPile.All;
+                for (int i = 0; i < piles.Count; i++)
                 {
                     if (piles[i] != null && piles[i].IsTriggered)
                     {

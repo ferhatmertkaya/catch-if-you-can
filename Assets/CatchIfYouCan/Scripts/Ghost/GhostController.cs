@@ -95,6 +95,49 @@ namespace CatchIfYouCan.Ghost
             _stateMachine.Tick(Time.deltaTime);
             UpdateManifestationVisibility();
             UpdateRoomAwareness();
+            UpdateFootsteps();
+        }
+
+        [Header("Traces")]
+        [Tooltip("How far the ghost must travel before it counts as having taken a step, in " +
+                 "metres. The step is what disturbs salt.")]
+        [SerializeField, Min(0.05f)] private float stepDistance = 0.55f;
+
+        private Vector3 _lastStepPosition;
+        private bool _hasStepped;
+
+        /// <summary>
+        /// Tells the salt where the ghost walked.
+        ///
+        /// <para>
+        /// Nothing used to. <c>SaltFootprintUtility.NotifyGhostStep</c> existed, was correct,
+        /// and had no caller anywhere in the project - so salt was a mechanic made of a pile
+        /// that could not be poured, a step that was never reported and a footprint that was
+        /// never built. This is the missing caller.
+        /// </para>
+        ///
+        /// <para>
+        /// On distance covered rather than per frame: a step is a step, and a stationary ghost
+        /// standing in a pile should not grind it.
+        /// </para>
+        /// </summary>
+        private void UpdateFootsteps()
+        {
+            Vector3 here = transform.position;
+
+            if (!_hasStepped)
+            {
+                _hasStepped = true;
+                _lastStepPosition = here;
+                return;
+            }
+
+            if ((here - _lastStepPosition).sqrMagnitude < stepDistance * stepDistance)
+                return;
+
+            Vector3 from = _lastStepPosition;
+            _lastStepPosition = here;
+            Equipment.SaltPile.NotifyGhostStep(from, here);
         }
 
         public void OnStateEntered(GhostState state)

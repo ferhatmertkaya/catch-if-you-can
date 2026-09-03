@@ -75,6 +75,24 @@ namespace CatchIfYouCan.Equipment
         /// <summary>Whether this profile points at anything at all.</summary>
         public bool HasArt => visualPrefab != null || !string.IsNullOrEmpty(modelResourcePath);
 
+        /// <summary>
+        /// Fills in a profile built at runtime for something that has no authored art yet.
+        ///
+        /// <para>
+        /// A method rather than public fields: the fields stay private and inspector-authored,
+        /// which is what keeps an authored profile the source of truth. Callers that need a
+        /// placeholder say what shape and colour it is and nothing else, and swapping in real
+        /// art is still assigning <see cref="VisualPrefab"/> to an authored asset.
+        /// </para>
+        /// </summary>
+        public void ApplyDevPlaceholder(Vector3 size, Color tint)
+        {
+            fallbackSize = size;
+            length = Mathf.Max(0.01f, size.y);
+            placeholderColor = tint;
+            isDevPlaceholder = true;
+        }
+
         private static EquipmentVisualProfile _fallback;
 
         /// <summary>
