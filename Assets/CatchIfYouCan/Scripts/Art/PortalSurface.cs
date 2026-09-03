@@ -71,8 +71,15 @@ namespace CatchIfYouCan.Art
         [SerializeField, Range(0.001f, 0.2f)] private float clipPlaneOffset = 0.02f;
 
         [Header("Look")]
-        [SerializeField] private Color rimColour = new Color(0.35f, 0.75f, 1f);
-        [SerializeField] private Color rimInnerColour = new Color(0.75f, 0.45f, 1f);
+        [Tooltip("The energy at the EDGE of the opening. Green, because that is this game's " +
+                 "colour, and at the edge only - the middle of a portal is the far room, not a " +
+                 "sheet of brand colour.")]
+        [SerializeField] private Color rimColour = new Color(0.16f, 0.84f, 0.42f);
+
+        [Tooltip("Where the rim fades inward. Paler, so the edge reads as heat rather than as " +
+                 "a painted border.")]
+        [SerializeField] private Color rimInnerColour = new Color(0.55f, 1f, 0.72f);
+
         [SerializeField, Range(0f, 6f)] private float rimIntensity = 2.1f;
         [SerializeField, Range(0f, 0.06f)] private float distortion = 0.014f;
 
@@ -96,6 +103,58 @@ namespace CatchIfYouCan.Art
 
         /// <summary>Sets the far side at runtime, so one portal can be re-aimed at a generated house.</summary>
         public void SetDestination(Transform target) => destination = target;
+
+        /// <summary>True once the surface, camera and buffer exist.</summary>
+        public bool IsBuilt => _built;
+
+        /// <summary>
+        /// Sizes the hole to the doorway that owns it, before it is built.
+        ///
+        /// <para>
+        /// The mesh, the captured plane and the culling bounds are all derived from these two
+        /// values in <see cref="Build"/>, so changing them afterwards would leave a surface whose
+        /// geometry and whose bounds disagree. Rather than half-apply, this refuses and says so:
+        /// an opening that quietly kept the wrong size is a portal that does not fit its frame.
+        /// </para>
+        /// </summary>
+        public void SetOpening(Vector2 size, Vector3 localPosition)
+        {
+            if (_built)
+            {
+                Debug.LogWarning("[CIYC][Portal] SetOpening after the surface was built is " +
+                                 "ignored - the mesh and its bounds are already derived from " +
+                                 "the old size. Size the opening before the object is enabled.");
+                return;
+            }
+
+            openingSize = new Vector2(Mathf.Max(0.01f, size.x), Mathf.Max(0.01f, size.y));
+            surfaceLocalPosition = localPosition;
+        }
+
+        /// <summary>
+        /// How hot the edge burns. Written by whatever animates the opening.
+        ///
+        /// <para>
+        /// Stored on the serialized field as well as pushed to the material, so a value set
+        /// before <see cref="Build"/> is not lost - a portal is normally told how to look while
+        /// its GameObject is still inactive, which is exactly when the material does not exist
+        /// yet.
+        /// </para>
+        /// </summary>
+        public void SetRimIntensity(float value)
+        {
+            rimIntensity = Mathf.Max(0f, value);
+            if (_material != null)
+                SetFloat("_RimIntensity", rimIntensity);
+        }
+
+        /// <summary>How much the surface ripples. Zero is a still opening.</summary>
+        public void SetDistortion(float value)
+        {
+            distortion = Mathf.Max(0f, value);
+            if (_material != null)
+                SetFloat("_Distortion", distortion);
+        }
 
         private void Start()
         {

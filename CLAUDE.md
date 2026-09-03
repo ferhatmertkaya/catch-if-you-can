@@ -74,6 +74,12 @@ place that number lives; everything else derives it.
   client is told the ghost's state and never its reasoning, and a diagnostic
   never reports a latency it did not measure. 50 checks.
 
+- `Scripts/check_ui_and_portal.sh` — the menu palette stays black, white and grey with the
+  green as an accent, `fadeDuration` stays zero so a button answers a touch on the same
+  frame, the branded fonts resolve to files that exist, only `MenuInputGate` suspends the
+  player's input and HUD, START INVESTIGATION opens the lobby doorway instead of loading a
+  scene, and the lobby scene actually carries a portal. 21 checks.
+
 - `Scripts/check_agent_architecture.sh` — the roster holds 40 unique roles with
   every field, the roster and `AGENT_OWNERSHIP.md` name the same roles, the
   hotspot policy and table survive, the handoff contract still demands preserved
@@ -81,7 +87,7 @@ place that number lives; everything else derives it.
   runtime object exists in the game, and `MaxPlayers` is still 8 in its one
   source. 13 checks.
 
-All five run in CI (`.github/workflows/determinism.yml`). Run them locally before
+All six run in CI (`.github/workflows/determinism.yml`). Run them locally before
 pushing; they need nothing but a shell (and `python3` for the roster checks).
 
 ## The mistakes this project has already made

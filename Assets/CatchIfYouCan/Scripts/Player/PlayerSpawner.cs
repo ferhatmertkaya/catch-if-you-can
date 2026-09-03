@@ -123,6 +123,32 @@ namespace CatchIfYouCan.Player
         }
 
         /// <summary>
+        /// Whether the player is currently driving.
+        ///
+        /// <para>
+        /// Read back off the components rather than kept as a flag beside them, so it cannot
+        /// disagree with what is actually true. Something that takes control away temporarily
+        /// asks this first, so that giving it back restores what the player had rather than
+        /// forcing "on" - which is how the on-screen controls could appear over a fade that had
+        /// deliberately hidden them.
+        /// </para>
+        /// </summary>
+        public static bool IsInputEnabled
+        {
+            get
+            {
+                if (!HasPlayer)
+                    return false;
+                var controller = Current.Root.GetComponent<PlayerController>();
+                return controller != null && controller.MovementEnabled;
+            }
+        }
+
+        /// <summary>Whether the touch HUD is on screen right now.</summary>
+        public static bool IsHudVisible =>
+            Current != null && Current.TouchHud != null && Current.TouchHud.activeSelf;
+
+        /// <summary>
         /// The touch HUD is created switched off by the factory, because it exists a whole
         /// fade before anyone should see it.
         /// </summary>

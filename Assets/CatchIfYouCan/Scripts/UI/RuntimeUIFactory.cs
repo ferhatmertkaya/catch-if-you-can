@@ -68,8 +68,18 @@ namespace CatchIfYouCan.UI
             return go;
         }
 
+        /// <summary>
+        /// A label in one of the project's three faces.
+        ///
+        /// <para>
+        /// <paramref name="role"/> is what makes the interface branded rather than default. It
+        /// is not a colour or a size - those are already here - it is which typeface the label
+        /// is set in, and leaving it out is how every screen ended up in the built-in sans.
+        /// </para>
+        /// </summary>
         public static Component CreateText(Transform parent, string name, string text, int fontSize,
-            TextAnchor alignment = TextAnchor.MiddleCenter, bool bold = false)
+            TextAnchor alignment = TextAnchor.MiddleCenter, bool bold = false,
+            UITheme.FontRole role = UITheme.FontRole.Body)
         {
             GameObject go;
             Component comp;
@@ -96,12 +106,14 @@ namespace CatchIfYouCan.UI
                 legacy.text = text;
                 legacy.fontSize = fontSize;
                 legacy.alignment = alignment;
-                legacy.font = _defaultFont;
+                legacy.font = UITheme.BodyFont != null ? UITheme.BodyFont : _defaultFont;
                 legacy.fontStyle = bold ? FontStyle.Bold : FontStyle.Normal;
                 legacy.color = UITheme.TextPrimary;
                 legacy.raycastTarget = false;
                 comp = legacy;
             }
+
+            UITheme.ApplyFont(comp, role);
 
             var rect = go.GetComponent<RectTransform>();
             rect.sizeDelta = new Vector2(400, fontSize + 12);
@@ -117,8 +129,11 @@ namespace CatchIfYouCan.UI
             var rect = go.GetComponent<RectTransform>();
             rect.sizeDelta = new Vector2(420, height);
 
+            // A dark surface with a hairline, in both weights. "Primary" is now a shade, not a
+            // colour: the old primary button was a solid brand-green fill, which is what made
+            // every menu read as a form rather than as a game.
             var img = go.GetComponent<Image>();
-            img.color = primary ? UITheme.Secondary : UITheme.BackgroundPanel;
+            img.color = primary ? UITheme.Surface : UITheme.BackgroundPanel;
             UITheme.ApplyBorder(go);
 
             var btn = go.GetComponent<Button>();
@@ -128,12 +143,44 @@ namespace CatchIfYouCan.UI
                 UiAudioService.Instance?.PlayButton();
                 onClick?.Invoke();
             });
-            go.AddComponent<UIButtonFeedback>();
 
-            var text = CreateText(go.transform, "Label", label, 22, TextAnchor.MiddleCenter, true);
+            // The accent is a bar down the leading edge, not a fill. It is the one green thing
+            // on a button and it is four pixels wide.
+            Image accent = CreateAccentBar(go.transform);
+            var feedback = go.AddComponent<UIButtonFeedback>();
+            feedback.BindAccent(accent);
+
+            var text = CreateText(go.transform, "Label", label, 22, TextAnchor.MiddleCenter, true,
+                UITheme.FontRole.Button);
             Stretch(text.gameObject);
+            var labelRect = text.GetComponent<RectTransform>();
+            labelRect.offsetMin = new Vector2(UITheme.AccentBarWidth + 12f, 0f);
+            labelRect.offsetMax = new Vector2(-12f, 0f);
 
             return btn;
+        }
+
+        /// <summary>
+        /// The thin green bar that marks a held or selected control. Hidden until something
+        /// asks for it, and never wider than <see cref="UITheme.AccentBarWidth"/>.
+        /// </summary>
+        private static Image CreateAccentBar(Transform parent)
+        {
+            var go = new GameObject("Accent", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
+            go.transform.SetParent(parent, false);
+
+            var rect = go.GetComponent<RectTransform>();
+            rect.anchorMin = new Vector2(0f, 0f);
+            rect.anchorMax = new Vector2(0f, 1f);
+            rect.pivot = new Vector2(0f, 0.5f);
+            rect.offsetMin = Vector2.zero;
+            rect.offsetMax = Vector2.zero;
+            rect.sizeDelta = new Vector2(UITheme.AccentBarWidth, 0f);
+
+            var img = go.GetComponent<Image>();
+            img.color = Color.clear;
+            img.raycastTarget = false;
+            return img;
         }
 
         public static Slider CreateSlider(Transform parent, string name, float min, float max, float value)
@@ -500,8 +547,8 @@ namespace CatchIfYouCan.UI
             layout.childForceExpandHeight = false;
 
             ctrl.BindRuntime(
-                levelText: CreateText(root, "LevelText", "LV 1", 24, TextAnchor.UpperRight),
-                moneyText: CreateText(root, "MoneyText", "$500", 24, TextAnchor.UpperRight),
+                levelText: CreateText(root, "LevelText", "LV 1", 24, TextAnchor.UpperRight, false, UITheme.FontRole.Header),
+                moneyText: CreateText(root, "MoneyText", "$500", 24, TextAnchor.UpperRight, false, UITheme.FontRole.Header),
                 versionText: CreateText(root, "VersionText", "v1.0", 16, TextAnchor.LowerRight),
                 flickerOverlay: CreatePanel(root, "FlickerOverlay").GetComponent<Image>(),
                 playButton: CreateButton(left.transform, "PLAY", null, true),
@@ -650,11 +697,11 @@ namespace CatchIfYouCan.UI
             panel.GetComponent<Image>().raycastTarget = false;
 
             var title = CreateText(panel.transform, "Title", "EMPTY", 20,
-                                   TextAnchor.UpperCenter, true);
+                                   TextAnchor.UpperCenter, true, UITheme.FontRole.Header);
             Position(title.gameObject, 0f, 0.66f, 1f, 1f);
 
             var readout = CreateText(panel.transform, "Readout", string.Empty, 24,
-                                     TextAnchor.MiddleCenter, false);
+                                     TextAnchor.MiddleCenter, false, UITheme.FontRole.Header);
             Position(readout.gameObject, 0f, 0.34f, 1f, 0.66f);
 
             var row = CreatePanel(panel.transform, "Actions", false);
@@ -693,7 +740,7 @@ namespace CatchIfYouCan.UI
         /// configuration the game actually ships in - a label that silently never updates.
         /// </para>
         /// </summary>
-        private static Component FindLabel(Button button)
+        public static Component FindLabel(Button button)
         {
             if (button == null)
                 return null;
@@ -744,30 +791,96 @@ namespace CatchIfYouCan.UI
             field?.SetValue(target, value);
         }
 
+        /// <summary>
+        /// Mission select: the list on the left, the chosen mission on the right, the two
+        /// decisions in the bottom corners.
+        ///
+        /// <para>
+        /// <b>The detail title and the detail body used to be stacked on the same pixels.</b>
+        /// Both were created with <c>CreateText</c>, which leaves a label at its default
+        /// centred anchors with a fixed 400-wide rect, and neither was positioned afterwards -
+        /// so a 32-point mission name and a six-line briefing were drawn over each other in the
+        /// middle of the panel. Every label on this screen is now given a rectangle.
+        /// </para>
+        ///
+        /// <para>
+        /// The two commitments sit in opposite bottom corners, and Back is on the left, where
+        /// every platform's own back control is and where a thumb already rests.
+        /// </para>
+        /// </summary>
         private static void WireMissionSelect(MissionSelectUI ui, Transform root)
         {
-            var title = CreateText(root, "Title", "SELECT MISSION", 42, TextAnchor.UpperCenter, true);
-            Position(title.gameObject, 0.1f, 0.85f, 0.9f, 0.95f);
+            root.GetComponent<Image>().color = UITheme.Overlay;
+
+            var title = CreateText(root, "Title", "SELECT MISSION", 46, TextAnchor.UpperLeft, true,
+                UITheme.FontRole.Title);
+            Position(title.gameObject, 0.05f, 0.86f, 0.62f, 0.95f);
             UITheme.StyleTitle(title);
 
-            var list = CreatePanel(root, "MissionList", false);
-            Position(list, 0.05f, 0.2f, 0.55f, 0.82f);
-            var vlg = list.AddComponent<VerticalLayoutGroup>();
-            vlg.spacing = 8;
-            vlg.padding = new RectOffset(8, 8, 8, 8);
+            // A hairline of brand green under the title. Four pixels tall, and the only green
+            // on the screen that is not a selection.
+            var rule = CreatePanel(root, "TitleRule", false);
+            Position(rule, 0.05f, 0.845f, 0.16f, 0.845f);
+            var ruleRect = rule.GetComponent<RectTransform>();
+            ruleRect.offsetMin = new Vector2(0f, -3f);
+            ruleRect.offsetMax = new Vector2(0f, 1f);
+            rule.GetComponent<Image>().color = UITheme.Secondary;
 
+            // ---- left: the list --------------------------------------------------------------
+            var list = CreatePanel(root, "MissionList", false);
+            Position(list, 0.05f, 0.18f, 0.44f, 0.80f);
+            list.GetComponent<Image>().enabled = false;
+
+            var vlg = list.AddComponent<VerticalLayoutGroup>();
+            vlg.spacing = 10f;
+            vlg.padding = new RectOffset(0, 0, 0, 0);
+            vlg.childAlignment = TextAnchor.UpperCenter;
+            vlg.childControlWidth = true;
+            vlg.childControlHeight = true;
+            vlg.childForceExpandWidth = true;
+            vlg.childForceExpandHeight = false;
+
+            // ---- right: the chosen mission ---------------------------------------------------
             var detail = CreatePanel(root, "DetailPanel", false);
-            Position(detail, 0.58f, 0.2f, 0.95f, 0.82f);
+            Position(detail, 0.47f, 0.18f, 0.95f, 0.80f);
+            UITheme.ApplyPanel(detail.GetComponent<Image>());
+            UITheme.ApplyBorder(detail);
+
+            var detailTitle = CreateText(detail.transform, "DetailTitle", string.Empty, 34,
+                TextAnchor.UpperLeft, true, UITheme.FontRole.Title);
+            Position(detailTitle.gameObject, 0f, 0.84f, 1f, 1f);
+            Inset(detailTitle.gameObject, 28f, 20f, 28f, 4f);
+
+            var detailBody = CreateText(detail.transform, "DetailBody", string.Empty, 21,
+                TextAnchor.UpperLeft, false, UITheme.FontRole.Body);
+            Position(detailBody.gameObject, 0f, 0f, 1f, 0.84f);
+            Inset(detailBody.gameObject, 28f, 4f, 28f, 24f);
 
             ui.BindRuntime(
                 missionListParent: list.transform,
-                detailTitle: CreateText(detail.transform, "DetailTitle", "", 32, TextAnchor.UpperLeft, true),
-                detailBody: CreateText(detail.transform, "DetailBody", "", 20, TextAnchor.UpperLeft),
-                startButton: CreateButton(root, "START INVESTIGATION", null, true, 64),
-                backButton: CreateButton(root, "BACK", null, false, 48));
+                detailTitle: detailTitle,
+                detailBody: detailBody,
+                startButton: CreateButton(root, "START INVESTIGATION", null, true, 68),
+                backButton: CreateButton(root, "\u2190  BACK", null, false, 60));
 
-            Position(ui.StartButton.gameObject, 0.58f, 0.08f, 0.95f, 0.16f);
-            Position(ui.BackButton.gameObject, 0.05f, 0.08f, 0.2f, 0.16f);
+            // Bottom right commits, bottom left retreats. Nothing overlaps the list or the
+            // detail panel, both of which stop at 0.80.
+            Position(ui.StartButton.gameObject, 0.62f, 0.05f, 0.95f, 0.13f);
+            Position(ui.BackButton.gameObject, 0.05f, 0.05f, 0.22f, 0.13f);
+            ui.BackButton.gameObject.name = "BackButton";
+        }
+
+        /// <summary>
+        /// Pushes a stretched rect in from its own edges. Positive numbers always move inward,
+        /// which <c>offsetMax</c> alone does not - it is measured outward and needs negating,
+        /// and getting that backwards is how a label ends up wider than the panel holding it.
+        /// </summary>
+        private static void Inset(GameObject go, float left, float top, float right, float bottom)
+        {
+            var rect = go.GetComponent<RectTransform>();
+            if (rect == null) return;
+            rect.offsetMin = new Vector2(left, bottom);
+            rect.offsetMax = new Vector2(-right, -top);
         }
 
         private static void WireJournal(JournalController journal, Transform root)
@@ -828,7 +941,7 @@ namespace CatchIfYouCan.UI
 
         private static void WireSettings(SettingsUI settings, Transform root)
         {
-            var title = CreateText(root, "Title", "SETTINGS", 40, TextAnchor.UpperCenter, true);
+            var title = CreateText(root, "Title", "SETTINGS", 40, TextAnchor.UpperCenter, true, UITheme.FontRole.Title);
             Position(title.gameObject, 0.1f, 0.88f, 0.9f, 0.98f);
 
             var tabs = CreatePanel(root, "Tabs", false);
@@ -869,7 +982,7 @@ namespace CatchIfYouCan.UI
             var panel = CreatePanel(root, "Panel", false);
             Position(panel, 0.25f, 0.15f, 0.75f, 0.85f);
             ui.BindRuntime(
-                titleText: CreateText(panel.transform, "Title", "MISSION COMPLETE", 44, TextAnchor.UpperCenter, true),
+                titleText: CreateText(panel.transform, "Title", "MISSION COMPLETE", 44, TextAnchor.UpperCenter, true, UITheme.FontRole.Title),
                 breakdownText: CreateText(panel.transform, "Breakdown", "", 22, TextAnchor.UpperLeft),
                 continueButton: CreateButton(panel.transform, "CONTINUE", null, true));
             Position(ui.BreakdownText.gameObject, 0.05f, 0.2f, 0.95f, 0.75f);
@@ -878,7 +991,7 @@ namespace CatchIfYouCan.UI
 
         private static void WireEquipmentShop(EquipmentShopUI shop, Transform root)
         {
-            var title = CreateText(root, "Title", "EQUIPMENT", 40, TextAnchor.UpperCenter, true);
+            var title = CreateText(root, "Title", "EQUIPMENT", 40, TextAnchor.UpperCenter, true, UITheme.FontRole.Title);
             Position(title.gameObject, 0.1f, 0.88f, 0.9f, 0.98f);
 
             var cats = CreatePanel(root, "Categories", false);
@@ -916,7 +1029,7 @@ namespace CatchIfYouCan.UI
             loading.BindRuntime(
                 progressSlider: CreateSlider(root, "Progress", 0, 1, 0),
                 tipText: CreateText(root, "Tip", "Loading...", 24, TextAnchor.MiddleCenter),
-                logoText: CreateText(root, "Logo", "CATCH IF YOU CAN", 48, TextAnchor.UpperCenter, true));
+                logoText: CreateText(root, "Logo", "CATCH IF YOU CAN", 48, TextAnchor.UpperCenter, true, UITheme.FontRole.Title));
             Position(loading.ProgressSlider.gameObject, 0.15f, 0.35f, 0.85f, 0.42f);
             Position(loading.TipText.gameObject, 0.1f, 0.22f, 0.9f, 0.32f);
             Position(loading.LogoText.gameObject, 0.1f, 0.55f, 0.9f, 0.7f);
@@ -930,7 +1043,7 @@ namespace CatchIfYouCan.UI
             icon.GetComponent<Image>().color = UITheme.Primary;
             ui.BindRuntime(
                 handIcon: icon.GetComponent<Image>(),
-                promptText: CreateText(root, "Prompt", "", 24, TextAnchor.MiddleCenter));
+                promptText: CreateText(root, "Prompt", "", 24, TextAnchor.MiddleCenter, false, UITheme.FontRole.Header));
             Position(ui.RootRect != null ? ui.RootRect.gameObject : root.gameObject, 0.35f, 0.08f, 0.65f, 0.16f);
         }
 
@@ -940,8 +1053,8 @@ namespace CatchIfYouCan.UI
             var panel = CreatePanel(root, "Panel", false);
             Position(panel, 0.2f, 0.3f, 0.8f, 0.7f);
             ui.BindRuntime(
-                titleText: CreateText(panel.transform, "Title", "ENTITY DISCOVERED", 48, TextAnchor.UpperCenter, true),
-                nameText: CreateText(panel.transform, "Name", "", 36, TextAnchor.MiddleCenter, true),
+                titleText: CreateText(panel.transform, "Title", "ENTITY DISCOVERED", 48, TextAnchor.UpperCenter, true, UITheme.FontRole.Title),
+                nameText: CreateText(panel.transform, "Name", "", 36, TextAnchor.MiddleCenter, true, UITheme.FontRole.Header),
                 descText: CreateText(panel.transform, "Desc", "", 20, TextAnchor.LowerCenter));
         }
 
@@ -949,7 +1062,7 @@ namespace CatchIfYouCan.UI
         {
             Position(root.gameObject, 0.05f, 0.55f, 0.45f, 0.95f);
             ui.BindRuntime(
-                cameraNameText: CreateText(root, "CamName", "CAM 01", 24, TextAnchor.UpperLeft, true),
+                cameraNameText: CreateText(root, "CamName", "CAM 01", 24, TextAnchor.UpperLeft, true, UITheme.FontRole.Header),
                 prevButton: CreateButton(root, "PREV", null, false, 40),
                 nextButton: CreateButton(root, "NEXT", null, false, 40),
                 nightVisionToggle: CreateToggle(root, "Night Vision", false),

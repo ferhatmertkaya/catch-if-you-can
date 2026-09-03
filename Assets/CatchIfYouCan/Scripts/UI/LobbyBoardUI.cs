@@ -36,11 +36,34 @@ namespace CatchIfYouCan.UI
         /// <summary>Gamepad B on Xbox layouts, Circle on PlayStation. The conventional cancel.</summary>
         private const KeyCode GamepadCancel = KeyCode.JoystickButton1;
 
+        /// <summary>This panel's name in <see cref="MenuInputGate"/>. One name, one hold.</summary>
+        private const string GateOwner = "LobbyBoardUI";
+
         private static LobbyBoardUI _instance;
 
         private GameObject _root;
         private Component _statusText;
         private Button _multiplayerButton;
+
+        /// <summary>
+        /// The frame this panel came up on.
+        ///
+        /// <para>
+        /// Mission select also closes on Escape, and closing it opens this panel - all within
+        /// one frame. <c>GetKeyDown</c> stays true for the whole of that frame and Unity does
+        /// not promise which component's Update runs first, so without this the single press
+        /// that backs out of mission select could also close the board it just opened. A frame
+        /// number, not a timer: it costs nothing and adds no latency.
+        /// </para>
+        /// </summary>
+        private int _openedFrame = -1;
+
+        /// <summary>
+        /// Whether this lobby has a board at all - that is, whether the player reached the game
+        /// through it. Mission select asks this to decide where Back goes: to the board they
+        /// came from, or, in a scene with no lobby, to the main menu.
+        /// </summary>
+        public static bool Exists => _instance != null;
 
         /// <summary>Whether the panel is up. The board asks this before offering to open it.</summary>
         public static bool IsOpen =>
@@ -61,14 +84,15 @@ namespace CatchIfYouCan.UI
 
             _instance.RefreshOnlineAvailability();
             _instance._root.SetActive(true);
+            _instance._openedFrame = Time.frameCount;
 
             if (UIManager.Instance != null)
                 UIManager.Instance.Show(UIScreen.LobbyBoard, false);
 
             // The lobby keeps running behind the panel - this is a board on a wall, not a
-            // pause. What stops is the player driving into it while reading.
-            Player.PlayerSpawner.SetInputEnabled(false);
-            Player.PlayerSpawner.SetHudVisible(false);
+            // pause. What stops is the player driving into it while reading, and the on-screen
+            // controls, which would otherwise sit on top of the menu and eat its touches.
+            MenuInputGate.Push(GateOwner);
         }
 
         /// <summary>Closes the panel and gives the player back their controls.</summary>
@@ -82,11 +106,10 @@ namespace CatchIfYouCan.UI
             if (UIManager.Instance != null)
                 UIManager.Instance.Hide(UIScreen.LobbyBoard);
 
-            // SetInputEnabled also restores the cursor on desktop, which is why the cursor is
-            // not handled separately here: two places deciding where the cursor is, is how it
-            // ends up locked with a menu open.
-            Player.PlayerSpawner.SetInputEnabled(true);
-            Player.PlayerSpawner.SetHudVisible(true);
+            // Released, not restored. If mission select is already up, it is holding the gate
+            // too and the controls stay away until it closes - which is exactly the sequencing
+            // this panel used to get wrong by handing them back here unconditionally.
+            MenuInputGate.Pop(GateOwner);
         }
 
         private static void EnsureBuilt()
@@ -128,47 +151,83 @@ namespace CatchIfYouCan.UI
             _root.SetActive(false);
         }
 
+        /// <summary>
+        /// One centred column on black. No frame, no boxes.
+        ///
+        /// <para>
+        /// It used to be a 760x700 panel with a green outline holding three green-filled
+        /// buttons and a green subtitle - four separate green things on one screen, which is
+        /// what made it read as a tool rather than as part of the game. What is left is the
+        /// title in the display face, a hairline of brand green under it, three dark buttons
+        /// with a hairline each, and a small line of status text.
+        /// </para>
+        /// </summary>
         private void BuildPanel(Transform parent)
         {
-            var panel = RuntimeUIFactory.CreatePanel(parent, "BoardPanel", false);
-            var rect = panel.GetComponent<RectTransform>();
+            var column = RuntimeUIFactory.CreatePanel(parent, "BoardColumn", false);
+            var rect = column.GetComponent<RectTransform>();
             rect.anchorMin = new Vector2(0.5f, 0.5f);
             rect.anchorMax = new Vector2(0.5f, 0.5f);
             rect.pivot = new Vector2(0.5f, 0.5f);
-            rect.sizeDelta = new Vector2(760f, 700f);
-            UITheme.ApplyBorder(panel);
+            rect.sizeDelta = new Vector2(680f, 640f);
 
-            var layout = panel.AddComponent<VerticalLayoutGroup>();
-            layout.padding = new RectOffset(48, 48, 44, 44);
-            layout.spacing = 18f;
+            // The column is a layout, not a surface. Nothing to see, nothing to raycast.
+            var columnImage = column.GetComponent<Image>();
+            columnImage.enabled = false;
+
+            var layout = column.AddComponent<VerticalLayoutGroup>();
+            layout.padding = new RectOffset(0, 0, 0, 0);
+            layout.spacing = 14f;
             layout.childAlignment = TextAnchor.UpperCenter;
             layout.childForceExpandHeight = false;
             layout.childForceExpandWidth = true;
             layout.childControlHeight = true;
             layout.childControlWidth = true;
 
-            var title = RuntimeUIFactory.CreateText(panel.transform, "Title",
-                "CATCH IF YOU CAN", 30, TextAnchor.MiddleCenter, true);
-            UITheme.SetTextColor(title, UITheme.TextPrimary);
-            SetPreferredHeight(title.gameObject, 44f);
+            var title = RuntimeUIFactory.CreateText(column.transform, "Title",
+                "CATCH IF YOU CAN", 54, TextAnchor.MiddleCenter, true,
+                UITheme.FontRole.Title);
+            UITheme.StyleTitle(title);
+            SetPreferredHeight(title.gameObject, 66f);
 
-            var subtitle = RuntimeUIFactory.CreateText(panel.transform, "Subtitle",
-                "INVESTIGATION BOARD", 20, TextAnchor.MiddleCenter, true);
-            UITheme.SetTextColor(subtitle, UITheme.Primary);
-            SetPreferredHeight(subtitle.gameObject, 32f);
+            BuildAccentRule(column.transform);
 
-            SetPreferredHeight(Spacer(panel.transform, "TitleGap").gameObject, 18f);
+            var subtitle = RuntimeUIFactory.CreateText(column.transform, "Subtitle",
+                "INVESTIGATION BOARD", 22, TextAnchor.MiddleCenter, true,
+                UITheme.FontRole.Header);
+            UITheme.SetTextColor(subtitle, UITheme.TextMuted);
+            SetPreferredHeight(subtitle.gameObject, 30f);
 
-            AddEntry(panel.transform, "SINGLEPLAYER", StartSinglePlayer, true);
-            _multiplayerButton = AddEntry(panel.transform, "MULTIPLAYER", StartMultiplayer, false);
-            AddEntry(panel.transform, "SETTINGS", OpenSettings, false);
+            SetPreferredHeight(Spacer(column.transform, "TitleGap").gameObject, 26f);
 
-            SetPreferredHeight(Spacer(panel.transform, "StatusGap").gameObject, 10f);
+            AddEntry(column.transform, "SINGLEPLAYER", StartSinglePlayer, true);
+            _multiplayerButton = AddEntry(column.transform, "MULTIPLAYER", StartMultiplayer, false);
+            AddEntry(column.transform, "SETTINGS", OpenSettings, false);
 
-            _statusText = RuntimeUIFactory.CreateText(panel.transform, "Status",
-                string.Empty, 16, TextAnchor.MiddleCenter);
+            SetPreferredHeight(Spacer(column.transform, "StatusGap").gameObject, 12f);
+
+            _statusText = RuntimeUIFactory.CreateText(column.transform, "Status",
+                string.Empty, 17, TextAnchor.UpperCenter, false, UITheme.FontRole.Body);
             UITheme.SetTextColor(_statusText, UITheme.TextMuted);
-            SetPreferredHeight(_statusText.gameObject, 60f);
+            SetPreferredHeight(_statusText.gameObject, 56f);
+        }
+
+        /// <summary>
+        /// The one piece of brand colour on this screen: a 110 x 2 line under the title.
+        /// </summary>
+        private static void BuildAccentRule(Transform parent)
+        {
+            var rule = RuntimeUIFactory.CreatePanel(parent, "AccentRule", false);
+            rule.GetComponent<Image>().color = UITheme.Secondary;
+
+            // flexibleWidth 0 is what keeps this a short mark rather than a bar across the
+            // screen: the column expands its children to full width, and a child that asks for
+            // no flexible width keeps its preferred one instead.
+            var element = rule.AddComponent<LayoutElement>();
+            element.preferredHeight = 2f;
+            element.minHeight = 2f;
+            element.preferredWidth = 110f;
+            element.flexibleWidth = 0f;
         }
 
         private static Button AddEntry(Transform parent, string label, Action onClick, bool primary)
@@ -234,11 +293,12 @@ namespace CatchIfYouCan.UI
                 return;
             }
 
-            Close();
-
-            // Toward mission and loadout selection, which is an existing screen. This does not
-            // load a scene; picking the mission does.
+            // Shown BEFORE this panel closes. Mission select takes the input gate in its own
+            // OnEnable, so with this order the gate is never empty between the two screens and
+            // the touch HUD cannot flash back for a frame underneath the menu.
             UIManager.Instance.Show(UIScreen.MissionSelect, false);
+
+            Close();
         }
 
         /// <summary>
@@ -279,9 +339,9 @@ namespace CatchIfYouCan.UI
                 return;
             }
 
-            Close();
-
             UIManager.Instance.Show(UIScreen.MissionSelect, false);
+
+            Close();
         }
 
         /// <summary>
@@ -342,6 +402,9 @@ namespace CatchIfYouCan.UI
             if (_root == null || !_root.activeSelf)
                 return;
 
+            if (Time.frameCount == _openedFrame)
+                return;
+
             if (UnityEngine.Input.GetKeyDown(KeyCode.Escape) ||
                 UnityEngine.Input.GetKeyDown(GamepadCancel))
             {
@@ -363,8 +426,12 @@ namespace CatchIfYouCan.UI
             {
                 // Left interactive on purpose. A dead grey button tells the player nothing;
                 // pressing it and being told why is an answer.
+                // Read back and written back, so the fade duration UITheme set to zero is
+                // preserved. Assigning a fresh ColorBlock here would silently reintroduce
+                // Unity's 0.1 s tint fade on this one button.
                 var colors = _multiplayerButton.colors;
-                colors.normalColor = online ? UITheme.BackgroundPanel : UITheme.Hex("#0C0F0E");
+                colors.normalColor = online ? UITheme.BackgroundPanel : UITheme.BackgroundDark;
+                colors.selectedColor = colors.normalColor;
                 _multiplayerButton.colors = colors;
             }
 

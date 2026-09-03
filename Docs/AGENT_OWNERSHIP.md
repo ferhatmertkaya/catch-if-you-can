@@ -111,6 +111,9 @@ owns the folder. These have **one owner and no shared editing**, ever.
 | `Scripts/Session/MultiplayerSessionService.cs`, `Scripts/Core/SessionAuthority.cs` | Multiplayer (spec. 34) | Installing a session also sets who decides. Two places doing that is two parts of the game disagreeing about who the host is. |
 | `Scripts/Procedural/Deterministic/GenerationVersion.cs` | Procedural (spec. 20) | Changing it makes every existing build incompatible with itself. Never changed for a networking reason. |
 | `Scripts/Art/MirrorCorner.cs`, `Shaders/PlanarMirror.shader` | Mirror (spec. 23) | The mirror plane is captured once and never rotates toward the player. Reverting to an off-axis frustum brings the portal effect back. |
+| `Scripts/UI/UITheme.cs` | UI (spec. 29) | Every colour, weight and typeface in the game. Three separate bugs lived here at once: the brand green used as border, fill and hover, so every screen was green; `ColorBlock.fadeDuration` left unset, so every button lagged its press by 0.1 s; and no typeface at all. Guarded by `Scripts/check_ui_and_portal.sh`. |
+| `Scripts/UI/MenuInputGate.cs` | UI (spec. 29) | The one owner of "a fullscreen menu is up". Two screens each restoring the touch HUD on their way out is how the joystick came back underneath a menu; only the last holder releasing can be sequenced correctly. |
+| `Scripts/Environment/LobbyPortal.cs`, `Scripts/Art/PortalSurface.cs`, `Shaders/Portal.shader` | Environment (spec. 18) + VFX (spec. 24) | The doorway is a live second camera and an oblique clip plane. Accepting a mission opens it; walking through it starts the investigation. A second portal system, or a scene load put back on the accept path, removes the doorway entirely. |
 | `Scripts/Save/SaveManager.cs` | Save (spec. 33) | Local persistence with no online dependency, permanently. A format change without a migration eats a save. |
 
 ---

@@ -37,3 +37,6 @@ jobs:
 
       - name: Agent architecture guard
         run: Scripts/check_agent_architecture.sh
+
+      - name: UI and portal guard
+        run: Scripts/check_ui_and_portal.sh
