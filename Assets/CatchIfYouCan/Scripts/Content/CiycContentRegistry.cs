@@ -36,7 +36,7 @@ namespace CatchIfYouCan.Content
         [Header("Characters")]
         [Tooltip("Every playable character. The local selection is stored as an id and " +
                  "resolved through this.")]
-        [SerializeField] private ScriptableObject characterCatalog;
+        [SerializeField] private Character.CharacterCatalog characterCatalog;
 
         [Header("Equipment")]
         [Tooltip("Every equipment definition, in one place, so the shop, the loadout and a " +
@@ -47,7 +47,7 @@ namespace CatchIfYouCan.Content
         [SerializeField] private ScriptableObject ghostCatalog;
 
         public GameObject PlayerPrefab => playerPrefab;
-        public ScriptableObject CharacterCatalogRaw => characterCatalog;
+        public Character.CharacterCatalog CharacterCatalog => characterCatalog;
         public ScriptableObject EquipmentCatalogRaw => equipmentCatalog;
         public ScriptableObject GhostCatalogRaw => ghostCatalog;
 

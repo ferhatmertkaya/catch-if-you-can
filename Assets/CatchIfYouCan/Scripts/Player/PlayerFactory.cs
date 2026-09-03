@@ -215,7 +215,13 @@ namespace CatchIfYouCan.Player
 
         private static GameObject AttachCharacterVisual(GameObject player, Transform visualRoot)
         {
-            var prefab = Resources.Load<GameObject>(CharacterVisualResourcePath);
+            // The selected character wins when one is authored; the Resources path is the
+            // fallback that kept working while the catalog did not exist.
+            var character = Character.CharacterService.Resolve();
+            var prefab = character != null && character.VisualPrefab != null
+                ? character.VisualPrefab
+                : Resources.Load<GameObject>(CharacterVisualResourcePath);
+
             if (prefab == null)
             {
                 // This used to return quietly, and quietly is how the player ended up with no
@@ -286,6 +292,10 @@ namespace CatchIfYouCan.Player
             var motion = player.GetComponent<PlayerBodyMotion>();
             if (motion == null)
                 motion = player.AddComponent<PlayerBodyMotion>();
+
+            // Set before BindAnimator, which is when the bones are actually looked up.
+            // Null is fine and means the built-in naming, which is Nathan's.
+            motion.SetRigProfile(Character.CharacterService.Resolve()?.RigProfile);
 
             SetPrivateField(motion, "visualRoot", visualRoot);
             SetPrivateField(motion, "playerBody", player.transform);

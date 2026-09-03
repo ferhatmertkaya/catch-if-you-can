@@ -303,6 +303,24 @@ namespace CatchIfYouCan.Player
 
         // Right hand only: it is the hand the torch and every other item are held in.
         private readonly Transform[][] _fingers = new Transform[4][];
+
+        [Tooltip("How this character's skeleton is named. Left empty the built-in default " +
+                 "is used, which is Nathan's naming and exactly what this code used to " +
+                 "have written into it as literals.")]
+        [SerializeField] private Character.CharacterRigProfile rigProfile;
+
+        /// <summary>
+        /// The naming contract for the bound character. Never null: an unassigned profile
+        /// falls back to the built-in one rather than leaving every bone lookup empty.
+        /// </summary>
+        public Character.CharacterRigProfile RigProfile =>
+            rigProfile != null ? rigProfile : Character.CharacterRigProfile.Default;
+
+        /// <summary>
+        /// Sets the naming contract. Must be called before <see cref="BindAnimator"/>, which
+        /// is when the bones are actually looked up.
+        /// </summary>
+        public void SetRigProfile(Character.CharacterRigProfile profile) => rigProfile = profile;
         private Transform[] _thumb;
         private Transform _indexRoot, _pinkyRoot;
         private PlayerInventory _inventory;
@@ -459,31 +477,40 @@ namespace CatchIfYouCan.Player
 
             var all = animator.GetComponentsInChildren<Transform>(true);
 
-            _spine01 = Find(all, "_spine_01");
-            _spine02 = Find(all, "_spine_02");
-            _spine03 = Find(all, "_spine_03");
-            _neck = Find(all, "_neck");
-            _head = Find(all, "_head");
-            _upperLegL = Find(all, "_upperleg_l");
-            _upperLegR = Find(all, "_upperleg_r");
-            _lowerLegL = Find(all, "_lowerleg_l");
-            _lowerLegR = Find(all, "_lowerleg_r");
-            _footL = Find(all, "_foot_l");
-            _footR = Find(all, "_foot_r");
-            _eyelidL = Find(all, "_eyelid_l");
-            _eyelidR = Find(all, "_eyelid_r");
+            // Every suffix comes from the rig profile now. The default profile carries the
+            // exact strings that used to be written here, so Nathan binds to the same bones.
+            var rig = RigProfile;
+
+            _spine01 = Find(all, rig.Spine01);
+            _spine02 = Find(all, rig.Spine02);
+            _spine03 = Find(all, rig.Spine03);
+            _neck = Find(all, rig.Neck);
+            _head = Find(all, rig.Head);
+            _upperLegL = Find(all, rig.UpperLegLeft);
+            _upperLegR = Find(all, rig.UpperLegRight);
+            _lowerLegL = Find(all, rig.LowerLegLeft);
+            _lowerLegR = Find(all, rig.LowerLegRight);
+            _footL = Find(all, rig.FootLeft);
+            _footR = Find(all, rig.FootRight);
+            _eyelidL = Find(all, rig.EyelidLeft);
+            _eyelidR = Find(all, rig.EyelidRight);
 
             // Renderpeople calls the collarbone the shoulder and the shoulder the upper arm.
-            _clavicleR = Find(all, "_shoulder_r");
-            _upperArmR = Find(all, "_upperarm_r");
-            _lowerArmR = Find(all, "_lowerarm_r");
-            _handR = Find(all, "_hand_r");
+            // Another rig may not, which is why these are data rather than literals.
+            _clavicleR = Find(all, rig.ClavicleRight);
+            _upperArmR = Find(all, rig.UpperArmRight);
+            _lowerArmR = Find(all, rig.LowerArmRight);
+            _handR = Find(all, rig.HandRight);
 
-            _fingers[0] = FindChain(all, "index");
-            _fingers[1] = FindChain(all, "middle");
-            _fingers[2] = FindChain(all, "ring");
-            _fingers[3] = FindChain(all, "pinky");
-            _thumb = FindChain(all, "thumb");
+            var digits = rig.FingerDigits;
+            for (int i = 0; i < _fingers.Length; i++)
+            {
+                _fingers[i] = digits != null && i < digits.Length
+                    ? FindChain(all, rig, digits[i])
+                    : EmptyChain();
+            }
+
+            _thumb = FindChain(all, rig, rig.ThumbDigit);
             _indexRoot = _fingers[0][0];
             _pinkyRoot = _fingers[3][0];
 
@@ -681,19 +708,35 @@ namespace CatchIfYouCan.Player
                 _shinLength = Vector3.Distance(_lowerLegL.position, _footL.position);
         }
 
-        /// <summary>The three bones of one right-hand digit, by the rig's naming.</summary>
-        private static Transform[] FindChain(Transform[] all, string digit)
+        /// <summary>The bones of one right-hand digit, by the profile's naming.</summary>
+        private static Transform[] FindChain(Transform[] all, Character.CharacterRigProfile rig,
+                                             string digit)
         {
-            return new[]
+            if (string.IsNullOrEmpty(digit))
+                return EmptyChain();
+
+            // The pose code indexes three joints. A profile that declares fewer leaves the
+            // rest null, which every consumer already tolerates, rather than throwing here.
+            var chain = EmptyChain();
+            int joints = Mathf.Min(chain.Length, rig.JointsPerDigit);
+
+            for (int i = 0; i < joints; i++)
             {
-                Find(all, "_" + digit + "_01_r"),
-                Find(all, "_" + digit + "_02_r"),
-                Find(all, "_" + digit + "_03_r")
-            };
+                var suffix = rig.DigitJointSuffix(digit, i);
+                if (!string.IsNullOrEmpty(suffix))
+                    chain[i] = Find(all, suffix);
+            }
+
+            return chain;
         }
+
+        private static Transform[] EmptyChain() => new Transform[3];
 
         private static Transform Find(Transform[] all, string suffix)
         {
+            if (string.IsNullOrEmpty(suffix))
+                return null;
+
             for (int i = 0; i < all.Length; i++)
                 if (all[i].name.EndsWith(suffix, System.StringComparison.OrdinalIgnoreCase))
                     return all[i];
