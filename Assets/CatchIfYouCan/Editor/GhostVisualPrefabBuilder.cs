@@ -118,10 +118,13 @@ namespace CatchIfYouCan.EditorTools
                 agent.height = 1.8f * scale;
                 agent.radius = 0.35f * scale;
                 agent.baseOffset = 0.1f;
-                // UnityEngine, not UnityEngine.AI. NavMeshAgent lives in UnityEngine.AI and
-                // this enum does not, which is the kind of thing that looks obviously wrong
-                // only after a compiler says so.
-                agent.obstacleAvoidanceType = ObstacleAvoidanceType.HighQualityObstacleAvoidance;
+                // Fully qualified because this file has no `using UnityEngine.AI`, and that is
+                // where the enum lives - alongside NavMeshAgent, not in UnityEngine. The
+                // comment that used to sit here claimed the opposite and was wrong; the
+                // offline stub happened to encode the same mistake, so nothing here could
+                // catch it. A real compiler on a real machine did.
+                agent.obstacleAvoidanceType =
+                    UnityEngine.AI.ObstacleAvoidanceType.HighQualityObstacleAvoidance;
 
                 root.AddComponent<GhostPerception>().SetEyePoint(eye.transform);
                 root.AddComponent<GhostController>().EnsureManifestationRenderers();

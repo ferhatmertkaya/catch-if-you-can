@@ -120,7 +120,16 @@ Repeating one of these is the most likely way to break something.
    itself. Grep the declaration or the statement, never the name. The reverse
    also bites: a check that greps for a forbidden call will match the doc
    comment that warns against it, so strip comment lines first.
-9. **One value asked to mean two things.** `-1` was the offline player's client
+9. **Trusting the offline stub as if it were Unity.** The typecheck harness's
+   `UnityStub.cs` is hand-written by whoever needed a symbol, so it can encode
+   the same misconception as the code it is checking - and then the mistake is
+   invisible, because both sides agree. `ObstacleAvoidanceType` was declared in
+   `UnityEngine` in the stub and used unqualified in three files; the enum is
+   really in `UnityEngine.AI`, and the one file without `using UnityEngine.AI`
+   would not compile in Unity. The harness passed for weeks. A real compiler on
+   a real machine found it in minutes. When the stub is the only thing agreeing
+   with you about an API, that is not verification.
+10. **One value asked to mean two things.** `-1` was the offline player's client
    id, and `-1` was about to become "nobody owns this item", which would have
    made the solo player's carried torch read as unowned and let the first person
    past take it. `MultiplayerProtocol.LocalOnlyClientId` and `NoClientId` are
