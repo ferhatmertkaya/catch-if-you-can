@@ -206,6 +206,30 @@ namespace CatchIfYouCan.Ghost
         public void RequestDoorInteraction(bool slam) => _interaction.TryDoorInteraction(slam);
         public void RequestObjectThrow() => _interaction.TryObjectThrow();
         public bool TryBeginHunt() => _hunt.TryStartHunt();
+
+        /// <summary>
+        /// Cuts an active hunt short. The warding relic's whole purpose, asked for through the
+        /// ghost rather than taken.
+        ///
+        /// <para>
+        /// A public request rather than a <c>FindAnyObjectByType&lt;HuntController&gt;</c> from
+        /// outside: the relic used to sweep the scene for the component and call into it, which
+        /// is reaching past the ghost to operate one of its parts. Returns false when there was
+        /// no hunt to end, so a ward does not spend a charge on nothing.
+        /// </para>
+        /// </summary>
+        public bool TryEndHunt()
+        {
+            if (_hunt == null || (!_hunt.IsHunting && !_hunt.PreWarningActive))
+                return false;
+
+            _hunt.ForceEndHunt();
+            return true;
+        }
+
+        /// <summary>Whether a hunt or its pre-warning is running right now.</summary>
+        public bool IsHuntImminentOrActive =>
+            _hunt != null && (_hunt.IsHunting || _hunt.PreWarningActive);
         public void NotifyDirectorEvent(HorrorEventType type) => _stateMachine.ForceState(GhostState.Event);
 
         public void OnHuntStarted()
