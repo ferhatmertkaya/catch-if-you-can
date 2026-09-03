@@ -26,7 +26,52 @@ namespace CatchIfYouCan.Development.Labs
             BuildLightSwitch(new Vector3(x, 0f, 1.5f));     x += 2.6f;
             BuildBreaker(new Vector3(x, 0f, 1.5f));         x += 2.6f;
             BuildHideSpot(new Vector3(x, 0f, 1.5f));        x += 2.6f;
-            BuildPickup(new Vector3(x, 0f, 1.5f));
+            BuildPickup(new Vector3(x, 0f, 1.5f));           x += 2.6f;
+            BuildDoorHandle(new Vector3(x, 0f, 1.5f));
+
+            BuildReadout();
+        }
+
+        /// <summary>
+        /// A locked door leaf with the project's own handle on it. DoorHandle builds its own
+        /// lever from measurements of the leaf, so it needs a leaf of the right size rather
+        /// than a marker - and whether the lever ends up on the door or floating beside it is
+        /// exactly what this fixture is for.
+        /// </summary>
+        private void BuildDoorHandle(Vector3 at)
+        {
+            var leaf = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            leaf.name = "DEV_DoorHandleLeaf";
+            leaf.transform.position = at + new Vector3(0f, 1f, 0f);
+            leaf.transform.localScale = new Vector3(0.9f, 2f, 0.08f);
+            leaf.AddComponent<DoorHandle>();
+
+            BuildLabel("DoorHandle (locked)", at + new Vector3(0f, 2.2f, 0f));
+            _built++;
+        }
+
+        /// <summary>
+        /// What the interaction controller currently believes it is looking at. Half the bugs
+        /// in this system are "the prompt is for the wrong thing", which cannot be seen from
+        /// the prompt alone.
+        /// </summary>
+        private void BuildReadout()
+        {
+            Readout()
+                .Line(() =>
+                {
+                    var controller = Core.LocalPlayerService
+                        .GetPlayerComponent<InteractionController>();
+                    if (controller == null)
+                        return "Interaction: no player";
+
+                    var current = controller.CurrentTarget;
+                    return "Target: " + (current != null
+                        ? current.Prompt + "  (" + current.InteractionType + ", " +
+                          current.Distance.ToString("F1") + " m)"
+                        : "none");
+                })
+                .Line(() => "Fixtures in the row: " + _built);
         }
 
         private void BuildDoor(Vector3 at)

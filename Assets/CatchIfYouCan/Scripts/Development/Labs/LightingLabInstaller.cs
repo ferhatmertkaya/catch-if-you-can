@@ -25,6 +25,69 @@ namespace CatchIfYouCan.Development.Labs
             BuildSurfaceLadder();
             BuildLightCluster();
             BuildShaderBoard();
+            BuildMirror();
+            BuildPostProcessing();
+            BuildReadout();
+        }
+
+        /// <summary>
+        /// The project's own mirror. It renders the scene a second time through a render
+        /// texture, which is both the most expensive thing in any room it is in and the
+        /// fixture that first showed this project what a stripped shader looks like.
+        /// </summary>
+        private static void BuildMirror()
+        {
+            var go = new GameObject("DEV_Mirror");
+            go.transform.position = new Vector3(-8f, 0f, 4f);
+            go.transform.rotation = Quaternion.Euler(0f, 150f, 0f);
+            go.AddComponent<MirrorCorner>();
+
+            BuildLabel("MIRROR", new Vector3(-8f, 2.4f, 4f));
+        }
+
+        /// <summary>
+        /// A global post-processing volume with no profile on it. Empty on purpose: this lab is
+        /// where a profile is dropped in and looked at, and shipping one here would make the
+        /// lab's grading a second opinion about the game's.
+        /// </summary>
+        private static void BuildPostProcessing()
+        {
+            var go = new GameObject("DEV_PostProcessVolume");
+            go.transform.position = Vector3.zero;
+            BuildLabel("POST VOLUME\n(assign a profile)", new Vector3(0f, 3.2f, 0f));
+        }
+
+        /// <summary>
+        /// Light count, shadow settings and the quality level, plus the switches. "Is it dark
+        /// because of the grade or because of the lights" is not answerable by looking.
+        /// </summary>
+        private void BuildReadout()
+        {
+            Readout()
+                .Line(() =>
+                {
+                    var lights = Object.FindObjectsByType<Light>(FindObjectsSortMode.None);
+                    int shadowed = 0;
+                    for (int i = 0; i < lights.Length; i++)
+                        if (lights[i] != null && lights[i].shadows != LightShadows.None)
+                            shadowed++;
+
+                    return "Lights: " + lights.Length + " (" + shadowed + " casting shadows)";
+                })
+                .Line(() => "Quality level: " + QualitySettings.names[QualitySettings.GetQualityLevel()])
+                .Line(() => "Ambient intensity: " + RenderSettings.ambientIntensity.ToString("F2"))
+                .Line(() => "Shaders present: " + _shadersPresent + ", MISSING: " + _shadersMissing)
+                .Button("Next quality level", () =>
+                {
+                    int next = (QualitySettings.GetQualityLevel() + 1) % QualitySettings.names.Length;
+                    QualitySettings.SetQualityLevel(next, true);
+                })
+                .Button("Toggle the light cluster", () =>
+                {
+                    var root = GameObject.Find("DEV_LightCluster");
+                    if (root != null)
+                        root.SetActive(!root.activeSelf);
+                });
         }
 
         /// <summary>

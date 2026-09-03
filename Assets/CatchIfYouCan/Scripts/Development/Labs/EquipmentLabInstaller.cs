@@ -1,4 +1,5 @@
 using CatchIfYouCan.Equipment;
+using CatchIfYouCan.Evidence;
 using UnityEngine;
 
 namespace CatchIfYouCan.Development.Labs
@@ -25,6 +26,8 @@ namespace CatchIfYouCan.Development.Labs
 
             BuildBench();
             BuildDropZone();
+            BuildEvidenceTargets();
+            BuildReadout();
 
             // The same starter kit the investigation gives the player, so the HUD row in the
             // lab shows what it shows in the game.
@@ -71,6 +74,96 @@ namespace CatchIfYouCan.Development.Labs
                     item.name = "DEV_" + definition.Id;
                 }
             }
+        }
+
+        /// <summary>
+        /// The three things equipment is supposed to find: an EMF source, a UV trace and a
+        /// generic evidence target. Without them the detectors in this lab are held, switched
+        /// on, and pointed at nothing, which proves only that they turn on.
+        /// </summary>
+        private static void BuildEvidenceTargets()
+        {
+            // The EMF spot destroys itself when it decays, which is what it does in the game.
+            // A long duration rather than an infinite one, so the lab shows the decay too.
+            var emfGo = new GameObject("DEV_EMFSpot");
+            emfGo.transform.position = new Vector3(-4f, 1f, 0f);
+            emfGo.AddComponent<EMFSpot>().Initialize(1f, 600f, 0.001f, 4f);
+            BuildLabel("EMF SOURCE\n4 m radius", new Vector3(-4f, 1.4f, 0f));
+
+            BuildUvTarget(new Vector3(4f, 1f, 0f));
+
+            // A button that raises evidence directly, for the case where the question is what
+            // the journal and the objectives do with a find rather than how it was found.
+            BuildLabel("EVIDENCE TARGETS", new Vector3(0f, 2.2f, 0f));
+        }
+
+        /// <summary>
+        /// A handprint that is invisible until a UV light is pointed at it. Built with the
+        /// project's own authored materials, so if MAT_UVEvidence was stripped from the build
+        /// this fixture is the thing that says so.
+        /// </summary>
+        private static void BuildUvTarget(Vector3 at)
+        {
+            var quad = GameObject.CreatePrimitive(PrimitiveType.Quad);
+            quad.name = "DEV_UVTarget";
+            quad.transform.position = at;
+            quad.transform.localScale = new Vector3(0.6f, 0.6f, 1f);
+
+            var reveal = quad.AddComponent<EvidenceReveal>();
+            WireLabField(reveal, "targetRenderer", quad.GetComponent<Renderer>());
+            WireLabField(reveal, "revealedMaterial", Art.RuntimeMaterialFactory.GetUVEvidence());
+            WireLabField(reveal, "revealLifetime", 600f);
+
+            BuildLabel("UV TRACE", at + new Vector3(0f, 0.5f, 0f));
+        }
+
+        /// <summary>
+        /// Battery, durability and what the player is actually holding. All three are numbers
+        /// that decide behaviour and none of them are visible in the room.
+        /// </summary>
+        private void BuildReadout()
+        {
+            Readout()
+                .Line(() =>
+                {
+                    var inventory = Core.LocalPlayerService.GetPlayerComponent<Player.PlayerInventory>();
+                    if (inventory == null)
+                        return "Held: no player";
+
+                    var item = inventory.GetSelectedItem();
+                    return "Held: slot " + inventory.SelectedIndex + " = " +
+                           (item != null ? item.DeviceId : "empty");
+                })
+                .Line(() =>
+                {
+                    var item = Core.LocalPlayerService
+                        .GetPlayerComponent<Player.PlayerInventory>()?.GetSelectedItem();
+                    if (item == null)
+                        return "Battery: -";
+
+                    return "Battery: " + (item.BatteryPercent * 100f).ToString("F0") + "%  " +
+                           "Durability: " + item.Durability.ToString("F0") + "/" +
+                           item.MaxDurability.ToString("F0") +
+                           "  active=" + item.IsActive;
+                })
+                .Line(() =>
+                {
+                    var manager = EquipmentManager.Instance;
+                    return "Loadout: " + (manager != null ? manager.Loadout.Count : 0) + " items";
+                })
+                .Line(() =>
+                {
+                    var evidence = EvidenceManager.Instance;
+                    return "Evidence found: " +
+                           (evidence != null ? evidence.FoundEvidence.Count : 0);
+                })
+                // No "drain the battery" button. The only way to reach BatteryLevel from
+                // outside is its compiler-generated backing field, and reflecting on a name
+                // the compiler chose is the kind of thing that works until it does not. The
+                // battery is watched here and run down by using the item, as it is in the game.
+                .Button("Register EMFSurge", () =>
+                    EvidenceManager.Instance?.RegisterEvidence(EvidenceType.EMFSurge))
+                .Button("Reset evidence", () => EvidenceManager.Instance?.ResetMission());
         }
 
         /// <summary>A marked square to drop into, so "where did it land" has an answer.</summary>

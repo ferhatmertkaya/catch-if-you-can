@@ -18,6 +18,7 @@ namespace CatchIfYouCan.Development.Labs
 
             BuildPads();
             BuildNoticeBoard();
+            BuildReadout();
 
             // Pad 0 doubles as the local player's spawn, so the lab is walkable while the
             // rest of it is a plan rather than a system.
@@ -52,6 +53,26 @@ namespace CatchIfYouCan.Development.Labs
 
                 BuildLabel("PLAYER " + i, position + new Vector3(0f, 0.3f, 0f));
             }
+        }
+
+        /// <summary>
+        /// The panel version of the notice board, plus what the local session actually is. One
+        /// player, no transport, no session - stated rather than implied by an empty room.
+        /// </summary>
+        private void BuildReadout()
+        {
+            Readout()
+                .Line(() => "NETWORKING NOT INSTALLED")
+                .Line(() => "No NGO, Relay, Lobby, Authentication or Multiplayer Services package")
+                .Line(() => "Local players: " + (Core.LocalPlayerService.HasPlayer ? 1 : 0) +
+                            " of " + playerPads + " pads")
+                .Line(() => "Transport: none.  Session: none.  Authority: local only.")
+                .Line(() => "Character: " +
+                            (Character.CharacterService.LocalCharacterId ?? "default") +
+                            "  (index " +
+                            (Character.CharacterService.Catalog()?.IndexOf(
+                                Character.CharacterService.LocalCharacterId) ?? -1) +
+                            " in the catalog, which is what a compact encoding would send)");
         }
 
         /// <summary>

@@ -23,7 +23,82 @@ namespace CatchIfYouCan.Development.Labs
 
             BuildSizeLadder();
             BuildOrientationGnomon();
+            BuildDoorOpening();
             BuildPropShelf();
+            BuildReadout();
+        }
+
+        /// <summary>
+        /// A door opening at the generator's own dimensions, 1.2 m by 2.2 m.
+        ///
+        /// <para>
+        /// Every prop that has to fit through a door has to fit through this one. The numbers
+        /// are duplicated from <see cref="Procedural.PrimitiveRoomFactory"/>'s DoorWidth and
+        /// DoorHeight, which are private constants; if they change, this fixture is wrong and
+        /// the lab is the place that should say so loudest.
+        /// </para>
+        /// </summary>
+        private static void BuildDoorOpening()
+        {
+            const float doorWidth = 1.2f;
+            const float doorHeight = 2.2f;
+            const float wallWidth = 4f;
+            const float wallHeight = 3f;
+
+            float pier = (wallWidth - doorWidth) * 0.5f;
+            float pierCentre = (doorWidth + pier) * 0.5f;
+            var at = new Vector3(8f, 0f, 0f);
+
+            BuildWall("DEV_DoorPier_L", at + new Vector3(-pierCentre, wallHeight * 0.5f, 0f),
+                      new Vector3(pier, wallHeight, 0.2f));
+            BuildWall("DEV_DoorPier_R", at + new Vector3(pierCentre, wallHeight * 0.5f, 0f),
+                      new Vector3(pier, wallHeight, 0.2f));
+            BuildWall("DEV_DoorHeader",
+                      at + new Vector3(0f, doorHeight + (wallHeight - doorHeight) * 0.5f, 0f),
+                      new Vector3(doorWidth, wallHeight - doorHeight, 0.2f));
+
+            BuildLabel("DOOR OPENING 1.2 x 2.2 m", at + new Vector3(0f, wallHeight + 0.3f, 0f));
+        }
+
+        /// <summary>
+        /// Bounds and triangle count for whatever is being looked at. "Is this prop too heavy"
+        /// and "why is it the wrong size" are both answered by numbers the scene does not show.
+        /// </summary>
+        private void BuildReadout()
+        {
+            Readout()
+                .Line(() => "Props on the shelf: " + _props)
+                .Line(() =>
+                {
+                    var shelf = GameObject.Find("DEV_PropShelf");
+                    if (shelf == null)
+                        return "Shelf: empty";
+
+                    int triangles = 0;
+                    var filters = shelf.GetComponentsInChildren<MeshFilter>(true);
+                    for (int i = 0; i < filters.Length; i++)
+                        if (filters[i] != null && filters[i].sharedMesh != null)
+                            triangles += filters[i].sharedMesh.triangles.Length / 3;
+
+                    return "Shelf: " + filters.Length + " meshes, " + triangles + " triangles";
+                })
+                .Line(() =>
+                {
+                    var shelf = GameObject.Find("DEV_PropShelf");
+                    if (shelf == null)
+                        return "Bounds: -";
+
+                    var renderers = shelf.GetComponentsInChildren<Renderer>(true);
+                    if (renderers.Length == 0)
+                        return "Bounds: no renderers";
+
+                    var bounds = renderers[0].bounds;
+                    for (int i = 1; i < renderers.Length; i++)
+                        bounds.Encapsulate(renderers[i].bounds);
+
+                    return "Shelf bounds: " + bounds.size.ToString("F2") + " m";
+                })
+                .Line(() => "Door opening: 1.2 x 2.2 m (PrimitiveRoomFactory's own numbers)");
         }
 
         /// <summary>
@@ -100,6 +175,7 @@ namespace CatchIfYouCan.Development.Labs
 
         protected override string DescribeState() =>
             "Floor 24x24, 1 m grid, 1.86 m reference, size ladder 0.25-3 m, axis gnomon, " +
-            _props + " props from Resources/" + propResourceFolder + ".";
+            _props + " props from Resources/" + propResourceFolder +
+            ", a 1.2 x 2.2 m door opening.";
     }
 }

@@ -13,7 +13,11 @@ namespace CatchIfYouCan.Development.Labs
 
         public override DevelopmentLab Lab => DevelopmentLab.Ghost;
 
+        private readonly System.Collections.Generic.List<Interaction.LightController> _lights =
+            new System.Collections.Generic.List<Interaction.LightController>();
+
         private string _spawned = "nothing";
+        private bool _navMesh;
 
         protected override void BuildFixtures()
         {
@@ -21,7 +25,110 @@ namespace CatchIfYouCan.Development.Labs
             BuildMarker(PlayerSpawnMarkerName, new Vector3(0f, 0.05f, -10f));
 
             BuildFourRoomHouse();
+            BuildRoomFixtures();
+            BuildNavMesh();
             SpawnGhost();
+            BuildReadout();
+        }
+
+        /// <summary>
+        /// A door and a switchable light in each room. A ghost's interactions are almost all
+        /// with doors and lights, so a house with neither can only be walked around in.
+        /// </summary>
+        private void BuildRoomFixtures()
+        {
+            var offsets = new[]
+            {
+                new Vector3(-6f, 0f, 6f), new Vector3(6f, 0f, 6f),
+                new Vector3(-6f, 0f, -2f), new Vector3(6f, 0f, -2f),
+            };
+
+            for (int i = 0; i < offsets.Length; i++)
+            {
+                var doorAt = offsets[i] + new Vector3(-0.7f, 0f, 3f);
+                var hinge = new GameObject("DEV_RoomDoor_" + i);
+                hinge.transform.position = doorAt;
+
+                var leaf = GameObject.CreatePrimitive(PrimitiveType.Cube);
+                leaf.name = "Leaf";
+                leaf.transform.SetParent(hinge.transform, false);
+                leaf.transform.localPosition = new Vector3(0.7f, 1f, 0f);
+                leaf.transform.localScale = new Vector3(1.4f, 2f, 0.08f);
+                hinge.AddComponent<Interaction.InteractiveDoor>();
+
+                var lightGo = new GameObject("DEV_RoomLight_" + i);
+                lightGo.transform.position = offsets[i] + new Vector3(0f, 2.6f, 0f);
+                var light = lightGo.AddComponent<Light>();
+                light.type = LightType.Point;
+                light.range = 8f;
+                light.intensity = 1.6f;
+                light.color = new Color(1f, 0.88f, 0.7f);
+
+                var controller = lightGo.AddComponent<Interaction.LightController>();
+                WireLabField(controller, "lights", new[] { light });
+                _lights.Add(controller);
+            }
+        }
+
+        /// <summary>
+        /// Bakes navigation over the fixtures. A ghost that cannot path is a ghost that stands
+        /// still, and a lab where it stands still for that reason wastes an afternoon.
+        /// </summary>
+        private void BuildNavMesh()
+        {
+            var builder = Object.FindAnyObjectByType<Procedural.NavMeshRuntimeBuilder>();
+            if (builder == null)
+                builder = new GameObject("DEV_NavMesh").AddComponent<Procedural.NavMeshRuntimeBuilder>();
+
+            _navMesh = builder != null;
+        }
+
+        /// <summary>
+        /// State, distance and evidence. Everything a ghost does is decided by a state machine
+        /// that is invisible from inside the room.
+        /// </summary>
+        private void BuildReadout()
+        {
+            Readout()
+                .Line(() =>
+                {
+                    var controller = Object.FindAnyObjectByType<GhostController>();
+                    return controller != null
+                        ? "Ghost: " + controller.CurrentState
+                        : "Ghost: none in scene";
+                })
+                .Line(() =>
+                {
+                    var controller = Object.FindAnyObjectByType<GhostController>();
+                    var player = Core.LocalPlayerService.RootTransform;
+                    if (controller == null || player == null)
+                        return "Distance: -";
+
+                    return "Distance: " +
+                           Vector3.Distance(controller.transform.position, player.position)
+                               .ToString("F1") + " m";
+                })
+                .Line(() =>
+                {
+                    var evidence = Evidence.EvidenceManager.Instance;
+                    if (evidence == null)
+                        return "Evidence: no manager";
+
+                    return "Evidence: " + string.Join(", ", evidence.FoundEvidence);
+                })
+                .Line(() => "NavMesh builder present: " + _navMesh)
+                .Button("Make noise at player", () =>
+                {
+                    var player = Core.LocalPlayerService.RootTransform;
+                    if (player != null)
+                        Core.GameEvents.NoiseGenerated(1f, player.position);
+                })
+                .Button("Toggle all lights", () =>
+                {
+                    for (int i = 0; i < _lights.Count; i++)
+                        _lights[i]?.Toggle();
+                })
+                .Button("Reset evidence", () => Evidence.EvidenceManager.Instance?.ResetMission());
         }
 
         /// <summary>
@@ -82,6 +189,7 @@ namespace CatchIfYouCan.Development.Labs
 
         protected override string DescribeState() =>
             "Floor 26x26, four 8x6 rooms with 1.4 m doorways and a spawn marker each, " +
-            "ghost spawned: " + _spawned + ".";
+            "a door and a switchable light per room, navmesh builder " +
+            (_navMesh ? "present" : "MISSING") + ", ghost spawned: " + _spawned + ".";
     }
 }

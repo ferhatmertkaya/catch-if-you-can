@@ -206,6 +206,26 @@ namespace CatchIfYouCan.Development
             field.SetValue(target, value);
         }
 
+        /// <summary>The lab's on-screen readout, created on first use.</summary>
+        protected DevelopmentLabReadout Readout() =>
+            DevelopmentLabReadout.Ensure("CIYC " + DevelopmentScenes.NameOf(Lab));
+
+        /// <summary>
+        /// A surface that reports a footstep type. Footsteps are chosen by what is underfoot,
+        /// so a lab floor with no surface component makes every step the default one.
+        /// </summary>
+        protected static GameObject BuildFootstepSurface(string name, Vector3 centre, Vector2 size,
+                                                         Audio.SurfaceType surface, bool indoor = true)
+        {
+            var pad = BuildFloor(centre, size, name);
+            var component = pad.AddComponent<Audio.FootstepSurface>();
+            WireLabField(component, "surface", surface);
+            WireLabField(component, "indoor", indoor);
+
+            BuildLabel(surface.ToString().ToUpperInvariant(), centre + new Vector3(0f, 0.3f, 0f));
+            return pad;
+        }
+
         /// <summary>A labelled stand: a plinth with a caption, for putting one thing on.</summary>
         protected static Transform BuildPlinth(string label, Vector3 position, Transform parent = null)
         {

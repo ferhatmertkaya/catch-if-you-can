@@ -46,15 +46,15 @@ asset is nearly empty, which means:
 
 | Scene | Lab | What is in it |
 |---|---|---|
-| `DEV_EquipmentLab` | Equipment | A plinth per catalogue entry in catalogue order, labelled with its id and whether it is real or `DEV_PLACEHOLDER`; a drop zone; a wall to throw things at; the starter loadout. |
-| `DEV_CharacterLab` | Character | A rail at the player's exact 1.68 m eye height, a 1.3 m crouch gate, a strafe lane, a 1.86 m human reference and a 1 m grid. |
-| `DEV_InteractionLab` | Interaction | One of every `IInteractable` in a row 2.6 m apart — door, drawer, light switch, breaker box, hide spot, pickup — each labelled. |
-| `DEV_GhostLab` | Ghost | A fixed four-room house with doorways and a spawn marker per room, and a ghost built by the real `GhostFactory`. |
-| `DEV_AudioLab` | Audio | Two rooms sharing a doorway, a glass pane, and three silent 3D looping emitters. |
-| `DEV_LightingLab` | Lighting | An albedo ladder from 3% to 95%, a cluster of overlapping point lights, and a shader board with one quad per project shader. |
-| `DEV_EnvironmentLab` | Environment | A size ladder from 0.25 m to 3 m, an axis gnomon, a 1 m grid, and every prop under `Resources/Props` at authored scale. |
-| `DEV_UIInputLab` | UI / Input | The shipping HUD, heading posts at the four compass points, a 20 degree ramp and 0.18 m steps. |
-| `DEV_NetworkLab` | Network | A fixed ring of spawn pads and a notice board reading NETWORKING NOT INSTALLED. |
+| `DEV_EquipmentLab` | Equipment | A plinth per catalogue entry in catalogue order, labelled with its id and whether it is real or `DEV_PLACEHOLDER`; a drop zone; a wall to throw things at; an EMF source; a UV trace target; the starter loadout; a readout of what is held, its battery and durability, and the evidence found so far. |
+| `DEV_CharacterLab` | Character | A rail at the player's exact 1.68 m eye height, a 1.3 m crouch gate, a strafe lane, a 1.86 m human reference, a 1 m grid, a third-person observation camera on a screen, the project's mirror, and controls to cycle the character and freeze the pose. |
+| `DEV_InteractionLab` | Interaction | One of every `IInteractable` in a row 2.6 m apart — door, drawer, light switch, breaker box, hide spot, pickup, door handle — each labelled, with a readout of what the interaction controller is currently targeting. |
+| `DEV_GhostLab` | Ghost | A fixed four-room house with doorways, a door and a switchable light per room, a navmesh builder, a spawn marker per room, a ghost from the real `GhostFactory`, and a readout of state, distance and evidence with a noise trigger. |
+| `DEV_AudioLab` | Audio | Three rooms off a corridor, each with a zone and a portal, a glass pane, three silent 3D emitters, six footstep surfaces, and a readout of the reverb profile, occlusion and portal state. |
+| `DEV_LightingLab` | Lighting | An albedo ladder from 3% to 95%, a cluster of overlapping point lights, a shader board with one quad per project shader, the mirror, an empty post-process volume, and a quality-level toggle. |
+| `DEV_EnvironmentLab` | Environment | A size ladder from 0.25 m to 3 m, an axis gnomon, a 1 m grid, a 1.2 × 2.2 m door opening at the generator's own dimensions, every prop under `Resources/Props` at authored scale, and a bounds and triangle-count readout. |
+| `DEV_UIInputLab` | UI / Input | The shipping HUD, heading posts at the four compass points, a 20 degree ramp and 0.18 m steps, and a live readout of move, look, button state, touch count and the safe area — plus a dump of the HUD rect tree. |
+| `DEV_NetworkLab` | Network | A fixed ring of spawn pads, a notice board reading NETWORKING NOT INSTALLED, and a panel stating that there is no transport, no session and no authority beyond local.
 
 ---
 
@@ -93,6 +93,12 @@ Authentication package is installed.
 The scenes are created by **Catch If You Can > Development > Create Missing
 Lab Scenes**. Because the fixtures are code, a lab scene contains only its
 installer, so "Rebuild All Lab Scenes" is safe and cheap.
+
+Every lab draws an on-screen readout — live values on the left, buttons under
+them — through `DevelopmentLabReadout`. **F10** hides it, which is what you
+want for a screenshot. It is IMGUI on purpose: no canvas, no prefab, no layout
+pass and no scene authoring, which is the trade a development overlay should
+make, and it is what `AudioDebugOverlay` already does.
 
 Each lab has three switches on its installer:
 

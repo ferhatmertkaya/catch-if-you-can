@@ -1,3 +1,5 @@
+using CatchIfYouCan.Character;
+using CatchIfYouCan.Player;
 using UnityEngine;
 
 namespace CatchIfYouCan.Development.Labs
@@ -23,6 +25,137 @@ namespace CatchIfYouCan.Development.Labs
             BuildEyeLine();
             BuildCrouchGate();
             BuildStrafeLane();
+            BuildObservationCamera();
+            BuildMirror();
+            BuildReadout();
+        }
+
+        /// <summary>
+        /// A fixed camera looking back at the spawn, rendering to a screen on the wall.
+        ///
+        /// <para>
+        /// This is a first-person game, so the one thing you cannot see is the character. Every
+        /// question about the rig - does the crouch read, is the arm in the right place, does
+        /// the walk cycle match the speed - is a question about a body the player's own camera
+        /// is inside of.
+        /// </para>
+        /// </summary>
+        private static void BuildObservationCamera()
+        {
+            var target = new RenderTexture(512, 512, 16) { name = "DEV_ObservationRT" };
+
+            var camGo = new GameObject("DEV_ObservationCamera");
+            camGo.transform.position = new Vector3(0f, 1.4f, 1.2f);
+            camGo.transform.rotation = Quaternion.Euler(0f, 180f, 0f);
+
+            var cam = camGo.AddComponent<Camera>();
+            cam.targetTexture = target;
+            cam.fieldOfView = 50f;
+            cam.nearClipPlane = 0.05f;
+            cam.farClipPlane = 30f;
+
+            var screen = GameObject.CreatePrimitive(PrimitiveType.Quad);
+            screen.name = "DEV_ObservationScreen";
+            screen.transform.position = new Vector3(-3f, 1.6f, 3f);
+            screen.transform.localScale = new Vector3(2f, 2f, 1f);
+
+            var shader = Art.CiycShaders.Find(Art.CiycShaders.Unlit)
+                         ?? Art.CiycShaders.FindLit();
+            if (shader != null)
+            {
+                var mat = new Material(shader);
+                mat.mainTexture = target;
+                screen.GetComponent<Renderer>().sharedMaterial = mat;
+            }
+
+            BuildLabel("THIRD-PERSON VIEW", new Vector3(-3f, 2.75f, 3f));
+        }
+
+        /// <summary>
+        /// The project's own mirror, at the same size the lobby uses. The mirror is the other
+        /// way to see the character, and it is also the fixture that catches a stripped shader
+        /// before the lobby does.
+        /// </summary>
+        private static void BuildMirror()
+        {
+            var go = new GameObject("DEV_Mirror");
+            go.transform.position = new Vector3(3f, 0f, 3f);
+            go.transform.rotation = Quaternion.Euler(0f, 180f, 0f);
+            go.AddComponent<Art.MirrorCorner>();
+
+            BuildLabel("MIRROR", new Vector3(3f, 2.4f, 3f));
+        }
+
+        /// <summary>
+        /// The rig's own numbers, plus the controls that make a pose hold still long enough to
+        /// look at. A pose that only exists while you are moving cannot be inspected.
+        /// </summary>
+        private void BuildReadout()
+        {
+            var readout = Readout();
+
+            readout
+                .Line(() =>
+                {
+                    var character = CharacterService.Resolve();
+                    return "Character: " + (character != null ? character.Id : "none") +
+                           "  (catalog " + (CharacterService.Catalog()?.Count ?? 0) + ")";
+                })
+                .Line(() =>
+                {
+                    var motion = Core.LocalPlayerService.GetPlayerComponent<PlayerBodyMotion>();
+                    if (motion == null)
+                        return "Body motion: none";
+
+                    return "Crouch drop: " + motion.FullCrouchDrop.ToString("F3") + " m" +
+                           "  measured head drop: " + motion.MeasuredHeadDrop.ToString("F3") + " m";
+                })
+                .Line(() =>
+                {
+                    var controller = Core.LocalPlayerService.GetPlayerComponent<PlayerController>();
+                    return controller != null
+                        ? "Speed: " + controller.CurrentSpeed.ToString("F2") + " m/s"
+                        : "Speed: no player";
+                })
+                .Line(() =>
+                {
+                    var motion = Core.LocalPlayerService.GetPlayerComponent<PlayerBodyMotion>();
+                    if (motion == null || !motion.TryGetGrip(out var palm, out _, out _))
+                        return "Grip: not measured";
+
+                    return "Grip palm: " + palm.ToString("F2");
+                })
+                .Button("Next character", CycleCharacter)
+                .Button("Freeze pose (disable body motion)", () => SetPoseFrozen(true))
+                .Button("Unfreeze pose", () => SetPoseFrozen(false));
+        }
+
+        /// <summary>Steps through the catalog, so a second character can be looked at.</summary>
+        private static void CycleCharacter()
+        {
+            var catalog = CharacterService.Catalog();
+            if (catalog == null || catalog.Count == 0)
+                return;
+
+            int next = (catalog.IndexOf(CharacterService.LocalCharacterId) + 1) % catalog.Count;
+            var character = catalog.Characters[next];
+            if (character != null)
+                CharacterService.SetLocalCharacter(character.Id);
+
+            Core.CIYCLog.Info("Character lab: selected '" + CharacterService.LocalCharacterId +
+                              "'. Respawn the player to see it.");
+        }
+
+        /// <summary>
+        /// Turns the procedural body layer off and on. Off is the underlying animation clip
+        /// with nothing added, which is the only way to tell which of the two put a limb
+        /// somewhere unexpected.
+        /// </summary>
+        private static void SetPoseFrozen(bool frozen)
+        {
+            var motion = Core.LocalPlayerService.GetPlayerComponent<PlayerBodyMotion>();
+            if (motion != null)
+                motion.enabled = !frozen;
         }
 
         public override DevelopmentLab Lab => DevelopmentLab.Character;
