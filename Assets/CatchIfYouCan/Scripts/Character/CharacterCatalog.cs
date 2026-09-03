@@ -56,6 +56,41 @@ namespace CatchIfYouCan.Character
             return characters.Length > 0 ? characters[0] : null;
         }
 
+        /// <summary>
+        /// The character at a compact index, with the index validated first.
+        ///
+        /// <para>
+        /// The counterpart to <see cref="IndexOf"/> and the one place an index that came from
+        /// another machine is turned back into a character. It goes through
+        /// <see cref="Procedural.Deterministic.CharacterSelection"/> rather than indexing the
+        /// array, because an index off a wire is a claim: 4000, -1 and 255 are all things a
+        /// peer can send, and none of them may reach <c>characters[i]</c>.
+        /// </para>
+        /// </summary>
+        public CharacterDefinition ResolveIndex(int index)
+        {
+            int resolved = Procedural.Deterministic.CharacterSelection.Resolve(index, Count);
+
+            if (resolved == Procedural.Deterministic.CharacterSelection.Unset)
+                return null;
+
+            // Resolve guarantees this is inside the array. The null check is for a slot that
+            // was left empty in the asset, which is an authoring mistake rather than a claim.
+            var character = characters[resolved];
+            return character != null ? character : Resolve(defaultCharacterId);
+        }
+
+        /// <summary>
+        /// Whether every character in this catalog can be named over a wire.
+        ///
+        /// <para>
+        /// False means a character past the encoding limit exists and would silently become
+        /// somebody else on another machine. A content problem, checked where the content is.
+        /// </para>
+        /// </summary>
+        public bool FitsCompactEncoding =>
+            Count <= Procedural.Deterministic.CharacterSelection.MaxCharacters;
+
         public int IndexOf(string characterId)
         {
             if (characters == null)

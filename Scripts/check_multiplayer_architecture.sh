@@ -356,6 +356,41 @@ else
   ok "no session is started merely because the game booted"
 fi
 
+# --------------------------------------------------- who each player is
+
+# A character index that arrives from another machine is a claim. The rules that decide what
+# to do with one are pure and live in the deterministic assembly, which is the only reason
+# they are exercised by a test suite at all - there is no Unity here to run two machines in.
+SELECTION="$DETERMINISTIC/CharacterSelection.cs"
+if [ -f "$SELECTION" ]; then
+  ok "the character index has a validated contract"
+
+  # The catalog must not index its own array from a number a peer sent. Resolve is what
+  # makes 4000, -1 and 255 all land inside the catalog instead of inside an exception.
+  CATALOG="$SCRIPTS/Character/CharacterCatalog.cs"
+  if [ -f "$CATALOG" ]; then
+    grep -q 'CharacterSelection.Resolve(' "$CATALOG" \
+      && ok "the character catalog validates an index before using it" \
+      || fail "CharacterCatalog indexes by a raw number; a peer's claim can reach the array"
+  fi
+else
+  fail "CharacterSelection is missing; a character index has no validation"
+fi
+
+# CharacterService holds exactly one character: the one this machine chose. Reading it while
+# building a player is correct for the local player and silently wrong for every other one -
+# the same mistake as asking LocalPlayerService where the player is. The factory reads it
+# once, in the local entry point, and passes it down.
+FACTORY="$SCRIPTS/Player/PlayerFactory.cs"
+if [ -f "$FACTORY" ]; then
+  reads=$(grep -c 'CharacterService\.Resolve(' "$FACTORY" || true)
+  if [ "$reads" = "1" ]; then
+    ok "the player factory reads the local character exactly once"
+  else
+    fail "PlayerFactory reads the local character in $reads places; a remote player would wear it"
+  fi
+fi
+
 printf '\npassed: %s   failed: %s\n\n' "$passed" "$failed"
 
 if [ "$failed" -gt 0 ]; then

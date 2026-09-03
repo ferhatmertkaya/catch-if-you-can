@@ -36,6 +36,7 @@ redesign.
 | Request boundary | **Built.** `Session.AuthorityRequests` |
 | Mode selection | **Built.** `Session.SessionLauncher` — §6b |
 | Online provider | **Seam only.** `IOnlineSessionProvider`, unimplemented — §9 |
+| Character index | **Built.** `Deterministic.CharacterSelection` — §3b |
 | Transport | **Not built.** Blocked — §9 |
 | Relay / Lobby / Auth | **Not built.** Blocked — §9 |
 | NGO scene sync | **Not built.** Blocked — §9 |
@@ -158,6 +159,37 @@ Everything in `Player.PlayerPresentationState`: yaw, pitch, the movement stick i
 the player's own axes, speed, crouch depth, sprinting, crouching, grounded. Plus
 the root position, ghost transform and state, hunt state, confirmed evidence and
 objective progress.
+
+---
+
+## 3b. Which character each player is (V5)
+
+The choice is a string id in a save file and a **compact index** on a wire — the
+catalog's order, which is why that order is documented as meaningful and why the
+catalog is an explicit list rather than a folder scan. A scan answers "whatever
+happened to be imported", which is a different order on two machines and
+therefore a different character on two clients.
+
+`Deterministic.CharacterSelection` holds the rules and is pure, so the offline
+harness exercises them — 19 checks, including every one of the 256 bytes a peer
+can send resolving to an index inside a real catalog.
+
+**An index from another machine is a claim, not a fact.** `Check` names what is
+wrong with one (`Unset`, `OutOfRange`, `EmptyCatalog`, `CatalogTooLarge`) and
+`Resolve` substitutes the default. Neither can return something that would index
+outside the catalog, and `CharacterCatalog.ResolveIndex` goes through them rather
+than touching its array. The guard fails if it stops doing so.
+
+The encoding limit is a **content** limit: the index travels as one byte with the
+top value reserved for "unset", so a 256th character would be unnameable and
+silently become somebody else. `CharacterService` says so once, as an error.
+
+**`CharacterService` holds exactly one character: the one this machine chose.**
+`PlayerFactory` reads it once, in the local entry point, and passes it down;
+`Create(position, rotation, character)` is how anybody else's player gets built.
+Reading the service per part would give every remote player the local player's
+face, body metrics and rig profile — the same mistake as asking
+`LocalPlayerService` where the player is. The guard counts the reads.
 
 ---
 

@@ -28,8 +28,70 @@ namespace CatchIfYouCan.Character
             _resolved = null;
         }
 
+        /// <summary>
+        /// The local choice as the compact index another machine would be sent.
+        ///
+        /// <para>
+        /// Derived from the id rather than stored beside it. Two fields for one fact is how
+        /// they end up disagreeing after the catalog is reordered - the id is the identity,
+        /// and the index is a view of it that is only valid against a particular catalog.
+        /// </para>
+        ///
+        /// <para>
+        /// <see cref="Procedural.Deterministic.CharacterSelection.Unset"/> when nothing has
+        /// been chosen, when there is no catalog, or when the chosen id is not in it. The
+        /// receiving host substitutes its own default for all three, which is the same
+        /// outcome the local fallback in <see cref="CharacterCatalog.Resolve"/> produces.
+        /// </para>
+        /// </summary>
+        public static int LocalCharacterIndex
+        {
+            get
+            {
+                var catalog = Catalog();
+                if (catalog == null)
+                    return Procedural.Deterministic.CharacterSelection.Unset;
+
+                int index = catalog.IndexOf(LocalCharacterId);
+                return index >= 0 ? index : Procedural.Deterministic.CharacterSelection.Unset;
+            }
+        }
+
+        /// <summary>
+        /// Chooses by compact index - what a lobby row hands back, and what arrives from
+        /// another machine.
+        ///
+        /// <para>
+        /// Validated through the catalog rather than indexed, so an index from a peer or from
+        /// a stale save cannot reach the array. An index nothing answers to leaves the
+        /// selection alone rather than clearing it, because losing a choice silently is worse
+        /// than ignoring an impossible one.
+        /// </para>
+        /// </summary>
+        public static void SetLocalCharacterIndex(int index)
+        {
+            var catalog = Catalog();
+            if (catalog == null)
+                return;
+
+            var verdict = Procedural.Deterministic.CharacterSelection.Check(index, catalog.Count);
+            if (!Procedural.Deterministic.CharacterSelection.IsAccepted(verdict))
+            {
+                Core.CIYCLog.Warn(
+                    "Character index " + index + " was refused: " +
+                    Procedural.Deterministic.CharacterSelection.Describe(verdict) +
+                    " The selection is unchanged.");
+                return;
+            }
+
+            var character = catalog.ResolveIndex(index);
+            if (character != null)
+                SetLocalCharacter(character.Id);
+        }
+
         private static CharacterDefinition _resolved;
         private static bool _noCatalogReported;
+        private static bool _tooLargeReported;
 
         /// <summary>
         /// The local player's character, or null when no catalog is authored yet.
@@ -64,6 +126,19 @@ namespace CatchIfYouCan.Character
                     "Author one with Catch If You Can > Characters > Build Character Assets.");
             }
 
+            // A character past the encoding limit cannot be named over a wire and would
+            // silently be somebody else on another machine. Said once, here, because this is
+            // the only place the catalog is obtained.
+            if (catalog != null && !catalog.FitsCompactEncoding && !_tooLargeReported)
+            {
+                _tooLargeReported = true;
+                Core.CIYCLog.Error(
+                    "The character catalog holds " + catalog.Count + " characters, more than " +
+                    Procedural.Deterministic.CharacterSelection.MaxCharacters +
+                    ". Everything past that cannot be named over a wire and would appear as " +
+                    "a different character to other players.");
+            }
+
             return catalog;
         }
 
@@ -73,6 +148,7 @@ namespace CatchIfYouCan.Character
             LocalCharacterId = null;
             _resolved = null;
             _noCatalogReported = false;
+            _tooLargeReported = false;
         }
     }
 }

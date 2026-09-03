@@ -57,6 +57,7 @@ namespace CatchIfYouCan.Tools
             TestSessionHandshake();
             TestSessionCapacity();
             TestSessionMode();
+            TestCharacterSelection();
 
             Console.WriteLine();
             Console.WriteLine($"passed: {_passed}   failed: {_failed}");
@@ -68,6 +69,138 @@ namespace CatchIfYouCan.Tools
             }
 
             return _failed == 0;
+        }
+
+        /// <summary>
+        /// The compact character index and what a host does with the one it is handed.
+        ///
+        /// <para>
+        /// An index arriving from another machine is a claim. Every case here is one a peer
+        /// can produce - nothing chosen, a stale index from an older catalog, a number nobody
+        /// could have meant - and none of them may come back as something that would index
+        /// outside the catalog.
+        /// </para>
+        /// </summary>
+        private static void TestCharacterSelection()
+        {
+            // --- the ordinary case --------------------------------------------------------
+            Check("character: a valid index is accepted",
+                CharacterSelection.Check(2, 4) == CharacterVerdict.Accepted);
+
+            Check("character: an accepted index is used as sent",
+                CharacterSelection.Resolve(2, 4) == 2);
+
+            Check("character: the first and last entries are both reachable",
+                CharacterSelection.Resolve(0, 4) == 0 &&
+                CharacterSelection.Resolve(3, 4) == 3);
+
+            // --- claims a peer can actually send ------------------------------------------
+            Check("character: one past the end is out of range",
+                CharacterSelection.Check(4, 4) == CharacterVerdict.OutOfRange);
+
+            Check("character: an out-of-range claim becomes the default, not an exception",
+                CharacterSelection.Resolve(4, 4) == CharacterSelection.Fallback);
+
+            Check("character: a wildly out-of-range claim is substituted too",
+                CharacterSelection.Resolve(4000, 4) == CharacterSelection.Fallback &&
+                CharacterSelection.Resolve(int.MaxValue, 4) == CharacterSelection.Fallback);
+
+            Check("character: a negative claim is substituted rather than clamped into a crash",
+                CharacterSelection.Resolve(-7, 4) == CharacterSelection.Fallback &&
+                CharacterSelection.Resolve(int.MinValue, 4) == CharacterSelection.Fallback);
+
+            // Unset and hostile both end up as character zero, and the verdict is what tells
+            // the host's log which of the two happened.
+            Check("character: unset is its own verdict, not an out-of-range one",
+                CharacterSelection.Check(CharacterSelection.Unset, 4) == CharacterVerdict.Unset);
+
+            Check("character: unset resolves to the default",
+                CharacterSelection.Resolve(CharacterSelection.Unset, 4) ==
+                CharacterSelection.Fallback);
+
+            Check("character: unset is not the same value as character zero",
+                CharacterSelection.Unset != 0);
+
+            // --- nothing to choose from ---------------------------------------------------
+            Check("character: an empty catalog is reported as empty",
+                CharacterSelection.Check(0, 0) == CharacterVerdict.EmptyCatalog &&
+                CharacterSelection.Check(0, -1) == CharacterVerdict.EmptyCatalog);
+
+            Check("character: an empty catalog resolves to unset, never to index zero",
+                CharacterSelection.Resolve(0, 0) == CharacterSelection.Unset);
+
+            // --- the encoding limit is a content limit ------------------------------------
+            Check("character: a catalog past the encoding limit is reported",
+                CharacterSelection.Check(0, CharacterSelection.MaxCharacters + 1) ==
+                CharacterVerdict.CatalogTooLarge);
+
+            Check("character: an index past the encoding limit resolves to the default",
+                CharacterSelection.Resolve(CharacterSelection.MaxCharacters, 1000) ==
+                CharacterSelection.Fallback);
+
+            Check("character: the last nameable index still resolves to itself",
+                CharacterSelection.Resolve(CharacterSelection.MaxCharacters - 1, 1000) ==
+                CharacterSelection.MaxCharacters - 1);
+
+            // --- the wire round trip ------------------------------------------------------
+            bool roundTrips = true;
+            for (int i = 0; i < CharacterSelection.MaxCharacters; i++)
+                if (CharacterSelection.Decode(CharacterSelection.Encode(i)) != i)
+                    roundTrips = false;
+
+            Check("character: every nameable index survives the wire round trip", roundTrips);
+
+            Check("character: unset survives the wire round trip",
+                CharacterSelection.Decode(
+                    CharacterSelection.Encode(CharacterSelection.Unset)) ==
+                CharacterSelection.Unset);
+
+            Check("character: an unencodable index becomes unset rather than another character",
+                CharacterSelection.Encode(CharacterSelection.MaxCharacters) ==
+                CharacterSelection.UnsetWire &&
+                CharacterSelection.Encode(-3) == CharacterSelection.UnsetWire);
+
+            Check("character: no byte decodes to something Resolve would refuse to place",
+                AllBytesResolveInside(4));
+
+            Check("character: only Accepted counts as accepted",
+                CharacterSelection.IsAccepted(CharacterVerdict.Accepted) &&
+                !CharacterSelection.IsAccepted(CharacterVerdict.Unset) &&
+                !CharacterSelection.IsAccepted(CharacterVerdict.OutOfRange) &&
+                !CharacterSelection.IsAccepted(CharacterVerdict.EmptyCatalog) &&
+                !CharacterSelection.IsAccepted(CharacterVerdict.CatalogTooLarge));
+
+            Check("character: every verdict has its own description",
+                DistinctDescriptions());
+        }
+
+        /// <summary>
+        /// Every one of the 256 bytes a peer could send, resolved against a real catalog size.
+        /// None may come back outside it - a resolve that did would be an index into a live
+        /// array from an untrusted number.
+        /// </summary>
+        private static bool AllBytesResolveInside(int catalogCount)
+        {
+            for (int b = 0; b <= 255; b++)
+            {
+                int resolved = CharacterSelection.Resolve(
+                    CharacterSelection.Decode((byte)b), catalogCount);
+
+                if (resolved < 0 || resolved >= catalogCount)
+                    return false;
+            }
+
+            return true;
+        }
+
+        private static bool DistinctDescriptions()
+        {
+            var seen = new System.Collections.Generic.HashSet<string>();
+            foreach (CharacterVerdict v in System.Enum.GetValues(typeof(CharacterVerdict)))
+                if (!seen.Add(CharacterSelection.Describe(v)))
+                    return false;
+
+            return true;
         }
 
         /// <summary>

@@ -33,7 +33,41 @@ namespace CatchIfYouCan.Player
 
     public static class PlayerFactory
     {
+        /// <summary>
+        /// Builds the local player as whatever character this machine chose.
+        ///
+        /// <para>
+        /// The choice is read here, once, rather than by each part that needs it. Two reads
+        /// of a mutable static during one build can disagree, and a body built from one
+        /// character with the rig profile of another is a rig that binds to bones that are
+        /// not there.
+        /// </para>
+        /// </summary>
         public static PlayerBuildResult Create(Vector3 position, Quaternion rotation)
+        {
+            return Create(position, rotation, Character.CharacterService.Resolve());
+        }
+
+        /// <summary>
+        /// Builds a player as a named character.
+        ///
+        /// <para>
+        /// The character is a parameter rather than something this asks
+        /// <see cref="Character.CharacterService"/> for, because that service holds exactly
+        /// one character: the one this machine chose. Correct for the local player and
+        /// silently wrong for anybody else - every remote player would wear the local
+        /// player's face, body metrics and rig profile. This is the same mistake as asking
+        /// <see cref="LocalPlayerService"/> where the player is, and it is prevented the same
+        /// way: whoever knows which player is being built says which character it is.
+        /// </para>
+        ///
+        /// <para>
+        /// Null means the built-in fallback - the Resources visual and Nathan's rig naming -
+        /// which is what kept working before any catalog existed.
+        /// </para>
+        /// </summary>
+        public static PlayerBuildResult Create(Vector3 position, Quaternion rotation,
+                                               Character.CharacterDefinition character)
         {
             EnsureMobileInput();
 
@@ -45,8 +79,8 @@ namespace CatchIfYouCan.Player
 
             // Everything below depends on which character was chosen, so none of it can live
             // in the prefab. The rig above is the half that is the same for everybody.
-            var characterVisual = AttachCharacterVisual(player, rig.VisualRoot);
-            AttachBodyMotion(player, rig.VisualRoot, rig.CameraRoot, characterVisual);
+            var characterVisual = AttachCharacterVisual(player, rig.VisualRoot, character);
+            AttachBodyMotion(player, rig.VisualRoot, rig.CameraRoot, characterVisual, character);
             AttachFlashlight(player, characterVisual);
             AttachFootsteps(player);
 
@@ -213,11 +247,11 @@ namespace CatchIfYouCan.Player
             footsteps.SetWoodClips(Resources.LoadAll<AudioClip>(FootstepClipResourcePath));
         }
 
-        private static GameObject AttachCharacterVisual(GameObject player, Transform visualRoot)
+        private static GameObject AttachCharacterVisual(GameObject player, Transform visualRoot,
+                                                        Character.CharacterDefinition character)
         {
-            // The selected character wins when one is authored; the Resources path is the
-            // fallback that kept working while the catalog did not exist.
-            var character = Character.CharacterService.Resolve();
+            // The given character wins when there is one; the Resources path is the fallback
+            // that kept working while the catalog did not exist.
             var prefab = character != null && character.VisualPrefab != null
                 ? character.VisualPrefab
                 : Resources.Load<GameObject>(CharacterVisualResourcePath);
@@ -287,7 +321,8 @@ namespace CatchIfYouCan.Player
         /// </para>
         /// </summary>
         private static void AttachBodyMotion(GameObject player, Transform visualRoot,
-                                             Transform cameraRoot, GameObject characterVisual)
+                                             Transform cameraRoot, GameObject characterVisual,
+                                             Character.CharacterDefinition character)
         {
             var motion = player.GetComponent<PlayerBodyMotion>();
             if (motion == null)
@@ -295,7 +330,7 @@ namespace CatchIfYouCan.Player
 
             // Set before BindAnimator, which is when the bones are actually looked up.
             // Null is fine and means the built-in naming, which is Nathan's.
-            motion.SetRigProfile(Character.CharacterService.Resolve()?.RigProfile);
+            motion.SetRigProfile(character != null ? character.RigProfile : null);
 
             SetPrivateField(motion, "visualRoot", visualRoot);
             SetPrivateField(motion, "playerBody", player.transform);
