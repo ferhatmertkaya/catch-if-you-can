@@ -1,4 +1,6 @@
 using CatchIfYouCan.Core;
+using CatchIfYouCan.Evidence;
+using CatchIfYouCan.Ghost;
 using UnityEngine;
 
 namespace CatchIfYouCan.Equipment
@@ -29,6 +31,11 @@ namespace CatchIfYouCan.Equipment
 
         [Tooltip("Full angle of the cone it throws, in degrees.")]
         [SerializeField, Range(15f, 120f)] private float projectionAngle = 70f;
+
+        [Tooltip("Seconds between checks for something standing in the field. A body does not " +
+                 "cross a room between ticks, and the reveal holds itself up for longer than " +
+                 "this so a ghost still in the cone stays lit between scans.")]
+        [SerializeField, Min(0.05f)] private float scanInterval = 0.1f;
 
         private bool _powered;
 
@@ -120,12 +127,83 @@ namespace CatchIfYouCan.Equipment
             head.transform.SetParent(CarriedRoot, false);
             head.transform.localPosition = new Vector3(0f, CarriedLength, 0f);
 
-            _projection = SpectralGridProjection.Attach(head.transform);
+            _head = head.transform;
+            _projection = SpectralGridProjection.Attach(_head);
             _projection?.Configure(projectionRange, projectionAngle);
             _projection?.SetRunning(false);
         }
 
         private SpectralGridProjection _projection;
+        private Transform _head;
+        private float _scanTimer;
+
+        /// <summary>
+        /// Looks for the ghost in the field, and shows its shape when one is standing in it.
+        ///
+        /// <para>
+        /// Throttled rather than per frame: a body does not cross a room between ticks, and the
+        /// reveal holds itself up for longer than one interval so a ghost still in the cone
+        /// stays lit between scans.
+        /// </para>
+        /// </summary>
+        protected override void TickEquipped(float deltaTime)
+        {
+            // The placement preview, when one is up.
+            base.TickEquipped(deltaTime);
+
+            if (!IsActive || _head == null)
+                return;
+
+            _scanTimer -= deltaTime;
+            if (_scanTimer > 0f)
+                return;
+
+            _scanTimer = scanInterval;
+            ScanForGhost();
+        }
+
+        private void ScanForGhost()
+        {
+            // From the registry, not a scene sweep.
+            var ghost = GhostController.Active;
+            if (ghost == null || !IsInsideField(ghost.transform.position))
+                return;
+
+            // Only an entity that actually leaves a spectral signature can be shown by one.
+            // A ghost without SpectralGrid in its profile walks through the field and nothing
+            // happens, which is what makes an empty field informative.
+            var definition = ghost.Definition;
+            if (definition == null || !definition.HasEvidence(EvidenceType.SpectralGrid))
+                return;
+
+            var reveal = GhostSpectralReveal.Ensure(ghost);
+            reveal?.Illuminate(_head, projectionRange, projectionAngle * 0.5f * Mathf.Deg2Rad);
+
+            OnGhostRevealed(ghost);
+        }
+
+        /// <summary>
+        /// Whether a world point is inside the cone. The same test the shader does, in the same
+        /// frame - the device head's +Y is the axis it throws along.
+        /// </summary>
+        public bool IsInsideField(Vector3 worldPoint)
+        {
+            if (_head == null)
+                return false;
+
+            Vector3 local = _head.InverseTransformPoint(worldPoint);
+            float axial = local.y;
+            if (axial <= 0f || axial >= projectionRange)
+                return false;
+
+            float radial = new Vector2(local.x, local.z).magnitude;
+            return radial < axial * Mathf.Tan(projectionAngle * 0.5f * Mathf.Deg2Rad);
+        }
+
+        /// <summary>Called each scan that a qualifying ghost is standing in the field.</summary>
+        protected virtual void OnGhostRevealed(GhostController ghost)
+        {
+        }
 
         /// <summary>
         /// Installed on a wall or a floor, and left running if it was running.
