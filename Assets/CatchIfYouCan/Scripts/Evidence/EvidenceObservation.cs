@@ -67,6 +67,13 @@ namespace CatchIfYouCan.Evidence
         TooWeak,
 
         /// <summary>
+        /// This device is not the declared source for this evidence type. See
+        /// <see cref="EvidenceAuthority"/>: each type has exactly one observer, and a device
+        /// that is not it cannot prove it however good its reading was.
+        /// </summary>
+        NotAnAuthorizedObserver,
+
+        /// <summary>
         /// This process does not decide evidence. Reserved for the host-authoritative build:
         /// clients never assert evidence, so a client's observation is forwarded and confirmed
         /// by the host rather than resolved locally. Never returned today - there is one

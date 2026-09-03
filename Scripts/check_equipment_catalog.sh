@@ -187,9 +187,15 @@ else
   ok "no equipment registers evidence directly"
 fi
 
-grep -q 'EvidenceValidator.Submit' Assets/CatchIfYouCan/Scripts/Evidence/EvidenceManager.cs \
-  && ok "journal entries are validated rather than trusted" \
-  || fail "AddJournalEntry registers evidence without validation"
+# Stronger than it used to be. AH made the journal submit an observation instead of
+# registering directly; V4 gives every evidence type exactly one declared observing
+# device, so a journal entry - which has no device - has no standing at all. The
+# journal records; it does not prove.
+if grep -q 'EvidenceValidator' Assets/CatchIfYouCan/Scripts/Evidence/EvidenceManager.cs; then
+  fail "EvidenceManager's journal path can still start an evidence confirmation"
+else
+  ok "the journal records rather than proves"
+fi
 
 # ------------------------------------------------------------- the never-agains
 

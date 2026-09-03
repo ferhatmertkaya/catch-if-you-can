@@ -87,16 +87,16 @@ namespace CatchIfYouCan.Evidence
 
             _journalEntries.Add(entry);
 
-            // Through the validator, not straight into the found set. A journal entry carrying
-            // an evidence type is a device's finding written down, and it was the one door into
-            // RegisterEvidence that skipped every check - which is how the EVP recorder proved
-            // EVP Response against ghosts that do not make one.
-            if (entry.RelatedEvidence.HasValue)
-            {
-                EvidenceValidator.Submit(new EvidenceObservation(
-                    entry.RelatedEvidence.Value, entry.Title ?? "journal", 1f, Vector3.zero));
-            }
-
+            // A journal entry is a record, not proof. It does not touch evidence truth at all.
+            //
+            // It used to call RegisterEvidence directly, which is how the EVP recorder proved
+            // EVP Response against ghosts that do not make one. AH routed it through the
+            // validator instead, which closed the hole but kept the shape: a caller with a
+            // string and an enum could still start a confirmation. Now that each evidence type
+            // has exactly one declared observing device (EvidenceAuthority), a journal entry
+            // has no device and therefore no standing - so rather than submit an observation
+            // that is always refused, it does not submit one. The device that measured the
+            // thing has already said so through Observe; this writes down that it happened.
             CIYCLog.Info($"Journal entry added: {entry.Title}");
         }
 

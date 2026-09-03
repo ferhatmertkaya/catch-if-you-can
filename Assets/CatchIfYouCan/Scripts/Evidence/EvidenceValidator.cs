@@ -92,6 +92,16 @@ namespace CatchIfYouCan.Evidence
             if (!Equipment.EquipmentAuthority.CanConfirmEvidence)
                 return EvidenceConfirmation.NoAuthority;
 
+            // The declared observer, and only it. A device measuring something it is not the
+            // authoritative source of is refused however correct its measurement was: two
+            // devices able to prove one thing is two places for the rule to drift, and the
+            // drift is invisible until someone proves Ghost Orbs with a thermometer.
+            if (!EvidenceAuthority.IsDeclaredObserver(observation.Type, observation.SourceDeviceId))
+            {
+                Forget(observation.Type);
+                return EvidenceConfirmation.NotAnAuthorizedObserver;
+            }
+
             if (!ServiceLocator.TryGet<EvidenceManager>(out var manager))
                 return EvidenceConfirmation.NoActiveGhost;
 
