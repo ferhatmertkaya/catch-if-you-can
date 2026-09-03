@@ -91,7 +91,12 @@ namespace CatchIfYouCan.Equipment
             IsPlaced = false;
 
             transform.SetParent(handAnchor, false);
-            if (definition != null)
+
+            // The deprecated HandLocalPosition/Rotation are applied only for items that have
+            // not been converted to the held-equipment path. A HeldEquipmentBase gets its pose
+            // from its grip profile through EquipmentPresentation, which is the one owner;
+            // applying a second offset here as well is how there came to be three.
+            if (definition != null && !(this is HeldEquipmentBase))
             {
                 transform.localPosition = definition.HandLocalPosition;
                 transform.localRotation = Quaternion.Euler(definition.HandLocalRotation);

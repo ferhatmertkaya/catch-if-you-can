@@ -210,22 +210,22 @@ namespace CatchIfYouCan.Player
         [Tooltip("Seconds the crouch takes to change its mind about whether it is moving.")]
         [SerializeField, Min(0.01f)] private float crouchMoveSmoothing = 0.22f;
 
-        [Header("Flashlight arm")]
+        [Header("Held item arm")]
         [Tooltip("Raise the right arm into a torch-carrying pose whenever something is being " +
                  "carried. Off leaves the arm entirely to the walk clip.")]
-        [SerializeField] private bool poseFlashlightArm = true;
+        [SerializeField] private bool poseHeldItemArm = true;
 
         [Tooltip("The hand's goal. Created under the camera pivot at start-up if it is empty, " +
-                 "named FlashlightHandTarget, and left in the hierarchy so it can be dragged and " +
+                 "named HeldItemHandTarget, and left in the hierarchy so it can be dragged and " +
                  "turned in Play Mode. Its position is where the fist goes; its rotation is the " +
                  "wrist, and therefore the torch and the beam: forward is the barrel, up is the " +
                  "back of the hand.")]
-        [SerializeField] private Transform flashlightHandTarget;
+        [SerializeField] private Transform heldItemHandTarget;
 
         [Tooltip("The elbow's goal, roughly where the point of the elbow should sit. Created " +
-                 "under the player root if it is empty, named FlashlightElbowHint. Only its " +
+                 "under the player root if it is empty, named HeldItemElbowHint. Only its " +
                  "position is used - it decides which way the arm bends, nothing else.")]
-        [SerializeField] private Transform flashlightElbowHint;
+        [SerializeField] private Transform heldItemElbowHint;
 
         [Tooltip("Where the hand target starts, in the camera pivot's own axes. This is the " +
                  "value the created target is built with, and the one to overwrite once a better " +
@@ -269,7 +269,7 @@ namespace CatchIfYouCan.Player
         [Tooltip("Write the right arm's resolved bone paths to the log once at start-up.")]
         [SerializeField] private bool logArmBones = true;
 
-        [Header("Flashlight arm trim")]
+        [Header("Held item arm trim")]
         [Tooltip("Turns added to each arm bone after it has been solved, in its own local axes " +
                  "and in degrees. All zero is the solve untouched. These are here to be dragged " +
                  "in the Inspector while the game is running: the pose follows immediately, so a " +
@@ -561,33 +561,33 @@ namespace CatchIfYouCan.Player
         {
             Transform viewParent = cameraRoot != null ? cameraRoot : playerBody;
 
-            if (flashlightHandTarget == null && viewParent != null)
+            if (heldItemHandTarget == null && viewParent != null)
             {
-                var go = new GameObject("FlashlightHandTarget");
-                flashlightHandTarget = go.transform;
-                flashlightHandTarget.SetParent(viewParent, false);
+                var go = new GameObject("HeldItemHandTarget");
+                heldItemHandTarget = go.transform;
+                heldItemHandTarget.SetParent(viewParent, false);
                 // Only on the frame it is made. Re-binding must never quietly undo a pose that
                 // has just been dragged out by hand.
-                flashlightHandTarget.localPosition = handTargetLocalPosition;
-                flashlightHandTarget.localRotation = Quaternion.Euler(handTargetLocalEuler);
+                heldItemHandTarget.localPosition = handTargetLocalPosition;
+                heldItemHandTarget.localRotation = Quaternion.Euler(handTargetLocalEuler);
             }
-            else if (flashlightHandTarget != null && viewParent != null &&
-                     flashlightHandTarget.parent != viewParent)
+            else if (heldItemHandTarget != null && viewParent != null &&
+                     heldItemHandTarget.parent != viewParent)
             {
-                flashlightHandTarget.SetParent(viewParent, false);
+                heldItemHandTarget.SetParent(viewParent, false);
             }
 
-            if (flashlightElbowHint == null && playerBody != null)
+            if (heldItemElbowHint == null && playerBody != null)
             {
-                var go = new GameObject("FlashlightElbowHint");
-                flashlightElbowHint = go.transform;
-                flashlightElbowHint.SetParent(playerBody, false);
-                flashlightElbowHint.localPosition = elbowHintLocalPosition;
+                var go = new GameObject("HeldItemElbowHint");
+                heldItemElbowHint = go.transform;
+                heldItemElbowHint.SetParent(playerBody, false);
+                heldItemElbowHint.localPosition = elbowHintLocalPosition;
             }
-            else if (flashlightElbowHint != null && playerBody != null &&
-                     flashlightElbowHint.parent != playerBody)
+            else if (heldItemElbowHint != null && playerBody != null &&
+                     heldItemElbowHint.parent != playerBody)
             {
-                flashlightElbowHint.SetParent(playerBody, false);
+                heldItemElbowHint.SetParent(playerBody, false);
             }
         }
 
@@ -598,14 +598,14 @@ namespace CatchIfYouCan.Player
         [ContextMenu("Copy live arm targets into defaults")]
         public void CaptureArmTargets()
         {
-            if (flashlightHandTarget != null)
+            if (heldItemHandTarget != null)
             {
-                handTargetLocalPosition = flashlightHandTarget.localPosition;
-                handTargetLocalEuler = flashlightHandTarget.localEulerAngles;
+                handTargetLocalPosition = heldItemHandTarget.localPosition;
+                handTargetLocalEuler = heldItemHandTarget.localEulerAngles;
             }
 
-            if (flashlightElbowHint != null)
-                elbowHintLocalPosition = flashlightElbowHint.localPosition;
+            if (heldItemElbowHint != null)
+                elbowHintLocalPosition = heldItemElbowHint.localPosition;
 
             Debug.Log("[CIYC] Arm defaults captured. handTargetLocalPosition=" +
                       handTargetLocalPosition.ToString("F4") +
@@ -649,21 +649,21 @@ namespace CatchIfYouCan.Player
             if (!drawArmGizmos)
                 return;
 
-            if (flashlightHandTarget != null)
+            if (heldItemHandTarget != null)
             {
                 Gizmos.color = new Color(0.35f, 0.9f, 1f);
-                Gizmos.DrawWireSphere(flashlightHandTarget.position, 0.035f);
-                Gizmos.DrawLine(flashlightHandTarget.position,
-                                flashlightHandTarget.position + flashlightHandTarget.forward * 0.18f);
+                Gizmos.DrawWireSphere(heldItemHandTarget.position, 0.035f);
+                Gizmos.DrawLine(heldItemHandTarget.position,
+                                heldItemHandTarget.position + heldItemHandTarget.forward * 0.18f);
                 Gizmos.color = new Color(1f, 0.8f, 0.3f);
-                Gizmos.DrawLine(flashlightHandTarget.position,
-                                flashlightHandTarget.position + flashlightHandTarget.up * 0.08f);
+                Gizmos.DrawLine(heldItemHandTarget.position,
+                                heldItemHandTarget.position + heldItemHandTarget.up * 0.08f);
             }
 
-            if (flashlightElbowHint != null)
+            if (heldItemElbowHint != null)
             {
                 Gizmos.color = new Color(1f, 0.45f, 0.35f);
-                Gizmos.DrawWireSphere(flashlightElbowHint.position, 0.03f);
+                Gizmos.DrawWireSphere(heldItemElbowHint.position, 0.03f);
             }
 
             if (_upperArmR != null && _lowerArmR != null && _handR != null)
@@ -823,7 +823,7 @@ namespace CatchIfYouCan.Player
             ApplyStrafe(right, up, moving);
             ApplyIdle(right, forward, crouch, moving);
             ApplyHeadPitch(right);
-            ApplyFlashlightArm(right, up, forward);
+            ApplyHeldItemArm(right, up, forward);
             ApplyGrip();
             ApplyBlink(right);
 
@@ -1090,20 +1090,20 @@ namespace CatchIfYouCan.Player
         /// put and the wrist bending back to aim the beam.
         /// </para>
         /// </summary>
-        private void ApplyFlashlightArm(Vector3 right, Vector3 up, Vector3 forward)
+        private void ApplyHeldItemArm(Vector3 right, Vector3 up, Vector3 forward)
         {
-            if (!poseFlashlightArm || _grip < 0.01f)
+            if (!poseHeldItemArm || _grip < 0.01f)
                 return;
             if (_upperArmR == null || _lowerArmR == null || _handR == null)
                 return;
-            if (flashlightHandTarget == null || flashlightElbowHint == null)
+            if (heldItemHandTarget == null || heldItemElbowHint == null)
                 return;
 
             float weight = Mathf.Clamp01(_grip);
 
             Vector3 shoulder = _upperArmR.position;
-            Vector3 target = flashlightHandTarget.position;
-            Vector3 pole = flashlightElbowHint.position;
+            Vector3 target = heldItemHandTarget.position;
+            Vector3 pole = heldItemElbowHint.position;
 
             if (enforceElbowRange)
                 target = ClampToElbowRange(shoulder, target);
@@ -1188,8 +1188,8 @@ namespace CatchIfYouCan.Player
                 return;
 
             var current = Quaternion.LookRotation(barrel, backOfHand.normalized);
-            var wanted = Quaternion.LookRotation(flashlightHandTarget.forward,
-                                                 flashlightHandTarget.up);
+            var wanted = Quaternion.LookRotation(heldItemHandTarget.forward,
+                                                 heldItemHandTarget.up);
 
             // The whole correction, as one turn, and how much of it is a roll about the forearm.
             Quaternion delta = wanted * Quaternion.Inverse(current);

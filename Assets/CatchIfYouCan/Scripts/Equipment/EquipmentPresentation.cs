@@ -46,17 +46,50 @@ namespace CatchIfYouCan.Equipment
             float backset,
             out Vector3 position, out Quaternion rotation)
         {
+            SolveMeasuredHand(palm, barrel, palmNormal,
+                              handPositionOffset, handRotationOffset, gripRotationOffset,
+                              Vector3.zero, Vector3.zero, backset,
+                              out position, out rotation);
+        }
+
+        /// <summary>
+        /// The same solve, composing the character's own correction with the item's.
+        ///
+        /// <para>
+        /// Two offsets, two owners. The character correction is a fact about whose hand this is
+        /// - Nathan's fist is Nathan's fist whatever he is holding - and the item offset is a
+        /// fact about the item, the same in anyone's hand. This is the only place the two are
+        /// composed, which is what stops either of them turning into a database of the other.
+        /// </para>
+        ///
+        /// <para>
+        /// The character's correction is applied first, moving where "the palm" effectively is,
+        /// and the item is then laid on that. Both being zero - which is what they are until a
+        /// character is authored with a correction - produces exactly the arithmetic that was
+        /// here before.
+        /// </para>
+        /// </summary>
+        public static void SolveMeasuredHand(
+            Vector3 palm, Vector3 barrel, Vector3 palmNormal,
+            Vector3 handPositionOffset, Vector3 handRotationOffset, Vector3 gripRotationOffset,
+            Vector3 characterPositionOffset, Vector3 characterRotationOffset,
+            float backset,
+            out Vector3 position, out Quaternion rotation)
+        {
             rotation = Quaternion.LookRotation(barrel, palmNormal) *
                        Quaternion.Euler(90f, 0f, 0f) *
+                       Quaternion.Euler(characterRotationOffset) *
                        Quaternion.Euler(gripRotationOffset) *
                        Quaternion.Euler(handRotationOffset);
 
             Vector3 towardsFingers = Vector3.Cross(palmNormal, barrel);
+            Vector3 offset = characterPositionOffset + handPositionOffset;
+
             position = palm
                        - barrel * backset
-                       + barrel * handPositionOffset.x
-                       + palmNormal * handPositionOffset.y
-                       + towardsFingers * handPositionOffset.z;
+                       + barrel * offset.x
+                       + palmNormal * offset.y
+                       + towardsFingers * offset.z;
         }
 
         /// <summary>

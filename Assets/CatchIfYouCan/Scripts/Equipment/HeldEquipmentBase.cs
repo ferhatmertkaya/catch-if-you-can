@@ -45,42 +45,11 @@ namespace CatchIfYouCan.Equipment
         [SerializeField] protected PlayerController playerController;
 
         [Header("Grip")]
-        [Tooltip("Offset from the hand, in the player's own axes: right, up, forward. Only used " +
-                 "on the fallback path, when there is no character whose knuckles can be " +
-                 "measured. The field below is the one that moves the item in the real hand.")]
-        [SerializeField] protected Vector3 anchorGripOffset = new Vector3(0.02f, 0.01f, 0.06f);
-
-        [Tooltip("Where the item sits in the fist, in the hand's own measured axes and in " +
-                 "metres: X along the item towards its far end, Y out of the back of the hand, " +
-                 "Z towards the fingertips. Drag it in the Inspector while the game is running " +
-                 "and the item moves in the hand immediately.")]
-        [SerializeField] protected Vector3 handGripPositionOffset;
-
-        [Tooltip("Turn added to the item after it has been laid on the fist, in its own axes. " +
-                 "Live-tunable in the same way.")]
-        [SerializeField] protected Vector3 handGripRotationOffset;
-
-        [Tooltip("How far back along the item the fist closes, in metres. The origin is the " +
-                 "tail, so without this the hand grips thin air at the very end of the handle " +
-                 "and the whole item hangs off the front of it. A fist is about eight " +
-                 "centimetres across.")]
-        [SerializeField, Min(0f)] protected float gripBackset = 0.085f;
-
-        [Tooltip("Turn applied to the item after it has been aimed, in degrees about its own " +
-                 "axes. Zero is level and pointing down the aim; this is here so the pose can " +
-                 "be tuned against the hand without touching the aiming.")]
-        [SerializeField] protected Vector3 gripRotationOffset = Vector3.zero;
-
-        [Header("Aim")]
-        [Tooltip("Downward tilt from level, degrees. Something carried at chest height points " +
-                 "at the floor a few metres ahead, not at the horizon.")]
-        [SerializeField] protected float aimPitch = 10f;
-
-        [Tooltip("Seconds the aim lags the body. This is the swing.")]
-        [SerializeField, Min(0.01f)] protected float aimLag = 0.16f;
-
-        [SerializeField] protected float walkBobDegrees = 4.5f;
-        [SerializeField] protected float walkBobRate = 1.15f;
+        [Tooltip("Overrides the grip this item would otherwise resolve from its definition. " +
+                 "For trying something in the lab; production grips belong on the definition, " +
+                 "because how an item sits in a fist is a fact about the item and not about " +
+                 "one copy of it.")]
+        [SerializeField] private EquipmentGripProfile gripProfileOverride;
 
         [Header("Dropped")]
         [Tooltip("How far in front of the player it leaves the hand, and how far above chest " +
@@ -136,11 +105,69 @@ namespace CatchIfYouCan.Equipment
         /// </summary>
         protected abstract Transform Carried { get; }
 
-        /// <summary>How long the carried item is, in metres. Used to centre it when dropped.</summary>
-        protected abstract float CarriedLength { get; }
+        /// <summary>
+        /// How long the carried item is, in metres. Used to centre it when dropped and to size
+        /// the capsule it lands on. Defaults to the grip profile's length; an item that
+        /// measures its own mesh overrides this with the measurement, which is better data.
+        /// </summary>
+        protected virtual float CarriedLength => Grip.Length;
 
         /// <summary>True while it is lying in the room rather than carried.</summary>
         public bool IsOnGround => _onGround;
+
+        /// <summary>
+        /// How this item sits in a hand: the override if one is set, the definition's profile
+        /// if it has one, a migration of the definition's deprecated hand pose if it carries
+        /// one, and otherwise the shared default.
+        ///
+        /// <para>
+        /// One store, resolved in one place. There were three - the definition's
+        /// HandLocalPosition/Rotation applied as a local transform, this class's own serialized
+        /// offsets applied in the hand's measured axes, and CharacterRigProfile's grip offsets
+        /// which nothing read - and they did not agree about what space they were even in.
+        /// </para>
+        ///
+        /// <para>
+        /// The default is the flashlight's grip, unchanged, because it is the only grip in this
+        /// project that has ever been tuned against a real character in a real hand.
+        /// </para>
+        /// </summary>
+        public EquipmentGripProfile Grip
+        {
+            get
+            {
+                if (gripProfileOverride != null)
+                    return gripProfileOverride;
+
+                if (definition != null && definition.GripProfile != null)
+                    return definition.GripProfile;
+
+                // Deliberately NOT migrating the definition's deprecated HandLocalPosition and
+                // HandLocalRotation. All eleven carry the identical (0.08, -0.05, 0.22) and
+                // (0, -90, 0), because one line in EquipmentDefinitionFactory.Create wrote the
+                // same guess onto every item - it is not per-item tuning, it is one number
+                // copied eleven times. Migrating it would give every item the same grip and
+                // would move the flashlight, whose real grip is this default and is the only
+                // one in the project that has been tuned against a real hand.
+                return EquipmentGripProfile.Default;
+            }
+        }
+
+        /// <summary>
+        /// The character-wide grip correction, which is a fact about whose hand this is rather
+        /// than about what is in it. Zero when no character is selected, which is what it has
+        /// always effectively been.
+        ///
+        /// <para>
+        /// Resolved when the item is bound to a character rather than every frame: this is read
+        /// from the presentation, which runs in LateUpdate for every held item, and a catalog
+        /// lookup per item per frame is exactly the kind of cost that is invisible until there
+        /// are eleven of them.
+        /// </para>
+        /// </summary>
+        protected Character.CharacterRigProfile RigProfile => _rigProfile;
+
+        private Character.CharacterRigProfile _rigProfile;
 
         /// <summary>The view the fallback aim is taken from, when there is one.</summary>
         protected Transform ViewTransform => _view;
@@ -182,6 +209,10 @@ namespace CatchIfYouCan.Equipment
             if (body != null)
                 playerBody = body;
             ResolveHandBone();
+
+            // Cached here rather than read per frame. Which character is being played does not
+            // change while an item is in the hand.
+            _rigProfile = Character.CharacterService.Resolve()?.RigProfile;
 
             // The body motion poses the arm that carries this, and both run in LateUpdate, where
             // the order between two components is whatever Unity feels like. Rather than guess,
@@ -649,13 +680,18 @@ namespace CatchIfYouCan.Equipment
             if (carried == null || !IsEquipped || playerBody == null)
                 return;
 
+            var grip = Grip;
+            var rig = RigProfile;
+
             if (_bodyMotion != null &&
                 _bodyMotion.TryGetGrip(out Vector3 palm, out Vector3 barrel, out Vector3 palmNormal))
             {
                 EquipmentPresentation.SolveMeasuredHand(
                     palm, barrel, palmNormal,
-                    handGripPositionOffset, handGripRotationOffset, gripRotationOffset,
-                    gripBackset,
+                    grip.PositionOffset, grip.WristHint, grip.RotationOffset,
+                    rig != null ? rig.GripPositionOffset : Vector3.zero,
+                    rig != null ? rig.GripRotationOffset : Vector3.zero,
+                    grip.Backset,
                     out Vector3 handPosition, out Quaternion handRotation);
 
                 carried.rotation = handRotation;
@@ -671,19 +707,19 @@ namespace CatchIfYouCan.Equipment
             // rather than only where they are facing.
             Vector3 look = _view != null ? _view.forward : playerBody.forward;
             _aim = EquipmentPresentation.AdvanceAim(
-                _aim, ref _aimVelocity, look, playerBody.right, aimPitch, aimLag);
+                _aim, ref _aimVelocity, look, playerBody.right, grip.AimPitch, grip.AimLag);
 
             float speed = playerController != null ? playerController.CurrentSpeed : 0f;
             _bobPhase = EquipmentPresentation.AdvanceBobPhase(
-                _bobPhase, speed, walkBobRate, Time.deltaTime);
-            float bob = EquipmentPresentation.BobDegrees(_bobPhase, speed, walkBobDegrees);
+                _bobPhase, speed, grip.WalkBobRate, Time.deltaTime);
+            float bob = EquipmentPresentation.BobDegrees(_bobPhase, speed, grip.WalkBobDegrees);
 
             Vector3 aim = Quaternion.AngleAxis(bob, playerBody.right) * _aim.normalized;
 
             EquipmentPresentation.SolveAimed(
                 anchor.position, aim,
                 playerBody.right, playerBody.up, playerBody.forward,
-                anchorGripOffset, gripRotationOffset, gripBackset,
+                grip.AnchorOffset, grip.RotationOffset, grip.Backset,
                 out Vector3 aimedPosition, out Quaternion aimedRotation);
 
             carried.rotation = aimedRotation;

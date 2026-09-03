@@ -156,8 +156,16 @@ namespace CatchIfYouCan.Equipment
         /// <para>
         /// The old values were a local transform on the hand anchor and these are offsets in
         /// the hand's measured axes, so this is a migration and not a conversion: it preserves
-        /// intent, not arithmetic. Anything tuned this way should be re-checked in the
+        /// intent, not arithmetic. Anything migrated this way should be re-checked in the
         /// equipment lab once, and then the deprecated fields on the definition zeroed.
+        /// </para>
+        ///
+        /// <para>
+        /// <b>Nothing calls this automatically, on purpose.</b> All eleven definitions in this
+        /// project carry the identical (0.08, -0.05, 0.22) and (0, -90, 0) because one line in
+        /// EquipmentDefinitionFactory wrote the same guess onto every item. Migrating that
+        /// would hand every item the same grip and would move the flashlight off the one grip
+        /// that works. It is here for a definition somebody actually tuned.
         /// </para>
         /// </summary>
         public static EquipmentGripProfile FromLegacyHandPose(EquipmentDefinition definition)
