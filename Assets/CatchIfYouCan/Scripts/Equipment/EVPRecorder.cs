@@ -1,7 +1,8 @@
 using System;
-using UnityEngine;
 using CatchIfYouCan.Core;
 using CatchIfYouCan.Evidence;
+using CatchIfYouCan.Ghost;
+using UnityEngine;
 
 namespace CatchIfYouCan.Equipment
 {
@@ -14,8 +15,21 @@ namespace CatchIfYouCan.Equipment
         Knocking
     }
 
-    public class EVPRecorder : EquipmentBase
+    /// <summary>
+    /// The EVP recorder: ask a question, wait, and usually get nothing.
+    ///
+    /// <para>
+    /// Getting nothing is the point, and it did not used to be possible. Every question
+    /// produced a paranormal response and wrote a journal entry claiming one - with no ghost
+    /// required, no range, and no check on whether the entity makes EVP at all. Since the
+    /// journal registered its own evidence unchecked before AH, asking four questions into an
+    /// empty room proved EVP Response.
+    /// </para>
+    /// </summary>
+    [AddComponentMenu("Catch If You Can/EVP Recorder")]
+    public class EVPRecorder : HeldEquipmentBase
     {
+        [Header("Questions")]
         [SerializeField] private string[] questions =
         {
             "Are you here?",
@@ -23,38 +37,98 @@ namespace CatchIfYouCan.Equipment
             "How did you die?",
             "Can you speak to us?"
         };
+
+        [Header("Timing")]
+        [Tooltip("Seconds between asking and whatever comes back. The wait is the tension.")]
+        [SerializeField, Min(0.1f)] private float responseDelay = 2.5f;
+
+        [Tooltip("Seconds after a recording finishes before another can be started. Without " +
+                 "it, holding the button is a way to reroll the dice as fast as the frame rate.")]
+        [SerializeField, Min(0f)] private float cooldownSeconds = 3f;
+
+        [Header("Eligibility")]
+        [Tooltip("How close the ghost has to be to answer, in metres.")]
+        [SerializeField, Min(1f)] private float ghostRange = 8f;
+
+        [Tooltip("Chance of an answer when the ghost is right next to you, 0 to 1. It falls " +
+                 "off to nothing at the range above.")]
+        [SerializeField, Range(0f, 1f)] private float bestCaseChance = 0.55f;
+
+        [Header("Audio")]
         [SerializeField] private AudioClip[] whisperClips;
         [SerializeField] private AudioClip[] staticClips;
         [SerializeField] private AudioClip[] wordClips;
         [SerializeField] private AudioClip[] reverseClips;
         [SerializeField] private AudioClip[] knockClips;
-        [SerializeField] private float responseDelay = 2.5f;
 
         private int _questionIndex;
         private bool _awaitingResponse;
         private float _responseTimer;
+        private float _cooldownTimer;
+        private bool _warnedMissingClips;
+
+        /// <summary>The question that would be asked next.</summary>
+        public string CurrentQuestion =>
+            questions != null && questions.Length > 0 ? questions[_questionIndex] : "Hello?";
+
+        /// <summary>True between asking and the answer.</summary>
+        public bool IsRecording => _awaitingResponse;
+
+        /// <summary>Seconds until another question can be asked.</summary>
+        public float Cooldown => Mathf.Max(0f, _cooldownTimer);
+
+        /// <summary>What came back last, for a lab readout. Null when it was silence.</summary>
+        public string LastResult { get; private set; } = "nothing yet";
 
         protected override float GetInterferenceMultiplier() => 0.4f;
 
-        protected override void OnEquipped()
+        /// <summary>Asking a question does not wear the recorder out.</summary>
+        protected override float DurabilityLossPerUse => 0f;
+
+        /// <summary>Steps to the next question. Called by the HUD or the lab, not by a key.</summary>
+        public void NextQuestion()
         {
-            SetDeviceActive(true);
+            if (questions == null || questions.Length == 0)
+                return;
+
+            _questionIndex = (_questionIndex + 1) % questions.Length;
+            CIYCLog.Info("EVP question selected: " + questions[_questionIndex]);
         }
 
         protected override void OnUse()
         {
-            if (_awaitingResponse)
+            // One recording at a time, and not back to back. Without the cooldown, holding the
+            // button rerolls the dice as fast as the frame rate.
+            if (_awaitingResponse || _cooldownTimer > 0f)
                 return;
 
-            AskCurrentQuestion();
+            SetDeviceActive(true);
+            _awaitingResponse = true;
+            _responseTimer = responseDelay;
+            LastResult = "recording";
+            CIYCLog.Info("EVP asked: " + CurrentQuestion);
+        }
+
+        protected override void OnLifecycleStateChanged(EquipmentLifecycleState from,
+                                                        EquipmentLifecycleState to)
+        {
+            // Stowing it abandons the recording rather than leaving one running in a bag.
+            if (to == EquipmentLifecycleState.Equipped)
+                return;
+
+            _awaitingResponse = false;
+            SetDeviceActive(false);
         }
 
         protected override void TickEquipped(float deltaTime)
         {
+            if (_cooldownTimer > 0f)
+                _cooldownTimer -= deltaTime;
+
             if (!_awaitingResponse)
             {
-                if (UnityEngine.Input.GetKeyDown(KeyCode.Tab))
-                    CycleQuestion();
+                if (_cooldownTimer <= 0f)
+                    SetDeviceActive(false);
                 return;
             }
 
@@ -63,40 +137,75 @@ namespace CatchIfYouCan.Equipment
                 return;
 
             _awaitingResponse = false;
-            PlayGhostResponse(RollResponseType());
+            _cooldownTimer = cooldownSeconds;
+            Resolve();
         }
 
-        private void CycleQuestion()
+        /// <summary>
+        /// Decides whether anything answered, and only then reports it.
+        ///
+        /// <para>
+        /// Three things have to be true: there is a ghost, it is close enough to hear, and it
+        /// is the kind of entity that answers. A ghost with no EVP in its profile stays silent
+        /// however many times it is asked, which is what makes silence informative.
+        /// </para>
+        /// </summary>
+        private void Resolve()
         {
-            if (questions == null || questions.Length == 0)
+            var ghost = GhostController.Active;
+            if (ghost == null)
+            {
+                Silence("no entity present");
                 return;
+            }
 
-            _questionIndex = (_questionIndex + 1) % questions.Length;
-            CIYCLog.Info($"EVP question selected: {questions[_questionIndex]}");
+            Vector3 probe = CarriedRoot != null ? CarriedRoot.position : transform.position;
+            float distance = Vector3.Distance(probe, ghost.transform.position);
+            if (distance > ghostRange)
+            {
+                Silence("nothing within range");
+                return;
+            }
+
+            var definition = ghost.Definition;
+            if (definition == null || !definition.HasEvidence(EvidenceType.EVPResponse))
+            {
+                Silence("no response");
+                return;
+            }
+
+            float chance = bestCaseChance * (1f - distance / ghostRange);
+            if (UnityEngine.Random.value > chance)
+            {
+                Silence("no response");
+                return;
+            }
+
+            Respond(RollResponseType(), 1f - distance / ghostRange);
         }
 
-        private void AskCurrentQuestion()
+        private void Silence(string why)
         {
-            string question = questions != null && questions.Length > 0
-                ? questions[_questionIndex]
-                : "Hello?";
-
-            _awaitingResponse = true;
-            _responseTimer = responseDelay;
-            CIYCLog.Info($"EVP asked: {question}");
+            LastResult = why;
+            CIYCLog.Info("EVP playback: " + why + ".");
         }
 
-        private EVPResponseType RollResponseType()
-        {
-            Array values = Enum.GetValues(typeof(EVPResponseType));
-            return (EVPResponseType)values.GetValue(UnityEngine.Random.Range(0, values.Length));
-        }
-
-        private void PlayGhostResponse(EVPResponseType responseType)
+        private void Respond(EVPResponseType responseType, float strength)
         {
             AudioClip clip = PickClip(responseType);
             if (clip != null)
+            {
                 PlayClip(clip);
+            }
+            else if (!_warnedMissingClips)
+            {
+                // Said once, and said plainly. A recorder with no audio still reports the
+                // response it detected - the finding is real - but nobody should be left
+                // thinking they heard something the project does not contain.
+                _warnedMissingClips = true;
+                CIYCLog.Warn("EVP recorder has no clips for " + responseType +
+                             ". The response is reported but there is nothing to play.");
+            }
 
             string body = responseType switch
             {
@@ -108,10 +217,21 @@ namespace CatchIfYouCan.Equipment
                 _ => "Unknown EVP response."
             };
 
-            if (Core.ServiceLocator.TryGet<EvidenceManager>(out var manager))
-            {
+            LastResult = body;
+
+            // The observation is what proves it; the journal entry is the record of it. Both
+            // go through the validator now, which is what closed the door this item used to
+            // walk through.
+            Observe(EvidenceType.EVPResponse, Mathf.Clamp01(strength));
+
+            if (ServiceLocator.TryGet<EvidenceManager>(out var manager))
                 manager.AddJournalEntry("EVP Response", body, EvidenceType.EVPResponse);
-            }
+        }
+
+        private static EVPResponseType RollResponseType()
+        {
+            Array values = Enum.GetValues(typeof(EVPResponseType));
+            return (EVPResponseType)values.GetValue(UnityEngine.Random.Range(0, values.Length));
         }
 
         private AudioClip PickClip(EVPResponseType type)
