@@ -137,8 +137,85 @@ namespace CatchIfYouCan.Player
             _bodyMotion = GetComponent<PlayerBodyMotion>();
         }
 
+        /// <summary>
+        /// Where this player's movement comes from.
+        ///
+        /// <para>
+        /// A remote player is the same rig, the same animator and the same
+        /// <see cref="PlayerBodyMotion"/> as the local one - it just is not driven by this
+        /// machine's thumbs. So rather than a second character implementation with a second
+        /// animation stack, the controller has two ways of arriving at the same published
+        /// state, and everything downstream reads that state without knowing which.
+        /// </para>
+        /// </summary>
+        public enum DriveMode
+        {
+            /// <summary>Driven by this machine's input. The path that has always existed.</summary>
+            LocalInput = 0,
+
+            /// <summary>
+            /// Driven by replicated <see cref="PlayerPresentationState"/>. Movement, crouch
+            /// and grounding are not simulated here: the authority already decided them and
+            /// the root transform is placed by whatever received them.
+            /// </summary>
+            RemoteState,
+        }
+
+        /// <summary>How this player is driven. Local unless something says otherwise.</summary>
+        public DriveMode Drive { get; private set; } = DriveMode.LocalInput;
+
+        /// <summary>
+        /// Switches this player to being driven by replicated state.
+        ///
+        /// <para>
+        /// One-way on purpose: a player that starts remote stays remote for its lifetime. A
+        /// component that can change whose it is halfway through is a component where every
+        /// question about ownership has to be asked again every frame.
+        /// </para>
+        /// </summary>
+        public void DriveFromRemoteState()
+        {
+            Drive = DriveMode.RemoteState;
+
+            // A remote body must not run the capsule against this machine's colliders: the
+            // authority already decided where it is, and a second simulation would fight the
+            // received position.
+            if (_controller != null)
+                _controller.enabled = false;
+        }
+
+        /// <summary>
+        /// Publishes one received frame of remote state onto exactly the properties a local
+        /// player computes.
+        ///
+        /// <para>
+        /// This is the whole trick, and it is why no pose mathematics changed anywhere:
+        /// <see cref="PlayerBodyMotion"/> reads <see cref="LocalMoveInput"/>,
+        /// <see cref="CurrentSpeed"/>, <see cref="CrouchAmount01"/>, <see cref="IsSprinting"/>,
+        /// <see cref="IsCrouching"/> and <see cref="IsGrounded"/>, and it cannot tell whether
+        /// a thumb or a network produced them.
+        /// </para>
+        /// </summary>
+        public void ApplyRemoteState(in PlayerPresentationState state)
+        {
+            if (Drive != DriveMode.RemoteState)
+                return;
+
+            LocalMoveInput = state.MoveInput;
+            CurrentSpeed = state.Speed;
+            CrouchAmount01 = state.Crouch01;
+            IsSprinting = state.IsSprinting;
+            IsCrouching = state.IsCrouching;
+            IsGrounded = state.IsGrounded;
+        }
+
         private void Update()
         {
+            // A remote player's movement was already decided elsewhere. Everything below reads
+            // this machine's input and moves a capsule, and neither is this body's business.
+            if (Drive == DriveMode.RemoteState)
+                return;
+
             if (!_movementEnabled || _input == null)
                 return;
 
