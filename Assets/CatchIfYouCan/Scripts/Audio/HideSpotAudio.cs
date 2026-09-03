@@ -56,7 +56,7 @@ namespace CatchIfYouCan.Audio
             if (_listenerFilter != null)
                 return;
 
-            var listener = FindAnyObjectByType<AudioListener>();
+            var listener = Core.LocalPlayerService.Listener;
             if (listener == null)
                 return;
 

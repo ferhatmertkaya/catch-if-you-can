@@ -177,10 +177,13 @@ namespace CatchIfYouCan.Input
 
         private void ResolveReferences()
         {
+            // This button drives the local player's hands, so both of these must come
+            // from the local player rather than from whichever instance the scene search
+            // happened to reach first.
             if (interaction == null)
-                interaction = Object.FindAnyObjectByType<InteractionController>();
+                interaction = Core.LocalPlayerService.GetPlayerComponent<InteractionController>();
             if (inventory == null)
-                inventory = Object.FindAnyObjectByType<PlayerInventory>();
+                inventory = Core.LocalPlayerService.GetPlayerComponent<PlayerInventory>();
         }
 
         private void ApplyFade(float shown)

@@ -232,9 +232,9 @@ namespace CatchIfYouCan.Equipment
 
             // Cached once. The beam follows the look rather than the body, so this is read every
             // frame and must never be a search.
-            var main = Camera.main;
-            if (main != null)
-                _view = main.transform;
+            var view = Core.LocalPlayerService.ResolveViewCamera();
+            if (view != null)
+                _view = view.transform;
 
             Build();
             _lit = litOnSpawn;

@@ -1,5 +1,6 @@
 using System;
 using UnityEngine;
+using CatchIfYouCan.Core;
 using CatchIfYouCan.Input;
 
 namespace CatchIfYouCan.Interaction
@@ -23,19 +24,20 @@ namespace CatchIfYouCan.Interaction
         private IInteractable _heldTarget;
         private float _holdTimer;
 
-        private void Awake()
-        {
-            if (viewCamera == null)
-                viewCamera = Camera.main;
-        }
-
-        private void Start()
-        {
-            _input = MobileInputController.Instance;
-        }
-
         private void Update()
         {
+            // Both of these used to be latched once, the camera in Awake and the input in
+            // Start, and both can legitimately not exist yet at that moment: the factory
+            // assigns the camera immediately after AddComponent returns, and the input
+            // singleton is created alongside the HUD. Losing either race left interaction
+            // dead for the whole session with nothing on screen to say why. Resolved per
+            // frame until they answer, then cached.
+            if (viewCamera == null)
+                viewCamera = LocalPlayerService.ResolveViewCamera();
+
+            if (_input == null)
+                _input = MobileInputController.Instance;
+
             if (_input == null || viewCamera == null)
                 return;
 

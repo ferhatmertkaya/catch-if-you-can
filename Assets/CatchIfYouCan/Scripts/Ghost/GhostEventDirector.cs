@@ -263,7 +263,7 @@ namespace CatchIfYouCan.Ghost
 
         private static Vector3 GetBehindPlayer(Vector3 fallback)
         {
-            var cam = Camera.main;
+            var cam = Core.LocalPlayerService.ResolveViewCamera();
             if (cam == null) return fallback;
             return cam.transform.position - cam.transform.forward * 2f;
         }

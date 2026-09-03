@@ -51,14 +51,14 @@ namespace CatchIfYouCan.Player
             GameEvents.OnHuntEnded -= HandleHuntEnded;
         }
 
-        private void Start()
-        {
-            if (targetCamera == null)
-                targetCamera = Camera.main;
-        }
-
         private void Update()
         {
+            // Resolved here rather than latched in Start. The camera is built in the same
+            // frame as this component, and Start could run before the player was registered;
+            // a latch that lost that race stayed null for the rest of the session.
+            if (targetCamera == null)
+                targetCamera = LocalPlayerService.ResolveViewCamera();
+
             float delta = 0f;
 
             if (_huntActive)

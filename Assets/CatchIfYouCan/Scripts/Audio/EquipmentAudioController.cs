@@ -180,17 +180,27 @@ namespace CatchIfYouCan.Audio
         private void Awake()
         {
             _mic = GetComponent<ParabolicMicrophone>();
-            var cam = Camera.main;
+            // Resolved lazily in LateUpdate as well, because this component can be added
+            // before a player camera exists.
+            var cam = Core.LocalPlayerService.ResolveViewCamera();
             if (cam != null)
                 _listenerFilter = cam.GetComponent<AudioLowPassFilter>();
         }
 
         private void LateUpdate()
         {
-            if (_mic == null || !_mic.IsActive || _listenerFilter == null) return;
+            if (_mic == null || !_mic.IsActive) return;
+
+            var cam = Core.LocalPlayerService.ResolveViewCamera();
+            if (cam == null) return;
+
+            if (_listenerFilter == null)
+                _listenerFilter = cam.GetComponent<AudioLowPassFilter>();
+            if (_listenerFilter == null) return;
+
             Vector3 forward = transform.forward;
-            Vector3 toSource = (transform.position - Camera.main.transform.position).normalized;
-            float angle = Vector3.Angle(Camera.main.transform.forward, forward);
+            Vector3 toSource = (transform.position - cam.transform.position).normalized;
+            float angle = Vector3.Angle(cam.transform.forward, forward);
             bool inCone = angle <= coneAngle;
             _listenerFilter.cutoffFrequency = inCone ? 18000f : 6000f;
         }

@@ -1,3 +1,4 @@
+using CatchIfYouCan.Core;
 using CatchIfYouCan.Input;
 using CatchIfYouCan.Interaction;
 using UnityEngine;
@@ -131,6 +132,11 @@ namespace CatchIfYouCan.Player
             // switches it on once the screen has faded back in.
             var touchHud = UI.TouchHudFactory.Create();
             touchHud.SetActive(false);
+
+            // Announced at the end, when every part a consumer might ask for exists. The
+            // mirror, the room tone and the ambience emitters can all outlive a player and
+            // are built before one, so they follow this rather than resolving once.
+            LocalPlayerService.Register(player, viewCamera, cameraGo.GetComponent<AudioListener>());
 
             return new PlayerBuildResult
             {

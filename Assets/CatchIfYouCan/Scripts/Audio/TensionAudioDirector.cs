@@ -35,10 +35,8 @@ namespace CatchIfYouCan.Audio
 
         private void Start()
         {
-            var playerGo = GameObject.FindGameObjectWithTag("Player");
-            if (playerGo != null)
-                _fear = playerGo.GetComponent<FearSystem>();
-            _player = playerGo != null ? playerGo.transform : null;
+            _fear = Core.LocalPlayerService.GetPlayerComponent<FearSystem>();
+            _player = Core.LocalPlayerService.RootTransform;
             _ghost = FindAnyObjectByType<GhostController>();
             _lastEventTime = Time.time;
         }

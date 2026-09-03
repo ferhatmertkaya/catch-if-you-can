@@ -34,17 +34,30 @@ namespace CatchIfYouCan.Ghost
 
         private void Start()
         {
-            var playerObj = GameObject.FindGameObjectWithTag("Player");
-            if (playerObj != null)
-            {
-                _player = playerObj.transform;
-                LastKnownPlayerPosition = _player.position;
-            }
+            // The ghost is spawned before the player in the investigation bootstrap, so
+            // this can legitimately find nothing here. Re-resolved on demand rather than
+            // leaving the ghost permanently unable to perceive anyone.
+            BindPlayer();
+        }
+
+        private bool BindPlayer()
+        {
+            if (_player != null)
+                return true;
+
+            _player = Core.LocalPlayerService.RootTransform;
+            if (_player == null)
+                return false;
+
+            LastKnownPlayerPosition = _player.position;
+            return true;
         }
 
         private void Update()
         {
-            if (_player == null) return;
+            // Retried every tick until a player exists, so a ghost spawned first is not
+            // blind for the rest of the mission.
+            if (!BindPlayer()) return;
 
             UpdateLineOfSight();
             UpdateHuntConfirmation();

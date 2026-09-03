@@ -25,7 +25,7 @@ namespace CatchIfYouCan.Ghost
 
         private void Start()
         {
-            _targetCamera = Camera.main;
+            _targetCamera = Core.LocalPlayerService.ResolveViewCamera();
             ApplyVisibilityMode();
         }
 

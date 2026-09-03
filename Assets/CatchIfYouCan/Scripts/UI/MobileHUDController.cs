@@ -143,7 +143,9 @@ namespace CatchIfYouCan.UI
         {
             if (equipmentSlots == null || equipmentSlots.Length == 0) return;
             var mgr = EquipmentManager.Instance;
-            var inventory = FindAnyObjectByType<PlayerInventory>();
+            // The local player's inventory. FindAnyObjectByType returned an arbitrary
+            // one, which is the wrong answer the moment a second player exists.
+            var inventory = Core.LocalPlayerService.GetPlayerComponent<PlayerInventory>();
 
             for (int i = 0; i < equipmentSlots.Length; i++)
             {

@@ -42,8 +42,7 @@ namespace CatchIfYouCan.Audio
         private void Start()
         {
             _identity = GhostIdentityAudio.Resolve(_ghost?.Definition?.DisplayName);
-            var playerGo = GameObject.FindGameObjectWithTag("Player");
-            _player = playerGo != null ? playerGo.transform : null;
+            _player = Core.LocalPlayerService.RootTransform;
         }
 
         private void OnEnable()

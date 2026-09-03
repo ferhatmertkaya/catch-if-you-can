@@ -539,7 +539,10 @@ namespace CatchIfYouCan.Art
 
             ApplyMirrorFlip();
 
-            Camera source = Camera.main;
+            // The reflection is only correct from the eye it is drawn for. Camera.main
+            // answered "any tagged camera", which in the lobby was the menu camera until
+            // the player spawned, and in a scene with two of them is arbitrary.
+            Camera source = Core.LocalPlayerService.ResolveViewCamera();
             if (source == null)
             {
                 _mirrorCamera.gameObject.SetActive(false);
@@ -658,7 +661,7 @@ namespace CatchIfYouCan.Art
             Gizmos.DrawLine(tr, tl);
             Gizmos.DrawLine(tl, bl);
 
-            Camera source = Camera.main;
+            Camera source = Core.LocalPlayerService.ResolveViewCamera();
             if (source == null)
                 return;
 

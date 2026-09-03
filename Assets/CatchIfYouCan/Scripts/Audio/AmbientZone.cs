@@ -59,10 +59,12 @@ namespace CatchIfYouCan.Audio
 
         private void UpdateBoundsMode()
         {
-            var player = GameObject.FindGameObjectWithTag("Player");
+            // The local player, not an arbitrary tagged one: this zone decides what the
+            // person at this machine hears.
+            var player = Core.LocalPlayerService.RootTransform;
             if (player == null) return;
             var col = GetComponent<Collider>();
-            bool inside = col != null && col.bounds.Contains(player.transform.position);
+            bool inside = col != null && col.bounds.Contains(player.position);
             if (inside && !_active) Activate();
             else if (!inside && _active) Deactivate();
         }

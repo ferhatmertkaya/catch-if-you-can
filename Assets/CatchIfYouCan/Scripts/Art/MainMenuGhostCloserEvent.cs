@@ -167,7 +167,7 @@ namespace CatchIfYouCan.Art
                     _doorwayBaseline[i] = doorwayLights[i].intensity;
 
             if (menuCamera == null)
-                menuCamera = Camera.main;
+                menuCamera = Core.LocalPlayerService.ResolveViewCamera();
 
             _ready = true;
         }

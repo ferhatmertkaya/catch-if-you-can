@@ -109,8 +109,10 @@ namespace CatchIfYouCan.Audio
 
         private static Transform GetListenerTransform()
         {
-            var listener = UnityEngine.Object.FindAnyObjectByType<AudioListener>();
-            return listener != null ? listener.transform : Camera.main != null ? Camera.main.transform : null;
+            // "Any listener in the scene" was the wrong question even in single player:
+            // during the menu-to-lobby hand-off two exist for part of a frame, and the
+            // search does not say which one it picked.
+            return Core.LocalPlayerService.ResolveListenerTransform();
         }
     }
 }

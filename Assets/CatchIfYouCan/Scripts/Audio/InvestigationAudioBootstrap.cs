@@ -53,7 +53,7 @@ namespace CatchIfYouCan.Audio
         private void TryLateInstall()
         {
             var houseGen = FindAnyObjectByType<ProceduralHouseGenerator>();
-            var player = GameObject.FindGameObjectWithTag("Player");
+            var player = Core.LocalPlayerService.Root;
             var ghost = FindAnyObjectByType<GhostController>();
             VanBuildResult van = null;
             var vanRoot = GameObject.Find("InvestigationVan");
@@ -220,7 +220,7 @@ namespace CatchIfYouCan.Audio
         private void WireReverbListener()
         {
             if (FindAnyObjectByType<ReverbZoneController>() != null) return;
-            var cam = Camera.main;
+            var cam = Core.LocalPlayerService.ResolveViewCamera();
             if (cam == null) return;
             cam.gameObject.AddComponent<ReverbZoneController>();
         }

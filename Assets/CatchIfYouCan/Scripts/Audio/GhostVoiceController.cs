@@ -27,9 +27,7 @@ namespace CatchIfYouCan.Audio
         {
             _identity = GhostIdentityAudio.Resolve(_ghost?.Definition?.DisplayName);
             _whisperTimer = Random.Range(whisperIntervalMin, whisperIntervalMax);
-            var player = GameObject.FindGameObjectWithTag("Player");
-            if (player != null)
-                _playerFear = player.GetComponent<FearSystem>();
+            _playerFear = Core.LocalPlayerService.GetPlayerComponent<FearSystem>();
         }
 
         private void OnEnable()
@@ -49,9 +47,15 @@ namespace CatchIfYouCan.Audio
             if (_whisperTimer > 0f) return;
             _whisperTimer = Random.Range(whisperIntervalMin, whisperIntervalMax);
 
-            var player = GameObject.FindGameObjectWithTag("Player");
+            var player = Core.LocalPlayerService.RootTransform;
             if (player == null) return;
-            float dist = Vector3.Distance(transform.position, player.transform.position);
+
+            // Resolved late as well: this controller lives on the ghost, which is spawned
+            // before the player in the investigation bootstrap.
+            if (_playerFear == null)
+                _playerFear = Core.LocalPlayerService.GetPlayerComponent<FearSystem>();
+
+            float dist = Vector3.Distance(transform.position, player.position);
             if (dist > maxWhisperDistance) return;
 
             float fearBoost = _playerFear != null ? _playerFear.NormalizedFear * 0.3f : 0f;

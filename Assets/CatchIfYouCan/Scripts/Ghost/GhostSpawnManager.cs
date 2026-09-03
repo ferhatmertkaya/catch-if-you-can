@@ -19,9 +19,35 @@ namespace CatchIfYouCan.Ghost
 
         private void Start()
         {
-            var playerObj = GameObject.FindGameObjectWithTag(playerTag);
-            if (playerObj != null) _player = playerObj.transform;
-            _camera = Camera.main;
+            // This manager is created before the player is spawned, so Start is too early
+            // for both of these. Resolved here for the case where a player already exists,
+            // and re-resolved on demand below for the case where one does not.
+            _player = Core.LocalPlayerService.RootTransform;
+            _camera = Core.LocalPlayerService.ResolveViewCamera();
+        }
+
+        /// <summary>
+        /// The player to hunt, resolved late. Prefers the registered local player; falls
+        /// back to the tag search this used to do, so a hand-placed player in a test scene
+        /// still works.
+        /// </summary>
+        private Transform Player
+        {
+            get
+            {
+                if (Player != null)
+                    return _player;
+
+                _player = Core.LocalPlayerService.RootTransform;
+                if (Player != null)
+                    return _player;
+
+                var tagged = GameObject.FindGameObjectWithTag(playerTag);
+                if (tagged != null)
+                    _player = tagged.transform;
+
+                return _player;
+            }
         }
 
         public GhostController SpawnGhost(GhostDefinition definition, bool forceEventSpawn = false)
@@ -68,7 +94,8 @@ namespace CatchIfYouCan.Ghost
         public bool TryFindSpawnPoint(bool allowFrontSpawn, out Vector3 position)
         {
             position = Vector3.zero;
-            Vector3 playerPos = _player != null ? _player.position : Vector3.zero;
+            var player = Player;
+            Vector3 playerPos = player != null ? player.position : Vector3.zero;
 
             for (int attempt = 0; attempt < 24; attempt++)
             {
@@ -78,7 +105,7 @@ namespace CatchIfYouCan.Ghost
 
                 candidate = hit.position;
 
-                if (_player != null)
+                if (Player != null)
                 {
                     float dist = Vector3.Distance(candidate, playerPos);
                     if (dist < minPlayerDistance || dist > maxPlayerDistance)
@@ -106,7 +133,7 @@ namespace CatchIfYouCan.Ghost
                 return anchor.position + Random.insideUnitSphere * 4f;
             }
 
-            if (_player != null)
+            if (Player != null)
             {
                 Vector2 ring = Random.insideUnitCircle.normalized * Random.Range(minPlayerDistance, maxPlayerDistance);
                 return playerPos + new Vector3(ring.x, 0f, ring.y);
@@ -117,7 +144,7 @@ namespace CatchIfYouCan.Ghost
 
         private bool IsInPlayerFOV(Vector3 worldPos)
         {
-            if (_camera == null) _camera = Camera.main;
+            if (_camera == null) _camera = Core.LocalPlayerService.ResolveViewCamera();
             if (_camera == null) return false;
 
             Vector3 viewport = _camera.WorldToViewportPoint(worldPos);

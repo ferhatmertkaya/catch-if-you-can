@@ -38,17 +38,48 @@ namespace CatchIfYouCan.Audio
 
         private void Start()
         {
-            if (listener == null)
-            {
-                var cam = Camera.main;
-                listener = cam != null ? cam.transform : transform;
-            }
+            RefreshListener();
             if (WeatherSystem.Instance != null)
                 ApplyFromSystem(WeatherSystem.Instance.CurrentWeather);
         }
 
+        private bool _listenerAutoResolved;
+
+        /// <summary>
+        /// Finds the ear to measure from, and keeps looking until it finds the real one.
+        ///
+        /// This used to latch Camera.main once in Start. These controllers are installed
+        /// before the player is spawned, so that latch bound the audio to whatever camera
+        /// the scene carried at boot - in the lobby, the menu camera - and never let go.
+        /// A listener assigned by hand in the inspector is left alone.
+        /// </summary>
+        private void RefreshListener()
+        {
+            if (listener != null && !_listenerAutoResolved)
+                return;
+
+            var resolved = Core.LocalPlayerService.ResolveListenerTransform();
+            if (resolved != null)
+            {
+                listener = resolved;
+                _listenerAutoResolved = true;
+                return;
+            }
+
+            if (listener == null)
+            {
+                listener = transform;
+                _listenerAutoResolved = true;
+            }
+        }
+
         private void Update()
         {
+            // Keeps looking until a player registers a real listener; after that
+            // ResolveListenerTransform returns it and this settles.
+            if (_listenerAutoResolved)
+                RefreshListener();
+
             if (WeatherSystem.Instance != null &&
                 WeatherSystem.Instance.CurrentWeather != _lastSystemWeather)
             {
