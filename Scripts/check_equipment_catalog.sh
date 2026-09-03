@@ -125,6 +125,56 @@ for id in $CANONICAL; do
 done
 [ "$gap_ok" -eq 1 ] && ok "every id either has a runtime path or is a declared known gap"
 
+# --------------------------------------------------------- visual presentation
+
+VIS="$DEFS/Visual"
+
+if [ -d "$VIS" ]; then
+  missing=0
+  for def in "$DEFS"/Equipment_*.asset; do
+    grep -q 'VisualProfile: {fileID: 11400000' "$def" || missing=$((missing + 1))
+  done
+  [ "$missing" -eq 0 ] \
+    && ok "every definition resolves a visual profile" \
+    || fail "$missing definitions have no visual profile, so they have no presentation entry"
+
+  # An item with no art must say so. An unimplemented item that looks finished is one
+  # nobody ever finishes, which is the whole reason this flag exists.
+  bad=0
+  for vis in "$VIS"/VisualProfile_*.asset; do
+    model=$(grep '^  modelResourcePath:' "$vis" | sed 's/^  modelResourcePath: *//')
+    prefab=$(grep '^  visualPrefab:' "$vis" | grep -c 'fileID: 0' || true)
+    placeholder=$(grep '^  isDevPlaceholder:' "$vis" | awk '{print $2}')
+    if [ -z "$model" ] && [ "$prefab" = "1" ] && [ "$placeholder" != "1" ]; then
+      fail "$(basename "$vis") has no art but is not marked isDevPlaceholder"
+      bad=$((bad + 1))
+    fi
+    if [ -n "$model" ] && [ "$placeholder" = "1" ]; then
+      fail "$(basename "$vis") points at real art but is still marked isDevPlaceholder"
+      bad=$((bad + 1))
+    fi
+  done
+  [ "$bad" -eq 0 ] && ok "no placeholder is dressed up as production art, and none the other way"
+
+  # The one item with real art must keep pointing at it.
+  grep -q 'modelResourcePath: Props/CIYC_Flashlight' "$VIS/VisualProfile_Flashlight.asset" \
+    && ok "the flashlight still resolves its real FBX" \
+    || fail "the flashlight's visual profile no longer points at Props/CIYC_Flashlight"
+else
+  fail "no visual profile folder at $VIS"
+fi
+
+# Gameplay classes must not build their own production visual identity.
+if grep -n 'CreatePrimitive' Assets/CatchIfYouCan/Scripts/Equipment/HeldFlashlight.cs >/dev/null 2>&1; then
+  # The lens is a primitive on purpose - it is a light, not a model - so this only
+  # catches the body/fallback construction moving back in.
+  grep -q 'PrimitiveType.Capsule' Assets/CatchIfYouCan/Scripts/Equipment/HeldFlashlight.cs \
+    && fail "HeldFlashlight builds a body primitive again; that is the visual factory's" \
+    || ok "HeldFlashlight no longer builds its own body"
+else
+  ok "HeldFlashlight no longer builds its own body"
+fi
+
 # ------------------------------------------------------------- the never-agains
 
 ! grep -rq "class FlashlightEquipment" Assets/CatchIfYouCan/Scripts \

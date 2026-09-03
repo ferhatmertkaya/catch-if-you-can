@@ -16,6 +16,7 @@ MonoBehaviour:
   DisplayName: Video Camera
   Icon: {fileID: 0}
   Prefab: {fileID: 0}
+  VisualProfile: {fileID: 11400000, guid: 5dde983d64d71a299ce6358c267dce49, type: 2}
   HandLocalPosition: {x: 0.08, y: -0.05, z: 0.22}
   HandLocalRotation: {x: 0, y: -90, z: 0}
   BatteryUsagePerSecond: 0.9

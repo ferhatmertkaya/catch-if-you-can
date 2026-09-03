@@ -8,13 +8,12 @@ namespace CatchIfYouCan.Equipment
     /// droppable while still burning.
     ///
     /// <para>
-    /// The mesh is loaded from Resources and <b>measured</b> rather than assumed. Its long axis,
-    /// its length and where its grip ends are all read off the renderer bounds at spawn and used
-    /// to scale it to <see cref="torchLength"/> and to place the lens and the beam at the end of
-    /// it. That is why swapping the model is a matter of dropping a different FBX in: nothing
-    /// here knows how big this one is, only which way along it the beam points. If the model is
-    /// missing entirely it falls back to a capsule, which is what this was before there was a
-    /// model, and everything else still works.
+    /// The mesh is loaded and <b>measured</b> rather than assumed - its long axis, its length
+    /// and where its grip ends are read off the renderer bounds at spawn - which is why
+    /// swapping the model is a matter of pointing the visual profile somewhere else. None of
+    /// that lives here any more: it is <see cref="EquipmentVisualFactory"/>'s, driven by the
+    /// definition's <see cref="EquipmentVisualProfile"/>, so the other ten items get the same
+    /// treatment without ten copies of it.
     /// </para>
     ///
     /// <para>
@@ -45,36 +44,6 @@ namespace CatchIfYouCan.Equipment
     [AddComponentMenu("Catch If You Can/Held Flashlight")]
     public sealed class HeldFlashlight : HeldEquipmentBase
     {
-        [Header("Body")]
-        [Tooltip("Resources path of the torch mesh. Empty, or missing, falls back to a capsule.")]
-        [SerializeField] private string modelResourcePath = "Props/CIYC_Flashlight";
-
-        [Tooltip("Resources path of the material to pin onto the torch mesh. The FBX carries its " +
-                 "own material remap, and a remap that quietly did not take is a torch that is " +
-                 "there and cannot be seen; loading the real one by path removes that whole class " +
-                 "of failure. Empty leaves the model with whatever it imported with.")]
-        [SerializeField] private string modelMaterialPath = "Props/MAT_Flashlight";
-
-        [Tooltip("Log once what the torch actually ended up being: whether the mesh loaded, how " +
-                 "many renderers it has, what shader they are on and how big it came out.")]
-        [SerializeField] private bool logState = true;
-
-        [Tooltip("How long the torch is in the hand, in metres. The model is scaled to this " +
-                 "whatever units it was exported in - this one is two units end to end, which " +
-                 "would be a two metre torch taken at face value.")]
-        [SerializeField, Min(0.05f)] private float torchLength = 0.24f;
-
-        [Tooltip("Which way along the model the beam points, in the model's own axes as Unity " +
-                 "imports them. Measured from the mesh: the barrel lies along X at a radius of " +
-                 "0.096 and flares to 0.19 over the last quarter, so the head is at the FBX's " +
-                 "+X - which is Unity's -X, because the importer negates X on the way in from " +
-                 "the file's right-handed axes.")]
-        [SerializeField] private Vector3 modelBeamAxis = Vector3.left;
-
-        [Tooltip("Fallback capsule size in metres: diameter, length, diameter.")]
-        [SerializeField] private Vector3 size = new Vector3(0.052f, 0.24f, 0.052f);
-
-        [SerializeField] private Color bodyColor = new Color(0.18f, 0.19f, 0.2f);
         [SerializeField] private Color lensColor = new Color(0.85f, 0.82f, 0.66f);
 
         [Tooltip("How wide the glowing lens is, as a fraction of the torch's length.")]
@@ -115,18 +84,11 @@ namespace CatchIfYouCan.Equipment
         [SerializeField, Range(0f, 1f)] private float interferenceMultiplier = 0.2f;
         [SerializeField] private bool litOnSpawn;
 
-        private Transform _barrel;
         private Transform _head;
         private Light _light;
-        private Material _bodyMaterial;
         private Material _lensMaterial;
         private Renderer _lensRenderer;
         private bool _lit;
-
-        /// <summary>The torch itself: its local +Y runs from the grip to the lens.</summary>
-        protected override Transform Carried => _barrel;
-
-        protected override float CarriedLength => torchLength;
 
         /// <summary>Whether the switch is on. The beam also needs the torch to be held or down.</summary>
         public bool LightOn
@@ -166,8 +128,6 @@ namespace CatchIfYouCan.Equipment
             _lit = litOnSpawn;
             ApplyLight();
         }
-
-        protected override void BuildCarried() => Build();
 
         /// <summary>The beam follows the torch wherever it ends up: hand, bag or floor.</summary>
         protected override void OnCarryChanged() => ApplyLight();
@@ -285,160 +245,35 @@ namespace CatchIfYouCan.Equipment
         /// none of the aiming has to know anything about the mesh.
         /// </para>
         /// </summary>
-        private void Build()
+        /// <summary>
+        /// The model comes from content; the lens and the beam do not.
+        ///
+        /// <para>
+        /// Loading the mesh, measuring it, scaling it to length, pinning its material and
+        /// falling back to a primitive were all written here first, and were all about being
+        /// an object rather than about being a torch. They are
+        /// <see cref="EquipmentVisualFactory"/>'s now, driven by the definition's visual
+        /// profile, so swapping the flashlight FBX is a content change and the other ten items
+        /// get the same treatment for free.
+        /// </para>
+        ///
+        /// <para>
+        /// What is left here is what a mesh cannot be: a lens that lights up independently of
+        /// the body, and a real spot light.
+        /// </para>
+        /// </summary>
+        protected override void BuildCarried()
         {
-            if (_barrel != null)
+            if (CarriedRoot != null)
                 return;
 
+            base.BuildCarried();
+
+            float length = CarriedLength;
+
             var shader = Art.CiycShaders.FindLit();
-
-            var pivot = new GameObject("Torch");
-            _barrel = pivot.transform;
-            _barrel.SetParent(transform, false);
-
-            float length = BuildBody(shader);
-
             BuildLens(shader, length);
             BuildBeam(length);
-            BuildDropCollider(length);
-        }
-
-        /// <summary>
-        /// Puts the mesh on the pivot and returns how long the torch ended up, in metres.
-        /// Falls back to a capsule when there is no model to load.
-        /// </summary>
-        private float BuildBody(Shader shader)
-        {
-            var prefab = string.IsNullOrEmpty(modelResourcePath)
-                ? null
-                : Resources.Load<GameObject>(modelResourcePath);
-
-            if (prefab == null)
-            {
-                if (!string.IsNullOrEmpty(modelResourcePath))
-                {
-                    Debug.LogError("[CIYC] No torch model at Resources/" + modelResourcePath +
-                                   ". What you are seeing in the hand is the fallback capsule and " +
-                                   "its lens, not the flashlight.", this);
-                }
-                return BuildCapsule(shader);
-            }
-
-            // Spawned loose, at the world origin with no rotation and no scale, so that the
-            // renderer bounds read below are the model's own numbers. Spawned into the hand
-            // instead - which is what this did - they are the model's bounds plus wherever in
-            // the level the player happens to be standing, and the slide at the end of this
-            // method then pushes the torch that whole distance away: at the room's spawn point
-            // it put the mesh two and a quarter metres behind the player, which is exactly the
-            // "the button works but there is no torch" this is here to fix.
-            var model = Instantiate(prefab);
-            model.name = "Body";
-
-            var renderers = model.GetComponentsInChildren<Renderer>(true);
-            if (renderers.Length == 0)
-            {
-                Destroy(model);
-                return BuildCapsule(shader);
-            }
-
-            var bounds = renderers[0].bounds;
-            for (int i = 1; i < renderers.Length; i++)
-                bounds.Encapsulate(renderers[i].bounds);
-
-            model.transform.SetParent(_barrel, false);
-            model.transform.localPosition = Vector3.zero;
-            model.transform.localRotation = Quaternion.identity;
-            model.transform.localScale = Vector3.one;
-
-            // Made visible and given a material that is known to exist. An object the importer
-            // decided was hidden, a renderer that arrived switched off, and a material whose
-            // textures were never in the delivery all look the same from the player's side: a
-            // hand holding nothing.
-            Material pinned = string.IsNullOrEmpty(modelMaterialPath)
-                ? null
-                : Resources.Load<Material>(modelMaterialPath);
-
-            if (pinned == null && !string.IsNullOrEmpty(modelMaterialPath))
-            {
-                Debug.LogWarning("[CIYC] No torch material at Resources/" + modelMaterialPath +
-                                 "; keeping whatever the model imported with.", this);
-            }
-
-            for (int i = 0; i < renderers.Length; i++)
-            {
-                if (!renderers[i].gameObject.activeSelf)
-                    renderers[i].gameObject.SetActive(true);
-                renderers[i].enabled = true;
-
-                if (pinned == null)
-                    continue;
-
-                int slots = Mathf.Max(1, renderers[i].sharedMaterials.Length);
-                var materials = new Material[slots];
-                for (int m = 0; m < slots; m++)
-                    materials[m] = pinned;
-                renderers[i].sharedMaterials = materials;
-            }
-
-            Vector3 axis = modelBeamAxis.sqrMagnitude < 0.0001f ? Vector3.right : modelBeamAxis.normalized;
-            float along = Mathf.Abs(Vector3.Dot(bounds.size, Abs(axis)));
-            if (along < 0.0001f)
-                along = Mathf.Max(bounds.size.x, Mathf.Max(bounds.size.y, bounds.size.z));
-
-            float scale = torchLength / along;
-            model.transform.localScale = Vector3.one * scale;
-
-            // Turn the model's own long axis into the pivot's +Y, so everything downstream -
-            // aiming, the lens, the beam, the capsule fallback - shares one convention.
-            model.transform.localRotation = Quaternion.FromToRotation(axis, Vector3.up);
-
-            // And slide it so the grip end sits on the pivot rather than its middle.
-            Vector3 centre = model.transform.localRotation * (bounds.center * scale);
-            model.transform.localPosition = new Vector3(-centre.x, torchLength * 0.5f - centre.y, -centre.z);
-
-            for (int i = 0; i < renderers.Length; i++)
-            {
-                renderers[i].shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.On;
-                renderers[i].receiveShadows = true;
-            }
-
-            if (logState)
-            {
-                var used = renderers[0].sharedMaterial != null
-                    ? renderers[0].sharedMaterial.shader
-                    : null;
-                Debug.Log("[CIYC] Torch model: renderers=" + renderers.Length +
-                          " active=" + model.activeInHierarchy +
-                          " shader=" + (used != null ? used.name : "<none>") +
-                          " measured=" + bounds.size.ToString("F3") +
-                          " scale=" + scale.ToString("F4") +
-                          " length=" + torchLength.ToString("F3"), this);
-            }
-
-            return torchLength;
-        }
-
-        private static Vector3 Abs(Vector3 v) =>
-            new Vector3(Mathf.Abs(v.x), Mathf.Abs(v.y), Mathf.Abs(v.z));
-
-        /// <summary>The torch as it was before there was a model: a capsule with a pale cap.</summary>
-        private float BuildCapsule(Shader shader)
-        {
-            var barrel = GameObject.CreatePrimitive(PrimitiveType.Capsule);
-            barrel.name = "Body";
-            DestroyCollider(barrel);
-            barrel.transform.SetParent(_barrel, false);
-            barrel.transform.localScale = new Vector3(size.x, size.y * 0.5f, size.z);
-            barrel.transform.localPosition = new Vector3(0f, size.y * 0.5f, 0f);
-
-            if (shader != null)
-            {
-                _bodyMaterial = new Material(shader) { name = "Flashlight_Body_Runtime" };
-                _bodyMaterial.color = bodyColor;
-                barrel.GetComponent<Renderer>().sharedMaterial = _bodyMaterial;
-            }
-
-            return size.y;
         }
 
         /// <summary>
@@ -451,9 +286,9 @@ namespace CatchIfYouCan.Equipment
             var lens = GameObject.CreatePrimitive(PrimitiveType.Sphere);
             lens.name = "Lens";
             DestroyCollider(lens);
-            lens.transform.SetParent(_barrel, false);
+            lens.transform.SetParent(CarriedRoot, false);
 
-            float width = torchLength * lensFraction;
+            float width = length * lensFraction;
             lens.transform.localScale = new Vector3(width, width * 0.45f, width);
             lens.transform.localPosition = new Vector3(0f, length - width * 0.18f, 0f);
 
@@ -472,7 +307,7 @@ namespace CatchIfYouCan.Equipment
         {
             var lightGo = new GameObject("FlashlightHead");
             _head = lightGo.transform;
-            lightGo.transform.SetParent(_barrel, false);
+            lightGo.transform.SetParent(CarriedRoot, false);
             // The torch runs along local Y and a spot light shines down local Z, so the light is
             // turned a quarter turn to agree with the body it sits in.
             lightGo.transform.localRotation = Quaternion.Euler(-90f, 0f, 0f);
@@ -500,7 +335,6 @@ namespace CatchIfYouCan.Equipment
 
         private void OnDestroy()
         {
-            if (_bodyMaterial != null) Destroy(_bodyMaterial);
             if (_lensMaterial != null) Destroy(_lensMaterial);
         }
     }

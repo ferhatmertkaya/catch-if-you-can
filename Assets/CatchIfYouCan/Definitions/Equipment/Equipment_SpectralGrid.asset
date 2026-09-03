@@ -16,6 +16,7 @@ MonoBehaviour:
   DisplayName: Spectral Grid Projector
   Icon: {fileID: 0}
   Prefab: {fileID: 0}
+  VisualProfile: {fileID: 11400000, guid: 6d11756d87e09938280d208c23ff7f13, type: 2}
   HandLocalPosition: {x: 0.08, y: -0.05, z: 0.22}
   HandLocalRotation: {x: 0, y: -90, z: 0}
   BatteryUsagePerSecond: 0.85

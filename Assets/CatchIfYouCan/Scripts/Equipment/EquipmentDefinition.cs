@@ -30,6 +30,12 @@ namespace CatchIfYouCan.Equipment
         [Tooltip("DEPRECATED. See HandLocalPosition.")]
         public Vector3 HandLocalRotation;
 
+        [Header("Presentation")]
+        [Tooltip("What this item looks like. Null gets an honest placeholder rather than " +
+                 "nothing. Swapping placeholder art for final art is a change to this profile, " +
+                 "never to gameplay code.")]
+        public EquipmentVisualProfile VisualProfile;
+
         [Header("Grip")]
         [Tooltip("How this item sits in a hand. Null falls back to the shared default, which " +
                  "is the flashlight's measured grip - the one grip in this project that has " +

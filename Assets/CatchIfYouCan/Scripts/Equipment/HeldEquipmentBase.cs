@@ -100,17 +100,31 @@ namespace CatchIfYouCan.Equipment
         public Transform WorldPose => transform;
 
         /// <summary>
-        /// The transform actually laid in the hand. Built by the subclass, with its local +Y
-        /// along its length and its origin at the grip.
+        /// The transform actually laid in the hand, with its local +Y along its length and its
+        /// origin at the grip. Built from content by <see cref="BuildCarried"/>; a subclass
+        /// that assembles something more elaborate overrides that rather than this.
         /// </summary>
-        protected abstract Transform Carried { get; }
+        protected virtual Transform Carried => CarriedRoot;
+
+        /// <summary>The visual root this class built. Null until <see cref="Awake"/>.</summary>
+        protected Transform CarriedRoot { get; private set; }
+
+        /// <summary>
+        /// How this item looks, from its definition. An item with no profile gets an honest
+        /// placeholder rather than an invisible hand.
+        /// </summary>
+        protected EquipmentVisualProfile VisualProfile =>
+            definition != null && definition.VisualProfile != null
+                ? definition.VisualProfile
+                : EquipmentVisualProfile.Fallback;
 
         /// <summary>
         /// How long the carried item is, in metres. Used to centre it when dropped and to size
         /// the capsule it lands on. Defaults to the grip profile's length; an item that
         /// measures its own mesh overrides this with the measurement, which is better data.
         /// </summary>
-        protected virtual float CarriedLength => Grip.Length;
+        protected virtual float CarriedLength =>
+            _measuredLength > 0f ? _measuredLength : Grip.Length;
 
         /// <summary>True while it is lying in the room rather than carried.</summary>
         public bool IsOnGround => _onGround;
@@ -193,8 +207,31 @@ namespace CatchIfYouCan.Equipment
                 _aim = playerBody.forward;
         }
 
-        /// <summary>Builds the item's own geometry. Called once, from <see cref="Awake"/>.</summary>
-        protected abstract void BuildCarried();
+        /// <summary>
+        /// Builds the item's visual. Called once, from <see cref="Awake"/>.
+        ///
+        /// <para>
+        /// The default is the whole implementation for most items: the visual comes out of
+        /// content, so an item's class does not describe its own appearance. Override to add
+        /// something the model cannot be - the flashlight's lens and beam - and call base
+        /// first.
+        /// </para>
+        /// </summary>
+        protected virtual void BuildCarried()
+        {
+            if (CarriedRoot != null)
+                return;
+
+            CarriedRoot = EquipmentVisualFactory.Build(
+                VisualProfile, transform,
+                definition != null ? definition.DisplayName : name,
+                out float measured);
+
+            _measuredLength = measured;
+            BuildDropCollider(measured);
+        }
+
+        private float _measuredLength;
 
         /// <summary>
         /// Called whenever the item changes between being held, stowed and lying on the floor.

@@ -16,6 +16,7 @@ MonoBehaviour:
   DisplayName: Thermometer
   Icon: {fileID: 0}
   Prefab: {fileID: 0}
+  VisualProfile: {fileID: 11400000, guid: b5a9b1df02c2d118a3f9f7dcfdaba7ae, type: 2}
   HandLocalPosition: {x: 0.08, y: -0.05, z: 0.22}
   HandLocalRotation: {x: 0, y: -90, z: 0}
   BatteryUsagePerSecond: 0.25
