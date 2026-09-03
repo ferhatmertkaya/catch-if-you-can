@@ -38,6 +38,26 @@ namespace CatchIfYouCan.Equipment
         /// </summary>
         protected virtual float DurabilityLossPerUse => durabilityLossPerUse;
 
+        /// <summary>
+        /// Every piece of equipment that exists. Systems that need to walk them - the audio
+        /// wiring, the lab, the validator - ask this instead of sweeping the scene.
+        ///
+        /// <para>
+        /// The audio controller called <c>FindObjectsByType&lt;EquipmentBase&gt;</c> on every
+        /// equipment change, which walks every object in the house to find at most a handful.
+        /// It is the same cost the EMF reader and the thermometer were each paying before
+        /// phases W and Y, in a different place.
+        /// </para>
+        /// </summary>
+        private static readonly System.Collections.Generic.List<EquipmentBase> AliveEquipment =
+            new System.Collections.Generic.List<EquipmentBase>();
+
+        /// <summary>Read-only view. Do not hold onto it across frames.</summary>
+        public static System.Collections.Generic.IReadOnlyList<EquipmentBase> Alive => AliveEquipment;
+
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+        private static void ResetOnPlay() => AliveEquipment.Clear();
+
         protected virtual void Awake()
         {
             ApplyDefinitionStats();
@@ -46,11 +66,15 @@ namespace CatchIfYouCan.Equipment
                 audioSource = GetComponent<AudioSource>();
 
             ElectronicDeviceRegistry.Register(this);
+
+            if (!AliveEquipment.Contains(this))
+                AliveEquipment.Add(this);
         }
 
         protected virtual void OnDestroy()
         {
             ElectronicDeviceRegistry.Unregister(this);
+            AliveEquipment.Remove(this);
         }
 
         public virtual void BindDefinition(EquipmentDefinition def)
