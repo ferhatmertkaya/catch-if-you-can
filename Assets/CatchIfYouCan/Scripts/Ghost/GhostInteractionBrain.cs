@@ -122,9 +122,34 @@ namespace CatchIfYouCan.Ghost
                     GameEvents.BreakerChanged();
                     break;
                 case HorrorEventType.MirrorWriting:
-                    GameEvents.EvidenceDetected(EvidenceType.UVTraces);
+                    // Writing on a mirror leaves a mark on the mirror. It does not tell the
+                    // player they have found UV Traces - that used to be exactly what it did,
+                    // announcing the evidence with nothing written anywhere and no lamp ever
+                    // switched on. Now something is actually there to be found.
+                    LeaveWrittenMark();
                     break;
             }
+        }
+
+        /// <summary>
+        /// Leaves the mark the ghost just made where the ghost made it, so a UV lamp has
+        /// something to find.
+        ///
+        /// <para>
+        /// Not anchored to a mirror on purpose. The only mirror this project builds is the one
+        /// the DEV labs install, so a mark placed on "the mirror" would exist in a lab and
+        /// nowhere in a mission - which is the same nothing this branch used to leave behind,
+        /// dressed up.
+        /// </para>
+        /// </summary>
+        private void LeaveWrittenMark()
+        {
+            var evidence = GetComponent<GhostEvidenceManager>();
+            if (evidence == null)
+                return;
+
+            Vector3 spot = transform.position + transform.forward * 1.2f + Vector3.up * 1.4f;
+            evidence.Manifest(EvidenceType.UVTraces, spot);
         }
 
         private GameObject FindNearestTagged(string tag)

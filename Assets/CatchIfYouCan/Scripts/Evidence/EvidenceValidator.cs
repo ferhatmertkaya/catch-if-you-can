@@ -123,6 +123,16 @@ namespace CatchIfYouCan.Evidence
         /// <summary>
         /// Accumulates time for one evidence type, forgiving a brief gap so a reading that
         /// flickers for a frame does not restart the clock.
+        ///
+        /// <para>
+        /// The accumulated figure is elapsed time and nothing else. It used to be elapsed time
+        /// <i>plus</i> one <c>Time.deltaTime</c> per submission, which is not a quantity: a
+        /// device submitting every frame counted each frame twice and dwelled in half the
+        /// seconds asked of it, so Freezing Temperatures confirmed in a second and a half
+        /// against a three second requirement, while a device submitting on a throttle counted
+        /// only a little fast. A dwell that means a different number of seconds depending on how
+        /// often the caller happens to ask is not a dwell.
+        /// </para>
         /// </summary>
         private static bool HasDwelled(EvidenceType type, float required)
         {
@@ -131,10 +141,14 @@ namespace CatchIfYouCan.Evidence
             if (!InFlight.TryGetValue(type, out var progress) ||
                 now - progress.LastSeenTime > DwellGraceSeconds)
             {
-                progress = new Progress { Dwell = 0f, LastSeenTime = now };
+                // First sight, or gone long enough to have been forgotten. The clock starts
+                // here and this sample is worth no time at all - a device cannot have been
+                // observing for longer than it has been observing.
+                InFlight[type] = new Progress { Dwell = 0f, LastSeenTime = now };
+                return required <= 0f;
             }
 
-            progress.Dwell += Mathf.Max(0f, now - progress.LastSeenTime) + Time.deltaTime;
+            progress.Dwell += now - progress.LastSeenTime;
             progress.LastSeenTime = now;
             InFlight[type] = progress;
 

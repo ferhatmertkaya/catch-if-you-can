@@ -166,7 +166,11 @@ namespace CatchIfYouCan.Equipment
         {
             // From the registry, not a scene sweep.
             var ghost = GhostController.Active;
-            if (ghost == null || !IsInsideField(ghost.transform.position))
+            if (ghost == null)
+                return;
+
+            float strength = FieldStrengthAt(ghost.transform.position);
+            if (strength <= 0f)
                 return;
 
             // Only an entity that actually leaves a spectral signature can be shown by one.
@@ -179,30 +183,68 @@ namespace CatchIfYouCan.Equipment
             var reveal = GhostSpectralReveal.Ensure(ghost);
             reveal?.Illuminate(_head, projectionRange, projectionAngle * 0.5f * Mathf.Deg2Rad);
 
-            OnGhostRevealed(ghost);
+            OnGhostRevealed(ghost, strength);
         }
 
         /// <summary>
-        /// Whether a world point is inside the cone. The same test the shader does, in the same
-        /// frame - the device head's +Y is the axis it throws along.
+        /// How strongly the field falls on a world point, 0 to 1, where 0 means outside it.
+        ///
+        /// <para>
+        /// The same cone the shader draws, in the same frame - the device head's +Y is the axis
+        /// it throws along - so what this reports and what the player sees cannot disagree. The
+        /// two falloff terms are the two the shader has: the field dims with distance, and it
+        /// dims towards the rim. A shape at the far edge of the throw catches a handful of
+        /// points and reads near zero, which is the honest answer.
+        /// </para>
+        ///
+        /// <para>
+        /// Linear in distance where the shader squares it. The square is a look - it keeps the
+        /// last third of the throw visually dim - and a measurement should not inherit a
+        /// rendering choice.
+        /// </para>
         /// </summary>
-        public bool IsInsideField(Vector3 worldPoint)
+        public float FieldStrengthAt(Vector3 worldPoint)
         {
             if (_head == null)
-                return false;
+                return 0f;
 
             Vector3 local = _head.InverseTransformPoint(worldPoint);
             float axial = local.y;
             if (axial <= 0f || axial >= projectionRange)
-                return false;
+                return 0f;
+
+            float coneRadius = axial * Mathf.Tan(projectionAngle * 0.5f * Mathf.Deg2Rad);
+            if (coneRadius <= 0f)
+                return 0f;
 
             float radial = new Vector2(local.x, local.z).magnitude;
-            return radial < axial * Mathf.Tan(projectionAngle * 0.5f * Mathf.Deg2Rad);
+            if (radial >= coneRadius)
+                return 0f;
+
+            float reach = 1f - axial / projectionRange;
+            float centring = 1f - radial / coneRadius;
+            return Mathf.Clamp01(reach * centring);
         }
 
-        /// <summary>Called each scan that a qualifying ghost is standing in the field.</summary>
-        protected virtual void OnGhostRevealed(GhostController ghost)
+        /// <summary>
+        /// Whether a world point is inside the cone at all. One cone test, asked two ways -
+        /// two tests would be two chances to disagree with the shader.
+        /// </summary>
+        public bool IsInsideField(Vector3 worldPoint) => FieldStrengthAt(worldPoint) > 0f;
+
+        /// <summary>
+        /// Called each scan that a qualifying ghost is standing in the field, with how strongly
+        /// the field is falling on it.
+        ///
+        /// <para>
+        /// This reports a measurement. It does not decide that Spectral Grid has been proved -
+        /// the validator does, against the ghost's own profile and against a dwell, which is
+        /// why a projector left running in a doorway is not a way to grant yourself evidence.
+        /// </para>
+        /// </summary>
+        protected virtual void OnGhostRevealed(GhostController ghost, float fieldStrength)
         {
+            Observe(EvidenceType.SpectralGrid, fieldStrength);
         }
 
         /// <summary>
