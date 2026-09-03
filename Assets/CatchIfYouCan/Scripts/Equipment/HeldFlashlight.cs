@@ -56,16 +56,32 @@ namespace CatchIfYouCan.Equipment
         [SerializeField, Min(0f)] private float lensEmissionStrength = 4.5f;
 
         [Header("Beam")]
-        [SerializeField] private float lightRange = 14f;
-        [SerializeField] private float lightIntensity = 4.2f;
+        [Tooltip("How far the beam reaches. 14 m stopped inside most rooms, which reads as the " +
+                 "torch being weak rather than the room being deep; 22 m carries down a hallway " +
+                 "and still falls off long before it lights a house.")]
+        [SerializeField] private float lightRange = 22f;
+
+        [Tooltip("Lower than it was, because the cone is tighter and the range is longer. A " +
+                 "torch that washes out a whole room makes the room's own lights pointless, " +
+                 "which is the balance this number is really setting.")]
+        [SerializeField] private float lightIntensity = 3.4f;
+
+        [Tooltip("Kelvin. A modern LED torch is cool-white and slightly blue against the warm " +
+                 "practicals in the house, which is what makes the beam read as YOURS.")]
+        [SerializeField, Range(1500f, 12000f)] private float lightTemperature = 4300f;
+
+        [Tooltip("Shadows from the torch are what make a doorway frame a shape and a bannister " +
+                 "throw bars across a wall. Real cost, so it is a quality-tier decision: on " +
+                 "above the lowest tier, off at it.")]
+        [SerializeField] private bool beamShadows = true;
 
         [Tooltip("Cone of the beam. Narrow enough to be a torch rather than a lamp, wide enough " +
                  "that walking a corridor does not feel like looking down a straw.")]
-        [SerializeField] private float lightSpotAngle = 52f;
+        [SerializeField] private float lightSpotAngle = 42f;
 
         [Tooltip("Inner cone, as a fraction of the outer. The soft edge is most of what makes a " +
                  "beam read as a beam.")]
-        [SerializeField, Range(0f, 1f)] private float lightInnerFraction = 0.45f;
+        [SerializeField, Range(0f, 1f)] private float lightInnerFraction = 0.32f;
 
         [SerializeField] private Color lightColor = new Color(1f, 0.95f, 0.85f);
 
@@ -141,7 +157,19 @@ namespace CatchIfYouCan.Equipment
                  "enough that the beam reads as parallel to the view rather than converging.")]
         [SerializeField, Min(1f)] private float aimDistance = 25f;
 
+        [Tooltip("Nearest the beam will converge on something it hits. Below this the wall is " +
+                 "closer than the torch is long and aiming at it would swing the cone wildly " +
+                 "for a few centimetres of hand movement.")]
+        [SerializeField, Min(0.2f)] private float minimumAimDistance = 1.2f;
+
+        [Tooltip("How quickly the aim point slides between distances. A hard cut between a wall " +
+                 "at two metres and open air at twenty-five is a visible flick of the whole cone " +
+                 "every time the crosshair leaves a door frame.")]
+        [SerializeField, Min(0.01f)] private float aimSmoothTime = 0.08f;
+
         private Camera _aimCamera;
+        private float _aimDistanceSmoothed = -1f;
+        private float _aimDistanceVelocity;
 
         /// <summary>
         /// Points the beam through the middle of the screen.
@@ -173,9 +201,29 @@ namespace CatchIfYouCan.Equipment
             if (view == null)
                 return;
 
-            // The point the player is looking at, at a distance where the parallax between the
-            // eye and the hand no longer reads.
-            Vector3 target = view.transform.position + view.transform.forward * aimDistance;
+            // What is actually in front of the crosshair. Against a near wall the beam has to
+            // converge on the wall, or the cone lands beside the reticle by however far the hand
+            // sits from the eye; in open air it aims far, so the beam reads as parallel to the
+            // view rather than crossing it.
+            Vector3 eye = view.transform.position;
+            Vector3 forward = view.transform.forward;
+
+            float wanted = aimDistance;
+            if (Physics.Raycast(eye, forward, out RaycastHit hit, aimDistance,
+                                Physics.DefaultRaycastLayers, QueryTriggerInteraction.Ignore))
+            {
+                wanted = Mathf.Max(minimumAimDistance, hit.distance);
+            }
+
+            // Smoothed, because the distance is what jumps: a crosshair crossing a door frame
+            // goes from two metres to twenty-five in one frame, and pointing the cone straight
+            // at each in turn is a visible flick.
+            if (_aimDistanceSmoothed < 0f)
+                _aimDistanceSmoothed = wanted;
+            _aimDistanceSmoothed = Mathf.SmoothDamp(_aimDistanceSmoothed, wanted,
+                                                    ref _aimDistanceVelocity, aimSmoothTime);
+
+            Vector3 target = eye + forward * _aimDistanceSmoothed;
             Vector3 toTarget = target - _light.transform.position;
             if (toTarget.sqrMagnitude < 0.0001f)
                 return;
@@ -438,9 +486,19 @@ namespace CatchIfYouCan.Equipment
             _light.spotAngle = lightSpotAngle;
             _light.innerSpotAngle = lightSpotAngle * lightInnerFraction;
             _light.color = lightColor;
+            _light.useColorTemperature = true;
+            _light.colorTemperature = lightTemperature;
+
+            // A quality-tier decision, taken the same way PortalSurface takes its buffer size:
+            // the lowest tier is the mobile profile and pays for no beam shadows, everything
+            // above it gets them. Gameplay is identical either way - this is cost, not design.
+            int levels = Mathf.Max(1, QualitySettings.names != null ? QualitySettings.names.Length : 1);
+            bool lowestTier = QualitySettings.GetQualityLevel() <= 0 && levels > 1;
+            _light.shadows = beamShadows && !lowestTier ? LightShadows.Soft : LightShadows.None;
+            _light.shadowStrength = 0.75f;
+            _light.shadowBias = 0.02f;
             // Additional-light shadows are off in the URP asset, so asking for them here would
             // cost the sort and give nothing back.
-            _light.shadows = LightShadows.None;
             _light.enabled = false;
         }
 
