@@ -34,3 +34,6 @@ jobs:
 
       - name: Multiplayer architecture guard
         run: Scripts/check_multiplayer_architecture.sh
+
+      - name: Agent architecture guard
+        run: Scripts/check_agent_architecture.sh

@@ -4,6 +4,36 @@ A first-person paranormal-investigation horror game. Unity 6000.5.10f1, URP
 17.5.0, Forward+, IL2CPP. Mobile is the primary target (iOS and Android);
 desktop is a development convenience, not the platform being designed for.
 
+## This project uses a multi-agent ownership model
+
+Work is done by **specialist roles**, coordinated by a **Main Agent**. Before
+implementing any non-trivial task:
+
+1. Read `Docs/AGENT_OWNERSHIP.md` — who owns what.
+2. Classify the task with `Docs/AGENT_TASK_ROUTER.md` §2.
+3. Pick the **primary specialist**. If you cannot name one, it is two tasks.
+4. Identify secondary specialists and reviewers (router §4).
+5. Check the protected hotspots (`AGENT_OWNERSHIP.md` §4) and **state the
+   invariant you are preserving**.
+6. Use that specialist's DEV lab.
+7. Run the validators the roles name.
+8. Integrate through the Main Agent, in a stated order — never two writers on
+   one hotspot.
+9. QA before commit.
+
+Forty roles are defined in `Docs/AGENT_ROSTER.json` (machine-readable) and
+summarised in `AGENT_OWNERSHIP.md` §5b. `Scripts/check_agent_architecture.sh`
+fails if the two drift apart.
+
+**These are development roles, not runtime objects.** There is no
+`AgentManager`, no `AgentService`, no agent `GameObject`, and there must not be
+— the guard checks. Nothing under `Assets/` reads the roster.
+
+**Roles 35 (Netcode) and 36 (Online Services) are BLOCKED**: every Unity package
+host and `docs.unity3d.com` return a 403 policy denial here and no Unity Editor
+is available, so no package version or API signature can be verified. Those two
+domains stop rather than guess. Every other domain continues.
+
 ## Read these before changing anything
 
 | Document | When it applies |
@@ -16,6 +46,10 @@ desktop is a development convenience, not the platform being designed for.
 | `Docs/MULTIPLAYER_RUNTIME_ARCHITECTURE.md` | **Normative for the boundaries.** Who owns what, and why the pose is never replicated. |
 | `Docs/GHOST_EVIDENCE_AUTHORITY.md` | **Normative.** Any change to what counts as evidence, or to who decides it. |
 | `Docs/CROSSPLAY_PLATFORM_MATRIX.md` | Adding a platform, or anything tempted to branch on one. |
+| `Docs/AGENT_OWNERSHIP.md` + `Docs/AGENT_ROSTER.json` | **Always.** Who owns what, the 40 specialist roles, and the 19 protected hotspots. |
+| `Docs/AGENT_TASK_ROUTER.md` | **Normative for how work is assigned.** Routing, the handoff contract, the review matrix, the blocked-domain rule. |
+| `Docs/PLATFORM_QUALITY_TIERS.md` | Anything that would differ between PC, console and mobile. Gameplay never differs; presentation may. |
+| `Docs/PERFORMANCE_BUDGETS.md` | Before writing any performance number. Nothing is MEASURED yet, and saying it is fabricates evidence. |
 
 **Two session modes, chosen and never inferred.** Offline solo is exactly one
 local player with no dependency on anything outside the device — no
@@ -40,8 +74,15 @@ place that number lives; everything else derives it.
   client is told the ghost's state and never its reasoning, and a diagnostic
   never reports a latency it did not measure. 50 checks.
 
-Both run in CI (`.github/workflows/determinism.yml`). Run them locally before
-pushing; they need nothing but a shell.
+- `Scripts/check_agent_architecture.sh` — the roster holds 40 unique roles with
+  every field, the roster and `AGENT_OWNERSHIP.md` name the same roles, the
+  hotspot policy and table survive, the handoff contract still demands preserved
+  invariants, the blocked-domain rule still forbids fake netcode, no agent
+  runtime object exists in the game, and `MaxPlayers` is still 8 in its one
+  source. 13 checks.
+
+All five run in CI (`.github/workflows/determinism.yml`). Run them locally before
+pushing; they need nothing but a shell (and `python3` for the roster checks).
 
 ## The mistakes this project has already made
 
