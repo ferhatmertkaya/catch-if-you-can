@@ -162,30 +162,19 @@ namespace CatchIfYouCan.Procedural
 
         private void SpawnPlayer()
         {
-            Transform spawn = _van?.PlayerSpawnPoint;
-            Vector3 pos = spawn != null ? spawn.position : Vector3.zero;
-            Quaternion rot = spawn != null ? spawn.rotation : Quaternion.identity;
+            // Input is live immediately here, which is what this scene always did: it fades
+            // in over a player that is already in control, rather than handing control over
+            // at the end of a transition the way the menu does.
+            var buildResult = PlayerSpawner.Spawn(
+                _van?.PlayerSpawnPoint,
+                enableInput: true,
+                prefabOverride: playerPrefab != null ? playerPrefab.gameObject : null,
+                contextForDiagnostics: name);
 
-            PlayerBuildResult buildResult;
-            if (playerPrefab != null)
-            {
-                _playerInstance = Instantiate(playerPrefab.gameObject, pos, rot);
-                buildResult = new PlayerBuildResult
-                {
-                    Root = _playerInstance,
-                    HandAnchor = _playerInstance.transform.Find("HandAnchor")
-                                 ?? _playerInstance.transform.Find("CameraRoot")
-                                 ?? _playerInstance.transform,
-                    ViewCamera = _playerInstance.GetComponentInChildren<Camera>()
-                };
-            }
-            else
-            {
-                buildResult = PlayerFactory.Create(pos, rot);
-                _playerInstance = buildResult.Root;
-            }
+            if (buildResult == null)
+                return;
 
-            _playerInstance.tag = "Player";
+            _playerInstance = buildResult.Root;
             WirePlayerEquipment(buildResult);
         }
 

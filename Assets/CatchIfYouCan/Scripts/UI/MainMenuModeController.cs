@@ -229,10 +229,9 @@ namespace CatchIfYouCan.UI
             //     and showing the controls over a black screen would look like a glitch.
             yield return Fade(1f, 0f, fadeInDuration);
 
-            if (_player != null && _player.TouchHud != null)
-                _player.TouchHud.SetActive(true);
+            PlayerSpawner.SetHudVisible(true);
 
-            EnablePlayerInput(true);
+            PlayerSpawner.SetInputEnabled(true);
             DestroyFadeOverlay();
 
             if (logTransition)
@@ -244,55 +243,13 @@ namespace CatchIfYouCan.UI
             if (_player != null)
                 return;
 
-            // A missing spawn marker is not a survivable fallback, it only looks like one.
-            // The lobby floor spans x 14.7..25.3, and this controller sits at the world
-            // origin, so falling back to its transform drops the player roughly 15 m outside
-            // the room. On screen that reads as "the lobby did not load", which sends the
-            // reader hunting the wrong bug. Name the real cause before it happens.
-            if (playerSpawn == null)
-            {
-                Core.CIYCLog.Error(
-                    "MainMenuModeController.playerSpawn is not assigned on '" + name + "'. " +
-                    "The player will be created at this object's own position " +
-                    transform.position.ToString("F2") + " instead of the lobby spawn marker, " +
-                    "which is almost certainly outside the room. Assign Lobby_PlayerSpawn.");
-            }
-
-            Vector3 position = playerSpawn != null ? playerSpawn.position : transform.position;
-            Quaternion rotation = playerSpawn != null ? playerSpawn.rotation : Quaternion.identity;
-
-            _player = PlayerFactory.Create(position, rotation);
-
-            // Placed by the factory at construction, so there is no teleport of an already-live
-            // CharacterController to work around and no accumulated fall velocity to clear.
-            // Movement and look stay off until the fade is done.
-            EnablePlayerInput(false);
-
-            var look = _player.CameraRoot != null ? _player.CameraRoot.GetComponent<PlayerLook>() : null;
-            if (look != null)
-                look.SnapTo(rotation, 0f);
-        }
-
-        private void EnablePlayerInput(bool enabled)
-        {
-            if (_player == null || _player.Root == null)
-                return;
-
-            var controller = _player.Root.GetComponent<PlayerController>();
-            if (controller != null)
-                controller.MovementEnabled = enabled;
-
-            var look = _player.CameraRoot != null ? _player.CameraRoot.GetComponent<PlayerLook>() : null;
-            if (look != null)
-                look.AllowLook = enabled;
-
-            if (lockCursorInRoom && !Application.isMobilePlatform)
-            {
-                // Reversible: a future return to the menu sets these back rather than being
-                // stuck with a locked cursor.
-                Cursor.lockState = enabled ? CursorLockMode.Locked : CursorLockMode.None;
-                Cursor.visible = !enabled;
-            }
+            // The sequence - build, hold input, snap the look - lives in PlayerSpawner now,
+            // so the lobby and any later scene get it without copying it out of a menu
+            // component. This still decides the two things that are the menu's business:
+            // where, and that input stays off until the fade is finished.
+            PlayerSpawner.LockCursorWhenEnabled = lockCursorInRoom;
+            _player = PlayerSpawner.Spawn(playerSpawn, enableInput: false,
+                                          contextForDiagnostics: name);
         }
 
         private void SetRoomActive(bool active)
