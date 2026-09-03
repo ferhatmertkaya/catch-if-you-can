@@ -218,6 +218,137 @@ grep -rqE 'using Unity\.Netcode|NetworkBehaviour|NetworkVariable|ServerRpc|Clien
   && fail "netcode types have appeared; V3 is single player" \
   || ok "no netcode types"
 
+# The types above can be absent while the packages are present, and a package that is
+# in the manifest is a package somebody is about to use.
+if grep -qiE '"com\.unity\.(netcode|transport|services\.relay|services\.lobby|services\.authentication|services\.multiplayer|addressables)' \
+     Packages/manifest.json 2>/dev/null; then
+  fail "a netcode, relay, lobby, authentication or addressables package is in the manifest"
+else
+  ok "no netcode, relay, lobby, authentication or addressables package"
+fi
+
+# The seam is allowed to exist and is not allowed to be a networking layer.
+AUTHORITY="Assets/CatchIfYouCan/Scripts/Equipment/EquipmentAuthority.cs"
+if [ -f "$AUTHORITY" ]; then
+  grep -qE 'Unity\.Netcode|Socket|UnityWebRequest|NetworkManager' "$AUTHORITY" \
+    && fail "the authority seam has grown a networking dependency" \
+    || ok "the authority seam contains no networking"
+fi
+
+# ------------------------------------------------------------ evidence back-doors
+#
+# Three separate paths used to announce evidence with nothing found: devices calling
+# RegisterEvidence, the journal registering whatever a caller claimed, and the ghost's
+# own evidence manager firing EvidenceDetected on a timer for all three of its types -
+# which completed objectives forty-five seconds into a mission with no player involved.
+
+raisers=$(grep -rn 'GameEvents\.EvidenceDetected(' Assets/CatchIfYouCan/Scripts \
+          --include=*.cs | grep -v '/Core/GameEvents\.cs:' | wc -l | tr -d ' ')
+if [ "$raisers" -eq 1 ] && \
+   grep -q 'GameEvents\.EvidenceDetected(' \
+        Assets/CatchIfYouCan/Scripts/Evidence/EvidenceManager.cs; then
+  ok "EvidenceDetected is raised only by EvidenceManager.RegisterEvidence"
+else
+  fail "EvidenceDetected is raised from $raisers places; only RegisterEvidence may raise it"
+  grep -rn 'GameEvents\.EvidenceDetected(' Assets/CatchIfYouCan/Scripts --include=*.cs \
+    | grep -v '/Core/GameEvents\.cs:' | sed 's/^/        /'
+fi
+
+# RegisterEvidence itself: the validator, and the DEV lab's deliberately labelled bypass.
+callers=$(grep -rn '\.RegisterEvidence(' Assets/CatchIfYouCan/Scripts --include=*.cs \
+          | grep -v '/Missions/MissionRuntime\.cs:' | wc -l | tr -d ' ')
+if [ "$callers" -le 2 ] && \
+   grep -q 'manager\.RegisterEvidence' \
+        Assets/CatchIfYouCan/Scripts/Evidence/EvidenceValidator.cs; then
+  ok "RegisterEvidence is reached through the validator"
+else
+  fail "RegisterEvidence has $callers callers; it belongs to EvidenceValidator"
+fi
+
+# ------------------------------------------------------------------ item shape
+#
+# Every one of the eleven is a held item. Two classes may sit directly on EquipmentBase:
+# HeldEquipmentBase itself, and the DEV placeholder an unknown id becomes.
+strays=$(grep -rn ': EquipmentBase' Assets/CatchIfYouCan/Scripts --include=*.cs \
+         | grep -v 'HeldEquipmentBase : EquipmentBase' \
+         | grep -v 'DevPlaceholderEquipment : EquipmentBase' \
+         | grep -v 'where T : EquipmentBase' | wc -l | tr -d ' ')
+if [ "$strays" -eq 0 ]; then
+  ok "every equipment class is a held item"
+else
+  fail "$strays equipment classes derive straight from EquipmentBase and cannot be carried"
+  grep -rn ': EquipmentBase' Assets/CatchIfYouCan/Scripts --include=*.cs \
+    | grep -v 'HeldEquipmentBase : EquipmentBase' \
+    | grep -v 'DevPlaceholderEquipment : EquipmentBase' \
+    | grep -v 'where T : EquipmentBase' | sed 's/^/        /'
+fi
+
+# ------------------------------------------------------------------- hot paths
+#
+# A scene sweep inside Update, LateUpdate or TickEquipped walks every object in the
+# house, every frame, to find one thing. The EMF reader, the thermometer, the UV lamp,
+# the audio wiring, the salt and the evidence validator were each doing it.
+sweeps=$(awk '
+  /void (Update|LateUpdate|FixedUpdate)\(\)|void TickEquipped\(float/ { inhot = 1; depth = 0; next }
+  inhot {
+    depth += gsub(/{/, "{") - gsub(/}/, "}")
+    if ($0 ~ /FindObjectsByType|FindAnyObjectByType|GameObject\.Find|Camera\.main/)
+      print FILENAME ":" FNR ": " $0
+    if (depth <= 0 && NR > 1) inhot = 0
+  }
+' $(find Assets/CatchIfYouCan/Scripts/Equipment \
+         Assets/CatchIfYouCan/Scripts/Ghost \
+         Assets/CatchIfYouCan/Scripts/Evidence -name '*.cs') 2>/dev/null)
+
+if [ -z "$sweeps" ]; then
+  ok "no scene sweeps inside Update, LateUpdate or TickEquipped"
+else
+  fail "a scene sweep runs every frame"
+  printf '%s\n' "$sweeps" | sed 's/^/        /'
+fi
+
+# ----------------------------------------------------------------- meta files
+#
+# A .cs, .shader, .mat or .asset with no .meta is a new GUID on the next import, and
+# every reference to it silently breaks.
+# Read with a null separator: two of this project's post-processing profiles have a
+# space in the filename, and a for-loop over $(find) splits them into two halves that
+# each look like a file with no .meta.
+missing_meta=0
+while IFS= read -r asset; do
+  [ -f "$asset.meta" ] || { missing_meta=$((missing_meta + 1)); printf '        %s\n' "$asset"; }
+done <<EOF
+$(find Assets/CatchIfYouCan \
+       \( -name '*.cs' -o -name '*.shader' -o -name '*.mat' -o -name '*.asset' \))
+EOF
+[ "$missing_meta" -eq 0 ] \
+  && ok "every asset has a .meta" \
+  || fail "$missing_meta assets have no .meta; their GUIDs would be regenerated on import"
+
+# --------------------------------------------------------- placeholder honesty
+#
+# A profile that says its art is final has to point at some. One that says it is a
+# placeholder is fine and is counted, because "how much art is left" should be a number
+# somebody can read rather than an impression.
+VIS="$DEFS/Visual"
+if [ -d "$VIS" ]; then
+  placeholders=0
+  lying=0
+  for prof in "$VIS"/VisualProfile_*.asset; do
+    [ -f "$prof" ] || continue
+    if grep -q '^  isDevPlaceholder: 1$' "$prof"; then
+      placeholders=$((placeholders + 1))
+      continue
+    fi
+    grep -qE '^  (visualPrefab: \{fileID: [1-9]|modelResourcePath: .+)' "$prof" \
+      || { lying=$((lying + 1)); printf '        %s\n' "$prof"; }
+  done
+
+  [ "$lying" -eq 0 ] \
+    && ok "every profile claiming final art points at some ($placeholders still placeholder)" \
+    || fail "$lying profiles claim final art and reference none"
+fi
+
 printf '\npassed: %s   failed: %s\n\n' "$passed" "$failed"
 
 if [ "$failed" -gt 0 ]; then
