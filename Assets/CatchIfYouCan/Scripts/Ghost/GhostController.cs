@@ -29,6 +29,34 @@ namespace CatchIfYouCan.Ghost
         public GhostState CurrentState => _stateMachine != null ? _stateMachine.Current : GhostState.Dormant;
         public NavMeshAgent Agent => _agent;
 
+        /// <summary>
+        /// Every ghost currently in the scene. There is normally one, and equipment that needs
+        /// it was each calling FindAnyObjectByType - the thermometer did it every frame, per
+        /// frame, forever. A ghost knows when it exists.
+        /// </summary>
+        private static readonly System.Collections.Generic.List<GhostController> Alive =
+            new System.Collections.Generic.List<GhostController>();
+
+        /// <summary>The ghost, or null. Null is normal outside an investigation.</summary>
+        public static GhostController Active => Alive.Count > 0 ? Alive[0] : null;
+
+        /// <summary>All of them, for a lab that deliberately spawns more than one.</summary>
+        public static System.Collections.Generic.IReadOnlyList<GhostController> All => Alive;
+
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+        private static void ResetOnPlay() => Alive.Clear();
+
+        private void OnEnable()
+        {
+            if (!Alive.Contains(this))
+                Alive.Add(this);
+        }
+
+        private void OnDisable()
+        {
+            Alive.Remove(this);
+        }
+
         private void Awake()
         {
             _agent = GetComponent<NavMeshAgent>();
