@@ -19,6 +19,36 @@ namespace CatchIfYouCan.Equipment
         private static readonly System.Collections.Generic.Dictionary<string, GameObject> PrefabCache =
             new System.Collections.Generic.Dictionary<string, GameObject>();
 
+        /// <summary>
+        /// The ids this factory can actually build. Declared rather than inferred, because a
+        /// switch statement cannot be asked what it handles - and "which items have a runtime
+        /// path" is exactly the question four items were silently answering no to.
+        ///
+        /// <para>
+        /// <c>Scripts/check_equipment_catalog.sh</c> compares this set against the switch's own
+        /// case labels, so the two cannot drift apart without CI saying so.
+        /// </para>
+        /// </summary>
+        private static readonly System.Collections.Generic.HashSet<string> RuntimeIds =
+            new System.Collections.Generic.HashSet<string>(System.StringComparer.Ordinal)
+            {
+                EquipmentIds.Flashlight,
+                EquipmentIds.EmfDetector,
+                EquipmentIds.UvLight,
+                EquipmentIds.Thermometer,
+                EquipmentIds.EvpRecorder,
+                EquipmentIds.PhotoCamera,
+                EquipmentIds.Salt,
+            };
+
+        /// <summary>
+        /// Whether this id can become a real object rather than a DEV_PLACEHOLDER. Asked by
+        /// <see cref="EquipmentCatalogValidator"/>, which is the only reason an item without one
+        /// is now visible before someone picks it up and finds a grey box.
+        /// </summary>
+        public static bool HasRuntimePath(string equipmentId) =>
+            !string.IsNullOrEmpty(equipmentId) && RuntimeIds.Contains(equipmentId);
+
         public static void EnsureRuntimePrefab(EquipmentDefinition definition)
         {
             if (definition == null || definition.Prefab != null)
@@ -32,13 +62,13 @@ namespace CatchIfYouCan.Equipment
 
             GameObject prefab = definition.Id switch
             {
-                "flashlight" => BuildFlashlight(definition),
-                "emf_detector" => BuildPrimitiveEquipment<EMFDetector>(definition, new Vector3(0.15f, 0.08f, 0.25f)),
-                "uv_light" => BuildUvLight(definition),
-                "thermometer" => BuildPrimitiveEquipment<ThermometerEquipment>(definition, new Vector3(0.05f, 0.15f, 0.05f)),
-                "evp_recorder" => BuildPrimitiveEquipment<EVPRecorder>(definition, new Vector3(0.12f, 0.08f, 0.18f)),
-                "photo_camera" => BuildPrimitiveEquipment<PhotoCameraEquipment>(definition, new Vector3(0.12f, 0.1f, 0.18f)),
-                "salt" => BuildPrimitiveEquipment<SaltEquipment>(definition, new Vector3(0.2f, 0.15f, 0.2f)),
+                EquipmentIds.Flashlight => BuildFlashlight(definition),
+                EquipmentIds.EmfDetector => BuildPrimitiveEquipment<EMFDetector>(definition, new Vector3(0.15f, 0.08f, 0.25f)),
+                EquipmentIds.UvLight => BuildUvLight(definition),
+                EquipmentIds.Thermometer => BuildPrimitiveEquipment<ThermometerEquipment>(definition, new Vector3(0.05f, 0.15f, 0.05f)),
+                EquipmentIds.EvpRecorder => BuildPrimitiveEquipment<EVPRecorder>(definition, new Vector3(0.12f, 0.08f, 0.18f)),
+                EquipmentIds.PhotoCamera => BuildPrimitiveEquipment<PhotoCameraEquipment>(definition, new Vector3(0.12f, 0.1f, 0.18f)),
+                EquipmentIds.Salt => BuildPrimitiveEquipment<SaltEquipment>(definition, new Vector3(0.2f, 0.15f, 0.2f)),
                 _ => BuildDevPlaceholder(definition)
             };
 

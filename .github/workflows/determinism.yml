@@ -28,3 +28,6 @@ jobs:
 
       - name: Development scene guard
         run: Scripts/check_dev_scenes.sh
+
+      - name: Equipment catalog guard
+        run: Scripts/check_equipment_catalog.sh
