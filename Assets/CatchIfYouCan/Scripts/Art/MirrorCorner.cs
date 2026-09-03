@@ -103,6 +103,18 @@ namespace CatchIfYouCan.Art
                  "it should not run while the player is on the other side of the house.")]
         [SerializeField, Min(1f)] private float renderDistance = 7f;
 
+        [Tooltip("What the reflection is allowed to see. UI, post-processing volumes and " +
+                 "occlusion helpers are off by default: none of them belongs in a mirror, and " +
+                 "the first one would put the HUD in it. Player and Ghost stay ON - being able " +
+                 "to look at yourself is what this corner is for, and a ghost in the glass is " +
+                 "the whole point of a mirror in a horror game.")]
+        [SerializeField] private LayerMask reflectionLayers = ~((1 << 5) | (1 << 15) | (1 << 16));
+
+        [Tooltip("Beyond this, the reflection is drawn without shadows. A shadow map is a whole " +
+                 "extra pass, and at three metres in a 70 cm mirror nobody can tell. Zero keeps " +
+                 "shadows at every distance.")]
+        [SerializeField, Min(0f)] private float shadowDistance = 3f;
+
         [Tooltip("Near plane the reflection camera is built at before the oblique clip moves the " +
                  "real one onto the glass. Small, because the reflected eye can end up close to " +
                  "the plane when the player stands against the mirror.")]
@@ -211,6 +223,21 @@ namespace CatchIfYouCan.Art
 
         private Camera _cachedSource;
         private int _textureWidth, _textureHeight;
+
+        /// <summary>
+        /// The glass in world space, taken once. The mirror never moves, so neither do these.
+        /// </summary>
+        private Bounds _glassBounds;
+
+        /// <summary>
+        /// Reused every frame. The <c>Plane[]</c>-returning overload of
+        /// <see cref="GeometryUtility.CalculateFrustumPlanes(Camera)"/> allocates an array per
+        /// call, which in LateUpdate is six planes of garbage per frame forever.
+        /// </summary>
+        private readonly Plane[] _sourceFrustum = new Plane[6];
+
+        private UnityEngine.Rendering.Universal.UniversalAdditionalCameraData _cameraData;
+        private bool _shadowsOn = true;
 
         private static readonly int ReflectionTexId = Shader.PropertyToID("_ReflectionTex");
 
@@ -345,6 +372,13 @@ namespace CatchIfYouCan.Art
             _planePoint = _surface.position;
             _planeNormal = _surface.forward;
 
+            // The glass in world space, for the "is the mirror even on screen" test. Taken once
+            // for the same reason the plane is: the mirror does not move. Expanded slightly
+            // because a flat quad's bounds are zero-thick on one axis, and a zero-extent box is
+            // an awkward thing to hand a frustum test.
+            _glassBounds = renderer.bounds;
+            _glassBounds.Expand(0.05f);
+
             EnsureTexture(Core.LocalPlayerService.ResolveViewCamera());
 
             // The mirror shader, not URP/Lit. A lit mirror is a surface the room's light falls on,
@@ -432,13 +466,18 @@ namespace CatchIfYouCan.Art
             _mirrorCamera.allowMSAA = false;
             _mirrorCamera.useOcclusionCulling = false;
 
-            var data = go.GetComponent<UnityEngine.Rendering.Universal.UniversalAdditionalCameraData>();
-            if (data == null)
-                data = go.AddComponent<UnityEngine.Rendering.Universal.UniversalAdditionalCameraData>();
+            // Render fewer things, which is the cheapest optimisation there is. The HUD in
+            // particular must never appear in the glass.
+            _mirrorCamera.cullingMask = reflectionLayers;
+
+            _cameraData = go.GetComponent<UnityEngine.Rendering.Universal.UniversalAdditionalCameraData>();
+            if (_cameraData == null)
+                _cameraData = go.AddComponent<UnityEngine.Rendering.Universal.UniversalAdditionalCameraData>();
             // Grading and vignette are the player's view of the room, not the room itself, and
             // running them twice costs a full pass for something nobody can see at this size.
-            data.renderPostProcessing = false;
-            data.renderShadows = true;
+            _cameraData.renderPostProcessing = false;
+            _cameraData.renderShadows = true;
+            _shadowsOn = true;
 
             // Nothing else goes on this object, ever: no AudioListener (two of them is a Unity
             // warning and a wrong mix), no PlayerLook, no gameplay component. It is built from a
@@ -542,16 +581,39 @@ namespace CatchIfYouCan.Art
 
             Vector3 eye = source.transform.position;
             float inFront = Vector3.Dot(eye - _planePoint, _planeNormal);
+            float distance = Vector3.Distance(eye, _planePoint);
 
-            // Nothing to reflect from behind the glass, and nothing worth a second render of the
-            // room from across the house.
-            bool visible = inFront > 0.05f &&
-                           Vector3.Distance(eye, _planePoint) <= renderDistance;
+            // Three tests, cheapest first, and every one of them skips a whole second render of
+            // the room.
+            //
+            //   1. Behind the glass. The quad is single-sided, so from back there the mirror is
+            //      not merely unlit - it is not drawn at all.
+            //   2. Too far to be worth it.
+            //   3. Not on screen. This is the one that matters most: a player walking round the
+            //      lobby faces away from the mirror most of the time, and until now that still
+            //      cost a full render of the room every single frame. The glass is a fixed box,
+            //      so this is six plane tests against an AABB that never moves.
+            bool visible = inFront > 0.05f && distance <= renderDistance;
+
+            if (visible)
+            {
+                GeometryUtility.CalculateFrustumPlanes(source, _sourceFrustum);
+                visible = GeometryUtility.TestPlanesAABB(_sourceFrustum, _glassBounds);
+            }
 
             if (_mirrorCamera.gameObject.activeSelf != visible)
                 _mirrorCamera.gameObject.SetActive(visible);
             if (!visible)
                 return;
+
+            // A shadow map is a whole extra pass. In a 70 cm mirror across the room, it buys
+            // nothing. Set only when it changes, so this is not a write per frame.
+            bool wantShadows = shadowDistance <= 0f || distance <= shadowDistance;
+            if (_cameraData != null && _shadowsOn != wantShadows)
+            {
+                _cameraData.renderShadows = wantShadows;
+                _shadowsOn = wantShadows;
+            }
 
             EnsureTexture(source);
 
