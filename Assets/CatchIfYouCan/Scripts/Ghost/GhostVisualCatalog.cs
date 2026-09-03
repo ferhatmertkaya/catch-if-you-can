@@ -42,6 +42,21 @@ namespace CatchIfYouCan.Ghost
         public const string PrefabResourceFolder = "Ghosts/";
 
         /// <summary>
+        /// Where the editor tooling must WRITE ghost prefabs for the lookup above to find them.
+        ///
+        /// <para>
+        /// It exists because half of this bug was fixed once already. The runtime path was
+        /// corrected from "CatchIfYouCan/Ghosts/" to "Ghosts/", and the tool that builds the
+        /// prefabs went on writing them to Assets/CatchIfYouCan/Resources/CatchIfYouCan/Ghosts
+        /// - so every ghost the integrator produced was still unreachable and every ghost in
+        /// the game was still the primitive fallback. A reader and a writer that agree by
+        /// having been edited on the same day will disagree again; these two now derive from
+        /// one constant.
+        /// </para>
+        /// </summary>
+        public const string PrefabAssetFolder = "Assets/CatchIfYouCan/Resources/Ghosts";
+
+        /// <summary>
         /// Where a ghost's prefab is looked for under Resources.
         ///
         /// <para>

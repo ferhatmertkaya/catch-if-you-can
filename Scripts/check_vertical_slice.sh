@@ -204,6 +204,41 @@ if re.search(r"private bool PrepareWorld\(\)(.|\n)*?HouseLightingDirector", boot
 else:
     ok("lighting is applied on entry, not on preview")
 
+
+# ---- the ghost prefab writer and reader agree -----------------------------------------------
+#
+# This bug was half-fixed once: the runtime lookup was corrected from "CatchIfYouCan/Ghosts/"
+# to "Ghosts/" and the editor tool went on writing to the old folder, so every ghost the
+# integrator built stayed unreachable and every ghost in the game stayed a primitive capsule.
+
+catalog = code("/Assets/CatchIfYouCan/Scripts/Ghost/GhostVisualCatalog.cs")
+integrator = code("/Assets/CatchIfYouCan/Editor/ExternalAssetIntegrator.cs")
+
+m = re.search(r'PrefabAssetFolder\s*=\s*"([^"]+)"', catalog)
+if not m:
+    bad("the ghost prefab folder is declared once",
+        "expected GhostVisualCatalog.PrefabAssetFolder")
+else:
+    asset_folder = m.group(1)
+    ok("the ghost prefab folder is declared once (%s)" % asset_folder)
+
+    # It has to sit directly under a Resources folder for the runtime path to resolve.
+    r = re.search(r'PrefabResourceFolder\s*=\s*"([^"]+)"', catalog)
+    resource_folder = r.group(1) if r else ""
+    expected = "Assets/CatchIfYouCan/Resources/" + resource_folder.rstrip("/")
+    if asset_folder == expected:
+        ok("the write folder resolves to the lookup path")
+    else:
+        bad("the write folder resolves to the lookup path",
+            "Resources.Load(\"%s\") reads %s, but prefabs are written to %s"
+            % (resource_folder, expected, asset_folder))
+
+if re.search(r'"Assets/CatchIfYouCan/Resources/[^"]*Ghosts', integrator):
+    bad("the integrator writes through the shared constant",
+        "a hard-coded ghost prefab path is back in ExternalAssetIntegrator")
+else:
+    ok("the integrator writes through the shared constant")
+
 print()
 print("  %d passed, %d failed" % (passed, failed))
 sys.exit(1 if failed else 0)

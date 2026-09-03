@@ -61,7 +61,7 @@ namespace CatchIfYouCan.EditorTools
 
         private static void EnsureFolders()
         {
-            EnsureFolder("Assets/CatchIfYouCan/Resources/CatchIfYouCan/Ghosts");
+            EnsureFolder(Ghost.GhostVisualCatalog.PrefabAssetFolder);
             EnsureFolder(ExternalAssetPaths.PropPrefabsRoot);
             EnsureFolder(ExternalAssetPaths.GhostPrefabsRoot);
             EnsureFolder(MonsterPrefabsRoot);
@@ -271,7 +271,7 @@ namespace CatchIfYouCan.EditorTools
                     continue;
 
                 map[ghost.Id] = prefab;
-                SavePrefabCopy(prefab, $"Assets/CatchIfYouCan/Resources/CatchIfYouCan/Ghosts/{ghost.Id}.prefab");
+                SavePrefabCopy(prefab, Ghost.GhostVisualCatalog.PrefabAssetFolder + "/" + ghost.Id + ".prefab");
             }
 
             BuildProfileGhostPrefabs(ghostMaterial, report);
@@ -370,7 +370,7 @@ namespace CatchIfYouCan.EditorTools
                 if (prefab == null)
                     continue;
 
-                SavePrefabCopy(prefab, $"Assets/CatchIfYouCan/Resources/CatchIfYouCan/Ghosts/profile_{profile}.prefab");
+                SavePrefabCopy(prefab, Ghost.GhostVisualCatalog.PrefabAssetFolder + "/profile_" + profile + ".prefab");
                 created++;
             }
 

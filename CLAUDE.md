@@ -102,7 +102,8 @@ place that number lives; everything else derives it.
   identification bonus is paid for being right rather than for turning up. It also keeps the
   house lighting out of generation: the director derives from the seed locally rather than
   from a `CiycRandom` stream, and it runs on entry rather than while the world is only being
-  previewed through the portal. 15 checks.
+  previewed through the portal, and the tool that writes ghost prefabs writes them where the
+  runtime looks. 18 checks.
 
 All seven run in CI (`.github/workflows/determinism.yml`). Run them locally before
 pushing; they need nothing but a shell (and `python3` for the roster checks).
