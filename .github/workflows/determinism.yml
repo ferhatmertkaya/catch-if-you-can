@@ -40,3 +40,6 @@ jobs:
 
       - name: UI and portal guard
         run: Scripts/check_ui_and_portal.sh
+
+      - name: Vertical slice guard
+        run: Scripts/check_vertical_slice.sh

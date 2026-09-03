@@ -94,7 +94,11 @@ place that number lives; everything else derives it.
   runtime object exists in the game, and `MaxPlayers` is still 8 in its one
   source. 13 checks.
 
-All six run in CI (`.github/workflows/determinism.yml`). Run them locally before
+- `Scripts/check_vertical_slice.sh` — the Suburban House stays solvable: its entity roster is
+  named, every entity in it leaves evidence the four-tool kit can actually find, no two share
+  an evidence signature, and the mission still recommends those four tools. 7 checks.
+
+All seven run in CI (`.github/workflows/determinism.yml`). Run them locally before
 pushing; they need nothing but a shell (and `python3` for the roster checks).
 
 ## The mistakes this project has already made

@@ -69,7 +69,7 @@ namespace CatchIfYouCan.Missions
             // authoritative source; in multiplayer this call becomes host-only and the result
             // is replicated with MissionStart (Docs/NETWORKING.md §3).
             int seed = seedOverride ?? SessionSeedSource.Next();
-            var ghost = PickGhost();
+            var ghost = PickGhost(mission);
             var runtime = MissionRuntime.Create(mission, _nextCaseNumber++, seed, ghost);
             ActiveMission = runtime;
             SelectedMission = mission;
@@ -127,12 +127,66 @@ namespace CatchIfYouCan.Missions
             GameManager.Instance?.FailMission();
         }
 
-        private GhostDefinition PickGhost()
+        /// <summary>
+        /// Which entity haunts this location.
+        ///
+        /// <para>
+        /// Drawn from the mission's own roster where it declares one. A location that can host
+        /// any entity in the game is a location where the evidence the player can gather may
+        /// not narrow the answer at all - and an unsolvable case is not a hard case, it is a
+        /// coin toss. Restricting the roster is mission content; nothing here changes what
+        /// counts as evidence or who may confirm it.
+        /// </para>
+        ///
+        /// <para>
+        /// A roster that matches nothing is <b>reported and ignored</b> rather than silently
+        /// obeyed: an empty draw would leave the mission with no entity at all, which reads in
+        /// game as a house where nothing ever happens.
+        /// </para>
+        /// </summary>
+        private GhostDefinition PickGhost(MissionDefinition mission)
         {
             if (ghostPool == null || ghostPool.Length == 0)
                 return null;
 
-            return ghostPool[UnityEngine.Random.Range(0, ghostPool.Length)];
+            GhostDefinition[] eligible = FilterByMissionRoster(mission);
+            if (eligible.Length == 0)
+            {
+                CIYCLog.Error(
+                    "Mission '" + (mission != null ? mission.MapName : "?") + "' names an " +
+                    "entity roster that matches nothing in the ghost pool. Falling back to the " +
+                    "whole roster, which may make the case unsolvable with the kit for this " +
+                    "location. Check MissionDefinition.EligibleGhostIds against GhostIds.");
+                eligible = ghostPool;
+            }
+
+            return eligible[UnityEngine.Random.Range(0, eligible.Length)];
+        }
+
+        private GhostDefinition[] FilterByMissionRoster(MissionDefinition mission)
+        {
+            string[] allowed = mission != null ? mission.EligibleGhostIds : null;
+            if (allowed == null || allowed.Length == 0)
+                return ghostPool;
+
+            var matched = new System.Collections.Generic.List<GhostDefinition>();
+            for (int i = 0; i < ghostPool.Length; i++)
+            {
+                GhostDefinition candidate = ghostPool[i];
+                if (candidate == null)
+                    continue;
+
+                for (int j = 0; j < allowed.Length; j++)
+                {
+                    if (string.Equals(candidate.Id, allowed[j], StringComparison.Ordinal))
+                    {
+                        matched.Add(candidate);
+                        break;
+                    }
+                }
+            }
+
+            return matched.ToArray();
         }
 
         private void ApplyDifficultyModifiers(MissionRuntime runtime)

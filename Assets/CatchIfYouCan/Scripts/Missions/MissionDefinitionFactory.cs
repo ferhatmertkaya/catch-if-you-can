@@ -17,7 +17,24 @@ namespace CatchIfYouCan.Missions
                     difficulty: DifficultyTier.Investigator,
                     briefing: "A quiet suburban home with a recent history of unexplained disturbances. "
                               + "Identify the entity before dawn.",
-                    recommended: new[] { "emf_detector", "flashlight", "photo_camera" }),
+                    recommended: new[]
+                    {
+                        Equipment.EquipmentIds.Flashlight,
+                        Equipment.EquipmentIds.EmfDetector,
+                        Equipment.EquipmentIds.UvLight,
+                        Equipment.EquipmentIds.Thermometer,
+                    },
+                    // Three entities, each told apart by which of EMF, UV traces and freezing
+                    // temperatures the standard kit can actually find here: the Wanderer leaves
+                    // EMF and cold, the Mimicer EMF and traces, the Static only EMF. Their other
+                    // evidence needs tools this location is not equipped for, which is what
+                    // makes those signatures distinct rather than incomplete.
+                    eligibleGhosts: new[]
+                    {
+                        Ghost.GhostIds.Wanderer,
+                        Ghost.GhostIds.Mimicer,
+                        Ghost.GhostIds.Static,
+                    }),
                 Create(
                     MissionTheme.OldFarmHouse,
                     "OLD FARM HOUSE",
@@ -59,7 +76,8 @@ namespace CatchIfYouCan.Missions
             int bonusPerObjective,
             DifficultyTier difficulty,
             string briefing,
-            string[] recommended)
+            string[] recommended,
+            string[] eligibleGhosts = null)
         {
             var mission = ScriptableObject.CreateInstance<MissionDefinition>();
             mission.Theme = theme;
@@ -70,6 +88,7 @@ namespace CatchIfYouCan.Missions
             mission.Difficulty = DifficultyDefinition.CreatePreset(difficulty);
             mission.Briefing = briefing;
             mission.RecommendedEquipmentIds = recommended;
+            mission.EligibleGhostIds = eligibleGhosts ?? System.Array.Empty<string>();
             return mission;
         }
     }
