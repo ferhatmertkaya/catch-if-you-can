@@ -148,14 +148,41 @@ namespace CatchIfYouCan.EditorTools
                 return false;
             }
 
+            // A development lab that reaches a store build ships the debug fixtures, the
+            // placeholder art and, in the network lab's case, a panel announcing that the
+            // netcode is not installed. Failing the build is the correct response: the
+            // filter below would have dropped it silently, and silence is how a tick box
+            // left on in the editor becomes a shipped scene.
+            var labs = scenes
+                .Where(s => s.enabled && Development.DevelopmentScenes.IsDevelopmentScenePath(s.path))
+                .Select(s => s.path)
+                .ToArray();
+            if (labs.Length > 0)
+            {
+                Debug.LogError("[CIYC] Development scenes are enabled in Build Settings:\n" +
+                               string.Join("\n", labs) +
+                               "\nDisable or remove them; labs never ship.");
+                if (!Application.isBatchMode)
+                    EditorUtility.DisplayDialog("Build Failed",
+                        "Development scenes are enabled in Build Settings:\n\n" +
+                        string.Join("\n", labs) + "\n\nLabs never ship.", "OK");
+                return false;
+            }
+
             return true;
         }
 
+        /// <summary>
+        /// The scenes a build actually contains. Development scenes are filtered here as
+        /// well as rejected above, so a build started by a path that skips validation still
+        /// cannot pick one up.
+        /// </summary>
         private static string[] GetEnabledScenePaths()
         {
             return EditorBuildSettings.scenes
                 .Where(s => s.enabled)
                 .Select(s => s.path)
+                .Where(path => !Development.DevelopmentScenes.IsDevelopmentScenePath(path))
                 .ToArray();
         }
 

@@ -211,6 +211,16 @@ namespace CatchIfYouCan.EditorTools
                 if (!registered)
                     _issues.Add($"[WARN] Build Settings does not include {required[i]}.");
             }
+
+            // The opposite mistake, and the more expensive one: a lab in the shipping list.
+            for (int s = 0; scenes != null && s < scenes.Length; s++)
+            {
+                if (scenes[s] == null || !scenes[s].enabled)
+                    continue;
+
+                if (Development.DevelopmentScenes.IsDevelopmentScenePath(scenes[s].path))
+                    _issues.Add($"[ERROR] Development scene enabled in Build Settings: {scenes[s].path}");
+            }
         }
     }
 }

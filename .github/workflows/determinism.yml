@@ -25,3 +25,6 @@ jobs:
 
       - name: Static guard and determinism suite
         run: Scripts/check_determinism.sh
+
+      - name: Development scene guard
+        run: Scripts/check_dev_scenes.sh
