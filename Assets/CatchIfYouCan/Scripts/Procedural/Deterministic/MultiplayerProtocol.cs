@@ -55,6 +55,34 @@ namespace CatchIfYouCan.Procedural.Deterministic
         public const int MaxPlayers = 8;
 
         /// <summary>
+        /// The id a player has when there is no networking layer. Offline solo is this player.
+        ///
+        /// <para>
+        /// It is a real player, not the absence of one. Anything that means "nobody" wants
+        /// <see cref="NoClientId"/>: an item the solo player is carrying must not read as
+        /// unowned, which is exactly what happens when one value is asked to mean both.
+        /// </para>
+        /// </summary>
+        public const int LocalOnlyClientId = -1;
+
+        /// <summary>
+        /// Not a player. What an unowned thing records, and what a claim from nowhere is.
+        ///
+        /// <para>
+        /// Deliberately not <see cref="LocalOnlyClientId"/> and deliberately not zero, which
+        /// is a networking layer's first real client - usually the host.
+        /// </para>
+        /// </summary>
+        public const int NoClientId = int.MinValue;
+
+        /// <summary>
+        /// Whether this id names somebody. The offline player and any id a networking layer
+        /// hands out; nothing else.
+        /// </summary>
+        public static bool IsPlayer(int clientId) =>
+            clientId == LocalOnlyClientId || clientId >= 0;
+
+        /// <summary>
         /// A session is viable with the host alone.
         ///
         /// <para>

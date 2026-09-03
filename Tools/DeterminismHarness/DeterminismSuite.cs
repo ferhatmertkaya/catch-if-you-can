@@ -58,6 +58,7 @@ namespace CatchIfYouCan.Tools
             TestSessionCapacity();
             TestSessionMode();
             TestCharacterSelection();
+            TestEquipmentOwnership();
 
             Console.WriteLine();
             Console.WriteLine($"passed: {_passed}   failed: {_failed}");
@@ -69,6 +70,145 @@ namespace CatchIfYouCan.Tools
             }
 
             return _failed == 0;
+        }
+
+        /// <summary>
+        /// Whose equipment is whose, and who may act on it.
+        ///
+        /// <para>
+        /// Two players reaching for the same torch on the same frame is not an edge case, and
+        /// the only way one of them loses is if exactly one machine decides. These are the
+        /// answers that machine gives.
+        /// </para>
+        /// </summary>
+        private static void TestEquipmentOwnership()
+        {
+            const int nobody = EquipmentOwnership.Nobody;
+            const int solo = MultiplayerProtocol.LocalOnlyClientId;
+            const int host = 0;
+            const int guest = 3;
+
+            // The trap this contract was built around: -1 is a real player, so an item the
+            // solo player is carrying must not read as unowned.
+            Check("ownership: nobody is not the offline player",
+                EquipmentOwnership.Nobody != MultiplayerProtocol.LocalOnlyClientId);
+
+            Check("ownership: nobody is not the first networked client either",
+                EquipmentOwnership.Nobody != 0);
+
+            Check("ownership: the offline player is a player",
+                MultiplayerProtocol.IsPlayer(solo) && MultiplayerProtocol.IsPlayer(host) &&
+                MultiplayerProtocol.IsPlayer(MultiplayerProtocol.MaxPlayers - 1));
+
+            Check("ownership: nobody is not a player",
+                !MultiplayerProtocol.IsPlayer(nobody) && !MultiplayerProtocol.IsPlayer(-5));
+
+            Check("ownership: an unowned item is unowned and an owned one is not",
+                !EquipmentOwnership.IsOwned(nobody) &&
+                EquipmentOwnership.IsOwned(solo) &&
+                EquipmentOwnership.IsOwned(host));
+
+            // --- picking things up --------------------------------------------------------
+            Check("ownership: an item on the floor is granted",
+                EquipmentOwnership.Claim(EquipmentHold.InWorld, nobody, guest) ==
+                EquipmentClaimVerdict.Granted);
+
+            Check("ownership: a placed item is granted to somebody else - a camera can be moved",
+                EquipmentOwnership.Claim(EquipmentHold.Placed, host, guest) ==
+                EquipmentClaimVerdict.Granted);
+
+            Check("ownership: an item somebody else is carrying is refused",
+                EquipmentOwnership.Claim(EquipmentHold.Carried, host, guest) ==
+                EquipmentClaimVerdict.CarriedBySomebodyElse);
+
+            Check("ownership: claiming what you already carry is not a failure",
+                EquipmentOwnership.Claim(EquipmentHold.Carried, guest, guest) ==
+                EquipmentClaimVerdict.AlreadyYours);
+
+            Check("ownership: a claim from nobody is refused as a routing bug",
+                EquipmentOwnership.Claim(EquipmentHold.InWorld, nobody, nobody) ==
+                EquipmentClaimVerdict.InvalidClaimant);
+
+            // Offline is the whole game today, so it had better be ordinary.
+            Check("ownership: the solo player picks up an item on the floor",
+                EquipmentOwnership.Claim(EquipmentHold.InWorld, nobody, solo) ==
+                EquipmentClaimVerdict.Granted);
+
+            Check("ownership: the solo player keeps what they are carrying",
+                EquipmentOwnership.Claim(EquipmentHold.Carried, solo, solo) ==
+                EquipmentClaimVerdict.AlreadyYours);
+
+            // --- what a verdict means -----------------------------------------------------
+            Check("ownership: holding covers both granted and already-yours",
+                EquipmentOwnership.Holds(EquipmentClaimVerdict.Granted) &&
+                EquipmentOwnership.Holds(EquipmentClaimVerdict.AlreadyYours) &&
+                !EquipmentOwnership.Holds(EquipmentClaimVerdict.CarriedBySomebodyElse) &&
+                !EquipmentOwnership.Holds(EquipmentClaimVerdict.InvalidClaimant) &&
+                !EquipmentOwnership.Holds(EquipmentClaimVerdict.NotAuthoritative));
+
+            // The distinction a host broadcasts on. Already-yours holds but changes nothing,
+            // and sending it would be an ownership update per frame the button is held.
+            Check("ownership: only a grant changes who owns it",
+                EquipmentOwnership.ChangesOwner(EquipmentClaimVerdict.Granted) &&
+                !EquipmentOwnership.ChangesOwner(EquipmentClaimVerdict.AlreadyYours));
+
+            // --- who may press the button -------------------------------------------------
+            Check("ownership: a carried item answers only to its carrier",
+                EquipmentOwnership.MayUse(EquipmentHold.Carried, guest, guest) &&
+                !EquipmentOwnership.MayUse(EquipmentHold.Carried, guest, host));
+
+            Check("ownership: an item nobody carries is a question of reach, not ownership",
+                EquipmentOwnership.MayUse(EquipmentHold.InWorld, nobody, guest) &&
+                EquipmentOwnership.MayUse(EquipmentHold.Placed, host, guest));
+
+            Check("ownership: nobody cannot use anything",
+                !EquipmentOwnership.MayUse(EquipmentHold.InWorld, nobody, nobody) &&
+                !EquipmentOwnership.MayUse(EquipmentHold.Placed, host, nobody));
+
+            Check("ownership: carried-by is exact, not merely owned",
+                EquipmentOwnership.IsCarriedBy(EquipmentHold.Carried, guest, guest) &&
+                !EquipmentOwnership.IsCarriedBy(EquipmentHold.Carried, guest, host) &&
+                !EquipmentOwnership.IsCarriedBy(EquipmentHold.Placed, guest, guest) &&
+                !EquipmentOwnership.IsCarriedBy(EquipmentHold.InWorld, nobody, nobody));
+
+            // --- a contest, played out ----------------------------------------------------
+            int owner = nobody;
+            var hold = EquipmentHold.InWorld;
+
+            var first = EquipmentOwnership.Claim(hold, owner, host);
+            if (EquipmentOwnership.ChangesOwner(first))
+            {
+                owner = host;
+                hold = EquipmentHold.Carried;
+            }
+
+            var second = EquipmentOwnership.Claim(hold, owner, guest);
+
+            Check("contest: the first claim wins and the second is told why",
+                first == EquipmentClaimVerdict.Granted &&
+                second == EquipmentClaimVerdict.CarriedBySomebodyElse &&
+                owner == host);
+
+            // Dropped: belongs to nobody again, and the loser of the contest can have it.
+            owner = nobody;
+            hold = EquipmentHold.InWorld;
+
+            Check("contest: once it is dropped the other player may take it",
+                EquipmentOwnership.Claim(hold, owner, guest) == EquipmentClaimVerdict.Granted);
+
+            Check("ownership: every verdict has its own description",
+                DistinctOwnershipDescriptions());
+        }
+
+        private static bool DistinctOwnershipDescriptions()
+        {
+            var seen = new System.Collections.Generic.HashSet<string>();
+            foreach (EquipmentClaimVerdict v in
+                     System.Enum.GetValues(typeof(EquipmentClaimVerdict)))
+                if (!seen.Add(EquipmentOwnership.Describe(v)))
+                    return false;
+
+            return true;
         }
 
         /// <summary>

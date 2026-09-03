@@ -34,7 +34,8 @@ namespace CatchIfYouCan.Player
     public sealed class PlayerPresence : MonoBehaviour
     {
         /// <summary>The id a networking layer knows this player by. Negative means local-only.</summary>
-        public const int LocalOnlyClientId = -1;
+        public const int LocalOnlyClientId =
+            Procedural.Deterministic.MultiplayerProtocol.LocalOnlyClientId;
 
         [Tooltip("Where the ghost looks when it looks at this player: eye height, not the feet.")]
         [SerializeField] private Transform eyePoint;

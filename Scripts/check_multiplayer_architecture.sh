@@ -432,6 +432,63 @@ if [ -f "$RGD" ]; then
     || ok "the remote ghost driver adopts states rather than forcing them"
 fi
 
+# --------------------------------------------------- whose equipment is whose
+
+OWN="$DETERMINISTIC/EquipmentOwnership.cs"
+if [ -f "$OWN" ]; then
+  ok "equipment ownership has a validated contract"
+else
+  fail "EquipmentOwnership is missing; nothing decides who holds what"
+fi
+
+# -1 is the offline player's own client id, so it cannot also mean nobody: an item the solo
+# player is carrying would read as unowned and the first person past could take it. The two
+# values live in the protocol, once each.
+PRESENCE="$SCRIPTS/Player/PlayerPresence.cs"
+if [ -f "$PRESENCE" ]; then
+  grep -qE 'LocalOnlyClientId\s*=\s*-?[0-9]' "$PRESENCE" \
+    && fail "PlayerPresence declares its own local client id instead of deriving it" \
+    || ok "the local-only client id has one source"
+fi
+
+EQBASE="$SCRIPTS/Equipment/EquipmentBase.cs"
+if [ -f "$EQBASE" ]; then
+  grep -qE 'public int OwnerClientId \{ get; private set; \}' "$EQBASE" \
+    && ok "only the equipment itself can change who owns it" \
+    || fail "EquipmentBase.OwnerClientId is settable from outside the authority path"
+
+  # A claim is a world-state change and is gated like every other one. Offline the answer is
+  # always yes, so single player is unaffected.
+  claim=$(sed -n '/public Procedural.Deterministic.EquipmentClaimVerdict TryClaim/,/^        }/p' "$EQBASE")
+  if printf '%s' "$claim" | grep -q 'CanChangeWorldState'; then
+    ok "claiming a piece of equipment goes through the authority"
+  else
+    fail "TryClaim changes ownership without asking the authority"
+  fi
+
+  # A holstered item is not in a hand and is very much still carried. Deriving the hold from
+  # IsEquipped would put every stowed item back on the floor for a second player.
+  hold=$(sed -n '/public Procedural.Deterministic.EquipmentHold Hold/,/^        }$/p' "$EQBASE")
+  if printf '%s' "$hold" | grep -q 'IsEquipped'; then
+    fail "the equipment hold is derived from IsEquipped; holstered items would read as dropped"
+  else
+    ok "the equipment hold is not derived from whether it is in a hand"
+  fi
+fi
+
+# An inventory belongs to a player, and which player is on that player - not in the service
+# that holds the one on this machine.
+INV="$SCRIPTS/Player/PlayerInventory.cs"
+if [ -f "$INV" ]; then
+  # Comment lines stripped first. Naming the trap in a doc comment is the point; a doc
+  # comment satisfying a grep for the trap is the V4.1a hole in the other direction.
+  if grep -vE '^\s*(///|//|\*)' "$INV" | grep -q 'LocalPlayerService'; then
+    fail "PlayerInventory asks LocalPlayerService whose bag it is"
+  else
+    ok "an inventory knows whose it is from the player it is on"
+  fi
+fi
+
 printf '\npassed: %s   failed: %s\n\n' "$passed" "$failed"
 
 if [ "$failed" -gt 0 ]; then

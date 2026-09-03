@@ -38,6 +38,7 @@ redesign.
 | Online provider | **Seam only.** `IOnlineSessionProvider`, unimplemented — §9 |
 | Character index | **Built.** `Deterministic.CharacterSelection` — §3b |
 | Ghost presentation | **Built.** `Ghost.GhostPresentationState`, `RemoteGhostDriver` — §4b |
+| Equipment ownership | **Built.** `Deterministic.EquipmentOwnership` — §5b |
 | Transport | **Not built.** Blocked — §9 |
 | Relay / Lobby / Auth | **Not built.** Blocked — §9 |
 | NGO scene sync | **Not built.** Blocked — §9 |
@@ -265,6 +266,53 @@ is no longer in the world by the time their request is looked at.
 Every check is performed by the authority against the world it can see, never by
 the asker. Distance especially: a client that measures its own reach is a client
 that can be told to measure generously.
+
+---
+
+## 5b. Whose equipment is whose (V5)
+
+The project had no answer to "whose torch is that". An item knew it was equipped
+and knew which transform it was parented to — enough with one player, and exactly
+the shape of the mistake this repository keeps making. `AlreadyTaken` existed as
+a refusal reason with nothing to check it against.
+
+`Deterministic.EquipmentOwnership` is that check, and it is pure: 22 harness
+checks including a two-player contest played out in full.
+
+**−1 is a player, not the absence of one.** `MultiplayerProtocol.LocalOnlyClientId`
+is the offline player's own id, so "nobody" is a separate value
+(`NoClientId`). One value asked to mean both would make an item the solo player
+is carrying read as unowned, and the first person past could take it.
+`PlayerPresence` derives its constant from the protocol rather than declaring a
+second one; the guard fails if it declares its own.
+
+| Hold | Who may take it | Who may use it |
+|---|---|---|
+| `InWorld` | anybody in reach | anybody in reach |
+| `Placed` | anybody in reach — a camera left in the wrong room must be movable | anybody in reach |
+| `Carried` | nobody but its carrier | nobody but its carrier |
+
+`EquipmentBase.Hold` is derived from **ownership and placement, never from
+`IsEquipped`**: a holstered item is not in a hand and is very much still carried,
+and deriving it from the wrong flag would put every stowed item back on the floor
+as far as a second player is concerned. The guard reads the getter body.
+
+Ownership changes in exactly two places — `PlayerInventory.AddItem` claims,
+dropping and removal release — because those are the moments an item enters or
+leaves a bag. Equipping and holstering are about which of *my* three items is in
+*my* hand and are not ownership events at all. Releasing inside `Unequip` would
+hand everybody's spare equipment to the first person who walked past.
+
+`TryClaim` asks `SessionAuthority.CanChangeWorldState` and `OwnerClientId` has a
+private setter, so the authority is the only thing that can change it. Offline
+every claim is granted and single player behaves exactly as it always has. An
+inventory learns whose it is from the `PlayerPresence` on its own player, never
+from `LocalPlayerService`.
+
+Reach is deliberately **not** part of this contract: how far away a claimant is
+depends on positions and a tick of latency, and it belongs with the other spatial
+checks in `AuthorityRequests` — against positions the authority can see, never a
+distance the asker computed.
 
 ---
 

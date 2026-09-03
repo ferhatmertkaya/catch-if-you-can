@@ -30,6 +30,98 @@ namespace CatchIfYouCan.Equipment
         public string DeviceId => definition != null ? definition.Id : name;
         public Vector3 DevicePosition => transform.position;
 
+        /// <summary>
+        /// Whose this is, or <see cref="Procedural.Deterministic.EquipmentOwnership.Nobody"/>.
+        ///
+        /// <para>
+        /// The project had no answer to "whose torch is that". An item knew it was equipped
+        /// and knew which transform it was parented to, which is enough with one player and is
+        /// exactly the shape of the mistake this repository keeps making. Set only through
+        /// <see cref="TryClaim"/> and <see cref="ReleaseOwnership"/>, which is what makes the
+        /// authority the only thing that can change it.
+        /// </para>
+        /// </summary>
+        public int OwnerClientId { get; private set; } =
+            Procedural.Deterministic.EquipmentOwnership.Nobody;
+
+        /// <summary>
+        /// Where this is, for ownership.
+        ///
+        /// <para>
+        /// Read from ownership and placement rather than from <see cref="IsEquipped"/>, which
+        /// answers a different question: a holstered item is not in a hand and is very much
+        /// still carried. Deriving it from the wrong flag would put every stowed item back on
+        /// the floor as far as a second player is concerned.
+        /// </para>
+        /// </summary>
+        public Procedural.Deterministic.EquipmentHold Hold
+        {
+            get
+            {
+                if (IsPlaced)
+                    return Procedural.Deterministic.EquipmentHold.Placed;
+
+                return Procedural.Deterministic.EquipmentOwnership.IsOwned(OwnerClientId)
+                    ? Procedural.Deterministic.EquipmentHold.Carried
+                    : Procedural.Deterministic.EquipmentHold.InWorld;
+            }
+        }
+
+        /// <summary>
+        /// Somebody reaches for this. The authority answers.
+        ///
+        /// <para>
+        /// Two players reaching for the same torch on the same frame is not an edge case, and
+        /// the only way one of them loses is if exactly one machine decides. Offline that
+        /// machine is this one and every claim is granted, so single player behaves exactly as
+        /// it always has.
+        /// </para>
+        ///
+        /// <para>
+        /// Reach is not checked here. How far away the claimant is belongs with the other
+        /// spatial checks in <c>Session.AuthorityRequests</c>, against positions the authority
+        /// can see rather than a distance the asker computed.
+        /// </para>
+        /// </summary>
+        public Procedural.Deterministic.EquipmentClaimVerdict TryClaim(int claimantClientId)
+        {
+            if (!SessionAuthority.CanChangeWorldState(this))
+                return Procedural.Deterministic.EquipmentClaimVerdict.NotAuthoritative;
+
+            var verdict = Procedural.Deterministic.EquipmentOwnership.Claim(
+                Hold, OwnerClientId, claimantClientId);
+
+            if (Procedural.Deterministic.EquipmentOwnership.ChangesOwner(verdict))
+            {
+                OwnerClientId = claimantClientId;
+
+                // Taking a placed item is what un-places it. Doing this here rather than in
+                // the pickup path means an item cannot end up owned and still installed on a
+                // wall, which is a state nothing downstream knows how to draw.
+                IsPlaced = false;
+            }
+
+            return verdict;
+        }
+
+        /// <summary>
+        /// Puts this back to belonging to nobody - dropped, or taken out of an inventory.
+        ///
+        /// <para>
+        /// Deliberately not part of <see cref="Unequip"/>. Unequipping is also how an item is
+        /// stowed, and a stowed item is still its owner's; clearing ownership there would hand
+        /// everybody's spare equipment to the first person who walked past.
+        /// </para>
+        /// </summary>
+        public void ReleaseOwnership()
+        {
+            OwnerClientId = Procedural.Deterministic.EquipmentOwnership.Nobody;
+        }
+
+        /// <summary>Whether this player may press the button on it.</summary>
+        public bool MayBeUsedBy(int clientId) =>
+            Procedural.Deterministic.EquipmentOwnership.MayUse(Hold, OwnerClientId, clientId);
+
         protected virtual float GetInterferenceMultiplier() => 0.35f;
 
         /// <summary>

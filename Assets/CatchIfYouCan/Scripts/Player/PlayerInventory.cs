@@ -14,8 +14,32 @@ namespace CatchIfYouCan.Player
 
         private readonly EquipmentBase[] _slots = new EquipmentBase[SlotCount];
         private int _selectedIndex;
+        private PlayerPresence _presence;
 
         public int SelectedIndex => _selectedIndex;
+
+        /// <summary>
+        /// Whose bag this is.
+        ///
+        /// <para>
+        /// Asked of the presence on this player rather than of
+        /// <see cref="Core.LocalPlayerService"/>, which holds exactly one player: the one on
+        /// this machine. Correct for the local inventory and silently wrong for every other
+        /// one - every remote player's pickups would be recorded as the local player's.
+        /// </para>
+        /// </summary>
+        public int OwnerClientId
+        {
+            get
+            {
+                if (_presence == null)
+                    _presence = GetComponent<PlayerPresence>();
+
+                return _presence != null
+                    ? _presence.ClientId
+                    : Procedural.Deterministic.MultiplayerProtocol.LocalOnlyClientId;
+            }
+        }
         public event Action<int, EquipmentBase> OnSlotChanged;
 
         /// <summary>True when at least one slot is empty, so a pickup would actually land.</summary>
@@ -64,6 +88,18 @@ namespace CatchIfYouCan.Player
             {
                 if (_slots[i] != null)
                     continue;
+
+                // Claimed before the slot is filled, and only once a slot is known to be free.
+                // Claiming an item this bag has no room for would take it off whoever else
+                // could have had it and then leave it on the floor belonging to nobody who is
+                // holding it. Offline every claim is granted, so nothing changes.
+                var claim = item.TryClaim(OwnerClientId);
+                if (!Procedural.Deterministic.EquipmentOwnership.Holds(claim))
+                {
+                    CIYCLog.Info("Pickup refused: " +
+                                 Procedural.Deterministic.EquipmentOwnership.Describe(claim) + ".");
+                    return false;
+                }
 
                 _slots[i] = item;
                 OnSlotChanged?.Invoke(i, item);
@@ -129,6 +165,11 @@ namespace CatchIfYouCan.Player
 
             item.Unequip();
             item.Drop(GetDropPosition(), Quaternion.LookRotation(GetDropDirection()));
+
+            // Released here rather than in Unequip, because unequipping is also how an item is
+            // stowed and a stowed item is still its owner's. Clearing ownership there would
+            // hand everybody's spare equipment to the first person who walked past.
+            item.ReleaseOwnership();
             _slots[index] = null;
 
             OnSlotChanged?.Invoke(index, null);
@@ -166,6 +207,7 @@ namespace CatchIfYouCan.Player
                 return DropFromSlot(index);
 
             _slots[index].Unequip();
+            _slots[index].ReleaseOwnership();
             _slots[index] = null;
             OnSlotChanged?.Invoke(index, null);
 

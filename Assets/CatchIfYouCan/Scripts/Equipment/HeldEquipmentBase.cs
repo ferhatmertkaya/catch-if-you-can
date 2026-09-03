@@ -632,6 +632,16 @@ namespace CatchIfYouCan.Equipment
                 return EquipmentActionResult.Fail(
                     EquipmentActionStatus.NoAuthority, "the host decides what leaves the room");
 
+            // Claimed while it is still Placed, which is the state that makes it takeable by
+            // anybody in reach. Un-placing first would leave it looking like the placer's
+            // carried item and refuse everybody else - a camera one player set up in the wrong
+            // room would be nobody else's to move.
+            var claim = TryClaim(into.OwnerClientId);
+            if (!Procedural.Deterministic.EquipmentOwnership.Holds(claim))
+                return EquipmentActionResult.Fail(
+                    EquipmentActionStatus.NoAuthority,
+                    Procedural.Deterministic.EquipmentOwnership.Describe(claim));
+
             IsPlaced = false;
             OnPickedUpFromPlacement();
 
