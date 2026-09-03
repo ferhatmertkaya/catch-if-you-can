@@ -38,14 +38,18 @@ namespace CatchIfYouCan.Audio
         [SerializeField] private float sphereRadius = 0.15f;
 
         [Header("Stride length (metres of travel per step)")]
-        [Tooltip("Ground covered between footfalls while walking. At 1.9 m/s this lands a step " +
-                 "every 0.35 s, which is close to the 0.38 s the legs actually take at the walk " +
-                 "clip's 1.48x playback; the previous 0.82 m read as half speed against them.")]
+        [Tooltip("Ground covered between footfalls while walking. Cadence is distance-based, so " +
+                 "the 20% slower walk thins the steps out on its own: 1.52 m/s over this stride " +
+                 "is a step every 0.43 s, against 0.35 s before. Left alone deliberately - the " +
+                 "stride is a property of the legs, not of how fast they are being asked to " +
+                 "carry the player.")]
         [SerializeField, Min(0.1f)] private float walkStride = 0.66f;
 
-        [Tooltip("Running strides are longer, but not proportionally: at 3.8 m/s this gives a " +
-                 "step every 0.24 s, clearly quicker than walking without turning into a rattle.")]
-        [SerializeField, Min(0.1f)] private float runStride = 0.92f;
+        [Tooltip("Running strides are longer, but not proportionally. Retuned for the 2.28 m/s " +
+                 "sprint: at 0.92 it gave a step every 0.40 s against the walk's 0.43 s, which " +
+                 "is a sprint you cannot hear. At 0.68 it is a step every 0.30 s - clearly " +
+                 "quicker than walking, and still not a rattle.")]
+        [SerializeField, Min(0.1f)] private float runStride = 0.68f;
 
         [SerializeField, Min(0.1f)] private float crouchStride = 0.52f;
 

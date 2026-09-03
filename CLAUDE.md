@@ -106,7 +106,10 @@ place that number lives; everything else derives it.
   runtime looks. It also keeps things that were built from being invisible: every code-built
   item carries a visual profile, the flashlight points at its finished model, the portal never
   ends up with a renderer and no material, the HUD's own panels stay overlays rather than
-  opaque sheets over the game, and every volume slider reaches the mixer. 27 checks.
+  opaque sheets over the game, and every volume slider reaches the mixer. It also keeps the
+  player honest: the crouch camera has one source of truth (a measured depth times the shared
+  crouch progress, never the head's current drop), and a rig that cannot animate says so
+  instead of standing in a T-pose. 30 checks.
 
 All seven run in CI (`.github/workflows/determinism.yml`). Run them locally before
 pushing; they need nothing but a shell (and `python3` for the roster checks).

@@ -298,6 +298,33 @@ else:
     bad("every volume slider reaches the mixer",
         "a slider that only sets a field moves a number nothing is listening to")
 
+
+# ---- the player: one crouch truth, and a rig that says when it cannot animate --------------
+
+controller = code("/Assets/CatchIfYouCan/Scripts/Player/PlayerController.cs")
+
+# The camera drop must be a measured magnitude times the SHARED progress. MeasuredHeadDrop is
+# the head's current drop, not a magnitude: applied unscaled it moved the view on a different
+# curve from the capsule, ahead of it going down and behind it coming back.
+if "MeasuredHeadDrop" in controller:
+    bad("the crouch camera has one source of truth",
+        "PlayerController reads MeasuredHeadDrop again; use cameraCrouchDrop * CrouchAmount01")
+else:
+    ok("the crouch camera has one source of truth")
+
+if "_standingCameraHeight - cameraCrouchDrop * CrouchAmount01" in controller:
+    ok("the camera returns to exactly standing height")
+else:
+    bad("the camera returns to exactly standing height",
+        "the drop must be a multiple of CrouchAmount01 so zero crouch is zero drop")
+
+animator_src = code("/Assets/CatchIfYouCan/Scripts/Player/PlayerVisualAnimator.cs")
+if "ReportRigHealth()" in animator_src and "runtimeAnimatorController == null" in animator_src:
+    ok("a rig that cannot animate says so")
+else:
+    bad("a rig that cannot animate says so",
+        "a null controller holds the bind pose, which for Nathan is a T-pose")
+
 print()
 print("  %d passed, %d failed" % (passed, failed))
 sys.exit(1 if failed else 0)

@@ -187,9 +187,101 @@ namespace CatchIfYouCan.Player
             animator = target;
             if (animator != null)
                 animator.applyRootMotion = false;
+
+            ReportRigHealth();
             CacheParameters();
             CacheRootBone();
         }
+
+        private static bool _rigFaultReported;
+
+        /// <summary>
+        /// Says out loud when the character cannot possibly animate, and puts right the one
+        /// thing that can be put right from here.
+        ///
+        /// <para>
+        /// <b>A rig with no controller does not fail - it stands in its bind pose.</b> Nathan's
+        /// bind pose is a T-pose, so every way this can go wrong looks identical on screen: a
+        /// character standing with its arms out while <see cref="PlayerBodyMotion"/> sways it.
+        /// <see cref="CacheParameters"/> returned silently on a null controller, so nothing
+        /// anywhere distinguished "the animator has no controller", "the animator is disabled"
+        /// and "the animator is fine and the clips are wrong".
+        /// </para>
+        ///
+        /// <para>
+        /// It does not assign a controller of its own and it does not build a second animator
+        /// stack. The controller is authored onto the prefab variant - Nathan_PlayerVisual
+        /// overrides <c>m_Controller</c> on the imported Animator - so an instance arriving
+        /// without one means that chain is broken upstream, and the honest thing is to name the
+        /// asset and the editor step that produces it. A disabled Animator IS recoverable, and
+        /// is re-enabled and rebound here.
+        /// </para>
+        ///
+        /// <para>
+        /// Reported once per process. A rig fault is a permanent condition, and a log line per
+        /// frame buries the rest of the console.
+        /// </para>
+        /// </summary>
+        private void ReportRigHealth()
+        {
+            if (animator == null)
+            {
+                if (_rigFaultReported) return;
+                _rigFaultReported = true;
+                Debug.LogError("[CIYC][Character] No Animator on the character visual, so the " +
+                               "rig will stand in its bind pose - which for Nathan is a T-pose. " +
+                               "Expected one on the instance of " +
+                               "Assets/CatchIfYouCan/Art/Characters/Nathan/Prefabs/" +
+                               "Nathan_PlayerVisual.prefab.", this);
+                return;
+            }
+
+            // Recoverable: something switched it off. Rebind so it starts from a real state
+            // rather than from whatever pose it was frozen in.
+            if (!animator.enabled)
+            {
+                animator.enabled = true;
+                animator.Rebind();
+                Debug.LogWarning("[CIYC][Character] The character's Animator was disabled and " +
+                                 "has been re-enabled and rebound. A disabled Animator holds " +
+                                 "the bind pose, which reads as a T-pose.", this);
+            }
+
+            if (_rigFaultReported)
+                return;
+
+            if (animator.runtimeAnimatorController == null)
+            {
+                _rigFaultReported = true;
+                Debug.LogError("[CIYC][Character] The character's Animator has no " +
+                               "RuntimeAnimatorController, so nothing will play and the rig " +
+                               "will hold its bind pose - a T-pose. The controller is authored " +
+                               "onto Nathan_PlayerVisual.prefab as an m_Controller override; " +
+                               "rebuild it with Catch If You Can > Characters > Build Nathan " +
+                               "Player Visual.", this);
+                return;
+            }
+
+            if (animator.isHuman && animator.avatar == null)
+            {
+                _rigFaultReported = true;
+                Debug.LogError("[CIYC][Character] The character's Animator has no Avatar. A " +
+                               "humanoid controller cannot retarget onto a rig without one, so " +
+                               "the character will hold its bind pose. Re-import " +
+                               "CIYC_Nathan.fbx as Humanoid.", this);
+                return;
+            }
+
+            Debug.Log("[CIYC][Character] rig bound: controller=" +
+                      animator.runtimeAnimatorController.name +
+                      ", avatar=" + (animator.avatar != null ? animator.avatar.name : "<none>") +
+                      ", culling=" + animator.cullingMode +
+                      ", parameters=" + animator.parameters.Length, this);
+        }
+
+        /// <summary>A fresh process has reported nothing.</summary>
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+        private static void ResetOnPlay() => _rigFaultReported = false;
 
         /// <summary>
         /// Finds the root bone and remembers the pose it should be holding. Captured before the

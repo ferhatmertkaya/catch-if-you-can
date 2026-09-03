@@ -10,8 +10,12 @@ namespace CatchIfYouCan.Player
         // Nathan's only clip is authored at a measured 1.283 m/s. At the old 2.8 the walk cycle
         // had to play at 2.2x to keep the feet on the floor, which reads as a scurry; 1.9 lands
         // at about 1.5x, which still looks like walking.
-        [SerializeField] private float walkSpeed = 1.9f;
-        [SerializeField] private float sprintSpeed = 3.8f;
+        [Tooltip("Metres per second. 1.9 * 0.80 - the walk was asked to come down 20%.")]
+        [SerializeField] private float walkSpeed = 1.52f;
+        [Tooltip("Metres per second. 3.8 * 0.60 - the sprint was asked to come down 40%. That " +
+                 "leaves it 1.5x the walk rather than 2x, so it reads as a hurried jog; the " +
+                 "footstep cadence in FootstepController is retuned to match.")]
+        [SerializeField] private float sprintSpeed = 2.28f;
         [SerializeField] private float crouchSpeed = 1f;
 
         [Tooltip("Push the movement stick past this to sprint without the button. Zero disables " +
@@ -267,11 +271,26 @@ namespace CatchIfYouCan.Player
             // folds the legs, which drops the hips, and then leans the torso forward over the
             // knees, which drops the head again. Dropping the camera by the first alone left the
             // view hanging several centimetres above the eyes of the body it belongs to.
+            // ONE source of crouch truth, and it is this line.
+            //
+            // The magnitude is measured off the rig - PlayerBodyMotion computes FullCrouchDrop
+            // from the folded legs and the leaned spine and hands it here through
+            // SetCrouchDepth, so cameraCrouchDrop IS the character's own head drop rather than
+            // an estimate. The PROGRESS is CrouchAmount01, which comes off the same smoothed
+            // capsule height the collider uses. Measured depth times shared progress: the view
+            // and the collider cannot disagree about how far down the player is.
+            //
+            // It used to prefer MeasuredHeadDrop when that was non-zero, and MeasuredHeadDrop is
+            // the head's CURRENT drop rather than a magnitude - so it was applied at full value
+            // the instant the body began to fold, unscaled by how far the crouch had actually
+            // got, and it followed the animation's release curve on the way up while the capsule
+            // followed the lerp. Two curves, one camera: the view dropped ahead of the body going
+            // down and lagged it coming back. It was also measured in PlayerBodyMotion's
+            // LateUpdate and read here in Update, so it was always a frame stale.
+            //
+            // Nothing in PlayerBodyMotion changes. This reads the number it already publishes.
             Vector3 local = cameraRoot.localPosition;
-            float drop = _bodyMotion != null && _bodyMotion.MeasuredHeadDrop > 0.001f
-                ? _bodyMotion.MeasuredHeadDrop
-                : cameraCrouchDrop * CrouchAmount01;
-            local.y = _standingCameraHeight - drop;
+            local.y = _standingCameraHeight - cameraCrouchDrop * CrouchAmount01;
             cameraRoot.localPosition = local;
         }
 
