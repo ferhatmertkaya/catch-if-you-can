@@ -56,23 +56,45 @@ namespace CatchIfYouCan.Development.Labs
                 if (definition == null)
                     continue;
 
-                bool real = definition.Prefab != null || definition.Id == "flashlight";
-                if (real)
+                // The bench was a row of empty plinths. Nothing called EnsureRuntimePrefab, so
+                // every definition's Prefab was null and the "if (Prefab != null)" below never
+                // ran - the lab for looking at the equipment contained no equipment.
+                EquipmentRuntimeFactory.EnsureRuntimePrefab(definition);
+
+                // Two separate questions, and they used to be one wrong one. "Real" was
+                // `Prefab != null || Id == "flashlight"` - a hard-coded id, tested against a
+                // field nothing had filled in. An item is implemented when the factory can
+                // build it, and its ART is a placeholder when its visual profile says so.
+                // Those are different states and the bench should show both, because an item
+                // with a real runtime path and a grey box for a body is the normal state of
+                // ten of these and is not the same as one that does nothing.
+                bool implemented = EquipmentRuntimeFactory.HasRuntimePath(definition.Id);
+                bool placeholderArt = definition.VisualProfile == null ||
+                                      definition.VisualProfile.IsDevPlaceholder;
+
+                if (implemented)
                     _implemented++;
-                else
+                if (placeholderArt)
                     _placeholders++;
 
-                var plinth = BuildPlinth(
-                    definition.Id + (real ? "" : "\nDEV_PLACEHOLDER"),
+                string label = definition.Id;
+                if (!implemented)
+                    label += "\nNO RUNTIME PATH";
+                else if (placeholderArt)
+                    label += "\nDEV_PLACEHOLDER ART";
+                else
+                    label += "\nFINAL ART";
+
+                var plinth = BuildPlinth(label,
                     new Vector3(start + i * spacing, 0f, 3f), bench.transform);
 
-                if (definition.Prefab != null)
-                {
-                    var item = Instantiate(definition.Prefab,
-                                           plinth.position + new Vector3(0f, 0.55f, 0f),
-                                           Quaternion.identity, plinth);
-                    item.name = "DEV_" + definition.Id;
-                }
+                if (definition.Prefab == null)
+                    continue;
+
+                var item = Instantiate(definition.Prefab,
+                                       plinth.position + new Vector3(0f, 0.55f, 0f),
+                                       Quaternion.identity, plinth);
+                item.name = "DEV_" + definition.Id;
             }
         }
 
@@ -136,8 +158,7 @@ namespace CatchIfYouCan.Development.Labs
                 })
                 .Line(() =>
                 {
-                    var item = Core.LocalPlayerService
-                        .GetPlayerComponent<Player.PlayerInventory>()?.GetSelectedItem();
+                    var item = Selected();
                     if (item == null)
                         return "Battery: -";
 
@@ -146,10 +167,62 @@ namespace CatchIfYouCan.Development.Labs
                            item.MaxDurability.ToString("F0") +
                            "  active=" + item.IsActive;
                 })
+                // The lifecycle is the thing V3 introduced and the thing a placement bug shows
+                // up in first. It is not visible anywhere else in the game.
+                .Line(() =>
+                {
+                    var held = Selected() as HeldEquipmentBase;
+                    if (held == null)
+                        return "Lifecycle: -";
+
+                    string line = "Lifecycle: " + held.LifecycleState;
+                    if (held is PlaceableEquipmentBase placeable)
+                    {
+                        var candidate = placeable.Candidate;
+                        line += "  aim=" + (candidate.IsValid
+                            ? candidate.Surface.ToString()
+                            : candidate.Status + " " + candidate.Detail);
+                    }
+
+                    return line;
+                })
+                .Line(() =>
+                {
+                    var item = Selected();
+                    return "Readout: " + (item != null && !string.IsNullOrEmpty(item.HudReadout)
+                        ? item.HudReadout
+                        : "-");
+                })
+                // What the evidence boundary last decided, and how far through a dwell it is.
+                // "Nothing is happening" and "nearly there" look identical without this.
+                .Line(() =>
+                {
+                    var observation = EvidenceValidator.LastObservation;
+                    return "Last observation: " + observation +
+                           " -> " + EvidenceValidator.LastConfirmation +
+                           " (dwell " +
+                           (EvidenceValidator.DwellProgress(observation.Type) * 100f).ToString("F0") +
+                           "%)";
+                })
+                // The reason almost everything in here will say NotInGhostProfile or
+                // NoActiveGhost. Said out loud rather than left as a puzzle.
+                .Line(() => Ghost.GhostController.Active != null
+                    ? "Ghost: " + (Ghost.GhostController.Active.Definition != null
+                        ? Ghost.GhostController.Active.Definition.DisplayName
+                        : "no definition")
+                    : "Ghost: none in this lab - evidence cannot confirm. Use DEV_GhostLab.")
                 .Line(() =>
                 {
                     var manager = EquipmentManager.Instance;
-                    return "Loadout: " + (manager != null ? manager.Loadout.Count : 0) + " items";
+                    return "Loadout: " + (manager != null ? manager.Loadout.Count : 0) +
+                           " items,  live equipment: " + EquipmentBase.Alive.Count;
+                })
+                .Line(() =>
+                {
+                    var network = CameraNetworkManager.Instance;
+                    return "Cameras: " + (network != null ? network.CameraCount : 0) +
+                           "  salt piles: " + SaltPile.All.Count +
+                           "  orbs: " + Ghost.GhostOrb.All.Count;
                 })
                 .Line(() =>
                 {
@@ -161,9 +234,40 @@ namespace CatchIfYouCan.Development.Labs
                 // outside is its compiler-generated backing field, and reflecting on a name
                 // the compiler chose is the kind of thing that works until it does not. The
                 // battery is watched here and run down by using the item, as it is in the game.
-                .Button("Register EMFSurge", () =>
+                .Button("Use held", () => Inventory()?.TryUseSelected())
+                .Button("Aim / place", TogglePlacement)
+                .Button("Cancel placement", () =>
+                    (Selected() as HeldEquipmentBase)?.TryCancelPlacement())
+                .Button("Drop held", () => Inventory()?.DropSelected())
+                // Through the boundary, not around it, so what the lab shows is what the game
+                // does - including the refusal when there is no ghost to prove anything about.
+                .Button("Observe EMFSurge", () => EvidenceValidator.Submit(
+                    new EvidenceObservation(EvidenceType.EMFSurge, "DEV_Lab", 1f, Vector3.zero)))
+                // And one that goes around it on purpose, labelled as such, for testing what
+                // the journal and the objectives do with a find rather than how it was found.
+                .Button("FORCE register EMFSurge (bypasses validator)", () =>
                     EvidenceManager.Instance?.RegisterEvidence(EvidenceType.EMFSurge))
                 .Button("Reset evidence", () => EvidenceManager.Instance?.ResetMission());
+        }
+
+        private static Player.PlayerInventory Inventory() =>
+            Core.LocalPlayerService.GetPlayerComponent<Player.PlayerInventory>();
+
+        private static EquipmentBase Selected() => Inventory()?.GetSelectedItem();
+
+        /// <summary>
+        /// One button for the whole placement interaction, the same way the HUD offers it:
+        /// aiming if it is not, committing if it is.
+        /// </summary>
+        private static void TogglePlacement()
+        {
+            if (Selected() is not PlaceableEquipmentBase placeable)
+                return;
+
+            if (placeable.LifecycleState == EquipmentLifecycleState.PlacementPreview)
+                placeable.TryPlace();
+            else
+                placeable.TryBeginPlacement();
         }
 
         /// <summary>A marked square to drop into, so "where did it land" has an answer.</summary>
@@ -183,6 +287,7 @@ namespace CatchIfYouCan.Development.Labs
 
         protected override string DescribeState() =>
             "Floor 18x12, 1 m grid, drop wall at z=5.5, drop zone at the origin, bench of " +
-            _implemented + " implemented and " + _placeholders + " placeholder items.";
+            _implemented + " items with a runtime path, " + _placeholders +
+            " of them still on placeholder art. No ghost: evidence cannot confirm here.";
     }
 }
