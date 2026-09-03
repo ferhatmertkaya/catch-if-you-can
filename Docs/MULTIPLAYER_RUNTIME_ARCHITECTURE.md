@@ -34,6 +34,8 @@ redesign.
 | Join handshake | **Built.** `SessionGuard`, `JoinPayloadCodec` |
 | Layout compare | **Built.** `LayoutSyncGuard` |
 | Request boundary | **Built.** `Session.AuthorityRequests` |
+| Mode selection | **Built.** `Session.SessionLauncher` — §6b |
+| Online provider | **Seam only.** `IOnlineSessionProvider`, unimplemented — §9 |
 | Transport | **Not built.** Blocked — §9 |
 | Relay / Lobby / Auth | **Not built.** Blocked — §9 |
 | NGO scene sync | **Not built.** Blocked — §9 |
@@ -217,8 +219,53 @@ deterministic contract; nothing depends outward on it.
 - **`IMultiplayerSession`** — the only multiplayer surface gameplay may see.
   `OfflineSession` is a real implementation of it, so single player asking "am I
   the host" gets "yes".
+- **`SessionLauncher`** — the one place a session begins. See §6b.
 
 **No gameplay component knows what Relay is.** The guard fails if one does.
+
+---
+
+## 6b. Choosing a mode (V5)
+
+`MultiplayerSessionService.Install` used to have no callers. The process held an
+offline session because nothing had replaced it, which made online unreachable in
+the running game and made offline a default rather than a decision — two
+different bugs with one symptom, a build that looks fine because the only
+reachable mode is the one that needs nothing.
+
+`SessionLauncher` is the entry point for both, and the only caller of `Install`.
+The guard fails if anything else installs a session, because installing one also
+sets the process authority, and two places doing that is how two parts of the
+game end up disagreeing about who the host is.
+
+```
+PLAY
+ ├── SOLO / OFFLINE  → SessionLauncher.BeginOfflineSolo()
+ └── ONLINE          → SessionLauncher.BeginOnline(OnlineHost | OnlineJoin, joinTarget)
+```
+
+**Nothing runs at boot.** There is no `RuntimeInitializeOnLoadMethod` on the
+launcher and nothing calls it from a scene load, so no online service is
+attempted merely because the process started and airplane mode is a non-event.
+The guard greps for a `Begin` call near a boot hook.
+
+**Online is served through `IOnlineSessionProvider`,** which nothing implements
+yet. Everything an online launch needs — signing in, allocating, connecting,
+becoming host or client — happens behind that one call, so the menu asks for
+online without knowing Authentication, Lobby, Relay or a transport exist. With no
+provider registered, `BeginOnline` returns `LaunchStatus.NoOnlineProvider` and
+changes nothing.
+
+**An online launch that fails does not become an offline one.** Every refusal
+path returns a status and leaves the current session alone — including the case
+where a provider returns something whose `Mode` is not `Online`, which is refused
+rather than installed. Falling back would hand a player who chose online a
+single-player mission and no error. That is the failure mode §7b forbids, and the
+guard counts the launcher's `new OfflineSession(` call sites so a fallback cannot
+be slipped into a failure path.
+
+`HasOnlineProvider` is what the play screen asks before offering online at all.
+Offering a button that can only fail is worse than not offering it.
 
 ---
 

@@ -287,6 +287,75 @@ else
   ok "gameplay has one implementation for both session modes"
 fi
 
+# --------------------------------------------------- choosing a session
+
+# A session exists because somebody chose it. Before the launcher, Install had no callers
+# at all: online was unreachable in the running game and offline was a default rather than
+# a decision. Those are different bugs with one symptom - a build that looks fine because
+# the only reachable mode is the one that needs nothing.
+LAUNCHER="$SESSION/SessionLauncher.cs"
+if [ -f "$LAUNCHER" ]; then
+  if grep -qE 'static LaunchResult BeginOfflineSolo\(' "$LAUNCHER" \
+     && grep -qE 'static LaunchResult BeginOnline\(' "$LAUNCHER"; then
+    ok "both session modes have an explicit entry point"
+  else
+    fail "SessionLauncher no longer offers both an offline and an online entry point"
+  fi
+
+  # Online refuses when there is no networking layer, and says so. The alternative - handing
+  # back an offline session - gives somebody who chose online a single-player mission and no
+  # error, which is worse than the error.
+  # The refusal itself, not a mention of it. A <see cref="LaunchStatus.NoOnlineProvider"/>
+  # in the doc comment satisfied a plain grep for the name after the return had been
+  # changed - the same doc-comment hole that let a renamed EndSession pass its check.
+  if grep -qE 'Refused\(LaunchStatus\.NoOnlineProvider' "$LAUNCHER" \
+     && grep -q 'provider == null' "$LAUNCHER"; then
+    ok "an online launch with no networking layer refuses instead of falling back"
+  else
+    fail "SessionLauncher no longer refuses an online launch that has no provider"
+  fi
+
+  # A provider that hands back an offline session for an online launch has a bug, and
+  # installing it would put somebody who chose online into single player without telling
+  # them. Refused rather than trusted.
+  if grep -qE 'session\.Mode != SessionMode\.Online' "$LAUNCHER"; then
+    ok "a provider cannot return an offline session for an online launch"
+  else
+    fail "SessionLauncher installs whatever a provider returns, including an offline session"
+  fi
+
+  # Counted, not merely present. A fallback added to a failure path would be a second one,
+  # and a second one is how an online failure becomes a silent single-player mission.
+  offline_ctors=$(grep -c 'new OfflineSession(' "$LAUNCHER" || true)
+  if [ "$offline_ctors" = "1" ]; then
+    ok "the launcher creates an offline session in exactly one place"
+  else
+    fail "the launcher creates an offline session in $offline_ctors places; a failure path may fall back"
+  fi
+else
+  fail "SessionLauncher is missing; nothing chooses a session mode"
+fi
+
+# Installing a session sets the authority for the whole process. Gameplay doing it directly
+# is how two parts of the game end up disagreeing about who the host is.
+installers=$(grep -rl 'MultiplayerSessionService\.Install(' "$SCRIPTS" --include='*.cs' 2>/dev/null || true)
+if [ "$installers" = "$LAUNCHER" ] || [ -z "$installers" ]; then
+  ok "only the launcher installs a session"
+else
+  fail "something other than SessionLauncher installs a session"
+  printf '%s\n' "$installers" | sed 's/^/        /'
+fi
+
+# Booting is not choosing. Nothing may start a session because the process started - offline
+# solo has to work in airplane mode, and an online attempt nobody asked for is a failure
+# nobody can explain.
+if grep -rn -A 8 'RuntimeInitializeOnLoadMethod' "$SCRIPTS" --include='*.cs' 2>/dev/null \
+     | grep -qE 'BeginOnline\(|BeginOfflineSolo\('; then
+  fail "a session is started at boot; the mode must be chosen, never assumed"
+else
+  ok "no session is started merely because the game booted"
+fi
+
 printf '\npassed: %s   failed: %s\n\n' "$passed" "$failed"
 
 if [ "$failed" -gt 0 ]; then
