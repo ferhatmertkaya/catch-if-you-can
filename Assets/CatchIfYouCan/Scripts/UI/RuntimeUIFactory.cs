@@ -293,9 +293,32 @@ namespace CatchIfYouCan.UI
             var mainMenu = result.MainMenuRoot.AddComponent<MainMenuController>();
             WireMainMenu(mainMenu, result.MainMenuRoot.transform);
 
-            // MIXED. The root is a full-screen panel, so it stays full-bleed and only the
-            // controls on it are inset.
+            // MIXED. The root stays full-bleed so its children can reach the display edges,
+            // and only the controls on it are inset.
             result.HudRoot = CreatePanel(canvas.transform, "HUD");
+
+            // Cleared, because this one is drawn OVER the game.
+            //
+            // CreatePanel applies UITheme.ApplyPanel to every root it makes, which is #101513
+            // at 0.92 alpha - correct for a menu that replaces the view, and a near-opaque
+            // sheet over the 3D scene here. UIScreen.HUD is shown from the investigation flow,
+            // so this was the gameplay HUD blacking out the gameplay.
+            //
+            // raycastTarget matters as much as the colour: a full-screen Image that takes
+            // raycasts swallows every touch that does not land on a button, which is the look
+            // drag and the joystick area both.
+            //
+            // The border ApplyPanel added needs no removal - ApplyBorder sets
+            // useGraphicAlpha, so the outline's alpha is multiplied by the graphic's and a
+            // cleared graphic draws no outline. This is the same treatment MainMenu above
+            // already gives itself, for the same reason.
+            var hudBackground = result.HudRoot.GetComponent<Image>();
+            if (hudBackground != null)
+            {
+                hudBackground.color = Color.clear;
+                hudBackground.raycastTarget = false;
+            }
+
             var hud = result.HudRoot.AddComponent<MobileHUDController>();
             WireHUD(hud, result.HudRoot.transform);
             ConstrainContentToSafeArea(result.HudRoot);
