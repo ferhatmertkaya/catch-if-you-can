@@ -140,13 +140,36 @@ namespace CatchIfYouCan.UI
                 $"XP EARNED:             +{b.XpEarned}";
         }
 
+        /// <summary>
+        /// Back to base, and back to the lobby itself rather than to the title screen in front
+        /// of it.
+        ///
+        /// <para>
+        /// The lobby lives inside the menu scene, so this is still a load of that scene - but
+        /// the intent is stated before the load rather than inferred after it, and the menu
+        /// comes up already in the room. Replaying the cinematic, the phone and the tap to
+        /// start after every investigation turns the gameplay loop into a series of title
+        /// screens. A cold boot is unaffected: the mode defaults to Cinematic and resets itself
+        /// once read.
+        /// </para>
+        /// </summary>
         private void OnContinue()
         {
             Time.timeScale = 1f;
+
+            MainMenuModeController.PendingEntryMode = MainMenuEntryMode.DirectLobby;
+
             if (SceneLoader.Instance != null)
+            {
                 SceneLoader.Instance.LoadMainMenu();
+            }
             else if (UIManager.Instance != null)
+            {
+                // No loader means no scene change, so the intent would sit unread until some
+                // later load picked it up and skipped an intro nobody asked to skip.
+                MainMenuModeController.PendingEntryMode = MainMenuEntryMode.Cinematic;
                 UIManager.Instance.Show(UIScreen.MainMenu);
+            }
         }
     }
 }

@@ -318,6 +318,110 @@ else
   ok "the starter loadout carries the four slice items"
 fi
 
+# ---- V7.1: the torch does not eat an investigation slot -----------------------------------
+#
+# Four tools, three slots. The torch used to take slot 0, so the third investigation device
+# had nowhere to go and was dropped on the floor of a log line.
+
+INV="$ROOT/Assets/CatchIfYouCan/Scripts/Player/PlayerInventory.cs"
+grep -qE 'public const int SlotCount = 3;' "$INV" \
+  && ok "there are still three investigation slots" \
+  || bad "there are still three investigation slots" \
+         "SlotCount is what the HUD selector, the pickup rules and replication count on"
+
+grep -qE 'public const int TorchSlotIndex = SlotCount;' "$INV" \
+  && ok "the torch has a dedicated place outside the three" \
+  || bad "the torch has a dedicated place outside the three" \
+         "expected PlayerInventory.TorchSlotIndex"
+
+# Ownership is claimed in exactly one file, dedicated place included.
+CLAIMERS=""
+for f in $(grep -rl "TryClaim(" --include=*.cs "$ROOT/Assets/CatchIfYouCan" 2>/dev/null); do
+  case "$f" in
+    */PlayerInventory.cs|*/EquipmentBase.cs|*/HeldEquipmentBase.cs) ;;
+    *) CLAIMERS="$CLAIMERS $f" ;;
+  esac
+done
+if [ -n "$CLAIMERS" ]; then
+  bad "equipment ownership is claimed in one place" "also claimed in:$CLAIMERS"
+else
+  ok "equipment ownership is claimed in one place"
+fi
+
+# The installer must look at the torch's place too, or it hands out a second torch.
+code "$ROOT/Assets/CatchIfYouCan/Scripts/Equipment/MissionEquipmentInstaller.cs" \
+  | grep -qE 'PlayerInventory\.SelectableSlotCount' \
+  && ok "the installer sees the torch's dedicated place" \
+  || bad "the installer sees the torch's dedicated place" \
+         "it would not recognise the torch already in the player's hand"
+
+# ---- V7.1: nothing is silently discarded ---------------------------------------------------
+
+MI="$ROOT/Assets/CatchIfYouCan/Scripts/Equipment/MissionEquipmentInstaller.cs"
+code "$MI" | grep -qE 'CIYCLog\.(Info|Warn|Error)\(LogTag \+ "Loadout installed' \
+  && ok "an item that does not fit is named, not dropped" \
+  || bad "an item that does not fit is named, not dropped" \
+         "the installer must report what it could not carry"
+
+# ---- V7.1: the return to the lobby does not replay the cinematic ---------------------------
+
+MM="$UI/MainMenuModeController.cs"
+MISSINGENTRY=""
+for M in Cinematic DirectLobby; do
+  grep -qE "^[[:space:]]*$M,?[[:space:]]*$" "$MM" 2>/dev/null || MISSINGENTRY="$MISSINGENTRY $M"
+done
+if [ -n "$MISSINGENTRY" ]; then
+  bad "the menu has both entry modes" "missing:$MISSINGENTRY"
+else
+  ok "the menu has both entry modes"
+fi
+
+grep -qE 'PendingEntryMode = MainMenuEntryMode\.Cinematic;' "$MM" \
+  && ok "the entry mode resets itself after it is read" \
+  || bad "the entry mode resets itself after it is read" \
+         "a direct entry that failed would leave a cold boot skipping its own intro"
+
+code "$UI/MissionResultUI.cs" | grep -qE 'PendingEntryMode = MainMenuEntryMode\.DirectLobby' \
+  && ok "finishing a mission returns to the lobby directly" \
+  || bad "finishing a mission returns to the lobby directly" \
+         "MissionResultUI must state the intent before loading the menu scene"
+
+# The direct route must not run the cinematic's music, phone or tap-to-start sequence.
+if sed -n '/private IEnumerator DirectRoutine()/,/^        }$/p' "$MM" \
+     | grep -qE '(FadeOutMenuMusic|FadeOutCinematicSources|TransitionRoutine)\('; then
+  bad "the direct route replays no cinematic" "DirectRoutine runs the cinematic sequence"
+else
+  ok "the direct route replays no cinematic"
+fi
+
+# ---- V7.1: one world, generated once --------------------------------------------------------
+
+B71="$ROOT/Assets/CatchIfYouCan/Scripts/Procedural/InvestigationBootstrap.cs"
+code "$B71" | grep -qE '_generatedFor' \
+  && ok "a mission cannot be generated twice" \
+  || bad "a mission cannot be generated twice" \
+         "a second generation means the preview and the played world only happen to match"
+
+# ---- V7.1: the portal camera can never become the player's ----------------------------------
+
+PS="$ART/PortalSurface.cs"
+if code "$PS" | grep -qE 'AddComponent<AudioListener>|tag = "MainCamera"'; then
+  bad "the portal camera is not a gameplay camera" \
+      "it must carry no AudioListener and never claim the MainCamera tag"
+else
+  ok "the portal camera is not a gameplay camera"
+fi
+
+code "$PS" | grep -qE 'go\.tag = "Untagged"' \
+  && ok "the portal camera is explicitly untagged" \
+  || bad "the portal camera is explicitly untagged" \
+         "an untagged second camera is what stops Camera.main finding it"
+
+code "$PS" | grep -qE 'LocalPlayerService\.Register' \
+  && bad "the portal camera never registers as the local view" \
+     "PortalSurface must not touch LocalPlayerService registration" \
+  || ok "the portal camera never registers as the local view"
+
 echo
 echo "  $PASS passed, $FAIL failed"
 if [ "$FAIL" -ne 0 ]; then

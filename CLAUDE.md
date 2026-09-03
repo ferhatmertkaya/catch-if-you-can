@@ -82,7 +82,10 @@ place that number lives; everything else derives it.
   together: exactly one `MobileInputController`, one movement joystick and one transition
   overlay; the portal shows the real mission world rather than a stand-in; the world loader
   never rolls a seed of its own; a prepared world is scenery until it is entered; and the
-  mission actually puts its loadout in the player's hands. 35 checks.
+  mission actually puts its loadout in the player's hands; the torch has a dedicated place
+  outside the three investigation slots, a mission cannot be generated twice, finishing one
+  returns to the lobby without replaying the cinematic, and the portal camera can never
+  become the player's. 48 checks.
 
 - `Scripts/check_agent_architecture.sh` — the roster holds 40 unique roles with
   every field, the roster and `AGENT_OWNERSHIP.md` name the same roles, the

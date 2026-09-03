@@ -168,12 +168,36 @@ namespace CatchIfYouCan.Equipment
         /// </summary>
         private void OnFlashlightRequested()
         {
+            // The torch now lives in its own place rather than in one of the three
+            // investigation slots, so the player can be holding the EMF when they reach for it.
+            // A stowed torch refuses to light, deliberately - so bring it out first. One tap,
+            // torch in hand and on, which is what the button has always appeared to promise.
+            //
+            // This is a selection, not a special case in the carry rules: nothing below changes,
+            // the torch still goes dark when it is stowed, and the hand still holds one item.
+            if (LifecycleState == EquipmentLifecycleState.Holstered)
+                ResolveInventory()?.SelectTorch();
+
             // Through the lifecycle rather than EquipmentBase.Use, so a refusal has a reason -
             // flat, broken, or stowed in a bag - and so the torch obeys the same gate as every
             // other item.
             var result = TryUse();
             if (!result.Ok)
                 Core.CIYCLog.Info("Flashlight: " + result);
+        }
+
+        private PlayerInventory _inventory;
+
+        /// <summary>
+        /// The bag this torch is in, found through the hierarchy it is parented into. Cached,
+        /// because it is asked on a button press and the answer does not change while the torch
+        /// is carried; re-resolved if the torch changes hands.
+        /// </summary>
+        private PlayerInventory ResolveInventory()
+        {
+            if (_inventory == null)
+                _inventory = GetComponentInParent<PlayerInventory>();
+            return _inventory;
         }
 
         // ---- equipment ---------------------------------------------------------------------

@@ -7,6 +7,23 @@ using UnityEngine.UI;
 
 namespace CatchIfYouCan.UI
 {
+    /// <summary>How the menu scene should come up when it is next loaded.</summary>
+    public enum MainMenuEntryMode
+    {
+        /// <summary>
+        /// A cold boot: the cinematic menu, the phone, the tap to start, then the lobby. What
+        /// the game opens with, once per run.
+        /// </summary>
+        Cinematic,
+
+        /// <summary>
+        /// Straight into the interactive lobby. What a player returning from a finished
+        /// investigation gets: the mission ended, they are back at base, and there is no
+        /// title screen in the middle of a gameplay loop.
+        /// </summary>
+        DirectLobby
+    }
+
     /// <summary>
     /// Owns the one-way handover from the cinematic main menu to the lobby.
     ///
@@ -105,6 +122,25 @@ namespace CatchIfYouCan.UI
         private TransitionFade _fade;
         private PlayerBuildResult _player;
 
+        /// <summary>
+        /// How the NEXT load of this scene should come up, read once on Awake and immediately
+        /// put back to <see cref="MainMenuEntryMode.Cinematic"/>.
+        ///
+        /// <para>
+        /// A static set before the load, because the scene's components do not exist until it
+        /// is loaded and by then Awake has already decided what to show. It resets itself so a
+        /// direct entry that fails halfway cannot leave a cold boot skipping its own intro.
+        /// </para>
+        ///
+        /// <para>
+        /// <b>An explicit intent, never inferred.</b> Not derived from whether a mission ran,
+        /// from a scene name, or from leftover static state - a returning player and a cold
+        /// boot look identical by the time this scene wakes up, and guessing wrong means either
+        /// replaying the intro after every mission or never showing it at all.
+        /// </para>
+        /// </summary>
+        public static MainMenuEntryMode PendingEntryMode = MainMenuEntryMode.Cinematic;
+
         /// <summary>Which half of the menu is live. Read by the tap handler.</summary>
         public MenuMode Mode { get; private set; } = MenuMode.CinematicMainMenu;
 
@@ -126,6 +162,76 @@ namespace CatchIfYouCan.UI
             // that reactivates the room early cannot quietly bring the night in with it.
             if (roomAmbience != null)
                 roomAmbience.End();
+
+            MainMenuEntryMode entry = PendingEntryMode;
+            PendingEntryMode = MainMenuEntryMode.Cinematic;
+
+            if (entry == MainMenuEntryMode.DirectLobby)
+                _enterDirectly = true;
+        }
+
+        private bool _enterDirectly;
+
+        private void Start()
+        {
+            if (!_enterDirectly)
+                return;
+
+            _enterDirectly = false;
+            EnterLobbyDirect();
+        }
+
+        /// <summary>
+        /// Comes up straight in the lobby, with no cinematic and no tap to start.
+        ///
+        /// <para>
+        /// What a player returning from a finished investigation gets. The cinematic is an
+        /// introduction to the game, and it is worth exactly one viewing per run; replaying it
+        /// after every mission turns the loop into a series of title screens.
+        /// </para>
+        ///
+        /// <para>
+        /// It shares <see cref="GoLiveInLobby"/> with the cinematic route rather than repeating
+        /// it, so the room, the player, the exterior, the ambience, the camera handover and the
+        /// listener handover are done once, in one order, for both.
+        /// </para>
+        /// </summary>
+        public void EnterLobbyDirect()
+        {
+            if (Mode != MenuMode.CinematicMainMenu)
+                return;
+
+            Mode = MenuMode.TransitioningToInteractive;
+            StartCoroutine(DirectRoutine());
+        }
+
+        private IEnumerator DirectRoutine()
+        {
+            if (logTransition)
+                Debug.Log("[CIYC] Menu: entering the lobby directly", this);
+
+            // Black from the first frame. There is no cinematic to fade out of - the scene has
+            // only just loaded - so this covers the room coming up rather than hiding a cut.
+            BuildFadeOverlay();
+            SetFadeAlpha(1f);
+
+            // The cinematic half never runs, so its label, its music and its phone are switched
+            // off rather than faded: there is nothing audible to fade.
+            SetCinematicUiActive(false);
+            if (phoneRing != null)
+                phoneRing.StopRinging();
+            for (int i = 0; i < cinematicAudioSources.Length; i++)
+            {
+                if (cinematicAudioSources[i] != null)
+                    cinematicAudioSources[i].Stop();
+            }
+            if (horrorDirector != null)
+                horrorDirector.StopCinematicMode();
+
+            if (UIManager.Instance != null)
+                UIManager.Instance.HideAll();
+
+            yield return GoLiveInLobby();
         }
 
         /// <summary>
@@ -204,11 +310,27 @@ namespace CatchIfYouCan.UI
                 yield break;
             }
 
+            yield return GoLiveInLobby();
+        }
+
+        /// <summary>
+        /// Makes the room live: geometry on, listener handed over, player spawned, sky and
+        /// ambience bound to them, menu camera off, reveal, controls armed.
+        ///
+        /// <para>
+        /// Shared by the cinematic route and the direct one. The ORDER is the part worth
+        /// keeping in one place: the menu's listener is silenced before the player builds
+        /// theirs so there is never a frame with two, and the menu's camera is switched off
+        /// only after the player's exists so there is never a frame with none.
+        /// </para>
+        /// </summary>
+        private IEnumerator GoLiveInLobby()
+        {
             SetRoomActive(true);
 
-            // 8. Listener first, then the player. The player builds its own AudioListener, so
-            //    silencing the menu's before it exists is what guarantees there is never a frame
-            //    with two enabled listeners.
+            // Listener first, then the player. The player builds its own AudioListener, so
+            // silencing the menu's before it exists is what guarantees there is never a frame
+            // with two enabled listeners.
             if (cinematicAudioListener != null)
                 cinematicAudioListener.enabled = false;
 

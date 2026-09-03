@@ -31,10 +31,9 @@ namespace CatchIfYouCan.Equipment
         /// Fills the player's free slots from the loadout, in order, and says what did not fit.
         ///
         /// <para>
-        /// The inventory holds <see cref="PlayerInventory.SlotCount"/> items and a loadout may
-        /// name more; that is the design, not an error - the rest are chosen from at the van.
-        /// It is reported at info level so that "why am I not carrying the thermometer" has an
-        /// answer in the log rather than being a mystery.
+        /// The torch has its own place - <see cref="PlayerInventory.TorchSlotIndex"/> - and does
+        /// not compete for the three, which is what makes the four-tool vertical slice fit.
+        /// Anything that still will not fit is named in the log rather than silently dropped.
         /// </para>
         /// </summary>
         public static int InstallLoadout(PlayerInventory inventory)
@@ -114,7 +113,9 @@ namespace CatchIfYouCan.Equipment
         /// </summary>
         private static bool AlreadyCarrying(PlayerInventory inventory, string equipmentId)
         {
-            for (int i = 0; i < PlayerInventory.SlotCount; i++)
+            // Over the torch's dedicated place as well as the three, so the torch
+            // PlayerFactory already put in their hand is recognised rather than duplicated.
+            for (int i = 0; i < PlayerInventory.SelectableSlotCount; i++)
             {
                 EquipmentBase held = inventory.GetSlot(i);
                 if (held != null && held.Definition != null &&

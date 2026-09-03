@@ -7,12 +7,42 @@ namespace CatchIfYouCan.Player
 {
     public class PlayerInventory : MonoBehaviour
     {
+        /// <summary>
+        /// Investigation equipment slots. Three, and it stays three: the HUD selector, the
+        /// pickup rules and the replication contract all count on it.
+        /// </summary>
         public const int SlotCount = 3;
+
+        /// <summary>
+        /// The torch's own place, addressable for selection but not one of the three.
+        ///
+        /// <para>
+        /// <b>Why the torch is not a normal slot.</b> The vertical slice needs four tools -
+        /// torch, EMF, UV, thermometer - and the torch used to take slot 0, so the third
+        /// investigation device had nowhere to go and was dropped on the floor of a log line.
+        /// The torch is not really one of the three anyway: the player never chooses to bring
+        /// it, never trades it for something better, and it has its own HUD control rather
+        /// than a slot in the selector.
+        /// </para>
+        ///
+        /// <para>
+        /// <b>It is a slot for selection and nothing more.</b> Exactly one item is in the hand
+        /// at a time, here as before - <see cref="EquipSelected"/> holds the selected one and
+        /// stows the rest, the hand anchor is unchanged, and no grip or presentation maths is
+        /// involved. A torch stowed while the EMF is out still goes dark, which is the
+        /// behaviour <c>HeldFlashlight</c> documents and intends.
+        /// </para>
+        /// </summary>
+        public const int TorchSlotIndex = SlotCount;
+
+        /// <summary>Selectable positions: the three, plus the torch.</summary>
+        public const int SelectableSlotCount = SlotCount + 1;
 
         [SerializeField] private Transform handAnchor;
         [SerializeField] private Transform dropOrigin;
 
         private readonly EquipmentBase[] _slots = new EquipmentBase[SlotCount];
+        private EquipmentBase _torch;
         private int _selectedIndex;
         private PlayerPresence _presence;
 
@@ -54,8 +84,16 @@ namespace CatchIfYouCan.Player
             }
         }
 
+        /// <summary>True once the player is carrying their torch.</summary>
+        public bool HasTorch => _torch != null;
+
+        /// <summary>The torch, wherever it is in the carry cycle, or null.</summary>
+        public EquipmentBase Torch => _torch;
+
         public EquipmentBase GetSlot(int index)
         {
+            if (index == TorchSlotIndex)
+                return _torch;
             if (index < 0 || index >= SlotCount)
                 return null;
             return _slots[index];
@@ -67,7 +105,7 @@ namespace CatchIfYouCan.Player
 
         public bool SelectSlot(int index)
         {
-            if (index < 0 || index >= SlotCount)
+            if (index < 0 || index >= SelectableSlotCount)
                 return false;
 
             _selectedIndex = index;
@@ -83,6 +121,12 @@ namespace CatchIfYouCan.Player
         {
             if (item == null)
                 return false;
+
+            // The torch always goes to its own place, whether it is being handed over at spawn
+            // or picked back up off the floor. Without this, a torch put down and retrieved
+            // would take an investigation slot and the contradiction would come straight back.
+            if (IsTorch(item) && _torch == null)
+                return AdoptTorch(item);
 
             for (int i = 0; i < SlotCount; i++)
             {
@@ -118,6 +162,59 @@ namespace CatchIfYouCan.Player
 
             return false;
         }
+
+        /// <summary>
+        /// Whether this is the player's torch rather than an investigation device. Asked of the
+        /// definition id, which is a declared constant, rather than of the component type -
+        /// a mission that ever hands out a second torch-like light should not silently claim
+        /// the dedicated place.
+        /// </summary>
+        private static bool IsTorch(EquipmentBase item) =>
+            item != null && item.Definition != null &&
+            string.Equals(item.Definition.Id, EquipmentIds.Flashlight, StringComparison.Ordinal);
+
+        /// <summary>
+        /// Takes the torch into its dedicated place. Ownership is claimed here through exactly
+        /// the same call <see cref="AddItem"/> uses, because this file is still the only place
+        /// equipment ownership is claimed or released.
+        /// </summary>
+        public bool AdoptTorch(EquipmentBase item)
+        {
+            if (item == null || _torch != null)
+                return false;
+
+            var claim = item.TryClaim(OwnerClientId);
+            if (!Procedural.Deterministic.EquipmentOwnership.Holds(claim))
+            {
+                CIYCLog.Info("Torch refused: " +
+                             Procedural.Deterministic.EquipmentOwnership.Describe(claim) + ".");
+                return false;
+            }
+
+            _torch = item;
+            OnSlotChanged?.Invoke(TorchSlotIndex, item);
+
+            // A player who has only their torch has it in their hand. This is what the lobby
+            // has always looked like - the torch used to be slot 0 and slot 0 is selected by
+            // default - and moving it out of the three slots must not quietly empty their hands.
+            if (_selectedIndex != TorchSlotIndex && !HasAnyEquipment())
+                SelectSlot(TorchSlotIndex);
+            else if (_selectedIndex == TorchSlotIndex)
+                EquipSelected();
+            else
+                Holster(item);
+
+            GameEvents.EquipmentChanged();
+            return true;
+        }
+
+        /// <summary>
+        /// Brings the torch into the hand. The torch button calls this before switching on,
+        /// because a stowed torch refuses to light - which is
+        /// <see cref="Equipment.HeldFlashlight"/>'s intended behaviour and not something to
+        /// work around.
+        /// </summary>
+        public bool SelectTorch() => _torch != null && SelectSlot(TorchSlotIndex);
 
         public bool SwapSlots(int from, int to)
         {
@@ -170,7 +267,7 @@ namespace CatchIfYouCan.Player
             // stowed and a stowed item is still its owner's. Clearing ownership there would
             // hand everybody's spare equipment to the first person who walked past.
             item.ReleaseOwnership();
-            _slots[index] = null;
+            ClearSlot(index);
 
             OnSlotChanged?.Invoke(index, null);
             if (index == _selectedIndex)
@@ -206,9 +303,10 @@ namespace CatchIfYouCan.Player
             if (dropWorldItem)
                 return DropFromSlot(index);
 
-            _slots[index].Unequip();
-            _slots[index].ReleaseOwnership();
-            _slots[index] = null;
+            EquipmentBase held = GetSlot(index);
+            held.Unequip();
+            held.ReleaseOwnership();
+            ClearSlot(index);
             OnSlotChanged?.Invoke(index, null);
 
             if (index == _selectedIndex)
@@ -236,13 +334,30 @@ namespace CatchIfYouCan.Player
         /// not pickable.
         /// </para>
         /// </summary>
+        /// <summary>Whether any of the three investigation slots is occupied.</summary>
+        private bool HasAnyEquipment()
+        {
+            for (int i = 0; i < SlotCount; i++)
+                if (_slots[i] != null)
+                    return true;
+            return false;
+        }
+
+        private void ClearSlot(int index)
+        {
+            if (index == TorchSlotIndex)
+                _torch = null;
+            else if (index >= 0 && index < SlotCount)
+                _slots[index] = null;
+        }
+
         private void EquipSelected()
         {
             Transform anchor = ResolveHandAnchor();
 
-            for (int i = 0; i < SlotCount; i++)
+            for (int i = 0; i < SelectableSlotCount; i++)
             {
-                EquipmentBase item = _slots[i];
+                EquipmentBase item = GetSlot(i);
                 if (item == null)
                     continue;
 

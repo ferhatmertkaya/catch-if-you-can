@@ -267,6 +267,10 @@ namespace CatchIfYouCan.Procedural
             PlayerFactory.EnsureMobileInput();
         }
 
+        /// <summary>A fresh process has generated nothing.</summary>
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+        private static void ResetGenerationGuard() => _generatedFor = null;
+
         private static void EnsureRuntimeUi()
         {
             // Whether the HUD is raised depends on whether this call is what created the
@@ -312,7 +316,39 @@ namespace CatchIfYouCan.Procedural
             _van = VanBuilder.Build(worldRoot != null ? worldRoot : transform, vanPos, vanRot);
         }
 
+        /// <summary>
+        /// The mission runtime whose world has already been generated in this process.
+        ///
+        /// <para>
+        /// Generating the same mission twice is the failure this pass exists to make
+        /// impossible: it would mean a preview world and a played world that merely happen to
+        /// match, which is a promise the code would then be relying on rather than enforcing.
+        /// Held as a weak reference so a finished mission is not kept alive by the guard.
+        /// </para>
+        /// </summary>
+        private static System.WeakReference<MissionRuntime> _generatedFor;
+
         private void GenerateHouse(int seed)
+        {
+            if (_mission != null && _generatedFor != null &&
+                _generatedFor.TryGetTarget(out MissionRuntime already) &&
+                ReferenceEquals(already, _mission))
+            {
+                CIYCLog.Error("InvestigationBootstrap: the world for CASE #" +
+                              _mission.CaseNumber + " (seed " + _mission.Seed +
+                              ") has already been generated in this process. Generating it a " +
+                              "second time means the portal showed one world and the player is " +
+                              "standing in another. Refusing.");
+                return;
+            }
+
+            if (_mission != null)
+                _generatedFor = new System.WeakReference<MissionRuntime>(_mission);
+
+            GenerateHouseInternal(seed);
+        }
+
+        private void GenerateHouseInternal(int seed)
         {
             if (houseAnchor != null && houseGenerator != null)
                 houseGenerator.transform.SetPositionAndRotation(houseAnchor.position, houseAnchor.rotation);
