@@ -204,10 +204,12 @@ namespace CatchIfYouCan.Equipment
             _light.intensity =
                 lightIntensity * (0.6f + Mathf.PerlinNoise(Time.time * flickerSpeed, 0f) * 0.4f);
 
-            if (charge <= flickerThreshold * 0.5f
-                && Core.ServiceLocator.TryGet<Evidence.EvidenceManager>(out var evidence))
+            if (charge <= flickerThreshold * 0.5f)
             {
-                evidence.RegisterEvidence(Evidence.EvidenceType.ElectronicDistortion);
+                // An observation, not a finding. A browning-out torch near a ghost that does
+                // not distort electronics proves nothing, and used to prove everything.
+                Observe(Evidence.EvidenceType.ElectronicDistortion,
+                        1f - charge / Mathf.Max(0.0001f, flickerThreshold));
             }
         }
 

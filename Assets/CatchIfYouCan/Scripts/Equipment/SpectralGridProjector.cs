@@ -96,8 +96,7 @@ namespace CatchIfYouCan.Equipment
             var spawnPos = transform.position + offset;
             Instantiate(ghostSilhouettePrefab, spawnPos, Quaternion.LookRotation(transform.forward, Vector3.up));
 
-            if (Core.ServiceLocator.TryGet<EvidenceManager>(out var manager))
-                manager.RegisterEvidence(EvidenceType.SpectralGrid);
+            Observe(EvidenceType.SpectralGrid, 1f);
         }
     }
 }

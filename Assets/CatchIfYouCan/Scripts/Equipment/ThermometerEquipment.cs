@@ -47,10 +47,14 @@ namespace CatchIfYouCan.Equipment
             float target = ComputeTargetTemperature();
             _displayTemperature = MathUtil.SmoothApproach(_displayTemperature, target, lerpSpeed, deltaTime);
 
-            if (_displayTemperature <= evidenceFreezingThreshold
-                && Core.ServiceLocator.TryGet<EvidenceManager>(out var manager))
+            if (_displayTemperature <= evidenceFreezingThreshold)
             {
-                manager.RegisterEvidence(EvidenceType.FreezingTemperature);
+                // How far below freezing, not merely that it is. A reading hovering on the
+                // threshold and one well under it are different observations.
+                float depth = Mathf.InverseLerp(evidenceFreezingThreshold,
+                                                evidenceFreezingThreshold - 5f,
+                                                _displayTemperature);
+                Observe(EvidenceType.FreezingTemperature, Mathf.Max(0.3f, depth));
             }
         }
 

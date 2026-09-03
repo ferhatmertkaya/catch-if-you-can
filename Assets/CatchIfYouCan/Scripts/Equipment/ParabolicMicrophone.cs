@@ -53,8 +53,8 @@ namespace CatchIfYouCan.Equipment
                     loopSource.Stop();
             }
 
-            if (_signalStrength >= 0.55f && Core.ServiceLocator.TryGet<EvidenceManager>(out var manager))
-                manager.RegisterEvidence(EvidenceType.ParabolicAnomaly);
+            if (_signalStrength >= 0.55f)
+                Observe(EvidenceType.ParabolicAnomaly, _signalStrength);
         }
 
         private void HandleNoise(float intensity, Vector3 position)

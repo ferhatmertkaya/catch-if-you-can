@@ -74,8 +74,8 @@ namespace CatchIfYouCan.Equipment
                 found = true;
             }
 
-            if (found && Core.ServiceLocator.TryGet<EvidenceManager>(out var manager))
-                manager.RegisterEvidence(EvidenceType.UVTraces);
+            if (found)
+                Observe(EvidenceType.UVTraces, 1f);
         }
     }
 }

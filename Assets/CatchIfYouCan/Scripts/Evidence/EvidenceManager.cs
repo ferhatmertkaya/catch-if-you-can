@@ -86,8 +86,16 @@ namespace CatchIfYouCan.Evidence
                 return;
 
             _journalEntries.Add(entry);
+
+            // Through the validator, not straight into the found set. A journal entry carrying
+            // an evidence type is a device's finding written down, and it was the one door into
+            // RegisterEvidence that skipped every check - which is how the EVP recorder proved
+            // EVP Response against ghosts that do not make one.
             if (entry.RelatedEvidence.HasValue)
-                RegisterEvidence(entry.RelatedEvidence.Value);
+            {
+                EvidenceValidator.Submit(new EvidenceObservation(
+                    entry.RelatedEvidence.Value, entry.Title ?? "journal", 1f, Vector3.zero));
+            }
 
             CIYCLog.Info($"Journal entry added: {entry.Title}");
         }

@@ -186,6 +186,23 @@ namespace CatchIfYouCan.Equipment
                 OnDurabilityDepleted();
         }
 
+        /// <summary>
+        /// Reports what this device just measured. It is an observation, not a finding.
+        ///
+        /// <para>
+        /// Every item used to call <c>EvidenceManager.RegisterEvidence</c>, which meant a
+        /// device that fired once had proved something - with nothing checking whether the
+        /// ghost in the house exhibits that evidence at all, and nothing checking that the
+        /// reading lasted longer than a frame. <see cref="Evidence.EvidenceValidator"/> decides;
+        /// equipment only reports.
+        /// </para>
+        /// </summary>
+        protected Evidence.EvidenceConfirmation Observe(Evidence.EvidenceType type, float strength)
+        {
+            return Evidence.EvidenceValidator.Submit(
+                new Evidence.EvidenceObservation(type, DeviceId, strength, transform.position));
+        }
+
         protected void PlayClip(AudioClip clip)
         {
             if (clip == null)

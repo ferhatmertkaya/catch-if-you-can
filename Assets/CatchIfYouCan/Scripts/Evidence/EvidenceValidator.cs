@@ -1,0 +1,185 @@
+using System.Collections.Generic;
+using CatchIfYouCan.Core;
+using UnityEngine;
+
+namespace CatchIfYouCan.Evidence
+{
+    /// <summary>
+    /// Decides whether what a device measured is evidence.
+    ///
+    /// <para>
+    /// <b>Equipment observes. This decides truth.</b> The two were the same thing: an item
+    /// called RegisterEvidence and the journal believed it. Nothing checked the ghost, so a
+    /// thermometer could prove Freezing Temperatures against a ghost that does not have it, and
+    /// nothing checked duration, so one noisy frame was as good as a sustained reading. Pressing
+    /// Use was, in effect, a way to grant evidence.
+    /// </para>
+    ///
+    /// <para>
+    /// It is also where host authority goes later. A future networked build validates
+    /// observations on the host and replicates the confirmations; the eleven items keep
+    /// submitting observations and never learn the difference. That is the whole reason this is
+    /// a boundary rather than a rule inside each item.
+    /// </para>
+    ///
+    /// <para>
+    /// Ghost AI is untouched. This only reads <see cref="Ghost.GhostDefinition.HasEvidence"/>,
+    /// which already existed and was already the ghost's own statement of what it exhibits.
+    /// </para>
+    /// </summary>
+    public static class EvidenceValidator
+    {
+        /// <summary>
+        /// How long a device must keep observing before it counts, per evidence type, in
+        /// seconds. Longer for the ones a player can stumble into, shorter for the ones that
+        /// take a deliberate act.
+        /// </summary>
+        private static readonly Dictionary<EvidenceType, float> DwellSeconds =
+            new Dictionary<EvidenceType, float>
+            {
+                { EvidenceType.EMFSurge, 1.5f },
+                { EvidenceType.FreezingTemperature, 3f },
+                { EvidenceType.UVTraces, 1f },
+                { EvidenceType.SpectralGrid, 0.75f },
+                { EvidenceType.ParabolicAnomaly, 2f },
+                { EvidenceType.ElectronicDistortion, 2f },
+                // An EVP response and a photograph are single deliberate events, not readings
+                // held steady, so they confirm the moment they are valid.
+                { EvidenceType.EVPResponse, 0f },
+                { EvidenceType.GhostOrb, 0f },
+                { EvidenceType.PhysicalDisturbance, 0f },
+            };
+
+        /// <summary>Minimum strength an observation needs before its dwell even starts.</summary>
+        private const float MinimumStrength = 0.15f;
+
+        /// <summary>
+        /// How long an interrupted observation keeps its accumulated dwell before it is
+        /// forgotten. A reading that flickers for a frame should not restart the clock.
+        /// </summary>
+        private const float DwellGraceSeconds = 0.5f;
+
+        private struct Progress
+        {
+            public float Dwell;
+            public float LastSeenTime;
+        }
+
+        private static readonly Dictionary<EvidenceType, Progress> InFlight =
+            new Dictionary<EvidenceType, Progress>();
+
+        /// <summary>The last decision, for the equipment lab's readout.</summary>
+        public static EvidenceObservation LastObservation { get; private set; }
+        public static EvidenceConfirmation LastConfirmation { get; private set; }
+
+        /// <summary>
+        /// Submits what a device measured. Returns what was decided, and registers the evidence
+        /// only when it is confirmed.
+        /// </summary>
+        public static EvidenceConfirmation Submit(in EvidenceObservation observation)
+        {
+            LastObservation = observation;
+            return LastConfirmation = Decide(observation);
+        }
+
+        private static EvidenceConfirmation Decide(in EvidenceObservation observation)
+        {
+            if (!ServiceLocator.TryGet<EvidenceManager>(out var manager))
+                return EvidenceConfirmation.NoActiveGhost;
+
+            if (manager.HasEvidence(observation.Type))
+                return EvidenceConfirmation.AlreadyFound;
+
+            var ghost = ActiveGhost();
+            if (ghost == null)
+                return EvidenceConfirmation.NoActiveGhost;
+
+            // The ghost's own statement of what it exhibits. This is the check whose absence
+            // let a device prove something the entity does not do.
+            if (!ghost.HasEvidence(observation.Type))
+            {
+                Forget(observation.Type);
+                return EvidenceConfirmation.NotInGhostProfile;
+            }
+
+            if (observation.Strength < MinimumStrength)
+            {
+                Forget(observation.Type);
+                return EvidenceConfirmation.TooWeak;
+            }
+
+            float required = DwellSeconds.TryGetValue(observation.Type, out float seconds)
+                ? seconds
+                : 1f;
+
+            if (required > 0f && !HasDwelled(observation.Type, required))
+                return EvidenceConfirmation.Dwelling;
+
+            Forget(observation.Type);
+            manager.RegisterEvidence(observation.Type);
+            return EvidenceConfirmation.Confirmed;
+        }
+
+        /// <summary>
+        /// Accumulates time for one evidence type, forgiving a brief gap so a reading that
+        /// flickers for a frame does not restart the clock.
+        /// </summary>
+        private static bool HasDwelled(EvidenceType type, float required)
+        {
+            float now = Time.time;
+
+            if (!InFlight.TryGetValue(type, out var progress) ||
+                now - progress.LastSeenTime > DwellGraceSeconds)
+            {
+                progress = new Progress { Dwell = 0f, LastSeenTime = now };
+            }
+
+            progress.Dwell += Mathf.Max(0f, now - progress.LastSeenTime) + Time.deltaTime;
+            progress.LastSeenTime = now;
+            InFlight[type] = progress;
+
+            return progress.Dwell >= required;
+        }
+
+        private static void Forget(EvidenceType type) => InFlight.Remove(type);
+
+        /// <summary>
+        /// How far through its dwell an evidence type is, 0 to 1. For the lab, so "nothing is
+        /// happening" and "nearly there" look different.
+        /// </summary>
+        public static float DwellProgress(EvidenceType type)
+        {
+            if (!InFlight.TryGetValue(type, out var progress))
+                return 0f;
+
+            float required = DwellSeconds.TryGetValue(type, out float seconds) ? seconds : 1f;
+            return required <= 0f ? 1f : Mathf.Clamp01(progress.Dwell / required);
+        }
+
+        /// <summary>
+        /// The ghost this house has, or null. Read from the mission first, because that is the
+        /// assignment; the controller in the scene is the fallback for a lab with a ghost and
+        /// no mission.
+        /// </summary>
+        private static Ghost.GhostDefinition ActiveGhost()
+        {
+            var mission = Missions.MissionManager.Instance != null
+                ? Missions.MissionManager.Instance.ActiveMission
+                : null;
+
+            if (mission != null && mission.AssignedGhost != null)
+                return mission.AssignedGhost;
+
+            var controller = Object.FindAnyObjectByType<Ghost.GhostController>();
+            return controller != null ? controller.Definition : null;
+        }
+
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+        private static void ResetOnPlay()
+        {
+            InFlight.Clear();
+            LastConfirmation = EvidenceConfirmation.NoActiveGhost;
+            LastObservation = default;
+        }
+    }
+}

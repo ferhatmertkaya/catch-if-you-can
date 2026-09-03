@@ -175,6 +175,22 @@ else
   ok "HeldFlashlight no longer builds its own body"
 fi
 
+# ------------------------------------------------------------------- evidence
+
+# Equipment observes; the validator decides. A device that can call RegisterEvidence
+# directly is a device that can prove anything by firing once - including evidence the
+# ghost in the house does not exhibit.
+if grep -rn 'RegisterEvidence' Assets/CatchIfYouCan/Scripts/Equipment/*.cs \
+     | grep -v '^\s*//' | grep -qv 'used to call'; then
+  fail "equipment calls EvidenceManager.RegisterEvidence directly; go through EvidenceValidator"
+else
+  ok "no equipment registers evidence directly"
+fi
+
+grep -q 'EvidenceValidator.Submit' Assets/CatchIfYouCan/Scripts/Evidence/EvidenceManager.cs \
+  && ok "journal entries are validated rather than trusted" \
+  || fail "AddJournalEntry registers evidence without validation"
+
 # ------------------------------------------------------------- the never-agains
 
 ! grep -rq "class FlashlightEquipment" Assets/CatchIfYouCan/Scripts \

@@ -58,7 +58,7 @@ namespace CatchIfYouCan.Equipment
             UpdateBeep(deltaTime);
 
             if (_reading >= evidenceThreshold)
-                TryRegisterEvidence();
+                ReportReading();
         }
 
         private float SampleEmfReading()
@@ -128,13 +128,11 @@ namespace CatchIfYouCan.Equipment
         public int CurrentLevel => _level;
         public float CurrentReading => _reading;
 
-        private void TryRegisterEvidence()
+        private void ReportReading()
         {
-            if (!Core.ServiceLocator.TryGet<EvidenceManager>(out var manager))
-                return;
-
-            if (!manager.HasEvidence(EvidenceType.EMFSurge))
-                manager.RegisterEvidence(EvidenceType.EMFSurge);
+            // The reading, not a verdict. Strength is the reading itself, so a needle barely
+            // over the threshold and one pinned to the stop are different observations.
+            Observe(EvidenceType.EMFSurge, Mathf.Clamp01(_reading));
         }
     }
 }
