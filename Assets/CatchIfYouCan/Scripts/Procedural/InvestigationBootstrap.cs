@@ -80,48 +80,15 @@ namespace CatchIfYouCan.Procedural
 
         private void EnsureManagers()
         {
-            if (GameManager.Instance == null)
-            {
-                var go = new GameObject("GameManager");
-                go.AddComponent<GameManager>();
-            }
+            // The persistent layer is not this scene's to own. This method used to create
+            // its own set of ten, overlapping Bootstrap's eleven in two places, so which
+            // services existed depended on how the scene had been entered.
+            CiycServices.EnsureCore();
+            CiycServices.EnsureMission();
 
-            if (MissionManager.Instance == null)
-            {
-                var go = new GameObject("MissionManager");
-                go.AddComponent<MissionManager>();
-            }
-
-            if (ObjectiveManager.Instance == null)
-            {
-                var go = new GameObject("ObjectiveManager");
-                go.AddComponent<ObjectiveManager>();
-            }
-
-            if (EvidenceManager.Instance == null)
-            {
-                var go = new GameObject("EvidenceManager");
-                go.AddComponent<EvidenceManager>();
-            }
-
-            if (WeatherSystem.Instance == null)
-            {
-                var go = new GameObject("WeatherSystem");
-                go.AddComponent<WeatherSystem>();
-            }
-
-            if (EquipmentManager.Instance == null)
-            {
-                var go = new GameObject("EquipmentManager");
-                go.AddComponent<EquipmentManager>();
-            }
-
-            if (GhostActivitySystem.Instance == null)
-            {
-                var go = new GameObject("GhostActivitySystem");
-                go.AddComponent<GhostActivitySystem>();
-            }
-
+            // Below this line is what genuinely belongs to the investigation scene: the
+            // generator is parented into the world root, so it is scene content rather
+            // than a service, and the spawn manager is created per mission.
             if (houseGenerator == null)
             {
                 var go = new GameObject("ProceduralHouseGenerator");
@@ -142,10 +109,17 @@ namespace CatchIfYouCan.Procedural
 
         private static void EnsureRuntimeUi()
         {
-            if (GameObject.Find("RuntimeUI") != null)
+            // Whether the HUD is raised depends on whether this call is what created the
+            // canvas, exactly as before: arriving from the boot flow the canvas already
+            // exists and something else owns what is on screen, so raising the HUD here
+            // would take the screen away from it.
+            bool existedBefore = CiycServices.RuntimeUiRoot != null;
+
+            CiycServices.EnsureCore();
+
+            if (existedBefore)
                 return;
 
-            RuntimeUIFactory.BuildCompleteUI();
             if (UIManager.Instance != null)
                 UIManager.Instance.Show(UIScreen.HUD, false);
         }

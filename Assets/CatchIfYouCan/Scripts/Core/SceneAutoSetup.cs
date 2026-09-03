@@ -51,14 +51,10 @@ namespace CatchIfYouCan.Core
             EnsureMainCamera();
             EnsureDirectionalLight(0.15f);
 
-            if (UIManager.Instance == null)
-            {
-                var uiManagerGo = new GameObject("UIManager");
-                uiManagerGo.AddComponent<UIManager>();
-            }
-
-            if (GameObject.Find("RuntimeUI") == null)
-                RuntimeUIFactory.BuildCompleteUI();
+            // Entered from boot this is a no-op; opened directly in the editor it is what
+            // makes the scene runnable at all. Either way it is the same implementation,
+            // so the two paths cannot drift apart.
+            CiycServices.EnsureCore();
 
             if (UIManager.Instance != null)
                 UIManager.Instance.Show(UIScreen.MainMenu, true);
@@ -69,6 +65,8 @@ namespace CatchIfYouCan.Core
             EnsureEventSystem();
             EnsureMainCamera();
             EnsureDirectionalLight(0.25f);
+
+            CiycServices.EnsureCore();
 
             var world = FindOrCreate("WORLD");
             FindOrCreateChild(world.transform, "VanAnchor").transform.localPosition = new Vector3(0f, 0f, -14f);
@@ -85,12 +83,12 @@ namespace CatchIfYouCan.Core
             EnsureMainCamera();
             EnsureDirectionalLight(0.2f);
 
-            if (GameObject.Find("RuntimeUI") == null)
-            {
-                RuntimeUIFactory.BuildCompleteUI();
-                if (UIManager.Instance != null)
-                    UIManager.Instance.Show(UIScreen.HUD, false);
-            }
+            // Same rule as InvestigationBootstrap: the HUD is only raised when this call
+            // is what created the canvas.
+            bool uiExistedBefore = CiycServices.RuntimeUiRoot != null;
+            CiycServices.EnsureCore();
+            if (!uiExistedBefore && UIManager.Instance != null)
+                UIManager.Instance.Show(UIScreen.HUD, false);
 
             var world = FindOrCreate("WORLD");
             FindOrCreateChild(world.transform, "VanAnchor").transform.localPosition = new Vector3(0f, 0f, -14f);

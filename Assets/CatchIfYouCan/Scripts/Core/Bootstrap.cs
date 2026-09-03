@@ -1,8 +1,4 @@
 using UnityEngine;
-using CatchIfYouCan.Save;
-using CatchIfYouCan.Audio;
-using CatchIfYouCan.Graphics;
-using CatchIfYouCan.Equipment;
 using CatchIfYouCan.UI;
 
 namespace CatchIfYouCan.Core
@@ -34,59 +30,10 @@ namespace CatchIfYouCan.Core
 
         private void EnsureManagers()
         {
-            if (GameManager.Instance == null)
-            {
-                var go = new GameObject("GameManager");
-                go.AddComponent<GameManager>();
-            }
-            if (SceneLoader.Instance == null)
-            {
-                var go = new GameObject("SceneLoader");
-                go.AddComponent<SceneLoader>();
-            }
-            if (SaveManager.Instance == null)
-            {
-                var go = new GameObject("SaveManager");
-                go.AddComponent<SaveManager>();
-            }
-            if (SettingsManager.Instance == null)
-            {
-                var go = new GameObject("SettingsManager");
-                go.AddComponent<SettingsManager>();
-            }
-            AudioBootstrap.Initialize();
-            if (AudioManager.Instance == null)
-            {
-                var go = new GameObject("AudioManager");
-                go.AddComponent<AudioManager>();
-            }
-            if (GraphicsManager.Instance == null)
-            {
-                var go = new GameObject("GraphicsManager");
-                go.AddComponent<GraphicsManager>();
-            }
-            if (HapticManager.Instance == null)
-            {
-                var go = new GameObject("HapticManager");
-                go.AddComponent<HapticManager>();
-            }
-            if (EquipmentManager.Instance == null)
-            {
-                var go = new GameObject("EquipmentManager");
-                go.AddComponent<EquipmentManager>();
-            }
-            if (StatisticsTracker.Instance == null)
-            {
-                var go = new GameObject("StatisticsTracker");
-                go.AddComponent<StatisticsTracker>();
-            }
-            if (UIManager.Instance == null)
-            {
-                var go = new GameObject("UIManager");
-                go.AddComponent<UIManager>();
-            }
-            if (GameObject.Find("RuntimeUI") == null)
-                RuntimeUIFactory.BuildCompleteUI();
+            // One implementation, in CiycServices. This method used to be one of two
+            // competing lists; the other lived in InvestigationBootstrap and disagreed
+            // with it about nine of eleven entries.
+            CiycServices.EnsureCore();
         }
     }
 }
