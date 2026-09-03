@@ -172,8 +172,16 @@ namespace CatchIfYouCan.Evidence
 
         /// <summary>
         /// The ghost this house has, or null. Read from the mission first, because that is the
-        /// assignment; the controller in the scene is the fallback for a lab with a ghost and
-        /// no mission.
+        /// assignment; the ghost in the scene is the fallback for a lab with a ghost and no
+        /// mission.
+        ///
+        /// <para>
+        /// The fallback was <c>FindAnyObjectByType&lt;GhostController&gt;</c>, and this runs on
+        /// every observation - so a held thermometer, which submits on every one of its ticks
+        /// while it reads cold, walked every object in the scene to find the one ghost, over
+        /// and over, for as long as the player stood in the cold spot. The registry added for
+        /// exactly this in phase Y already has it.
+        /// </para>
         /// </summary>
         private static Ghost.GhostDefinition ActiveGhost()
         {
@@ -184,7 +192,7 @@ namespace CatchIfYouCan.Evidence
             if (mission != null && mission.AssignedGhost != null)
                 return mission.AssignedGhost;
 
-            var controller = Object.FindAnyObjectByType<Ghost.GhostController>();
+            var controller = Ghost.GhostController.Active;
             return controller != null ? controller.Definition : null;
         }
 

@@ -50,6 +50,8 @@ namespace CatchIfYouCan.UI
 
         private EquipmentBase _bound;
         private float _timer;
+        private string _title;
+        private string _readout;
 
         /// <summary>Called by the runtime UI factory, which builds the panel.</summary>
         public void BindRuntime(Component title, Component readout,
@@ -104,14 +106,42 @@ namespace CatchIfYouCan.UI
 
             if (item == null)
             {
-                UITheme.SetText(titleText, "EMPTY");
-                UITheme.SetText(readoutText, string.Empty);
+                SetTitle("EMPTY");
+                SetReadout(string.Empty);
                 return;
             }
 
             string title = item.Definition != null ? item.Definition.DisplayName : item.name;
-            UITheme.SetText(titleText, title.ToUpperInvariant());
-            UITheme.SetText(readoutText, item.HudReadout);
+            SetTitle(title.ToUpperInvariant());
+            SetReadout(item.HudReadout);
+        }
+
+        /// <summary>
+        /// Writes the title only when it changed. It changes when the selected item does,
+        /// which is a few times a minute - and ToUpperInvariant allocates a string every time
+        /// it is called, ten times a second, for the length of a mission.
+        /// </summary>
+        private void SetTitle(string value)
+        {
+            if (_title == value)
+                return;
+
+            _title = value;
+            UITheme.SetText(titleText, value);
+        }
+
+        /// <summary>
+        /// The readout genuinely changes - it is a temperature, a battery, a countdown - so
+        /// building it is unavoidable at the refresh rate. Comparing before writing still
+        /// saves the layout rebuild a text change costs, which is the expensive half.
+        /// </summary>
+        private void SetReadout(string value)
+        {
+            if (_readout == value)
+                return;
+
+            _readout = value;
+            UITheme.SetText(readoutText, value);
         }
 
         private void RebuildActions(EquipmentBase item)
@@ -140,6 +170,7 @@ namespace CatchIfYouCan.UI
                 button.onClick.AddListener(() => action.Invoke?.Invoke());
                 button.interactable = action.Enabled;
 
+                _labelCache[i] = action.Label;
                 UITheme.SetText(Label(i), action.Label);
             }
         }
@@ -173,9 +204,24 @@ namespace CatchIfYouCan.UI
                     continue;
 
                 button.interactable = _actions[i].Enabled;
-                UITheme.SetText(Label(i), _actions[i].Label);
+                SetLabel(i, _actions[i].Label);
             }
         }
+
+        /// <summary>
+        /// Writes an action label only when it changed. This runs at the refresh rate for
+        /// every visible button, and almost every refresh writes the same three words back.
+        /// </summary>
+        private void SetLabel(int index, string value)
+        {
+            if (_labelCache[index] == value)
+                return;
+
+            _labelCache[index] = value;
+            UITheme.SetText(Label(index), value);
+        }
+
+        private readonly string[] _labelCache = new string[ActionCount];
 
         private int CountActive()
         {

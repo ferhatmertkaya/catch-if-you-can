@@ -45,6 +45,7 @@ namespace CatchIfYouCan.Equipment
         private bool _nightVisionEnabled;
         private int _watchers;
         private float _frameTimer;
+        private bool _settingsDirty = true;
         private RenderTexture _feed;
 
         public VideoCameraEquipment ActiveCamera =>
@@ -85,13 +86,14 @@ namespace CatchIfYouCan.Equipment
         public void AddWatcher()
         {
             _watchers++;
+            _settingsDirty = true;
         }
 
         public void RemoveWatcher()
         {
             _watchers = Mathf.Max(0, _watchers - 1);
             if (_watchers == 0)
-                ApplyFeedSettings();
+                _settingsDirty = true;
         }
 
         private void Update()
@@ -100,7 +102,16 @@ namespace CatchIfYouCan.Equipment
                 return;
 
             UpdateSignalDistortion();
-            ApplyFeedSettings();
+
+            // Only when something changed. Every camera in the house was being told its feed
+            // state every frame, to tell it the same thing it was told last frame; the three
+            // things that can change it - the selection, night vision, and whether anyone is
+            // watching - all push it themselves.
+            if (_settingsDirty)
+            {
+                _settingsDirty = false;
+                ApplyFeedSettings();
+            }
 
             if (_watchers <= 0)
                 return;
@@ -121,6 +132,7 @@ namespace CatchIfYouCan.Equipment
             _cameras.Add(camera);
             if (_activeIndex < 0)
                 _activeIndex = 0;
+            _settingsDirty = true;
         }
 
         public void UnregisterCamera(VideoCameraEquipment camera)
@@ -149,6 +161,8 @@ namespace CatchIfYouCan.Equipment
             {
                 _activeIndex = _cameras.Count - 1;
             }
+
+            _settingsDirty = true;
         }
 
         public void SelectNext()
@@ -170,7 +184,7 @@ namespace CatchIfYouCan.Equipment
         public void ToggleNightVision()
         {
             _nightVisionEnabled = !_nightVisionEnabled;
-            ApplyFeedSettings();
+            _settingsDirty = true;
         }
 
         private void SelectIndex(int index)
@@ -186,7 +200,7 @@ namespace CatchIfYouCan.Equipment
                 previous.Lens.targetTexture = null;
 
             _activeIndex = index;
-            ApplyFeedSettings();
+            _settingsDirty = true;
         }
 
         private void UpdateSignalDistortion()
