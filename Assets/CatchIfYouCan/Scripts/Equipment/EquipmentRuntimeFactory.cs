@@ -40,6 +40,7 @@ namespace CatchIfYouCan.Equipment
                 EquipmentIds.ParabolicMicrophone,
                 EquipmentIds.SpectralGrid,
                 EquipmentIds.PhotoCamera,
+                EquipmentIds.VideoCamera,
                 EquipmentIds.Salt,
             };
 
@@ -72,6 +73,7 @@ namespace CatchIfYouCan.Equipment
                 EquipmentIds.ParabolicMicrophone => BuildSelfPresenting<ParabolicMicrophone>(definition),
                 EquipmentIds.SpectralGrid => BuildSelfPresenting<SpectralGridProjector>(definition),
                 EquipmentIds.PhotoCamera => BuildSelfPresenting<PhotoCameraEquipment>(definition),
+                EquipmentIds.VideoCamera => BuildSelfPresenting<VideoCameraEquipment>(definition),
                 EquipmentIds.Salt => BuildPrimitiveEquipment<SaltEquipment>(definition, new Vector3(0.2f, 0.15f, 0.2f)),
                 _ => BuildDevPlaceholder(definition)
             };

@@ -102,7 +102,7 @@ fi
 # Ids with no runtime path yet. This list must only ever shrink: an entry here is
 # an item that can currently be nothing but a DEV_PLACEHOLDER, and it is written
 # down so that it is a known gap rather than a discovery.
-UNMAPPED_ALLOWLIST="video_camera warding_relic"
+UNMAPPED_ALLOWLIST="warding_relic"
 
 gap_ok=1
 for id in $CANONICAL; do
