@@ -50,7 +50,7 @@ big a surface each team is holding.
 | 10 | **UI** | `Scripts/UI/**` | 28 | Every screen, the touch HUD, the runtime UI factory, the theme. |
 | 11 | **Input** | `Scripts/Input/**` | 9 | Touch, joystick, look, the HUD's input side and the input controller. |
 | 12 | **Art / Rendering** | `Scripts/Art/**`, `Scripts/Graphics/**`, `Shaders/**` | 15 | Shader resolution, runtime materials, the mirror, post-processing. |
-| 13 | **Environment** | `Art/Environment/**`, `Art/Particles/**` | — | Authored rooms, props, doors, materials and textures. |
+| 13 | **Environment** | `Art/Environment/**`, `Art/Particles/**`, `Scripts/Environment/**` | — | Authored rooms, props, doors, materials and textures, and the hand-built reference apartment shell. |
 | 14 | **Evidence** | `Scripts/Evidence/**` | 4 | Evidence types, the evidence manager and what counts as proof. |
 | 15 | **Missions** | `Scripts/Missions/**`, `Scripts/Objectives/**` | 16 | Mission definitions, runtime, objectives and their completion. |
 | 16 | **Electronics** | `Scripts/Electronics/**` | 1 | `IElectronicDevice`, interference and the breaker. |
