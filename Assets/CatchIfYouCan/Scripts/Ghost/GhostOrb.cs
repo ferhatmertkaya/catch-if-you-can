@@ -29,6 +29,22 @@ namespace CatchIfYouCan.Ghost
         [SerializeField] private float driftSpeed = 0.4f;
         [SerializeField] private float lifetime = 12f;
 
+        [Tooltip("Diameter of the mote, in metres. Small on purpose: an orb is something you " +
+                 "notice on a monitor, not a light source in the room.")]
+        [SerializeField, Min(0.01f)] private float bodyDiameter = 0.06f;
+
+        /// <summary>
+        /// The most orbs that may exist at once, across every ghost.
+        ///
+        /// <para>
+        /// A cap rather than a hope. Each orb is a renderer the camera feed has to switch on
+        /// and off around its render, and the feed is a full render of the room; a spawn rate
+        /// that outruns the twelve-second lifetime would grow that cost without bound. Four is
+        /// well above what "sparse and subtle" needs and well below what a phone would notice.
+        /// </para>
+        /// </summary>
+        public const int MaxAlive = 4;
+
         private float _spawnTime;
         private Renderer[] _renderers;
 
@@ -64,8 +80,53 @@ namespace CatchIfYouCan.Ghost
             if (orbParticles == null)
                 orbParticles = GetComponentInChildren<ParticleSystem>();
 
+            EnsureBody();
+
             _renderers = GetComponentsInChildren<Renderer>(true);
             _spawnTime = Time.time;
+        }
+
+        /// <summary>
+        /// Gives the orb something to see, when whatever spawned it did not.
+        ///
+        /// <para>
+        /// The evidence manager builds orbs from a prefab field nothing assigns, so every orb
+        /// in the game was a bare GameObject with a GhostOrb component: no renderer, no
+        /// particles, nothing. The video camera scans for orbs geometrically rather than
+        /// visually, so evidence still confirmed - the player was rewarded for photographing
+        /// a thing that could not be seen. This is that body.
+        /// </para>
+        ///
+        /// <para>
+        /// A DEV placeholder, and it says so in the object name. Assigning a real orb prefab
+        /// on the evidence manager replaces it with no code change.
+        /// </para>
+        /// </summary>
+        private void EnsureBody()
+        {
+            if (GetComponentInChildren<Renderer>(true) != null)
+                return;
+
+            var body = GameObject.CreatePrimitive(PrimitiveType.Sphere);
+            body.name = "DEV_PLACEHOLDER_OrbBody";
+            body.transform.SetParent(transform, false);
+            body.transform.localScale = Vector3.one * bodyDiameter;
+
+            // Nothing collides with a mote of light, and a collider here would be picked up by
+            // the UV lamp's overlap sweep and the placement system's clearance test.
+            var collider = body.GetComponent<Collider>();
+            if (collider != null)
+                Destroy(collider);
+
+            var renderer = body.GetComponent<Renderer>();
+            renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            renderer.receiveShadows = false;
+
+            // The project's own emissive material, so a stripped shader shows up here rather
+            // than silently drawing nothing. Never a Standard fallback.
+            var material = Art.RuntimeMaterialFactory.GetNeonGreenEmissive();
+            if (material != null)
+                renderer.sharedMaterial = material;
         }
 
         private void Start()

@@ -102,6 +102,15 @@ namespace CatchIfYouCan.Ghost
             rb.AddForce(dir.normalized * Random.Range(3f, 7f), ForceMode.Impulse);
             rb.AddTorque(Random.insideUnitSphere * 2f, ForceMode.Impulse);
 
+            // The object is now evidence, for a while. This is the only thing in the game that
+            // makes PhysicalDisturbance true: the evidence is not a reading, it is the claim
+            // that something moved on its own, and the claim is only honest if something did.
+            //
+            // Deliberately not on the door interaction. A door the ghost swung is a noise and a
+            // scare; it is not an object left out of place for somebody to photograph, and
+            // marking every slam would make the evidence mean nothing.
+            GhostDisturbance.MarkObject(obj);
+
             GameEvents.NoiseGenerated(0.55f, obj.transform.position);
             if (GhostActivitySystem.Instance != null)
                 GhostActivitySystem.Instance.RegisterGhostEvent(0.6f);

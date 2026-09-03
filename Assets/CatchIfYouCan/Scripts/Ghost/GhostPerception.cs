@@ -64,6 +64,17 @@ namespace CatchIfYouCan.Ghost
             PollNoise();
         }
 
+        /// <summary>
+        /// Where the ghost sees from. Asked for as a method because the factory used to reach
+        /// in and set the private field by reflection - which compiles, reviews clean, and
+        /// fails silently the next time somebody renames the field.
+        /// </summary>
+        public void SetEyePoint(Transform eye)
+        {
+            if (eye != null)
+                eyePoint = eye;
+        }
+
         public void SetPlayer(Transform player)
         {
             _player = player;

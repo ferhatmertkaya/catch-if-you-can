@@ -7,16 +7,16 @@ namespace CatchIfYouCan.Ghost
         {
             switch (ghostId)
             {
-                case "the_wanderer": return "Assets/External/Quaternius/Monsters/Orc.gltf";
-                case "the_whisper": return "Assets/External/Quaternius/Monsters/Demon.gltf";
-                case "the_watcher": return "Assets/External/Quaternius/Monsters/BlueDemon.gltf";
-                case "the_mimicer": return "Assets/External/Kenney/MiniDungeon/Models/character-human.fbx";
-                case "the_hollow": return "Assets/External/Quaternius/Monsters/Demon.gltf";
-                case "the_knocker": return "Assets/External/Quaternius/Monsters/Orc.gltf";
-                case "the_shadeborn": return "Assets/External/Quaternius/Monsters/BlueDemon.gltf";
-                case "the_static": return "Assets/External/Kenney/MiniDungeon/Models/character-orc.fbx";
-                case "the_crawler": return "Assets/External/Quaternius/Monsters/CreepCreature.glb";
-                case "the_weeping_one": return "Assets/External/Quaternius/Monsters/CreepCreature.glb";
+                case GhostIds.Wanderer: return "Assets/External/Quaternius/Monsters/Orc.gltf";
+                case GhostIds.Whisper: return "Assets/External/Quaternius/Monsters/Demon.gltf";
+                case GhostIds.Watcher: return "Assets/External/Quaternius/Monsters/BlueDemon.gltf";
+                case GhostIds.Mimicer: return "Assets/External/Kenney/MiniDungeon/Models/character-human.fbx";
+                case GhostIds.Hollow: return "Assets/External/Quaternius/Monsters/Demon.gltf";
+                case GhostIds.Knocker: return "Assets/External/Quaternius/Monsters/Orc.gltf";
+                case GhostIds.Shadeborn: return "Assets/External/Quaternius/Monsters/BlueDemon.gltf";
+                case GhostIds.Static: return "Assets/External/Kenney/MiniDungeon/Models/character-orc.fbx";
+                case GhostIds.Crawler: return "Assets/External/Quaternius/Monsters/CreepCreature.glb";
+                case GhostIds.WeepingOne: return "Assets/External/Quaternius/Monsters/CreepCreature.glb";
                 default: return GetModelAssetPathForProfile(GhostVisualProfile.HumanSilhouette);
             }
         }
@@ -66,18 +66,18 @@ namespace CatchIfYouCan.Ghost
         {
             switch (ghostId)
             {
-                case "the_crawler": return 0.55f;
-                case "the_weeping_one": return 0.75f;
-                case "the_whisper": return 0.95f;
-                case "the_shadeborn": return 1.15f;
-                case "the_knocker": return 1.05f;
+                case GhostIds.Crawler: return 0.55f;
+                case GhostIds.WeepingOne: return 0.75f;
+                case GhostIds.Whisper: return 0.95f;
+                case GhostIds.Shadeborn: return 1.15f;
+                case GhostIds.Knocker: return 1.05f;
                 default: return 1f;
             }
         }
 
         public static float GetVerticalOffset(string ghostId)
         {
-            return ghostId == "the_crawler" ? 0.15f : 0f;
+            return ghostId == GhostIds.Crawler ? 0.15f : 0f;
         }
     }
 }

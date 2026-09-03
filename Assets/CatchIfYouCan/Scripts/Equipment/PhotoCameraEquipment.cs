@@ -17,8 +17,11 @@ namespace CatchIfYouCan.Equipment
     /// </para>
     ///
     /// <para>
-    /// GhostOrb is deliberately not wired to this. It is an unused EvidenceType and attaching
-    /// it here would be filling in a matrix rather than designing an item.
+    /// GhostOrb is deliberately not wired to this - it belongs to the video camera, which is
+    /// what a mote visible only down a feed is for. This camera's evidence is
+    /// PhysicalDisturbance: a photograph of an object the ghost actually moved. Both bindings
+    /// are declared in <see cref="Evidence.EvidenceAuthority"/>, and the validator refuses a
+    /// device that is not the declared observer for a type.
     /// </para>
     /// </summary>
     [AddComponentMenu("Catch If You Can/Photo Camera")]
@@ -217,6 +220,43 @@ namespace CatchIfYouCan.Equipment
 
             if (ServiceLocator.TryGet<EvidenceManager>(out var manager))
                 manager.AddPhoto(photo);
+
+            ObserveDisturbance(subject, distance);
+        }
+
+        /// <summary>
+        /// Reports a photograph of something the ghost moved.
+        ///
+        /// <para>
+        /// This is the camera's evidence path and the only producer of PhysicalDisturbance,
+        /// which before V4 had none at all. Three things have to be true and all three are
+        /// facts about the world rather than about the shutter: the subject carries a
+        /// <see cref="GhostDisturbance"/> mark, the mark is still inside its window, and the
+        /// object was actually in the frame - <see cref="FindFramedSubject"/> has already
+        /// rejected anything outside the viewport, beyond range, off centre or behind
+        /// something solid.
+        /// </para>
+        ///
+        /// <para>
+        /// It observes; it does not decide. The validator still checks that the ghost in this
+        /// house is one that disturbs things at all, which is what stops a photograph of a
+        /// chair somebody kicked over from proving a poltergeist.
+        /// </para>
+        /// </summary>
+        private void ObserveDisturbance(Transform subject, float distance)
+        {
+            if (subject == null)
+                return;
+
+            var mark = subject.GetComponentInParent<GhostDisturbance>();
+            if (mark == null || !mark.IsFresh)
+                return;
+
+            // Fresher is stronger, and closer is stronger. A photograph taken as it lands is a
+            // better photograph than one taken from across the house a minute later.
+            float proximity = 1f - Mathf.Clamp01(distance / Mathf.Max(0.0001f, subjectRange));
+            Observe(EvidenceType.PhysicalDisturbance,
+                    Mathf.Clamp01(mark.Freshness * 0.6f + proximity * 0.4f));
         }
 
         /// <summary>
@@ -299,6 +339,18 @@ namespace CatchIfYouCan.Equipment
             var ghost = GhostController.Active;
             if (ghost != null)
                 Candidates.Add(ghost.transform);
+
+            // Objects the ghost has actually moved, from the registry. They are the subject of
+            // PhysicalDisturbance and they are rarely under the centre ray - a chair on its
+            // side is off to one edge of the shot, which is exactly the case the old
+            // single-ray subject test could not see.
+            var disturbed = GhostDisturbance.All;
+            for (int i = 0; i < disturbed.Count; i++)
+            {
+                var mark = disturbed[i];
+                if (mark != null && mark.IsFresh && !Candidates.Contains(mark.transform))
+                    Candidates.Add(mark.transform);
+            }
 
             int hits = Physics.RaycastNonAlloc(
                 new Ray(PhotoOrigin.position, PhotoOrigin.forward), HitBuffer,

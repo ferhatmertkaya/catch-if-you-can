@@ -45,6 +45,10 @@ namespace CatchIfYouCan.Ghost
         [SerializeField] private float temperatureDropAmount = 8f;
         [SerializeField] private float evidenceRefreshInterval = 45f;
 
+        [Tooltip("What counts as solid when siting an orb. An orb inside a wall cannot be " +
+                 "found by the one device that looks for them.")]
+        [SerializeField] private LayerMask orbSiteMask = ~0;
+
         private GhostController _ghost;
         private float _nextSpawnTime;
         private float _localTemperatureOffset;
@@ -166,22 +170,70 @@ namespace CatchIfYouCan.Ghost
 
         private bool _warnedMissingPrefab;
 
+        /// <summary>
+        /// Puts one mote in the air near the ghost, somewhere it can actually be seen.
+        ///
+        /// <para>
+        /// Bounded and sited, where it used to be neither. The population is capped, because
+        /// each orb is a renderer the camera feed switches on and off around a full render of
+        /// the room and a spawn rate outrunning the twelve-second lifetime would grow that
+        /// without limit. And the point is checked for solid geometry: the offset was
+        /// <c>Random.insideUnitSphere * 6</c> from the ghost, so orbs were routinely spawned
+        /// inside walls and floors, where the one device meant to find them cannot.
+        /// </para>
+        /// </summary>
         private void SpawnOrb(Vector3 position)
         {
-            GameObject prefab = orbPrefab;
-            if (prefab == null)
-            {
-                var orbGo = new GameObject("GhostOrb");
-                orbGo.transform.position = position;
-                var orb = orbGo.AddComponent<GhostOrb>();
-                orb.Configure(EvidenceType.GhostOrb, Random.Range(0.4f, 0.9f), true);
+            if (GhostOrb.All.Count >= GhostOrb.MaxAlive)
                 return;
+
+            if (!TryFindOpenAir(position, out Vector3 sited))
+                return;
+
+            GameObject prefab = orbPrefab;
+            GameObject instance = prefab != null
+                ? Instantiate(prefab, sited, Quaternion.identity)
+                : new GameObject("GhostOrb");
+
+            if (prefab == null)
+                instance.transform.position = sited;
+
+            var orb = instance.GetComponent<GhostOrb>() ?? instance.AddComponent<GhostOrb>();
+            orb.Configure(EvidenceType.GhostOrb, Random.Range(0.4f, 0.9f), true);
+        }
+
+        /// <summary>
+        /// A nearby point with nothing solid in it, or false. Bounded retries rather than a
+        /// loop: failing to place one orb this cycle is not worth a frame spike, and there is
+        /// another cycle along shortly.
+        /// </summary>
+        private bool TryFindOpenAir(Vector3 preferred, out Vector3 sited)
+        {
+            const int attempts = 4;
+            const float clearance = 0.12f;
+
+            Vector3 origin = _ghost != null ? _ghost.transform.position : transform.position;
+
+            for (int i = 0; i < attempts; i++)
+            {
+                Vector3 candidate = i == 0
+                    ? preferred
+                    : origin + Random.insideUnitSphere * spawnRadius;
+
+                // Orbs drift at head height rather than at the ghost's feet, which is where a
+                // camera mounted on a wall is actually looking.
+                candidate.y = origin.y + Random.Range(0.9f, 1.7f);
+
+                if (!Physics.CheckSphere(candidate, clearance, orbSiteMask.value,
+                                         QueryTriggerInteraction.Ignore))
+                {
+                    sited = candidate;
+                    return true;
+                }
             }
 
-            var instance = Instantiate(prefab, position, Quaternion.identity);
-            var orbComp = instance.GetComponent<GhostOrb>();
-            if (orbComp != null)
-                orbComp.Configure(EvidenceType.GhostOrb, Random.Range(0.4f, 0.9f), true);
+            sited = preferred;
+            return false;
         }
 
         private void ApplyTemperatureInfluence()

@@ -20,6 +20,19 @@ namespace CatchIfYouCan.Ghost
             return CreatePrimitiveFallback(definition, position);
         }
 
+        private static bool _warnedMissingVisual;
+
+        /// <summary>
+        /// The ghost's real model, or null.
+        ///
+        /// <para>
+        /// The Resources path itself was fixed in V2 - it used to contain the project name
+        /// twice and resolved to a folder that had never existed - but nothing has been
+        /// authored at the corrected path either, so every lookup still misses and every ghost
+        /// in the game is still the primitive capsule. The difference now is that it says so.
+        /// A silent fallback is how the original bug survived the life of the project.
+        /// </para>
+        /// </summary>
         private static GameObject LoadBundledPrefab(GhostDefinition definition)
         {
             if (definition.Prefab != null)
@@ -29,7 +42,25 @@ namespace CatchIfYouCan.Ghost
             if (byId != null)
                 return byId;
 
-            return Resources.Load<GameObject>(GhostVisualCatalog.GetPrefabResourcePath(definition.VisualProfile));
+            var byProfile = Resources.Load<GameObject>(
+                GhostVisualCatalog.GetPrefabResourcePath(definition.VisualProfile));
+            if (byProfile != null)
+                return byProfile;
+
+            // Once. A ghost spawns per mission, and a warning per spawn would be noise; a
+            // warning that never fires is how a whole content pipeline goes missing unnoticed.
+            if (!_warnedMissingVisual)
+            {
+                _warnedMissingVisual = true;
+                Core.CIYCLog.Warn(
+                    "No ghost visual at Resources/" +
+                    GhostVisualCatalog.GetPrefabResourcePath(definition.Id) + " or Resources/" +
+                    GhostVisualCatalog.GetPrefabResourcePath(definition.VisualProfile) +
+                    ". Every ghost will be the DEV_PLACEHOLDER capsule. Build the prefabs with " +
+                    "Catch If You Can > Ghosts > Build Ghost Visual Prefabs.");
+            }
+
+            return null;
         }
 
         private static GameObject SpawnFromPrefab(GameObject prefab, GhostDefinition definition, Vector3 position)
@@ -45,7 +76,9 @@ namespace CatchIfYouCan.Ghost
 
         private static GameObject CreatePrimitiveFallback(GhostDefinition definition, Vector3 position)
         {
-            var root = new GameObject($"Ghost_{definition?.DisplayName ?? "Entity"}");
+            // Named so a screenshot of it explains itself. The capsule is a development
+            // fallback and must never be mistaken for the ghost.
+            var root = new GameObject($"DEV_PLACEHOLDER_Ghost_{definition?.DisplayName ?? "Entity"}");
             root.transform.position = position;
             root.tag = "Ghost";
 
@@ -67,7 +100,7 @@ namespace CatchIfYouCan.Ghost
             controller.SetManifestationRenderers(renderers);
 
             var perception = root.GetComponent<GhostPerception>();
-            SetPrivateField(perception, "eyePoint", eye.transform);
+            perception.SetEyePoint(eye.transform);
 
             if (definition != null)
                 controller.Initialize(definition);
@@ -114,14 +147,5 @@ namespace CatchIfYouCan.Ghost
             return mesh;
         }
 
-        private static void SetPrivateField(object target, string fieldName, object value)
-        {
-            if (target == null)
-                return;
-
-            var field = target.GetType().GetField(fieldName,
-                System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-            field?.SetValue(target, value);
-        }
     }
 }
