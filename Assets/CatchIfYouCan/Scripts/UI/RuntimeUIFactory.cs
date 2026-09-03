@@ -208,6 +208,67 @@ namespace CatchIfYouCan.UI
             rect.offsetMax = Vector2.zero;
         }
 
+        /// <summary>
+        /// A stretched child carrying a working <see cref="SafeAreaFitter"/>.
+        ///
+        /// <para>
+        /// It has to be a child. <see cref="BuildRootCanvas"/> puts a fitter on the canvas
+        /// object itself, where a root Canvas drives its own RectTransform and rewrites the
+        /// anchors every frame - so that one can never apply and now says so out loud.
+        /// <c>TouchHudFactory</c> has always done it this way, which is why the on-screen
+        /// controls were correct while the screens below were not.
+        /// </para>
+        /// </summary>
+        private static RectTransform CreateSafeAreaContainer(Transform parent, string name)
+        {
+            var go = new GameObject(name, typeof(RectTransform));
+            go.transform.SetParent(parent, false);
+
+            var rect = go.GetComponent<RectTransform>();
+            rect.anchorMin = Vector2.zero;
+            rect.anchorMax = Vector2.one;
+            rect.offsetMin = Vector2.zero;
+            rect.offsetMax = Vector2.zero;
+
+            go.AddComponent<SafeAreaFitter>();
+            return rect;
+        }
+
+        /// <summary>
+        /// Insets a screen's CONTENT into the safe area while its own background keeps
+        /// reaching the physical edges of the display.
+        ///
+        /// <para>
+        /// This is the shape almost every screen here needs, and it is why they could not
+        /// simply be re-parented wholesale. Each of these roots <em>is</em> the background -
+        /// a dim overlay, or a near-opaque panel - and insetting that would leave the game
+        /// showing through a strip beside the notch. Only what sits on top has to move.
+        /// </para>
+        ///
+        /// <para>
+        /// Nothing the caller built needs changing. Everything is positioned with normalised
+        /// anchors and zero offsets by <c>Position</c>, so re-parenting into a container that
+        /// covers a smaller rectangle rescales all of it, and the bindings are direct object
+        /// references that do not care where a transform hangs.
+        /// </para>
+        /// </summary>
+        private static void ConstrainContentToSafeArea(GameObject screenRoot)
+        {
+            RectTransform content = CreateSafeAreaContainer(screenRoot.transform, "SafeAreaContent");
+
+            // Collected before anything moves: re-parenting while iterating a transform's
+            // children walks past half of them.
+            var existing = new System.Collections.Generic.List<Transform>();
+            foreach (Transform child in screenRoot.transform)
+            {
+                if (child != content.transform)
+                    existing.Add(child);
+            }
+
+            foreach (Transform child in existing)
+                child.SetParent(content, false);
+        }
+
         public static RuntimeUIBuildResult BuildCompleteUI()
         {
             var canvas = BuildRootCanvas("RuntimeUI", out _);
@@ -215,7 +276,14 @@ namespace CatchIfYouCan.UI
 
             var result = new RuntimeUIBuildResult { Canvas = canvas };
 
-            result.MainMenuRoot = CreatePanel(canvas.transform, "MainMenu");
+            // Screens that are a floating window, or that carry no background of their own,
+            // hang here and are inset whole. Screens that ARE their own background stay on the
+            // canvas and inset only their content - see ConstrainContentToSafeArea.
+            RectTransform safeArea = CreateSafeAreaContainer(canvas.transform, "SafeArea");
+
+            // CONSTRAINED. Its background is cleared below, so there is nothing to bleed and
+            // the whole menu can move inside the safe area.
+            result.MainMenuRoot = CreatePanel(safeArea, "MainMenu");
             var mainMenuBackground = result.MainMenuRoot.GetComponent<Image>();
             if (mainMenuBackground != null)
             {
@@ -225,52 +293,67 @@ namespace CatchIfYouCan.UI
             var mainMenu = result.MainMenuRoot.AddComponent<MainMenuController>();
             WireMainMenu(mainMenu, result.MainMenuRoot.transform);
 
+            // MIXED. The root is a full-screen panel, so it stays full-bleed and only the
+            // controls on it are inset.
             result.HudRoot = CreatePanel(canvas.transform, "HUD");
             var hud = result.HudRoot.AddComponent<MobileHUDController>();
             WireHUD(hud, result.HudRoot.transform);
+            ConstrainContentToSafeArea(result.HudRoot);
 
             result.MissionSelectRoot = CreatePanel(canvas.transform, "MissionSelect");
             var missionSelect = result.MissionSelectRoot.AddComponent<MissionSelectUI>();
             WireMissionSelect(missionSelect, result.MissionSelectRoot.transform);
+            ConstrainContentToSafeArea(result.MissionSelectRoot);   // MIXED
 
             result.JournalRoot = CreatePanel(canvas.transform, "Journal");
             var journal = result.JournalRoot.AddComponent<JournalController>();
             WireJournal(journal, result.JournalRoot.transform);
+            ConstrainContentToSafeArea(result.JournalRoot);         // MIXED
 
             result.PauseRoot = CreatePanel(canvas.transform, "Pause");
             var pause = result.PauseRoot.AddComponent<PauseMenuUI>();
             WirePause(pause, result.PauseRoot.transform);
+            ConstrainContentToSafeArea(result.PauseRoot);           // MIXED - dim overlay bleeds
 
             result.SettingsRoot = CreatePanel(canvas.transform, "Settings");
             var settings = result.SettingsRoot.AddComponent<SettingsUI>();
             WireSettings(settings, result.SettingsRoot.transform);
+            ConstrainContentToSafeArea(result.SettingsRoot);        // MIXED
 
             result.MissionResultRoot = CreatePanel(canvas.transform, "MissionResult");
             var missionResult = result.MissionResultRoot.AddComponent<MissionResultUI>();
             WireMissionResult(missionResult, result.MissionResultRoot.transform);
+            ConstrainContentToSafeArea(result.MissionResultRoot);   // MIXED - dim overlay bleeds
 
             result.EquipmentShopRoot = CreatePanel(canvas.transform, "EquipmentShop");
             var shop = result.EquipmentShopRoot.AddComponent<EquipmentShopUI>();
             WireEquipmentShop(shop, result.EquipmentShopRoot.transform);
+            ConstrainContentToSafeArea(result.EquipmentShopRoot);   // MIXED
 
             result.LoadingRoot = CreatePanel(canvas.transform, "Loading");
             var loading = result.LoadingRoot.AddComponent<LoadingUI>();
             WireLoading(loading, result.LoadingRoot.transform);
+            ConstrainContentToSafeArea(result.LoadingRoot);         // MIXED - the fill must bleed
 
-            result.InteractionRoot = CreatePanel(canvas.transform, "InteractionPrompt");
+            result.InteractionRoot = // CONSTRAINED. The root itself is repositioned to a small chip; a prompt under the
+            // home indicator is a prompt nobody can read.
+            CreatePanel(safeArea, "InteractionPrompt");
             var interaction = result.InteractionRoot.AddComponent<InteractionPromptUI>();
             WireInteractionPrompt(interaction, result.InteractionRoot.transform);
 
             result.EntityDiscoveredRoot = CreatePanel(canvas.transform, "EntityDiscovered");
             var entityDisc = result.EntityDiscoveredRoot.AddComponent<EntityDiscoveredUI>();
             WireEntityDiscovered(entityDisc, result.EntityDiscoveredRoot.transform);
+            ConstrainContentToSafeArea(result.EntityDiscoveredRoot);// MIXED - dim overlay bleeds
 
-            result.CameraMonitorRoot = CreatePanel(canvas.transform, "CameraMonitor");
+            result.CameraMonitorRoot = // CONSTRAINED. A floating window - its corner must be a corner of the SAFE rect.
+            CreatePanel(safeArea, "CameraMonitor");
             var camMon = result.CameraMonitorRoot.AddComponent<CameraMonitorUI>();
             WireCameraMonitor(camMon, result.CameraMonitorRoot.transform);
 
 #if DEVELOPMENT_BUILD || UNITY_EDITOR
-            result.DebugRoot = CreatePanel(canvas.transform, "DebugMenu");
+            result.DebugRoot = // CONSTRAINED. A floating window, same reason.
+            CreatePanel(safeArea, "DebugMenu");
             var debug = result.DebugRoot.AddComponent<DebugMenuUI>();
             WireDebugMenu(debug, result.DebugRoot.transform);
 #endif
