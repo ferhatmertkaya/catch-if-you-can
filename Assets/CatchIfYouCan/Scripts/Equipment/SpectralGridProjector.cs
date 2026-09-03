@@ -96,12 +96,36 @@ namespace CatchIfYouCan.Equipment
         }
 
         /// <summary>
-        /// Called whenever the projection starts or stops. The renderer hangs off this so that
-        /// nothing expensive runs while the device is off, stowed or in a bag.
+        /// Called whenever the projection starts or stops. Everything expensive hangs off this,
+        /// so a projector that is off, stowed or in a bag renders nothing at all.
         /// </summary>
         protected virtual void OnProjectionStateChanged(bool running)
         {
+            _projection?.SetRunning(running);
         }
+
+        /// <summary>
+        /// The field is a child of the device head, so it inherits the device's orientation.
+        /// That is what makes a wall-mounted projector throw into the room without anything
+        /// having to work out which way "away from the wall" is.
+        /// </summary>
+        protected override void BuildCarried()
+        {
+            if (CarriedRoot != null)
+                return;
+
+            base.BuildCarried();
+
+            var head = new GameObject("ProjectorHead");
+            head.transform.SetParent(CarriedRoot, false);
+            head.transform.localPosition = new Vector3(0f, CarriedLength, 0f);
+
+            _projection = SpectralGridProjection.Attach(head.transform);
+            _projection?.Configure(projectionRange, projectionAngle);
+            _projection?.SetRunning(false);
+        }
+
+        private SpectralGridProjection _projection;
 
         /// <summary>
         /// Installed on a wall or a floor, and left running if it was running.
