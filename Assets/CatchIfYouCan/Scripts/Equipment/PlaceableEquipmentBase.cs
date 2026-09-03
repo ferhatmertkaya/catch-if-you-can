@@ -134,6 +134,14 @@ namespace CatchIfYouCan.Equipment
             if (!_candidate.IsValid)
                 return EquipmentActionResult.Fail(_candidate.Status, _candidate.Detail);
 
+            // An installed item is world state: every player can see it and interact with it,
+            // so it is the host's to create. Asked here rather than assumed, so that when
+            // netcode arrives one file changes instead of three items. Today the answer is
+            // always yes - there is one player and they are the host.
+            if (!EquipmentAuthority.CanChangeWorldState(this))
+                return EquipmentActionResult.Fail(
+                    EquipmentActionStatus.NoAuthority, "the host decides what goes in the room");
+
             _preview?.SetVisible(false);
 
             // The same object moves into the room. Nothing is instantiated, so nothing is left

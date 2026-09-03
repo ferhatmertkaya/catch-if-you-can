@@ -597,6 +597,13 @@ namespace CatchIfYouCan.Equipment
             if (!into.HasFreeSlot)
                 return EquipmentActionResult.Fail(EquipmentActionStatus.NoInventorySpace);
 
+            // Removing an installed item is the same world-state change as installing one, and
+            // is gated the same way. Picking a held item out of your own bag is not: that is
+            // owner-predicted and deliberately does not ask.
+            if (!EquipmentAuthority.CanChangeWorldState(this))
+                return EquipmentActionResult.Fail(
+                    EquipmentActionStatus.NoAuthority, "the host decides what leaves the room");
+
             IsPlaced = false;
             OnPickedUpFromPlacement();
 

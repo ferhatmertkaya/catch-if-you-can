@@ -84,6 +84,14 @@ namespace CatchIfYouCan.Evidence
 
         private static EvidenceConfirmation Decide(in EvidenceObservation observation)
         {
+            // Clients never assert evidence - NETWORKING.md §6. The observation is still
+            // recorded above, because that is what a client would forward to the host; what a
+            // client may not do is decide. Today this is always true: one player, who is the
+            // host. It is asked here so that the netcode layer changes one provider rather
+            // than eleven devices.
+            if (!Equipment.EquipmentAuthority.CanConfirmEvidence)
+                return EvidenceConfirmation.NoAuthority;
+
             if (!ServiceLocator.TryGet<EvidenceManager>(out var manager))
                 return EvidenceConfirmation.NoActiveGhost;
 

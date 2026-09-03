@@ -16,7 +16,9 @@ The project has **no networking of any kind** at `aa8c431`:
   transport, no relay, no lobby, no multiplayer services package.
 - No `NetworkBehaviour`, `NetworkVariable`, or RPC anywhere in
   `Assets/CatchIfYouCan/Scripts/**`. (`FurnitureAudioRelay.cs` matches a
-  "Relay" grep; it is an audio component and unrelated.)
+  "Relay" grep; it is an audio component and unrelated.
+  `Equipment.EquipmentAuthority` matches an "authority" grep; it is the seam
+  described in §4.1 and contains no networking.)
 - `GameManager`, `MissionManager`, `EvidenceManager`, `EquipmentManager` and
   `SeedManager` are process-global singletons with no notion of ownership.
 - `SeedManager` still holds **static mutable state** — a per-process seed. It no
@@ -146,6 +148,41 @@ Two notes worth stating explicitly:
   reason the deterministic set in `DETERMINISM.md` §2.1 stays small enough to
   actually verify.
 
+### 4.1 Equipment authority seam **[Slice]**
+
+There is still **no netcode**, and none of what follows adds any. What exists is
+the *question*, asked at the call sites that will have to ask it, so the answer
+changes in one file rather than in eleven items.
+
+`Equipment.EquipmentAuthority` holds an `IAuthorityProvider`. The only
+implementation today is `LocalAuthority`, which answers yes to everything —
+correctly, not as a stub: in a single-player process the local player really
+does own the world. Step 7 of the build order replaces the provider; no item
+changes.
+
+Three questions, matching the table above:
+
+| Call site | Question | Why |
+|---|---|---|
+| `PlaceableEquipmentBase.TryPlace` | `CanChangeWorldState` | An installed item is an object every player sees and can take. The host creates it. |
+| `HeldEquipmentBase.TryPickupPlaced` | `CanChangeWorldState` | Removing one is the same change in the other direction. |
+| `EvidenceValidator.Decide` | `CanConfirmEvidence` | §6: clients never assert evidence. A client forwards an observation; the host decides. |
+
+Refusals surface as `EquipmentActionStatus.NoAuthority` and
+`EvidenceConfirmation.NoAuthority`. Neither can occur today.
+
+**Held-slot actions deliberately do not ask.** Switching a torch on, changing
+the recorder's question, zooming a lens, aiming a placement preview and stowing
+an item are owner-predicted, per the "Equipment state: owner-predicted,
+host-authoritative" row above. Making a player wait a round trip to press a
+button is what makes a game feel broken, and none of these actions changes
+anything another player can see until the moment of placement, which is gated.
+
+`EvidenceValidator` is the whole reason this is three call sites rather than
+thirty. It was built in phase AH as a boundary — equipment observes, the
+validator decides — precisely so that host authority would land in one place.
+Eleven devices submit observations and none of them knows whether it is a host.
+
 ---
 
 ## 5. Mismatch protocol **[Slice]**
@@ -239,7 +276,9 @@ Remaining slice ordering:
 4. Player movement replication
 5. Ghost replication + interest management
 6. Fear moved host-side
-7. Evidence, equipment, objectives
+7. Evidence, equipment, objectives — the call sites are already in place; see
+   §4.1. This step swaps `EquipmentAuthority.Provider` and adds the forwarding,
+   not a redesign of the eleven items.
 8. Relay + Lobby, real devices, cellular
 
 Step 3 is the milestone that proves the architecture. It is worth building on

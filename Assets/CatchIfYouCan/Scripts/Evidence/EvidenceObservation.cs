@@ -65,5 +65,13 @@ namespace CatchIfYouCan.Evidence
 
         /// <summary>Below the strength this evidence type needs.</summary>
         TooWeak,
+
+        /// <summary>
+        /// This process does not decide evidence. Reserved for the host-authoritative build:
+        /// clients never assert evidence, so a client's observation is forwarded and confirmed
+        /// by the host rather than resolved locally. Never returned today - there is one
+        /// player and they are the host.
+        /// </summary>
+        NoAuthority,
     }
 }
