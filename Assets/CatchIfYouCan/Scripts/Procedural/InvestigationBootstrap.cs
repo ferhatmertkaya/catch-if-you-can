@@ -483,6 +483,11 @@ namespace CatchIfYouCan.Procedural
 
         private void WireSystems(MissionRuntime mission)
         {
+            // Lighting runs here rather than in PrepareWorld: ambient and fog are written to
+            // RenderSettings, which belongs to the ACTIVE scene, and a world being looked at
+            // through a portal is not the active one. Applying it early would repaint the lobby.
+            Environment.HouseLightingDirector.Apply(_generatedHouse, mission != null ? mission.Seed : 0);
+
             EvidenceManager.Instance?.ResetMission();
             ObjectiveManager.Instance?.AssignMissionObjectives(mission);
 

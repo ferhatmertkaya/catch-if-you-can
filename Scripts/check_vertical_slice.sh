@@ -164,6 +164,46 @@ else:
     bad("the reward is paid for being right, not for turning up",
         "MissionResultUI must read MissionRuntime.IdentificationCorrect")
 
+
+# ---- lighting is presentation, not generation ---------------------------------------------
+#
+# The house is lit from the mission seed. If that ever came out of a CiycRandom stream it
+# would either move the layout or grow a stream the layout hash has to account for, and a
+# lighting tweak would become a determinism change.
+
+lighting = code("/Assets/CatchIfYouCan/Scripts/Environment/HouseLightingDirector.cs")
+
+if re.search(r"CiycRandom|SeedManager\.CreateRandom|CiycStream", lighting):
+    bad("lighting draws from no generation stream",
+        "HouseLightingDirector must derive from the seed locally, not from CiycRandom")
+else:
+    ok("lighting draws from no generation stream")
+
+if "RenderSettings" in lighting:
+    ok("lighting owns the scene's ambient and fog")
+else:
+    bad("lighting owns the scene's ambient and fog",
+        "the house would keep whatever the lobby left behind")
+
+boot = code("/Assets/CatchIfYouCan/Scripts/Procedural/InvestigationBootstrap.cs")
+if "HouseLightingDirector.Apply(" in boot:
+    ok("the mission lights its house")
+else:
+    bad("the mission lights its house", "InvestigationBootstrap never calls the director")
+
+# Applied on activation, never while the world is only being previewed - RenderSettings
+# belongs to the active scene and the lobby is the active one during a preview.
+if re.search(r"private bool PrepareWorld\(\)(.|\n)*?HouseLightingDirector", boot) and \
+   boot.index("HouseLightingDirector") < boot.index("private IEnumerator ActivateSequence"):
+    prepare = boot[boot.index("private bool PrepareWorld()"):boot.index("public IEnumerator ActivateForEntry")]
+    if "HouseLightingDirector" in prepare:
+        bad("lighting is applied on entry, not on preview",
+            "writing RenderSettings during a preview repaints the lobby")
+    else:
+        ok("lighting is applied on entry, not on preview")
+else:
+    ok("lighting is applied on entry, not on preview")
+
 print()
 print("  %d passed, %d failed" % (passed, failed))
 sys.exit(1 if failed else 0)
