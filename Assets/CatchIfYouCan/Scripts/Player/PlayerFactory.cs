@@ -37,94 +37,16 @@ namespace CatchIfYouCan.Player
         {
             EnsureMobileInput();
 
-            var player = new GameObject("Player");
-            player.transform.SetPositionAndRotation(position, rotation);
-            player.tag = "Player";
+            var rig = InstantiateRig(position, rotation);
+            if (rig == null)
+                return null;
 
-            var controller = player.AddComponent<CharacterController>();
-            // PlayerController owns these at Awake; matched here so the capsule is never briefly
-            // the wrong size on the frame it is built.
-            controller.height = CapsuleHeight;
-            controller.radius = 0.35f;
-            controller.center = new Vector3(0f, CapsuleHeight * 0.5f, 0f);
+            var player = rig.gameObject;
 
-            var cameraRoot = new GameObject("CameraRoot");
-            cameraRoot.transform.SetParent(player.transform, false);
-            // Where the eyes are, in both axes that matter. The height was already right; the
-            // forward offset was missing, and that is what put the camera inside the neck.
-            cameraRoot.transform.localPosition = new Vector3(0f, EyeHeight, EyeForward);
-
-            var visualRoot = new GameObject("VisualRoot");
-            visualRoot.transform.SetParent(player.transform, false);
-            // Scaled here rather than on the player, so collision, movement and the camera keep
-            // their own numbers. The character's feet are at its local origin and this sits at
-            // the player's, so scaling about it leaves the feet on the floor.
-            visualRoot.transform.localScale = Vector3.one * VisualScale;
-
-            var handAnchor = new GameObject("HandAnchor");
-            handAnchor.transform.SetParent(cameraRoot.transform, false);
-            handAnchor.transform.localPosition = new Vector3(0.12f, -0.08f, 0.35f);
-
-            // A transform of its own between the pitch pivot and the camera, purely so the idle
-            // breathing has somewhere to live. Three systems already write to the two transforms
-            // around it - PlayerLook the pivot's rotation, PlayerController the pivot's height
-            // while crouching, FearSystem the camera's own local position - and adding a fourth
-            // writer to either would mean one of them silently cancelling another. A spare node
-            // costs nothing and means every one of them owns its transform outright.
-            var cameraBreath = new GameObject("CameraBreath");
-            cameraBreath.transform.SetParent(cameraRoot.transform, false);
-            var cameraIdle = cameraBreath.AddComponent<CameraIdleMotion>();
-
-            var cameraGo = new GameObject("MainCamera");
-            cameraGo.tag = "MainCamera";
-            cameraGo.transform.SetParent(cameraBreath.transform, false);
-            var viewCamera = cameraGo.AddComponent<Camera>();
-            // 5 cm, re-checked against the moved camera and left alone. From the eye position
-            // the nearest body geometry is the shoulder line, about 25 cm below and behind, and
-            // the collapsed head sits about 18 cm away; 5 cm clears both without squeezing the
-            // depth buffer the way a millimetre near plane would.
-            viewCamera.nearClipPlane = 0.05f;
-
-            // The room's Volume is authored with the grading and vignette that carry its mood,
-            // and none of it was reaching the player: URP leaves renderPostProcessing off by
-            // default, and GraphicsManager only walks the cameras that exist when it runs, which
-            // is before this one is built. GraphicsManager still owns the setting afterwards and
-            // will switch it back off on the Low profile.
-            var cameraData = cameraGo.GetComponent<UniversalAdditionalCameraData>();
-            if (cameraData == null)
-                cameraData = cameraGo.AddComponent<UniversalAdditionalCameraData>();
-            cameraData.renderPostProcessing = true;
-
-            cameraGo.AddComponent<AudioListener>();
-
-            var playerLook = cameraRoot.AddComponent<PlayerLook>();
-            SetPrivateField(playerLook, "playerBody", player.transform);
-
-            var playerController = player.AddComponent<PlayerController>();
-            SetPrivateField(playerController, "cameraRoot", cameraRoot.transform);
-            SetPrivateField(playerController, "playerLook", playerLook);
-
-            // Wired here rather than found in Awake: the camera hierarchy is built before the
-            // controller exists, so the component's own GetComponentInParent runs too early and
-            // comes back empty. Without this the breathing works and the "is the player doing
-            // anything" test only ever sees the look, never the movement stick.
-            SetPrivateField(cameraIdle, "playerController", playerController);
-
-            player.AddComponent<PlayerInventory>();
-            player.AddComponent<PlayerNoiseEmitter>();
-            player.AddComponent<FearSystem>();
-
-            var interaction = player.AddComponent<InteractionController>();
-            SetPrivateField(interaction, "viewCamera", viewCamera);
-
-            var inventory = player.GetComponent<PlayerInventory>();
-            inventory.SetHandAnchor(handAnchor.transform);
-
-            var fear = player.GetComponent<FearSystem>();
-            SetPrivateField(fear, "targetCamera", viewCamera);
-
-            var characterVisual = AttachCharacterVisual(player, visualRoot.transform);
-            AttachBodyMotion(player, visualRoot.transform, cameraRoot.transform, characterVisual);
+            // Everything below depends on which character was chosen, so none of it can live
+            // in the prefab. The rig above is the half that is the same for everybody.
+            var characterVisual = AttachCharacterVisual(player, rig.VisualRoot);
+            AttachBodyMotion(player, rig.VisualRoot, rig.CameraRoot, characterVisual);
             AttachFlashlight(player, characterVisual);
             AttachFootsteps(player);
 
@@ -136,18 +58,69 @@ namespace CatchIfYouCan.Player
             // Announced at the end, when every part a consumer might ask for exists. The
             // mirror, the room tone and the ambience emitters can all outlive a player and
             // are built before one, so they follow this rather than resolving once.
-            LocalPlayerService.Register(player, viewCamera, cameraGo.GetComponent<AudioListener>());
+            LocalPlayerService.Register(player, rig.ViewCamera, rig.ViewListener);
 
             return new PlayerBuildResult
             {
                 Root = player,
-                HandAnchor = handAnchor.transform,
-                CameraRoot = cameraRoot.transform,
-                ViewCamera = viewCamera,
-                VisualRoot = visualRoot.transform,
+                HandAnchor = rig.HandAnchor,
+                CameraRoot = rig.CameraRoot,
+                ViewCamera = rig.ViewCamera,
+                VisualRoot = rig.VisualRoot,
                 CharacterVisual = characterVisual,
                 TouchHud = touchHud
             };
+        }
+
+        /// <summary>
+        /// The rig, from the authored prefab when there is one and from code when there is
+        /// not.
+        ///
+        /// <para>
+        /// Both paths run the same description of the hierarchy - the prefab is baked from
+        /// <see cref="PlayerRigBuilder"/> by an editor tool - so they cannot drift apart.
+        /// The prefab is preferred because its wiring is serialized rather than assigned by
+        /// reflection, and because a prefab is something a person can open and look at.
+        /// </para>
+        /// </summary>
+        private static PlayerRig InstantiateRig(Vector3 position, Quaternion rotation)
+        {
+            var registry = Content.CiycContentRegistry.Load();
+            var prefab = registry != null ? registry.PlayerPrefab : null;
+
+            PlayerRig rig = null;
+
+            if (prefab != null)
+            {
+                var instance = Object.Instantiate(prefab, position, rotation);
+                instance.name = "Player";
+                rig = instance.GetComponent<PlayerRig>();
+
+                if (rig == null)
+                {
+                    // A prefab without the component is a prefab the factory cannot read, and
+                    // guessing at its children by name is what this component exists to stop.
+                    CIYCLog.Error("The player prefab '" + prefab.name + "' has no PlayerRig " +
+                                  "component, so its parts cannot be located. Falling back to " +
+                                  "building the player in code. Rebuild the prefab with " +
+                                  "Catch If You Can > Player > Build Player Prefab.");
+                    Object.Destroy(instance);
+                }
+                else if (!rig.IsComplete)
+                {
+                    CIYCLog.Error("The player prefab is missing: " + rig.DescribeMissing() +
+                                  ". Falling back to building the player in code. Rebuild it " +
+                                  "with Catch If You Can > Player > Build Player Prefab.");
+                    Object.Destroy(rig.gameObject);
+                    rig = null;
+                }
+            }
+
+            if (rig == null)
+                rig = PlayerRigBuilder.Build();
+
+            rig.transform.SetPositionAndRotation(position, rotation);
+            return rig;
         }
 
         /// <summary>
@@ -381,7 +354,14 @@ namespace CatchIfYouCan.Player
             return input;
         }
 
-        private static void SetPrivateField(object target, string fieldName, object value)
+        /// <summary>
+        /// Assigns a serialized private field on a component built in code.
+        ///
+        /// Reflection because a code-built hierarchy has nowhere else to put the wiring.
+        /// The prefab path does none of this: the same assignments are serialized in the
+        /// asset by the tool that bakes it.
+        /// </summary>
+        internal static void SetPrivateField(object target, string fieldName, object value)
         {
             if (target == null)
                 return;
