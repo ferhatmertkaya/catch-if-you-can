@@ -24,6 +24,20 @@ namespace CatchIfYouCan.Interaction
                 itemComponent = GetComponent<EquipmentBase>();
         }
 
+        /// <summary>
+        /// Points the pickup at the item it picks up, for the code that builds equipment
+        /// rather than authoring it. Callers used to set these three fields through
+        /// reflection, which compiles happily and then fails silently the day one of them is
+        /// renamed.
+        /// </summary>
+        public void Configure(EquipmentBase item, string interactionPrompt, bool destroyWhenTaken)
+        {
+            itemComponent = item;
+            if (!string.IsNullOrEmpty(interactionPrompt))
+                prompt = interactionPrompt;
+            destroyOnPickup = destroyWhenTaken;
+        }
+
         public bool CanInteract(GameObject interactor)
         {
             if (itemComponent == null)

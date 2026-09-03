@@ -342,9 +342,7 @@ namespace CatchIfYouCan.Player
                                 player.transform);
 
             var pickup = go.AddComponent<Interaction.InteractivePickup>();
-            SetPrivateField(pickup, "itemComponent", torch);
-            SetPrivateField(pickup, "prompt", "Pick Up Flashlight");
-            SetPrivateField(pickup, "destroyOnPickup", false);
+            pickup.Configure(torch, "Pick Up Flashlight", destroyWhenTaken: false);
 
             inventory.AddItem(torch);
 

@@ -2,8 +2,65 @@ using UnityEngine;
 
 namespace CatchIfYouCan.Equipment
 {
+    /// <summary>
+    /// Where the rest of the game asks for an equipment definition.
+    ///
+    /// <para>
+    /// It prefers the authored <see cref="EquipmentCatalog"/> reached through the content
+    /// registry, and falls back to building the same eleven definitions in code when the
+    /// catalog has not been authored or imported yet. The fallback is a fallback: two callers
+    /// asking for "flashlight" used to get two different ScriptableObjects, so nothing could
+    /// compare definitions by reference and a battery charge written onto one was invisible to
+    /// the next caller. The catalog hands back the same asset every time, and the fallback is
+    /// now built once and cached so that it does too.
+    /// </para>
+    /// </summary>
     public static class EquipmentDefinitionFactory
     {
+        private static EquipmentDefinition[] _fallback;
+
+        /// <summary>
+        /// Every definition, authored if there is a catalog and code-built if there is not.
+        /// This is what a shop or a content hash should read.
+        /// </summary>
+        public static EquipmentDefinition[] All()
+        {
+            var catalog = Catalog();
+            if (catalog != null && catalog.Count > 0)
+                return catalog.Equipment;
+
+            return CachedFallback();
+        }
+
+        /// <summary>The authored catalog, or null while the registry has not been created.</summary>
+        public static EquipmentCatalog Catalog()
+        {
+            return Content.CiycContentRegistry.Load()?.EquipmentCatalog;
+        }
+
+        /// <summary>
+        /// The code-built definitions, made once. Rebuilt after a domain reload, because the
+        /// instances behind them do not survive one.
+        /// </summary>
+        private static EquipmentDefinition[] CachedFallback()
+        {
+            if (_fallback == null || _fallback.Length == 0 || _fallback[0] == null)
+                _fallback = CreateAllDefaultDefinitions();
+
+            return _fallback;
+        }
+
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+        private static void ResetOnPlay()
+        {
+            _fallback = null;
+        }
+
+        /// <summary>
+        /// The definitions as code, one instance per call. This is the authoring source the
+        /// editor tools write the assets from, and the runtime fallback when they have not
+        /// been written yet - reach it through <see cref="All"/> rather than directly.
+        /// </summary>
         public static EquipmentDefinition[] CreateAllDefaultDefinitions()
         {
             return new[]
@@ -72,7 +129,15 @@ namespace CatchIfYouCan.Equipment
             if (string.IsNullOrEmpty(id))
                 return null;
 
-            foreach (var def in CreateAllDefaultDefinitions())
+            var catalog = Catalog();
+            if (catalog != null)
+            {
+                var authored = catalog.Resolve(id);
+                if (authored != null)
+                    return authored;
+            }
+
+            foreach (var def in CachedFallback())
             {
                 if (def != null && def.Id == id)
                     return def;

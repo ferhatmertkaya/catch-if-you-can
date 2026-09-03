@@ -100,25 +100,24 @@ namespace CatchIfYouCan.UI
         {
             if (catalog != null && catalog.Count > 0) return;
             catalog = new List<EquipmentDefinition>();
-            var loaded = Resources.LoadAll<EquipmentDefinition>("Equipment");
-            if (loaded != null && loaded.Length > 0)
-            {
-                catalog.AddRange(loaded);
-                return;
-            }
 
-            // The authored assets are the intended source; the code factory is the safety
-            // net. Which one is live decides whether an icon, a prefab or a hand pose can
-            // exist at all, so it must not be invisible. Reported once per session.
-            if (!_authoredCatalogMissingReported)
+            // This used to scan Resources/Equipment by name, which answers "whatever happened
+            // to be imported" and ships everything under Resources whether or not the shop
+            // sells it. The catalog is an explicit ordered list reached through the content
+            // registry, so the shop and the loadout read the same eleven items in the same
+            // order.
+            if (EquipmentDefinitionFactory.Catalog() == null && !_authoredCatalogMissingReported)
             {
+                // The authored assets are the intended source; the code factory is the safety
+                // net. Which one is live decides whether an icon, a prefab or a hand pose can
+                // exist at all, so it must not be invisible. Reported once per session.
                 _authoredCatalogMissingReported = true;
-                Core.CIYCLog.Warn("No EquipmentDefinition assets under Resources/Equipment. " +
+                Core.CIYCLog.Warn("No authored EquipmentCatalog on the content registry. " +
                                   "Falling back to EquipmentDefinitionFactory, whose definitions " +
                                   "carry no Icon and no Prefab.");
             }
 
-            catalog.AddRange(EquipmentDefinitionFactory.CreateAllDefaultDefinitions());
+            catalog.AddRange(EquipmentDefinitionFactory.All());
         }
 
         private void RefreshCategory()

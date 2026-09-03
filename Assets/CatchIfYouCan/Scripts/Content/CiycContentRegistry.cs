@@ -41,14 +41,14 @@ namespace CatchIfYouCan.Content
         [Header("Equipment")]
         [Tooltip("Every equipment definition, in one place, so the shop, the loadout and a " +
                  "future content hash all read the same list.")]
-        [SerializeField] private ScriptableObject equipmentCatalog;
+        [SerializeField] private Equipment.EquipmentCatalog equipmentCatalog;
 
         [Header("Ghosts")]
         [SerializeField] private ScriptableObject ghostCatalog;
 
         public GameObject PlayerPrefab => playerPrefab;
         public Character.CharacterCatalog CharacterCatalog => characterCatalog;
-        public ScriptableObject EquipmentCatalogRaw => equipmentCatalog;
+        public Equipment.EquipmentCatalog EquipmentCatalog => equipmentCatalog;
         public ScriptableObject GhostCatalogRaw => ghostCatalog;
 
         private static CiycContentRegistry _cached;
