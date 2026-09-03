@@ -30,8 +30,9 @@ namespace CatchIfYouCan.Equipment
                 _ghostRoomCenter = _ghost.transform;
         }
 
-        private void OnDestroy()
+        protected override void OnDestroy()
         {
+            base.OnDestroy();
             GameEvents.OnGhostActivityChanged -= HandleGhostActivity;
             GameEvents.OnHuntStarted -= HandleHuntStarted;
             GameEvents.OnHuntEnded -= HandleHuntEnded;

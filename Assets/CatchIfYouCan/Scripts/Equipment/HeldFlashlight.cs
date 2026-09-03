@@ -367,8 +367,9 @@ namespace CatchIfYouCan.Equipment
                 Destroy(collider);
         }
 
-        private void OnDestroy()
+        protected override void OnDestroy()
         {
+            base.OnDestroy();
             if (_lensMaterial != null) Destroy(_lensMaterial);
         }
     }

@@ -24,8 +24,9 @@ namespace CatchIfYouCan.Equipment
             GameEvents.OnNoiseGenerated += HandleNoise;
         }
 
-        private void OnDestroy()
+        protected override void OnDestroy()
         {
+            base.OnDestroy();
             GameEvents.OnNoiseGenerated -= HandleNoise;
         }
 

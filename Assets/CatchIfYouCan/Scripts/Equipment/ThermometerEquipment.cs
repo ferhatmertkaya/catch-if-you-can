@@ -29,8 +29,9 @@ namespace CatchIfYouCan.Equipment
             GameEvents.OnDoorOpened += HandleDoorOpened;
         }
 
-        private void OnDestroy()
+        protected override void OnDestroy()
         {
+            base.OnDestroy();
             GameEvents.OnDoorOpened -= HandleDoorOpened;
         }
 

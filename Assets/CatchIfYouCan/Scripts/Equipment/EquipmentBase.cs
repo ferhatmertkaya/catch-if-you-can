@@ -28,6 +28,7 @@ namespace CatchIfYouCan.Equipment
         public bool IsActive => IsPowered && DeviceActive && (IsEquipped || IsPlaced);
         public float InterferenceStrength => IsActive ? Mathf.Clamp01(BatteryPercent) * GetInterferenceMultiplier() : 0f;
         public string DeviceId => definition != null ? definition.Id : name;
+        public Vector3 DevicePosition => transform.position;
 
         protected virtual float GetInterferenceMultiplier() => 0.35f;
 
@@ -43,6 +44,13 @@ namespace CatchIfYouCan.Equipment
 
             if (audioSource == null)
                 audioSource = GetComponent<AudioSource>();
+
+            ElectronicDeviceRegistry.Register(this);
+        }
+
+        protected virtual void OnDestroy()
+        {
+            ElectronicDeviceRegistry.Unregister(this);
         }
 
         public virtual void BindDefinition(EquipmentDefinition def)

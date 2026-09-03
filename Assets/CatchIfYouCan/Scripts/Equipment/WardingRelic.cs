@@ -25,8 +25,9 @@ namespace CatchIfYouCan.Equipment
             GameEvents.OnHuntEnded += HandleHuntEnded;
         }
 
-        private void OnDestroy()
+        protected override void OnDestroy()
         {
+            base.OnDestroy();
             GameEvents.OnHuntStarted -= HandleHuntStarted;
             GameEvents.OnHuntEnded -= HandleHuntEnded;
         }
