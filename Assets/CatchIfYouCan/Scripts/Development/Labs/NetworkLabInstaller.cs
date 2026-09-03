@@ -93,10 +93,51 @@ namespace CatchIfYouCan.Development.Labs
                 .Line(() => "Transport: none.  Session: none.  Authority: local only.")
                 .Line(() => "Character: " +
                             (Character.CharacterService.LocalCharacterId ?? "default") +
-                            "  (index " +
-                            (Character.CharacterService.Catalog()?.IndexOf(
-                                Character.CharacterService.LocalCharacterId) ?? -1) +
-                            " in the catalog, which is what a compact encoding would send)");
+                            "  (index " + Character.CharacterService.LocalCharacterIndex +
+                            " in the catalog, which is what a compact encoding would send)")
+
+                // Whether online is reachable at all, said out loud. A lab that showed a
+                // session mode and nothing else would leave "why does online do nothing" to
+                // be discovered by pressing it.
+                .Line(() => "Online provider: " +
+                            (Session.SessionLauncher.HasOnlineProvider
+                                ? "installed"
+                                : "none - BeginOnline refuses with NoOnlineProvider"))
+
+                // The readout that must never say 0 ms. Offline it says so; online with no
+                // probe it says it has not measured, which is the honest answer either way.
+                .Line(() => "Connection: " +
+                            Procedural.Deterministic.ConnectionRating.Describe(
+                                Session.ConnectionDiagnostics.LocalQuality) +
+                            "   probe: " +
+                            (Session.ConnectionDiagnostics.HasProbe ? "installed" : "none"))
+
+                // Ownership exists whether or not anybody else does. Offline every item is
+                // the one local player's, which is what these numbers should show.
+                .Line(() => "Equipment: " + Equipment.EquipmentBase.Alive.Count +
+                            " alive, " + OwnedItems() + " owned by a player")
+
+                .Line(() => "Reconnect: policy only, NOT PRODUCTION READY (" +
+                            Procedural.Deterministic.ReconnectPolicy.MaxAttempts +
+                            " attempts, seat held " +
+                            Procedural.Deterministic.ReconnectPolicy.SeatHeldSeconds + "s)");
+        }
+
+        /// <summary>
+        /// How many live items belong to somebody. Counted rather than assumed, because the
+        /// interesting failure is an item that is being carried and belongs to nobody.
+        /// </summary>
+        private static int OwnedItems()
+        {
+            var alive = Equipment.EquipmentBase.Alive;
+            int owned = 0;
+
+            for (int i = 0; i < alive.Count; i++)
+                if (alive[i] != null &&
+                    Procedural.Deterministic.EquipmentOwnership.IsOwned(alive[i].OwnerClientId))
+                    owned++;
+
+            return owned;
         }
 
         /// <summary>

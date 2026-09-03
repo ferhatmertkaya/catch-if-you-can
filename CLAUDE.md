@@ -27,7 +27,7 @@ place that number lives; everything else derives it.
 ## The rules that are enforced, not trusted
 
 - `Scripts/check_determinism.sh` — the deterministic set stays pure and the
-  layout hash stays stable. 44 checks, all must pass.
+  layout hash stays stable. 158 checks, all must pass.
 - `Scripts/check_dev_scenes.sh` — no `DEV_` scene is ever enabled in the build
   list.
 - `Scripts/check_equipment_catalog.sh` — the eleven items keep their runtime
@@ -35,8 +35,10 @@ place that number lives; everything else derives it.
   frame. 25 checks.
 - `Scripts/check_multiplayer_architecture.sh` — the deterministic assembly stays
   engine-free, gameplay never reaches a Relay API, remote players never read
-  local input, ghost decisions stay host-only, and online capacity has exactly
-  one source. 17 checks.
+  local input, ghost decisions stay host-only, online capacity has exactly one
+  source, only the launcher installs a session, nothing starts one at boot, a
+  client is told the ghost's state and never its reasoning, and a diagnostic
+  never reports a latency it did not measure. 50 checks.
 
 Both run in CI (`.github/workflows/determinism.yml`). Run them locally before
 pushing; they need nothing but a shell.
@@ -70,6 +72,18 @@ Repeating one of these is the most likely way to break something.
    harness stops early when its own stub breaks and then reports *zero*
    project errors. Always diff against the recorded baseline; never read a
    drop as good news without finding out which errors went and why.
+8. **A guard satisfied by a doc comment.** Twice now. A check grepped the whole
+   file for `EndSession`, and a `<see cref="EndSession"/>` in a comment kept it
+   green after the method was renamed away; the same hole let a
+   `<see cref="LaunchStatus.NoOnlineProvider"/>` stand in for the refusal
+   itself. Grep the declaration or the statement, never the name. The reverse
+   also bites: a check that greps for a forbidden call will match the doc
+   comment that warns against it, so strip comment lines first.
+9. **One value asked to mean two things.** `-1` was the offline player's client
+   id, and `-1` was about to become "nobody owns this item", which would have
+   made the solo player's carried torch read as unowned and let the first person
+   past take it. `MultiplayerProtocol.LocalOnlyClientId` and `NoClientId` are
+   now separate, and the harness asserts they differ.
 
 ## Unity Editor availability
 

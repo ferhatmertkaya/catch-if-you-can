@@ -30,6 +30,25 @@ The project has **no networking of any kind** at `aa8c431`:
 So the networking half is greenfield. The determinism half it depends on is
 built — see §8.
 
+**V5 built everything that does not need the packages**, and nothing that does.
+No `manifest.json` change, no NGO code written against a guessed API, no fake
+package stub. What landed is the layer a transport plugs into:
+
+| | Where |
+|---|---|
+| Choosing a mode, and the online seam | `Session.SessionLauncher`, `IOnlineSessionProvider` |
+| Which character each player is | `Deterministic.CharacterSelection` |
+| The ghost a client draws | `Ghost.GhostPresentationState`, `RemoteGhostDriver` |
+| Whose equipment is whose | `Deterministic.EquipmentOwnership` |
+| What a connection readout may claim | `Session.ConnectionDiagnostics`, `Deterministic.ConnectionRating` |
+| When a dropped player retries | `Deterministic.ReconnectPolicy` — **NOT PRODUCTION READY** |
+
+Each of the pure ones is exercised by the offline harness, which is the only
+thing that tests any of this today: 148 checks, no Unity and no network.
+`Docs/MULTIPLAYER_RUNTIME_ARCHITECTURE.md` §6b, §3b, §4b, §5b, §8 and §8b are
+normative for the boundaries; `Scripts/check_multiplayer_architecture.sh`
+enforces 50 of them.
+
 ---
 
 ## 2. Topology **[Slice]**
@@ -301,8 +320,11 @@ Remaining slice ordering:
 2. NGO + UTP packages; host/client bootstrap; `SeedManager` de-staticked
 3. Handshake (§3) and mismatch protocol (§5) with **no gameplay replication** —
    two clients generate the same house, agree, and spawn nothing
-4. Player movement replication
-5. Ghost replication + interest management
+4. Player movement replication — the payload and the remote driver exist
+   (`PlayerPresentationState`, `RemotePlayerDriver`); this step is the transport
+   under them, not a design
+5. Ghost replication + interest management — same: `GhostPresentationState` and
+   `RemoteGhostDriver` exist, interest management does not
 6. Fear moved host-side
 7. Evidence, equipment, objectives — the call sites are already in place; see
    §4.1. This step swaps `EquipmentAuthority.Provider` and adds the forwarding,
