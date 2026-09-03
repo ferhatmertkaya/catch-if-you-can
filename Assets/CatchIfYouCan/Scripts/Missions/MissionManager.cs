@@ -83,6 +83,77 @@ namespace CatchIfYouCan.Missions
             return runtime;
         }
 
+        /// <summary>What happened when the player named an entity.</summary>
+        public enum IdentificationResult
+        {
+            /// <summary>Right. The objective is complete and the mission is scored on it.</summary>
+            Correct,
+
+            /// <summary>Wrong, and it counted. The answer is locked in.</summary>
+            Incorrect,
+
+            /// <summary>They have already answered; the first answer stands.</summary>
+            AlreadySubmitted,
+
+            /// <summary>Nothing to answer about - no mission, or no entity named.</summary>
+            Unavailable
+        }
+
+        /// <summary>
+        /// The player's answer, taken once.
+        ///
+        /// <para>
+        /// <b>The point of this method is that it can be wrong.</b> The journal used to raise
+        /// <see cref="Core.GameEvents.EntityDiscovered"/> the moment a row was tapped, which
+        /// completes the objective if it happens to match and does nothing at all if it does
+        /// not - so a wrong answer was indistinguishable from no answer, and tapping every row
+        /// in turn was a guaranteed win. One answer is taken, it is recorded whether it is
+        /// right or wrong, and the caller is told which.
+        /// </para>
+        ///
+        /// <para>
+        /// The completion path is unchanged: a correct answer still goes out as
+        /// <c>EntityDiscovered</c>, which is what <c>IdentifyEntityObjective</c> listens for.
+        /// Nothing here decides that the mission is over.
+        /// </para>
+        /// </summary>
+        public IdentificationResult SubmitIdentification(GhostDefinition named)
+        {
+            if (ActiveMission == null || named == null)
+                return IdentificationResult.Unavailable;
+
+            if (ActiveMission.IdentificationSubmitted)
+                return IdentificationResult.AlreadySubmitted;
+
+            GhostDefinition present = ActiveMission.AssignedGhost;
+            bool correct = present != null &&
+                           (ReferenceEquals(present, named) ||
+                            string.Equals(present.Id, named.Id, StringComparison.Ordinal));
+
+            ActiveMission.IdentificationSubmitted = true;
+            ActiveMission.IdentifiedGhostId = named.Id;
+            ActiveMission.IdentificationCorrect = correct;
+
+            CIYCLog.Info("Identification submitted: " + named.DisplayName +
+                         (correct ? " - correct." : " - incorrect."));
+
+            if (correct)
+            {
+                GameEvents.EntityDiscovered(named);
+                return IdentificationResult.Correct;
+            }
+
+            // A wrong answer has to END the investigation, not stall it. EntityDiscovered is
+            // only raised for the right entity, so without this the main objective would never
+            // complete, the result screen would never appear, and the player would be left in
+            // a house with nothing further to do and no way to file the case.
+            CompleteActiveMission(false, Objectives.ObjectiveManager.Instance != null
+                ? Objectives.ObjectiveManager.Instance.CountCompletedOptional()
+                : 0);
+
+            return IdentificationResult.Incorrect;
+        }
+
         public void MarkInvestigationEntered()
         {
             if (ActiveMission == null)

@@ -96,7 +96,10 @@ place that number lives; everything else derives it.
 
 - `Scripts/check_vertical_slice.sh` — the Suburban House stays solvable: its entity roster is
   named, every entity in it leaves evidence the four-tool kit can actually find, no two share
-  an evidence signature, and the mission still recommends those four tools. 7 checks.
+  an evidence signature, and the mission still recommends those four tools. It also keeps the
+  identification a decision: selecting an entity is not an answer, the confirm step goes
+  through `MissionManager.SubmitIdentification`, a second answer is refused, and the
+  identification bonus is paid for being right rather than for turning up. 11 checks.
 
 All seven run in CI (`.github/workflows/determinism.yml`). Run them locally before
 pushing; they need nothing but a shell (and `python3` for the roster checks).

@@ -21,6 +21,24 @@ namespace CatchIfYouCan.Missions
         public bool Completed;
         public bool Failed;
 
+        /// <summary>
+        /// The entity the player named, or null while they have not committed.
+        ///
+        /// <para>
+        /// Recorded so the result screen can say what was submitted rather than only whether
+        /// the objective completed, and so a second guess can be refused. Without the refusal
+        /// the identification is not a deduction at all: the journal lists every candidate, and
+        /// tapping each in turn until one is accepted always works.
+        /// </para>
+        /// </summary>
+        public string IdentifiedGhostId;
+
+        /// <summary>True once the player has committed to an answer, right or wrong.</summary>
+        public bool IdentificationSubmitted;
+
+        /// <summary>True when the committed answer was the entity actually present.</summary>
+        public bool IdentificationCorrect;
+
         public readonly HashSet<EvidenceType> EvidenceFound = new HashSet<EvidenceType>();
         public int PhotosTaken;
         public int OptionalObjectivesCompleted;

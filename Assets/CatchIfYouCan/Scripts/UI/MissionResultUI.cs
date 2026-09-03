@@ -65,11 +65,17 @@ namespace CatchIfYouCan.UI
             if (UIManager.Instance != null)
                 UIManager.Instance.Show(UIScreen.MissionComplete, false);
 
-            UITheme.SetText(titleText, "MISSION COMPLETE");
-            UITheme.SetTextColor(titleText, UITheme.Primary);
-
             var mission = GameManager.Instance?.CurrentMission
                           ?? MissionManager.Instance?.ActiveMission;
+
+            // "Complete" is not the same as "solved". The case is filed either way; whether the
+            // entity was named correctly is what this screen has to say plainly, because the
+            // reward depends on it and the player is owed the answer.
+            bool identified = mission != null && mission.IdentificationCorrect;
+
+            UITheme.SetText(titleText, identified ? "ENTITY IDENTIFIED" : "CASE CLOSED");
+            UITheme.SetTextColor(titleText, identified ? UITheme.Primary : UITheme.TextPrimary);
+
             var breakdown = BuildBreakdown(mission, success: true);
 
             if (SaveManager.Instance != null)
@@ -80,11 +86,16 @@ namespace CatchIfYouCan.UI
             if (StatisticsTracker.Instance != null)
             {
                 StatisticsTracker.Instance.RecordSuccessfulCase();
-                if (mission != null && mission.AssignedGhost != null)
+
+                // Recorded when the player was right, not when an entity existed. The old test
+                // was "mission.AssignedGhost != null", which is true of every mission ever run,
+                // so the correct-identification statistic counted attempts.
+                if (identified)
                     StatisticsTracker.Instance.RecordCorrectIdentification();
             }
 
-            UITheme.SetText(breakdownText, FormatBreakdown(breakdown));
+            UITheme.SetText(breakdownText,
+                DescribeIdentification(mission) + FormatBreakdown(breakdown));
         }
 
         public void ShowFailure()
@@ -95,8 +106,23 @@ namespace CatchIfYouCan.UI
 
             UITheme.SetText(titleText, "MISSION FAILED");
             UITheme.SetTextColor(titleText, UITheme.Warning);
+
+            var mission = GameManager.Instance?.CurrentMission
+                          ?? MissionManager.Instance?.ActiveMission;
+
+            int evidenceCount = EvidenceManager.Instance != null
+                ? EvidenceManager.Instance.FoundEvidence.Count
+                : mission?.EvidenceFound?.Count ?? 0;
+
+            // Says what happened and what it cost, rather than one fixed sentence. A player who
+            // loses an investigation should be able to see how far they got.
             UITheme.SetText(breakdownText,
-                "The entity claimed another investigator.\n\nReward: $0\nXP: +0\n\nReturn to base and prepare better.");
+                "The entity claimed another investigator.\n\n" +
+                $"Evidence confirmed:    {evidenceCount}\n" +
+                $"Entity identified:     no\n\n" +
+                "Reward:                $0\n" +
+                "XP:                    +0\n\n" +
+                "Evidence is not paid for on a failed case. Return to base and prepare better.");
         }
 
         private static MissionResultBreakdown BuildBreakdown(MissionRuntime mission, bool success)
@@ -110,7 +136,10 @@ namespace CatchIfYouCan.UI
                 : mission.EvidenceFound?.Count ?? 0;
             int photos = mission.PhotosTaken;
             int objectives = mission.OptionalObjectivesCompleted;
-            bool entityId = mission.AssignedGhost != null;
+            // The identification bonus is paid for identifying the entity. This used to test
+            // whether the mission HAD an entity, which is true of every mission, so the bonus
+            // was paid for turning up.
+            bool entityId = mission.IdentificationCorrect;
 
             breakdown.EntityReward = entityId ? mission.Definition.BaseReward / 2 : 0;
             breakdown.EvidenceReward = evidenceCount * 75;
@@ -125,6 +154,28 @@ namespace CatchIfYouCan.UI
 
             mission.AddPendingReward(breakdown.TotalMoney, breakdown.XpEarned);
             return breakdown;
+        }
+
+        /// <summary>
+        /// What the player named, and what was actually there when they got it wrong.
+        /// </summary>
+        private static string DescribeIdentification(MissionRuntime mission)
+        {
+            if (mission == null)
+                return string.Empty;
+
+            string actual = mission.AssignedGhost != null
+                ? mission.AssignedGhost.DisplayName
+                : "unknown";
+
+            if (!mission.IdentificationSubmitted)
+                return "NO IDENTIFICATION FILED\nThe entity was " + actual + ".\n\n";
+
+            if (mission.IdentificationCorrect)
+                return "IDENTIFIED: " + actual + "\n\n";
+
+            return "FILED: " + (mission.IdentifiedGhostId ?? "unknown") +
+                   "\nThe entity was " + actual + ".\n\n";
         }
 
         private static string FormatBreakdown(MissionResultBreakdown b)

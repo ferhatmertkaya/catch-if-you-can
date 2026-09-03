@@ -123,6 +123,47 @@ if block is not None:
         bad("the mission recommends the four slice tools",
             "found: " + (", ".join(sorted(kit)) or "none"))
 
+
+# ---- the identification is a decision, not a search ------------------------------------
+#
+# The journal used to raise EntityDiscovered on the tap, so a wrong answer looked exactly
+# like no answer and working down the list always won. One answer, taken once, and the
+# player is told which it was.
+
+def code(path):
+    text = io.open(root + path, encoding="utf-8").read()
+    return "\n".join(l for l in text.splitlines()
+                     if not l.strip().startswith("//") and not l.strip().startswith("///"))
+
+entity_ui = code("/Assets/CatchIfYouCan/Scripts/UI/EntityListUI.cs")
+mission_mgr = code("/Assets/CatchIfYouCan/Scripts/Missions/MissionManager.cs")
+result_ui = code("/Assets/CatchIfYouCan/Scripts/UI/MissionResultUI.cs")
+
+if "GameEvents.EntityDiscovered(" in entity_ui:
+    bad("selecting an entity is not an identification",
+        "EntityListUI raises EntityDiscovered directly again")
+else:
+    ok("selecting an entity is not an identification")
+
+if "SubmitIdentification(" in entity_ui:
+    ok("the journal has an explicit confirm step")
+else:
+    bad("the journal has an explicit confirm step",
+        "EntityListUI must go through MissionManager.SubmitIdentification")
+
+if re.search(r"IdentificationSubmitted\s*\)\s*\n\s*return IdentificationResult\.AlreadySubmitted",
+             mission_mgr) or "IdentificationResult.AlreadySubmitted" in mission_mgr:
+    ok("a second identification is refused")
+else:
+    bad("a second identification is refused",
+        "without it the journal can be brute-forced one row at a time")
+
+if "IdentificationCorrect" in result_ui:
+    ok("the reward is paid for being right, not for turning up")
+else:
+    bad("the reward is paid for being right, not for turning up",
+        "MissionResultUI must read MissionRuntime.IdentificationCorrect")
+
 print()
 print("  %d passed, %d failed" % (passed, failed))
 sys.exit(1 if failed else 0)
