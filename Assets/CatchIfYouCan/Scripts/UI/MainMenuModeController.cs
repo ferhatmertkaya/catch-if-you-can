@@ -194,7 +194,17 @@ namespace CatchIfYouCan.UI
             if (UIManager.Instance != null)
                 UIManager.Instance.HideAll();
 
-            // 7. The room exists before the player is put in it.
+            // 7. Once the lobby is its own scene, the hand-over is a scene load and
+            //    everything below this point belongs to LobbySceneInstaller instead. The
+            //    branch is on whether that scene is in the build, not on a code flag, so the
+            //    cutover happens when the scene is created rather than in a second commit.
+            //    Delete the legacy branch after the split lands.
+            if (Core.CiycScenes.IsRegisteredInBuild(Core.CiycScenes.Lobby))
+            {
+                yield return HandOverToLobbyScene();
+                yield break;
+            }
+
             SetRoomActive(true);
 
             // 8. Listener first, then the player. The player builds its own AudioListener, so
@@ -236,6 +246,42 @@ namespace CatchIfYouCan.UI
 
             if (logTransition)
                 Debug.Log("[CIYC] Menu: lobby live", this);
+        }
+
+        /// <summary>
+        /// Hands over by loading the lobby scene.
+        ///
+        /// <para>
+        /// The menu's own camera and listener are switched off first and the menu scene is
+        /// then unloaded by the load itself, so there is never a frame with two listeners
+        /// and never two production scenes resident at once. The fade overlay is not torn
+        /// down here: it belongs to this object, which the load destroys, and the lobby
+        /// raises its own HUD once its installer has run.
+        /// </para>
+        /// </summary>
+        private System.Collections.IEnumerator HandOverToLobbyScene()
+        {
+            if (cinematicAudioListener != null)
+                cinematicAudioListener.enabled = false;
+
+            Mode = MenuMode.Lobby;
+
+            if (logTransition)
+                Debug.Log("[CIYC] Menu: loading the lobby scene", this);
+
+            if (Core.SceneLoader.Instance != null)
+            {
+                Core.SceneLoader.Instance.LoadLobby();
+            }
+            else
+            {
+                // Only reachable when the menu was opened directly without the boot flow and
+                // the services somehow did not come up. Saying so beats a silent dead tap.
+                Core.CIYCLog.Error("No SceneLoader, so the lobby cannot be loaded. Enter " +
+                                   "through 00_Boot, or check that CiycServices ran.");
+            }
+
+            yield break;
         }
 
         private void SpawnPlayer()
