@@ -290,9 +290,7 @@ namespace CatchIfYouCan.Equipment
             if (_barrel != null)
                 return;
 
-            var shader = Shader.Find("Universal Render Pipeline/Lit");
-            if (shader == null)
-                shader = Shader.Find("Standard");
+            var shader = Art.CiycShaders.FindLit();
 
             var pivot = new GameObject("Torch");
             _barrel = pivot.transform;

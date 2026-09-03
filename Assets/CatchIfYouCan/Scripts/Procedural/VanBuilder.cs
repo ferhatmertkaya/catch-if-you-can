@@ -61,7 +61,12 @@ namespace CatchIfYouCan.Procedural
 
         private static Material CreateMaterial(Color color)
         {
-            var shader = Shader.Find("Standard") ?? Shader.Find("Universal Render Pipeline/Lit");
+            // Standard first meant the URP shader was never reached; a built-in shader under
+            // URP is a magenta van.
+            var shader = Art.CiycShaders.FindLit();
+            if (shader == null)
+                return null;
+
             var mat = new Material(shader);
             mat.color = color;
             return mat;
@@ -70,6 +75,9 @@ namespace CatchIfYouCan.Procedural
         private static Material CreateEmissiveMaterial(Color color, float intensity)
         {
             var mat = CreateMaterial(color);
+            if (mat == null)
+                return null;
+
             mat.EnableKeyword("_EMISSION");
             mat.SetColor("_EmissionColor", color * intensity);
             return mat;

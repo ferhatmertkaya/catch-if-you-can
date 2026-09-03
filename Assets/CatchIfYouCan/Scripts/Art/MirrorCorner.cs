@@ -220,7 +220,7 @@ namespace CatchIfYouCan.Art
             // and a built-in shader under URP draws solid magenta. It worked every time in the
             // editor and was magenta every time on the phone.
             // </para>
-            var lit = FindSupported("Universal Render Pipeline/Lit");
+            var lit = CiycShaders.FindLit();
 
             BuildFrame(lit);
             BuildGlass(lit);
@@ -230,30 +230,6 @@ namespace CatchIfYouCan.Art
                 BuildLamp(lit);
             if (buildFill)
                 BuildFill();
-        }
-
-        /// <summary>
-        /// A shader by name, or null - never a shader from the wrong render pipeline. Anything
-        /// that is not in the build or not supported on this device is a magenta rectangle, and a
-        /// missing mirror is better than a magenta one.
-        /// </summary>
-        private static Shader FindSupported(string name)
-        {
-            var shader = Shader.Find(name);
-            if (shader == null)
-            {
-                Debug.LogError("[CIYC] Shader '" + name + "' is not in this build. Nothing in " +
-                               "the project uses it, so it was stripped.");
-                return null;
-            }
-
-            if (!shader.isSupported)
-            {
-                Debug.LogError("[CIYC] Shader '" + name + "' is not supported on this device.");
-                return null;
-            }
-
-            return shader;
         }
 
         private void BuildFrame(Shader lit)

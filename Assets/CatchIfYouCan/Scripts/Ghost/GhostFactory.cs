@@ -90,16 +90,21 @@ namespace CatchIfYouCan.Ghost
             var renderer = mesh.GetComponent<Renderer>();
             if (renderer != null)
             {
-                var shader = Shader.Find("CatchIfYouCan/GhostDissolve")
-                             ?? Shader.Find("Universal Render Pipeline/Lit")
-                             ?? Shader.Find("Standard");
-                var mat = RuntimeMaterialFactory.GetGhostDissolve(shader);
+                // The authored MAT_GhostDissolve if it is there, and the lit shader if the
+                // dissolve shader was stripped. Standard used to be the last resort, which
+                // under URP made the ghost a magenta capsule rather than an absent one.
+                var mat = RuntimeMaterialFactory.GetGhostDissolve();
                 if (mat == null)
                 {
-                    mat = new Material(shader);
-                    mat.color = new Color(NeonGreen.r, NeonGreen.g, NeonGreen.b, 0.85f);
-                    mat.EnableKeyword("_EMISSION");
-                    mat.SetColor("_EmissionColor", NeonGreen * 2.5f);
+                    var shader = CiycShaders.Find(CiycShaders.GhostDissolve)
+                                 ?? CiycShaders.FindLit();
+                    if (shader != null)
+                    {
+                        mat = new Material(shader);
+                        mat.color = new Color(NeonGreen.r, NeonGreen.g, NeonGreen.b, 0.85f);
+                        mat.EnableKeyword("_EMISSION");
+                        mat.SetColor("_EmissionColor", NeonGreen * 2.5f);
+                    }
                 }
 
                 renderer.sharedMaterial = mat;

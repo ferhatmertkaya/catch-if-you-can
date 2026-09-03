@@ -38,14 +38,28 @@ namespace CatchIfYouCan.Ghost
             }
         }
 
+        /// <summary>Resources subfolder ghost prefabs are looked up in.</summary>
+        public const string PrefabResourceFolder = "Ghosts/";
+
+        /// <summary>
+        /// Where a ghost's prefab is looked for under Resources.
+        ///
+        /// <para>
+        /// This used to return "CatchIfYouCan/Ghosts/{id}". A Resources path is relative to a
+        /// Resources folder, and this project's is Assets/CatchIfYouCan/Resources - so the old
+        /// path resolved to Assets/CatchIfYouCan/Resources/CatchIfYouCan/Ghosts, a folder that
+        /// has never existed. Every lookup missed, silently, and every ghost in the game was
+        /// the primitive capsule fallback. The project name was in the path twice.
+        /// </para>
+        /// </summary>
         public static string GetPrefabResourcePath(string ghostId)
         {
-            return $"CatchIfYouCan/Ghosts/{ghostId}";
+            return PrefabResourceFolder + ghostId;
         }
 
         public static string GetPrefabResourcePath(GhostVisualProfile profile)
         {
-            return $"CatchIfYouCan/Ghosts/profile_{profile}";
+            return PrefabResourceFolder + "profile_" + profile;
         }
 
         public static float GetScaleMultiplier(string ghostId)

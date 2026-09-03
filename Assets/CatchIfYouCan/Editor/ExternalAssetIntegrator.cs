@@ -506,9 +506,18 @@ namespace CatchIfYouCan.EditorTools
             if (existing != null)
                 return existing;
 
-            var shader = Shader.Find("CatchIfYouCan/GhostDissolve")
-                         ?? Shader.Find("Universal Render Pipeline/Lit")
-                         ?? Shader.Find("Standard");
+            // No Standard fallback. It resolves in the editor and draws magenta under URP,
+            // so a material baked here with it looks fine in the inspector's thumbnail and
+            // wrong everywhere else.
+            var shader = Shader.Find(Art.CiycShaders.GhostDissolve)
+                         ?? Shader.Find(Art.CiycShaders.Lit);
+            if (shader == null)
+            {
+                Debug.LogError("[CIYC] Neither " + Art.CiycShaders.GhostDissolve + " nor " +
+                               Art.CiycShaders.Lit + " could be found; no ghost material was " +
+                               "written.");
+                return null;
+            }
 
             var mat = new Material(shader);
             mat.name = "Ghost_RiggedDissolve";

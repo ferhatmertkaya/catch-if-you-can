@@ -10,13 +10,16 @@ namespace CatchIfYouCan.Art
         private static Material _floor;
         private static Material _ghostDissolve;
         private static Material _uvEvidence;
+        private static Material _spectralGrid;
+        private static Material _electronicGlitch;
+        private static Material _uiSlime;
 
         public static Material GetDarkWall()
         {
             if (_darkWall == null)
             {
                 _darkWall = CreateLit("CIYC_DarkWall", new Color(0.08f, 0.09f, 0.1f), 0f);
-                _darkWall.SetFloat("_Smoothness", 0.15f);
+                _darkWall?.SetFloat("_Smoothness", 0.15f);
             }
 
             return _darkWall;
@@ -27,8 +30,11 @@ namespace CatchIfYouCan.Art
             if (_neonGreenEmissive == null)
             {
                 _neonGreenEmissive = CreateLit("CIYC_NeonGreen", new Color(0.05f, 0.12f, 0.06f), 2.5f);
-                _neonGreenEmissive.SetColor("_EmissionColor", new Color(0.2f, 1f, 0.35f) * 2.5f);
-                _neonGreenEmissive.EnableKeyword("_EMISSION");
+                if (_neonGreenEmissive != null)
+                {
+                    _neonGreenEmissive.SetColor("_EmissionColor", new Color(0.2f, 1f, 0.35f) * 2.5f);
+                    _neonGreenEmissive.EnableKeyword("_EMISSION");
+                }
             }
 
             return _neonGreenEmissive;
@@ -39,7 +45,8 @@ namespace CatchIfYouCan.Art
             if (_ectoplasm == null)
             {
                 _ectoplasm = CreateLit("CIYC_Ectoplasm", new Color(0.15f, 0.45f, 0.25f, 0.65f), 1.2f);
-                ConfigureTransparent(_ectoplasm);
+                if (_ectoplasm != null)
+                    ConfigureTransparent(_ectoplasm);
             }
 
             return _ectoplasm;
@@ -50,49 +57,80 @@ namespace CatchIfYouCan.Art
             if (_floor == null)
             {
                 _floor = CreateLit("CIYC_Floor", new Color(0.12f, 0.11f, 0.1f), 0f);
-                _floor.SetFloat("_Smoothness", 0.05f);
+                _floor?.SetFloat("_Smoothness", 0.05f);
             }
 
             return _floor;
         }
 
-        public static Material GetGhostDissolve(Shader shader)
+        /// <summary>Resources folder holding one material per custom shader.</summary>
+        private const string MaterialResourceFolder = "Materials/";
+
+        /// <summary>
+        /// The authored material for one of this project's own shaders.
+        ///
+        /// <para>
+        /// These exist so the shaders exist. A shader that no material references is stripped
+        /// from a player build, and the code that then asked for it by name got null and fell
+        /// back to a built-in shader - which draws magenta under URP. One material per shader,
+        /// under Resources so it is included whether or not a scene happens to reference it,
+        /// removes the whole failure.
+        /// </para>
+        /// </summary>
+        private static Material LoadShared(ref Material cache, string materialName)
         {
-            if (_ghostDissolve == null && shader != null)
+            if (cache != null)
+                return cache;
+
+            cache = Resources.Load<Material>(MaterialResourceFolder + materialName);
+            if (cache == null)
             {
-                _ghostDissolve = new Material(shader);
-                _ghostDissolve.name = "CIYC_GhostDissolve_Runtime";
-                _ghostDissolve.SetColor("_BaseColor", new Color(0.1f, 0.9f, 0.3f, 0.85f));
-                _ghostDissolve.SetColor("_EmissionColor", new Color(0.2f, 1f, 0.4f) * 3f);
+                Core.CIYCLog.Warn("No material at Resources/" + MaterialResourceFolder +
+                                  materialName + ". Its shader is very likely not in this " +
+                                  "build either.");
             }
 
-            return _ghostDissolve;
+            return cache;
         }
 
-        public static Material GetUVEvidence(Shader shader)
-        {
-            if (_uvEvidence == null && shader != null)
-            {
-                _uvEvidence = new Material(shader);
-                _uvEvidence.name = "CIYC_UVEvidence_Runtime";
-                _uvEvidence.SetFloat("_UVReveal", 0f);
-            }
+        /// <summary>The ghost's dissolve material, or null if it was not imported.</summary>
+        public static Material GetGhostDissolve() =>
+            LoadShared(ref _ghostDissolve, "MAT_GhostDissolve");
 
-            return _uvEvidence;
-        }
+        /// <summary>
+        /// The UV-reveal material used for fingerprints and salt trails. It is not set to
+        /// hidden here: _UVReveal defaults to 0 in the shader, and writing to a shared
+        /// material asset at runtime edits the asset itself in the editor.
+        /// </summary>
+        public static Material GetUVEvidence() =>
+            LoadShared(ref _uvEvidence, "MAT_UVEvidence");
+
+        /// <summary>The spectral grid projector's material.</summary>
+        public static Material GetSpectralGrid() =>
+            LoadShared(ref _spectralGrid, "MAT_SpectralGrid");
+
+        /// <summary>The electronic-interference glitch material.</summary>
+        public static Material GetElectronicGlitch() =>
+            LoadShared(ref _electronicGlitch, "MAT_ElectronicGlitch");
+
+        /// <summary>The slime effect used on UI graphics.</summary>
+        public static Material GetUISlime() =>
+            LoadShared(ref _uiSlime, "MAT_UISlime");
 
         private static Material CreateLit(string name, Color color, float emission)
         {
-            var shader = Shader.Find("Universal Render Pipeline/Lit")
-                         ?? Shader.Find("Standard");
+            // No Standard fallback. It resolves everywhere and draws magenta under URP, so
+            // it turned "this shader is missing" into "this object is bright pink" - which is
+            // much harder to trace back to a shader.
+            var shader = CiycShaders.FindLit();
+            if (shader == null)
+                return null;
+
             var mat = new Material(shader);
             mat.name = name;
             mat.SetColor("_BaseColor", color);
-            if (shader != null && shader.name.Contains("Universal"))
-            {
-                mat.SetFloat("_Metallic", 0f);
-                mat.SetFloat("_Smoothness", 0.2f);
-            }
+            mat.SetFloat("_Metallic", 0f);
+            mat.SetFloat("_Smoothness", 0.2f);
 
             if (emission > 0f)
             {

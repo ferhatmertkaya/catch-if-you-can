@@ -75,9 +75,12 @@ namespace CatchIfYouCan.Procedural
 
         private static Material CreateMaterial(Color color)
         {
-            var shader = Shader.Find("Standard");
+            // Standard used to be tried first. It is a Built-in Render Pipeline shader and
+            // it always resolves, so this room was magenta under URP in the editor as well as
+            // on the device - the URP branch below it was never once reached.
+            var shader = Art.CiycShaders.FindLit();
             if (shader == null)
-                shader = Shader.Find("Universal Render Pipeline/Lit");
+                return null;
 
             var mat = new Material(shader);
             mat.color = color;

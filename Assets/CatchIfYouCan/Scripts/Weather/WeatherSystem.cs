@@ -150,7 +150,11 @@ namespace CatchIfYouCan.Weather
             shape.scale = new Vector3(30f, 0.1f, 30f);
 
             var renderer = ps.GetComponent<ParticleSystemRenderer>();
-            renderer.material = new Material(Shader.Find("Particles/Standard Unlit") ?? Shader.Find("Universal Render Pipeline/Particles/Unlit"));
+            // Particles/Standard Unlit is built-in and always resolves, so the URP particle
+            // shader after it was never reached and the weather drew magenta.
+            var particleShader = Art.CiycShaders.Find(Art.CiycShaders.ParticlesUnlit);
+            if (particleShader != null)
+                renderer.material = new Material(particleShader);
             go.SetActive(false);
             return ps;
         }
