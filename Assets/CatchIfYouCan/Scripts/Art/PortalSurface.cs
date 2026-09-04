@@ -85,10 +85,14 @@ namespace CatchIfYouCan.Art
         private Camera _cachedSource;
 
         private bool _usingRealShader;
+        private Renderer _surfaceRenderer;
         private float _opacity = 1f;
         private float _viewOpacity;
         private float _energyScale = 1f;
-        private float _open = 1f;
+        // ZU als Ausgangszustand. Eine Wand ist zu, bis jemand sie aufreisst - und dieser
+        // Standardwert war 1, also stand die Portalflaeche vom ersten Frame an sichtbar in
+        // der Wand, bevor irgendjemand START INVESTIGATION gedrueckt hatte.
+        private float _open;
 
         private Vector3 _planePoint;
         private Vector3 _planeNormal;
@@ -229,6 +233,19 @@ namespace CatchIfYouCan.Art
             _open = Mathf.Clamp01(value01);
             if (_material != null && _usingRealShader)
                 SetFloat("_Open", _open);
+
+            // Ein geschlossenes Portal zeichnet NICHTS, und zwar indem der Renderer aus ist -
+            // nicht indem der Shader alles auf durchsichtig rechnet.
+            //
+            // Der Unterschied ist genau der Fehler, der hier stand: die Zeile darueber setzt
+            // die Shader-Eigenschaft nur, wenn der echte Portal-Shader gefunden wurde. Wurde
+            // er es nicht, laeuft das Ersatzmaterial - und das zeichnet ein ganz normales,
+            // undurchsichtiges Viereck von 1,2 x 2,4 m mitten in die Wand. Das sieht aus wie
+            // eine Tuer, und es war eine, obwohl die echte Tuer laengst geloescht war.
+            //
+            // Ausgeschaltet ist ausgeschaltet, unabhaengig davon, welches Material haengt.
+            if (_surfaceRenderer != null)
+                _surfaceRenderer.enabled = _open > 0.001f;
         }
 
         /// <summary>Everything the style says, pushed at once. Silent when nothing is built.</summary>
@@ -393,6 +410,7 @@ namespace CatchIfYouCan.Art
 
             go.AddComponent<MeshFilter>().sharedMesh = mesh;
             var renderer = go.AddComponent<MeshRenderer>();
+            _surfaceRenderer = renderer;
             renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
             renderer.receiveShadows = false;
 
@@ -434,6 +452,8 @@ namespace CatchIfYouCan.Art
 
             _material = new Material(shader) { name = real ? "Portal_Runtime" : "Portal_Unlit_Fallback" };
             _usingRealShader = real;
+            if (_surfaceRenderer != null)
+                _surfaceRenderer.enabled = _open > 0.001f;
 
             SetTexture(real ? "_PortalTex" : "_BaseMap", _texture);
             PushStyle();

@@ -1207,6 +1207,26 @@ else
       "einer davon laesst das Portal wieder zusammenfallen"
 fi
 
+# ---- ein geschlossenes Portal zeichnet nichts ----------------------------------------------
+# Nicht "der Shader rechnet alles durchsichtig", sondern der Renderer ist aus. Die
+# Shader-Eigenschaft wird nur gesetzt, wenn der echte Portal-Shader gefunden wurde; wurde er
+# es nicht, laeuft das Ersatzmaterial und zeichnet ein undurchsichtiges Viereck von der
+# Groesse der Oeffnung mitten in die Wand. Das sah aus wie eine Tuer und war auch eine.
+if code "$ART/PortalSurface.cs" | grep -qE '_surfaceRenderer\.enabled = _open > 0\.001f'; then
+  ok "ein geschlossenes Portal schaltet seinen Renderer ab"
+else
+  bad "ein geschlossenes Portal schaltet seinen Renderer ab" \
+      "auf Durchsichtigkeit im Shader zu bauen versagt, sobald das Ersatzmaterial laeuft"
+fi
+
+# Und der Ausgangszustand ist ZU. Eine Wand ist zu, bis jemand sie aufreisst.
+if code "$ART/PortalSurface.cs" | grep -qE 'private float _open;'; then
+  ok "die Portalflaeche faengt geschlossen an"
+else
+  bad "die Portalflaeche faengt geschlossen an" \
+      "ein Standardwert von 1 stellt die Flaeche ab dem ersten Frame sichtbar in die Wand"
+fi
+
 echo
 echo "  $PASS passed, $FAIL failed"
 if [ "$FAIL" -ne 0 ]; then
