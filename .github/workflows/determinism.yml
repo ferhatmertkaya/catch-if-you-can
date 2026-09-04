@@ -49,3 +49,6 @@ jobs:
 
       - name: Asset reference and LFS payload guard
         run: Scripts/check_asset_references.sh
+
+      - name: HQ modular environment guard
+        run: Scripts/check_hq_environment.sh

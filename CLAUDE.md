@@ -51,6 +51,16 @@ domains stop rather than guess. Every other domain continues.
 | `Docs/PLATFORM_QUALITY_TIERS.md` | Anything that would differ between PC, console and mobile. Gameplay never differs; presentation may. |
 | `Docs/PERFORMANCE_BUDGETS.md` | Before writing any performance number. Nothing is MEASURED yet, and saying it is fabricates evidence. |
 
+**The house is built in two stages, and only the first one is deterministic.** Stage A
+decides the layout — how many rooms, of what category, where, which walls carry doors — from
+the mission seed alone, in an engine-free assembly, and folds the result into the layout hash.
+Stage B reads that layout and places geometry: `ModularRoomBuilder` assembles floors, walls,
+doorways, windows and trim from a `ModularInteriorCatalog`. Changing the art changes Stage B
+only, so the same seed keeps producing the same house. Where Stage B still has a choice —
+which of three interchangeable wall meshes this wall gets — it is *derived* by hashing the
+room's identity, never drawn from a `CiycRandom` stream: a draw would advance that stream and
+reach back into generation.
+
 **Two session modes, chosen and never inferred.** Offline solo is exactly one
 local player with no dependency on anything outside the device — no
 Authentication, Lobby, Relay, transport or account, and the whole mission loop
@@ -174,7 +184,18 @@ place that number lives; everything else derives it.
   — it names the files that are still pointers, because those are the ones Unity shows in
   red. It reports the LFS payload against GitHub's free 1 GiB allowance. 12 checks.
 
-All nine run in CI (`.github/workflows/determinism.yml`). Run them locally before
+- `Scripts/check_hq_environment.sh` — the house interior comes from a modular catalog, and
+  nothing can quietly put the old one back. No production file names a Kenney content path
+  (the two ghost meshes are allowed by full path), the folders are really gone, and no
+  integration tool still declares the methods that built 130 assets on one click. The
+  generator tries the modular builder first, a room it cannot build says so loudly, and the
+  primitive stand-in is fenced behind `UNITY_EDITOR || DEVELOPMENT_BUILD` — a shipped house
+  of grey boxes looks exactly like one that was never migrated. The builder consumes the
+  layout and never produces one, derives its variants from the room's identity instead of
+  drawing them from a generation stream, and stays outside the engine-free assembly. The
+  catalog names every structural role and no vendor. 18 checks.
+
+All ten run in CI (`.github/workflows/determinism.yml`). Run them locally before
 pushing; they need nothing but a shell (and `python3` for the roster checks).
 
 ## The mistakes this project has already made

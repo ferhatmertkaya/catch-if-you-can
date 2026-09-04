@@ -15,5 +15,6 @@ MonoBehaviour:
   PropDefinitions: []
   RoomDefinitions: []
   DoorPrefab: {fileID: 0}
+  ModularInterior: {fileID: 0}
   WallMaterial: {fileID: 0}
   FloorMaterial: {fileID: 0}

@@ -43,6 +43,13 @@ namespace CatchIfYouCan.Procedural
         [SerializeField] private Transform propRoot;
 
         [Header("Content")]
+        [Tooltip("Die Produktionsquelle fuer Hausgeometrie: modulare Teile, aus denen der " +
+                 "Bauer die Huelle jedes Raums zusammensetzt. Fehlt der Katalog oder kann er " +
+                 "eine tragende Rolle nicht liefern, wird das laut gemeldet und der Raum " +
+                 "NICHT gebaut - ein stiller Ersatz laesst eine gescheiterte Migration wie " +
+                 "einen Erfolg aussehen.")]
+        [SerializeField] private Content.ModularInteriorCatalog modularInteriorCatalog;
+
         [SerializeField] private RoomDefinition[] roomDefinitions;
         [SerializeField] private PropDefinition[] propDefinitions;
 
@@ -214,29 +221,76 @@ namespace CatchIfYouCan.Procedural
                 Quantize.Metres(room.PositionMm.Y),
                 Quantize.Metres(room.PositionMm.Z));
 
-            var definition = ContentSnapshotFactory.FindRoom(roomDefinitions, room.ArchetypeId);
-            // The VARIANT was chosen in Stage A from the RoomVariants stream. Stage B only
-            // looks it up - picking here would reintroduce a generation decision.
-            GameObject prefab = definition != null ? definition.GetPrefabVariant(room.VariantIndex) : null;
+            GameObject roomGo = null;
+            RoomModule module = null;
 
-            GameObject roomGo;
-            RoomModule module;
-
-            if (prefab != null)
+            // 1. The production path: modular pieces assembled against the logical shell.
+            if (modularInteriorCatalog != null)
             {
-                roomGo = UnityEngine.Object.Instantiate(prefab, position, Quaternion.identity, _activeHouseRoot);
-                module = roomGo.GetComponent<RoomModule>();
-                if (module == null)
-                    module = roomGo.AddComponent<RoomModule>();
+                roomGo = ModularRoomBuilder.Build(room, position, _activeHouseRoot,
+                    modularInteriorCatalog, out string modularError);
 
-                Vector3 size = definition != null ? definition.Size : roomSpacing;
-                module.Configure(room.Category, new Bounds(Vector3.up * (size.y * 0.5f), size), room.RoomId);
-                module.CollectSockets();
+                if (roomGo == null)
+                    Core.CIYCLog.Error("[CIYC][House] Der modulare Innenausbau konnte Raum " +
+                                       room.RoomId + " (" + room.Category + ") nicht bauen: " +
+                                       modularError);
+                else
+                    module = roomGo.GetComponent<RoomModule>();
             }
-            else
+
+            // 2. A whole-room prefab, if a RoomDefinition still carries one. The Kenney rooms
+            //    that used to arrive here are gone; this branch survives for a pack that ships
+            //    finished rooms rather than a kit, and does nothing when nothing is wired.
+            if (roomGo == null)
             {
+                var definition = ContentSnapshotFactory.FindRoom(roomDefinitions, room.ArchetypeId);
+                // The VARIANT was chosen in Stage A from the RoomVariants stream. Stage B only
+                // looks it up - picking here would reintroduce a generation decision.
+                GameObject prefab = definition != null ? definition.GetPrefabVariant(room.VariantIndex) : null;
+
+                if (prefab != null)
+                {
+                    roomGo = UnityEngine.Object.Instantiate(prefab, position, Quaternion.identity, _activeHouseRoot);
+                    module = roomGo.GetComponent<RoomModule>();
+                    if (module == null)
+                        module = roomGo.AddComponent<RoomModule>();
+
+                    Vector3 size = definition.Size;
+                    module.Configure(room.Category, new Bounds(Vector3.up * (size.y * 0.5f), size), room.RoomId);
+                    module.CollectSockets();
+                }
+            }
+
+            // 3. Nothing could build it. In the editor and in a development build a primitive
+            //    box stands in so the layout is still walkable and inspectable - with the error
+            //    above already on screen. In a player build there is no stand-in: a house made
+            //    of grey boxes that ships looks exactly like a house that was never migrated,
+            //    and that is the failure this whole pass exists to make impossible.
+            if (roomGo == null)
+            {
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+                Core.CIYCLog.Warn("[CIYC][House] Raum " + room.RoomId + " faellt auf eine " +
+                                  "Primitiv-Box zurueck. Das ist NUR im Editor und im " +
+                                  "Development-Build erlaubt.");
                 roomGo = PrimitiveRoomFactory.CreateRoom(room, position, _activeHouseRoot);
                 module = roomGo.GetComponent<RoomModule>();
+#else
+                Core.CIYCLog.Error("[CIYC][House] Raum " + room.RoomId + " (" + room.Category +
+                                   ") hat keine Geometrie und bekommt auch keinen Ersatz. " +
+                                   "Der modulare Innenausbau ist nicht vollstaendig " +
+                                   "eingerichtet.");
+                roomGo = new GameObject($"Room_{room.Category}_{room.RoomId}_MISSING");
+                roomGo.transform.SetParent(_activeHouseRoot, false);
+                roomGo.transform.position = position;
+                module = roomGo.AddComponent<RoomModule>();
+                var missingSize = new Vector3(
+                    Quantize.Metres(room.SizeMm.X),
+                    Quantize.Metres(room.SizeMm.Y),
+                    Quantize.Metres(room.SizeMm.Z));
+                module.Configure(room.Category,
+                    new Bounds(Vector3.up * (missingSize.y * 0.5f), missingSize), room.RoomId);
+                module.CollectSockets();
+#endif
             }
 
             return new GeneratedRoomInstance
@@ -598,6 +652,9 @@ namespace CatchIfYouCan.Procedural
 
             if (doorPrefab == null)
                 doorPrefab = catalog.DoorPrefab;
+
+            if (modularInteriorCatalog == null)
+                modularInteriorCatalog = catalog.ModularInterior;
         }
     }
 }
