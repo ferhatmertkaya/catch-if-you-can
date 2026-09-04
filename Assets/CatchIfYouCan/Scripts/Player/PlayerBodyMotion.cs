@@ -230,22 +230,36 @@ namespace CatchIfYouCan.Player
         [Tooltip("Where the hand target starts, in the camera pivot's own axes. This is the " +
                  "value the created target is built with, and the one to overwrite once a better " +
                  "one has been found in Play Mode.")]
-        // LEFT, and forward. The old value put the fist 20 cm to the RIGHT and only 6 cm in
-        // front of the camera pivot - which is inside the near clip plane, at eye height. The
-        // IK then folded the whole arm up against the face to reach it, which is the bent
-        // raised arm visible in the lobby mirror and the wall of skin filling the corner of
-        // every screenshot. Only this authored offset changes; the pose maths below is
-        // byte-identical.
-        [SerializeField] private Vector3 handTargetLocalPosition = new Vector3(-0.20f, -0.22f, 0.34f);
+        // RIGHT, at eye height, computed from Nathan's real bones rather than guessed. His
+        // upper arm measures 0.2797 m and his forearm 0.2572 m, so a hand 0.419 m from the
+        // shoulder joint puts the elbow at 102.6 degrees - inside the braced 90-105 window -
+        // and lands the fist at roughly 76% across and 56% up the screen, which is the framing
+        // in the reference: beside the temple, clear of the crosshair.
+        //
+        // The original 0.06 m depth was the real defect: that is inside the near clip plane at
+        // eye height, so the IK folded the whole arm against the face. 0.30 m is as far forward
+        // as a bent arm reaches; the brief asked for 0.35-0.55 m, which Nathan's arm cannot do
+        // without straightening past the elbow range it also asks for. Anatomy wins.
+        //
+        // Only this authored offset changes. The pose maths below is byte-identical.
+        [SerializeField] private Vector3 handTargetLocalPosition = new Vector3(0.17f, 0.02f, 0.30f);
 
         [Tooltip("Where the hand target starts turned to, in the camera pivot's own axes. Zero " +
                  "points the barrel exactly where the player is looking; the roll is what turns " +
                  "the palm down and inwards instead of leaving it flat.")]
-        [SerializeField] private Vector3 handTargetLocalEuler = new Vector3(0f, 0f, -35f);
+        // Roll -70 about the barrel puts the back of the hand outward and the palm inward
+        // toward the head, which is the fist in the reference close-up. The 2 degrees of nose
+        // tilt keeps the body within the "almost horizontal" the brief asks for. Neither
+        // affects the beam: HeldFlashlight solves that separately onto the crosshair.
+        [SerializeField] private Vector3 handTargetLocalEuler = new Vector3(2f, 0f, -70f);
 
         [Tooltip("Where the elbow hint starts, in the player root's own axes: out to the right, " +
                  "up from the floor, forward. Below the shoulder and outside the ribs.")]
-        [SerializeField] private Vector3 elbowHintLocalPosition = new Vector3(-0.42f, 1.02f, 0.06f);
+        // In the player root's axes, so eye level is 1.68. This sits 0.34 m right, 0.26 m
+        // BELOW the hand and 0.15 m forward of the eye - which is the brief's own recommended
+        // window (right 0.20-0.35, down 0.20-0.35, forward 0.05-0.20) expressed from the root.
+        // Below and forward is what stops the elbow flaring sideways at shoulder height.
+        [SerializeField] private Vector3 elbowHintLocalPosition = new Vector3(0.34f, 1.42f, 0.36f);
 
         [Tooltip("Lift of the right collarbone, degrees. Small: the shoulder should follow the " +
                  "arm, not shrug into the ear.")]
@@ -256,7 +270,7 @@ namespace CatchIfYouCan.Player
                  "target is dragged to is always obeyed; only how far away it is gets clamped.")]
         [SerializeField] private bool enforceElbowRange = true;
 
-        [SerializeField] private Vector2 elbowFlexionRange = new Vector2(95f, 110f);
+        [SerializeField] private Vector2 elbowFlexionRange = new Vector2(90f, 105f);
 
         [Tooltip("How much of the twist between forearm and hand the forearm takes, rather than " +
                  "the wrist. This is what stops the arm looking wrung out: a two-bone solve only " +

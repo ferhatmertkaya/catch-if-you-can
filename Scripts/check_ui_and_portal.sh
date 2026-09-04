@@ -783,7 +783,7 @@ SUFFIX="$(grep -oE 'handBoneSuffix = "[^"]*"' "$HELD" | head -1 | sed 's/.*"\(.*
 case "$SUFFIX" in
   _*) bad "the hand bone suffix can match a real bone" \
           "'$SUFFIX' starts with an underscore; Nathan's bones are hand_l / hand_r" ;;
-  hand_*) ok "the hand bone suffix can match a real bone ($SUFFIX)" ;;
+  hand_l|hand_r) ok "the hand bone suffix can match a real bone ($SUFFIX)" ;;
   *) bad "the hand bone suffix can match a real bone" "found '$SUFFIX'" ;;
 esac
 
@@ -791,16 +791,29 @@ esac
 # puts the item in the opposite hand from the arm holding it.
 HT="$(grep -oE 'handTargetLocalPosition = new Vector3\(-?[0-9.]+f' "$PBM" | grep -oE '\(-?[0-9.]+' | tr -d '(')"
 EH="$(grep -oE 'elbowHintLocalPosition = new Vector3\(-?[0-9.]+f' "$PBM" | grep -oE '\(-?[0-9.]+' | tr -d '(')"
-HA="$(grep -oE 'handAnchor.transform.localPosition = new Vector3\(-?[0-9.]+f' "$RIGB" | grep -oE '\(-?[0-9.]+' | tr -d '(')"
-SIDES_OK=1
-for v in "$HT" "$EH" "$HA"; do
-  case "$v" in -*) ;; *) SIDES_OK=0 ;; esac
-done
-if [ "$SIDES_OK" = "1" ]; then
-  ok "hand target, elbow hint and anchor are all on the left ($HT / $EH / $HA)"
+# The elbow must end up BELOW the hand, which in root space means its height is under eye
+# level. An elbow at or above the hand is the boxer-guard silhouette the brief rules out.
+EHY="$(grep -oE 'elbowHintLocalPosition = new Vector3\([^)]*\)' "$PBM" | grep -oE ', *[0-9.]+f *,' | tr -d ' ,f')"
+if [ -n "$EHY" ] && awk "BEGIN{exit !($EHY < 1.68)}"; then
+  ok "the elbow hint sits below eye level (y=$EHY)"
 else
-  bad "hand target, elbow hint and anchor are all on the left" \
-      "found $HT / $EH / $HA - a split side puts the item in the other hand"
+  bad "the elbow hint sits below eye level" \
+      "y=$EHY is at or above the 1.68 m eye line; the elbow would flare to shoulder height"
+fi
+HA="$(grep -oE 'handAnchor.transform.localPosition = new Vector3\(-?[0-9.]+f' "$RIGB" | grep -oE '\(-?[0-9.]+' | tr -d '(')"
+# One side, whichever it is. The three must AGREE: a hand target on one side with a fallback
+# anchor on the other puts the item in the opposite hand from the arm holding it. The bone
+# suffix has to name that same side, or the item is parented to one hand while the IK drags
+# the other - which is exactly the state this project shipped in.
+side_of () { case "$1" in -*) echo L ;; *) echo R ;; esac; }
+S_HT="$(side_of "$HT")"; S_EH="$(side_of "$EH")"; S_HA="$(side_of "$HA")"
+case "$SUFFIX" in hand_l) S_BONE=L ;; hand_r) S_BONE=R ;; *) S_BONE="?" ;; esac
+
+if [ "$S_HT" = "$S_EH" ] && [ "$S_HT" = "$S_HA" ] && [ "$S_HT" = "$S_BONE" ]; then
+  ok "hand target, elbow hint, anchor and bone are all on one side ($S_HT: $HT / $EH / $HA / $SUFFIX)"
+else
+  bad "hand target, elbow hint, anchor and bone are all on one side" \
+      "target=$S_HT hint=$S_EH anchor=$S_HA bone=$S_BONE - a split side puts the item in the other hand"
 fi
 
 # The fist must not sit inside the near clip plane. 0.06 m in front of the camera pivot is what
