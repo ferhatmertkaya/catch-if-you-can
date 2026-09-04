@@ -55,3 +55,6 @@ Assets/TutorialInfo.meta
 
 # Gekaufte Asset-Packs: zu gross fuer Git
 /Assets/HQ Modular House Interior/
+
+# Unity-Absturzprotokolle
+mono_crash.mem.*.blob
