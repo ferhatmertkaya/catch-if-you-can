@@ -35,6 +35,20 @@ namespace CatchIfYouCan.Environment
         /// <summary>The mission world is taking over.</summary>
         Loading,
 
+        /// <summary>
+        /// The far world could not be built, so the doorway collapsed with nobody in it.
+        ///
+        /// <para>
+        /// Distinct from <see cref="Closed"/>, which is deliberate, and from
+        /// <see cref="Inactive"/>, which is a doorway that was never asked to do anything. A
+        /// failure that reports itself as either of those is a failure nobody can see: the
+        /// player is standing in the lobby in all three cases, and only this one means
+        /// something went wrong and the reason is in the log above. Recoverable - pressing
+        /// START INVESTIGATION again is a fresh attempt, not a retry of a broken one.
+        /// </para>
+        /// </summary>
+        Failed,
+
         /// <summary>Shut deliberately - the mission was cancelled, or the lobby is going away.</summary>
         Closed
     }
@@ -397,6 +411,11 @@ namespace CatchIfYouCan.Environment
                 return false;
             }
 
+            if (State == LobbyPortalState.Failed)
+                CIYCLog.Info(LogTag + "Opening again after a failed preparation. This is a " +
+                             "fresh attempt: the previous world was discarded when the doorway " +
+                             "collapsed, so nothing from it is being reused.");
+
             _missionName = missionName;
             if (_threshold != null)
                 _threshold.enabled = true;
@@ -628,7 +647,10 @@ namespace CatchIfYouCan.Environment
                 _threshold.enabled = false;
             UI.MenuInputGate.Pop(nameof(LobbyPortal));
 
-            SetState(LobbyPortalState.Inactive);
+            // Failed, not Inactive. The player is standing in the lobby with their controls
+            // either way, so the state is the only thing that can tell "nothing was asked of
+            // this doorway" apart from "this doorway was asked and could not".
+            SetState(LobbyPortalState.Failed);
 
             // NOTHING is loaded here, and that is the fix. This used to call
             // FallBackToDirectLoad(), which ran SceneLoader.LoadInvestigation() - a full scene
@@ -873,7 +895,11 @@ namespace CatchIfYouCan.Environment
         /// </summary>
         public void Close(string reason)
         {
-            if (State == LobbyPortalState.Inactive || State == LobbyPortalState.Closed)
+            // Failed is included: the collapse already stopped the effects, disabled the
+            // threshold, returned the controls and discarded the world, so closing it again
+            // would only unload a world that is not there.
+            if (State == LobbyPortalState.Inactive || State == LobbyPortalState.Closed ||
+                State == LobbyPortalState.Failed)
                 return;
 
             // Never while handing over: the world being unloaded here is the one the player is
