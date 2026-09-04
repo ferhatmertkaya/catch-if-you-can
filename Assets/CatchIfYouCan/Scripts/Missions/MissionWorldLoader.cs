@@ -217,6 +217,72 @@ namespace CatchIfYouCan.Missions
             CIYCLog.Info(LogTag + "Mission world loaded behind the lobby; silenced " + cameras +
                          " camera(s), " + listeners + " listener(s), " + eventSystems +
                          " event system(s).");
+
+            EnsureBootstrap(scene);
+        }
+
+        /// <summary>
+        /// Makes sure the loaded investigation actually carries the component that builds it.
+        ///
+        /// <para>
+        /// <b>03_Investigation.unity contains ZERO MonoBehaviours.</b> It has a GameObject named
+        /// INVESTIGATION_BOOTSTRAP, and another named ProceduralHouseGenerator, and one called
+        /// MissionManager - and every one of them is a bare Transform with a name and nothing
+        /// attached. The scene was authored as YAML and the scripts were never put on it.
+        /// </para>
+        ///
+        /// <para>
+        /// So <c>InvestigationBootstrap.Start</c> never ran, <c>Prepared</c> stayed null,
+        /// <c>WorldReady</c> was never true, and PrepareAsync sat there until its 600-frame
+        /// budget expired - which is the timeout in the log, and the reason the portal has been
+        /// collapsing. It is also why entering by the old direct-load fallback dropped the
+        /// player into an empty dark scene with no house, no spawn point, no equipment and no
+        /// lighting: there was nothing in that scene to build any of it.
+        /// </para>
+        ///
+        /// <para>
+        /// Attached here rather than left to fail, on the same principle as
+        /// <c>SceneBootstrapper.EnsureForActiveScene</c>, and reported at error level because a
+        /// scene that has to be repaired on load is a scene that should be fixed in the editor.
+        /// </para>
+        /// </summary>
+        public static void EnsureBootstrap(Scene scene)
+        {
+            if (!scene.IsValid() || !scene.isLoaded)
+                return;
+
+            foreach (GameObject root in scene.GetRootGameObjects())
+            {
+                if (root.GetComponentInChildren<InvestigationBootstrap>() != null)
+                    return;
+            }
+
+            // Prefer the object the scene already names for the job, so the repaired scene has
+            // the shape the authored one was meant to have.
+            GameObject host = null;
+            foreach (GameObject root in scene.GetRootGameObjects())
+            {
+                if (root.name == "INVESTIGATION_BOOTSTRAP")
+                {
+                    host = root;
+                    break;
+                }
+            }
+
+            if (host == null)
+            {
+                host = new GameObject("INVESTIGATION_BOOTSTRAP");
+                SceneManager.MoveGameObjectToScene(host, scene);
+            }
+
+            host.AddComponent<InvestigationBootstrap>();
+
+            CIYCLog.Error(LogTag + "'" + scene.name + "' carried no InvestigationBootstrap, so " +
+                          "one was attached to '" + host.name + "' at load. NOTHING in that " +
+                          "scene builds the world without it - no house, no van, no spawn " +
+                          "point, no lighting - which is why preparation timed out. Open the " +
+                          "scene and add the component properly, so the scene declares what it " +
+                          "needs instead of being repaired every time it loads.");
         }
 
         // ---- entering --------------------------------------------------------------------------
