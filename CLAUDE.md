@@ -65,8 +65,8 @@ place that number lives; everything else derives it.
 - `Scripts/check_dev_scenes.sh` — no `DEV_` scene is ever enabled in the build
   list.
 - `Scripts/check_equipment_catalog.sh` — the eleven items keep their runtime
-  paths, the journal cannot prove evidence, and nothing sweeps the scene per
-  frame. 25 checks.
+  paths, the journal cannot prove evidence, nothing sweeps the scene per
+  frame, and no equipment id is looked up by string literal. 28 checks.
 - `Scripts/check_multiplayer_architecture.sh` — the deterministic assembly stays
   engine-free, gameplay never reaches a Relay API, remote players never read
   local input, ghost decisions stay host-only, online capacity has exactly one

@@ -168,7 +168,7 @@ namespace CatchIfYouCan.Development.Labs
 
         private void BuildPickup(Vector3 at)
         {
-            var flashlight = Equipment.EquipmentDefinitionFactory.GetById("flashlight");
+            var flashlight = Equipment.EquipmentDefinitionFactory.GetById(Equipment.EquipmentIds.Flashlight);
             var go = new GameObject("DEV_Pickup_Flashlight");
             go.transform.position = at + new Vector3(0f, 0.9f, 0f);
 

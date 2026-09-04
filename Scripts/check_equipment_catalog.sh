@@ -355,6 +355,43 @@ if [ -d "$VIS" ]; then
     || fail "$lying profiles claim final art and reference none"
 fi
 
+# ---------------------------------------------------------------- ids are constants
+
+# An equipment id looked up by string literal is a rename waiting to happen, and the
+# failure is silent in the worst possible way: GetById returns null, the caller's
+# `if (definition != null)` steps over it, the item keeps the placeholder it built before
+# the definition arrived, and PlayerInventory.IsTorch - which compares against the same
+# constant - stops recognising the torch, so it takes an investigation slot instead of
+# the player's hand. Comment lines are stripped first, or the comment explaining this
+# rule would break it.
+literals=$(grep -rn 'GetById("' Assets --include=*.cs 2>/dev/null \
+           | grep -v '^\s*//' | sed 's|:.*//.*||' | grep 'GetById("' || true)
+if [ -n "$literals" ]; then
+  fail "no equipment id is looked up by string literal"
+  printf '%s\n' "$literals" | sed 's/^/        /'
+else
+  ok "no equipment id is looked up by string literal"
+fi
+
+# The torch the player spawns with is the one case where a missed lookup is invisible:
+# every following line still runs. It has to say so.
+PF="Assets/CatchIfYouCan/Scripts/Player/PlayerFactory.cs"
+# Newlines squeezed out first: the call is wrapped across two lines, and a guard that
+# cannot read wrapped source is a guard that fails on formatting.
+if [ -f "$PF" ] && sed 's://.*::' "$PF" | tr -d '\n' | tr -s ' ' \
+     | grep -q 'GetById( *Equipment.EquipmentIds.Flashlight'; then
+  ok "PlayerFactory asks for the torch by its declared constant"
+else
+  fail "PlayerFactory asks for the torch by its declared constant"
+fi
+
+if [ -f "$PF" ] && grep -q 'CIYCLog.Error' "$PF" \
+   && sed 's://.*::' "$PF" | grep -q 'No definition for'; then
+  ok "a missing torch definition is reported rather than stepped over"
+else
+  fail "a missing torch definition is reported rather than stepped over"
+fi
+
 printf '\npassed: %s   failed: %s\n\n' "$passed" "$failed"
 
 if [ "$failed" -gt 0 ]; then

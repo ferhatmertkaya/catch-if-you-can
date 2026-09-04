@@ -369,9 +369,28 @@ namespace CatchIfYouCan.Player
             collider.isTrigger = true;
 
             var torch = go.AddComponent<Equipment.HeldFlashlight>();
-            var definition = Equipment.EquipmentDefinitionFactory.GetById("flashlight");
+
+            // AddComponent runs Awake synchronously, so the torch has already built its visual
+            // by this line - blind, with no definition, which is the placeholder capsule.
+            // BindDefinition is what rebuilds it from the real model, and it is also what makes
+            // PlayerInventory.IsTorch true so the torch reaches its own slot and the player's
+            // hand rather than an investigation slot. Both of those depend on this lookup, so a
+            // miss is not something to step over quietly: it produces exactly the symptom
+            // "there is no flashlight in my hand" while every line here still runs.
+            var definition = Equipment.EquipmentDefinitionFactory.GetById(
+                Equipment.EquipmentIds.Flashlight);
             if (definition != null)
+            {
                 torch.BindDefinition(definition);
+            }
+            else
+            {
+                Core.CIYCLog.Error(
+                    "[CIYC][Flashlight] No definition for '" + Equipment.EquipmentIds.Flashlight +
+                    "'. The torch keeps the placeholder it built before this line and, with no " +
+                    "definition, will not be recognised as the torch - so it takes an " +
+                    "investigation slot instead of the hand.");
+            }
 
             torch.BindCharacter(characterVisual != null ? characterVisual.transform : null,
                                 player.transform);
