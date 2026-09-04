@@ -216,25 +216,75 @@ namespace CatchIfYouCan.Equipment
                     ? "true" : "false (mask=" + inMask + ")";
             }
 
-            string source = definition != null && definition.VisualProfile != null
-                ? (definition.VisualProfile.IsDevPlaceholder
-                    ? "DEV PLACEHOLDER"
-                    : "Resources/" + definition.VisualProfile.ModelResourcePath)
-                : "<no profile>";
+            var profile = definition != null ? definition.VisualProfile : null;
+            string modelPath = profile == null
+                ? "<no profile>"
+                : profile.IsDevPlaceholder
+                    ? "DEV PLACEHOLDER (no model)"
+                    : "Resources/" + profile.ModelResourcePath;
+            string materialPath = profile == null || string.IsNullOrEmpty(profile.ModelMaterialPath)
+                ? "<none>"
+                : "Resources/" + profile.ModelMaterialPath;
+
+            // How far the thing actually is from the bone that is supposed to be holding it.
+            // A torch that built correctly and was never placed reads as a perfectly healthy
+            // renderer sitting a metre from the fingers, which from the player's side is a hand
+            // holding nothing - so this is the number that separates "not built" from
+            // "built and left behind".
+            float fromHand = HandBone != null
+                ? Vector3.Distance(CarriedRoot.position, HandBone.position)
+                : -1f;
 
             Core.CIYCLog.Info(
                 "[CIYC][FlashlightVisual] state=" + LifecycleState +
+                " definition=" + (definition != null ? definition.Id : "<NULL>") +
+                " modelPath=" + modelPath +
+                " materialPath=" + materialPath +
                 " handBone=" + (HandBone != null ? HandBone.name : "<UNRESOLVED>") +
                 " parent=" + (CarriedRoot.parent != null ? CarriedRoot.parent.name : "<none>") +
-                " resource=" + source +
                 " instance=" + CarriedRoot.name +
                 " renderers=" + enabled + "/" + renderers.Length +
                 " material=" + materials +
                 " bounds=" + bounds.size.ToString("F3") +
+                " localPosition=" + CarriedRoot.localPosition.ToString("F3") +
+                " localRotation=" + CarriedRoot.localEulerAngles.ToString("F1") +
                 " localScale=" + CarriedRoot.localScale.ToString("F3") +
                 " worldPosition=" + CarriedRoot.position.ToString("F2") +
+                " distanceFromHandBone=" + fromHand.ToString("F3") + "m" +
                 " layer=" + LayerMask.LayerToName(CarriedRoot.gameObject.layer) +
                 " cameraCanSee=" + canSee);
+
+            // Each of these is a different bug that looks identical on screen, so each says so
+            // in its own words rather than leaving the reader to compare numbers in the line
+            // above.
+            if (renderers.Length == 0)
+                Core.CIYCLog.Error("[CIYC][FlashlightVisual] NO RENDERERS. The model resource " +
+                                   "loaded nothing, or every renderer was stripped from it.");
+            else if (enabled == 0)
+                Core.CIYCLog.Error("[CIYC][FlashlightVisual] Every renderer is DISABLED.");
+
+            if (renderers.Length > 0 && renderers[0].sharedMaterial == null)
+                Core.CIYCLog.Error("[CIYC][FlashlightVisual] The renderer has NO MATERIAL. " +
+                                   "Nothing is drawn at all - not even magenta. Expected " +
+                                   materialPath + ".");
+
+            Vector3 sc = CarriedRoot.lossyScale;
+            if (Mathf.Abs(sc.x) < 1e-4f || Mathf.Abs(sc.y) < 1e-4f || Mathf.Abs(sc.z) < 1e-4f)
+                Core.CIYCLog.Error("[CIYC][FlashlightVisual] World scale is effectively ZERO (" +
+                                   sc.ToString("F5") + "). The model is there and has no size.");
+
+            if (CarriedRoot.parent == null)
+                Core.CIYCLog.Error("[CIYC][FlashlightVisual] The carried root has NO PARENT, so " +
+                                   "nothing is carrying it.");
+
+            // A held torch's pivot is the grip, so it should be within a hand's width of the
+            // bone. Anything past that is the item having been built but never placed.
+            if (fromHand > 0.35f)
+                Core.CIYCLog.Warn("[CIYC][FlashlightVisual] The torch is " +
+                                  fromHand.ToString("F2") + " m from " + HandBone.name +
+                                  ", which is not in the hand. It was built correctly and then " +
+                                  "left where it was parented - PlaceInHand is what moves it, " +
+                                  "and something is stopping that from running.");
         }
 
         private readonly Plane[] _visualFrustum = new Plane[6];
@@ -275,8 +325,36 @@ namespace CatchIfYouCan.Equipment
         /// own direction, which is what makes a dropped torch light the wall it fell facing.
         /// </para>
         /// </summary>
-        private void LateUpdate()
+        /// <summary>
+        /// <b>override, not a new private method.</b> This was <c>private void LateUpdate()</c>,
+        /// which HID <see cref="HeldEquipmentBase.LateUpdate"/> rather than extending it - and
+        /// Unity dispatches a message to the most-derived declaration by name, so the base one
+        /// simply never ran for the torch.
+        ///
+        /// <para>
+        /// What the base does there is the whole bug: it calls <c>PlaceInHand()</c> for any
+        /// frame the body motion's pose callback did not already place. Hidden, the torch had
+        /// no fallback at all - it was placed only when a procedural body layer existed AND was
+        /// driving the callback, and otherwise stayed at the anchor's own origin instead of
+        /// being solved onto the measured grip. A hand that animates normally, holding nothing,
+        /// with the torch sitting off at the anchor below the view. Which is the reported
+        /// symptom exactly.
+        /// </para>
+        ///
+        /// <para>
+        /// The flashlight is the only one of the nine HeldEquipmentBase subclasses that declared
+        /// its own LateUpdate, which is why it is the only item this happened to. The C# warning
+        /// for it is CS0108, and the offline typecheck harness was not printing warnings.
+        /// </para>
+        ///
+        /// <para>
+        /// The base call comes FIRST: place the item, then aim the beam out of where it ended up.
+        /// </para>
+        /// </summary>
+        protected override void LateUpdate()
         {
+            base.LateUpdate();
+
             // Reported once, WHATEVER the state. This used to wait for Equipped, which is why
             // nobody has ever seen this line: a torch sitting in the inventory unselected is
             // never equipped, so the one diagnostic that could say what is wrong with it stayed

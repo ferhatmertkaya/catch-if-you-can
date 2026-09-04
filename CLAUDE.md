@@ -66,7 +66,9 @@ place that number lives; everything else derives it.
   list.
 - `Scripts/check_equipment_catalog.sh` — the eleven items keep their runtime
   paths, the journal cannot prove evidence, nothing sweeps the scene per
-  frame, and no equipment id is looked up by string literal. 28 checks.
+  frame, no equipment id is looked up by string literal, no held item hides
+  `HeldEquipmentBase`'s per-frame methods, and the flashlight's model and material
+  paths resolve to real files. 34 checks.
 - `Scripts/check_multiplayer_architecture.sh` — the deterministic assembly stays
   engine-free, gameplay never reaches a Relay API, remote players never read
   local input, ghost decisions stay host-only, online capacity has exactly one
@@ -211,7 +213,18 @@ Repeating one of these is the most likely way to break something.
    breaker box, the NavMesh got no sources, and five prop prefabs of 120 never finished.
    It logged loudly the whole time and nobody read it. `check_project_tags.sh` checks
    every tag and layer literal against the project settings now.
-11. **One value asked to mean two things.** `-1` was the offline player's client
+11. **A `private` Unity message that hides a `virtual` one.** `HeldFlashlight` declared
+   `private void LateUpdate()`. `HeldEquipmentBase` declares `protected virtual void
+   LateUpdate()`, and Unity dispatches a message to the most-derived declaration *by
+   name* - so the base one never ran, and what it does there is call `PlaceInHand()` for
+   any frame the body motion's pose callback did not already place. The torch was built
+   correctly, given its real model and material, and then left at the anchor instead of
+   being solved onto the grip: a hand that animates normally, holding nothing. One of
+   nine `HeldEquipmentBase` subclasses did this, and it was the one item anybody noticed.
+   C# calls it CS0108 and the offline typecheck harness was printing errors only, so the
+   warning that names the bug exactly was never on screen. `check_equipment_catalog.sh`
+   checks the shape now; the harness prints warnings now.
+12. **One value asked to mean two things.** `-1` was the offline player's client
    id, and `-1` was about to become "nobody owns this item", which would have
    made the solo player's carried torch read as unowned and let the first person
    past take it. `MultiplayerProtocol.LocalOnlyClientId` and `NoClientId` are

@@ -392,6 +392,86 @@ else
   fail "a missing torch definition is reported rather than stepped over"
 fi
 
+# ---------------------------------------------------------------- held items reach the hand
+
+# HeldEquipmentBase.LateUpdate is the fallback that calls PlaceInHand for any frame the body
+# motion's pose callback did not already place. A subclass that declares its own LateUpdate
+# without `override` HIDES it - Unity dispatches the message to the most-derived declaration
+# by name, so the base never runs and the item is built correctly and then left wherever it
+# was parented. That is a hand holding nothing, and it is what happened to the flashlight:
+# nine subclasses, one private LateUpdate, one item not in the hand. C# calls it CS0108 and
+# the offline typecheck harness was not printing warnings.
+hiders=""
+for held in $(grep -rl ": HeldEquipmentBase" Assets/CatchIfYouCan/Scripts --include=*.cs); do
+  # Comment lines stripped first, or this paragraph would trip the check it documents.
+  if sed 's://.*::' "$held" | grep -qE '^[[:space:]]*(private|public)?[[:space:]]*void[[:space:]]+(LateUpdate|Update)[[:space:]]*\('; then
+    hiders="$hiders $held"
+  fi
+done
+if [ -n "$hiders" ]; then
+  fail "no held item hides HeldEquipmentBase's per-frame methods"
+  for h in $hiders; do printf '        %s\n' "$h"; done
+else
+  ok "no held item hides HeldEquipmentBase's per-frame methods"
+fi
+
+# And the flashlight's own override must actually chain, or the fix is cosmetic.
+FL="Assets/CatchIfYouCan/Scripts/Equipment/HeldFlashlight.cs"
+if sed 's://.*::' "$FL" | tr -d '\n' | tr -s ' ' \
+     | grep -qE 'protected override void LateUpdate\(\) \{ base\.LateUpdate\(\);'; then
+  ok "the flashlight's LateUpdate chains to the base"
+else
+  fail "the flashlight's LateUpdate chains to the base"
+fi
+
+# ---------------------------------------------------------------- the flashlight's own art
+
+# The visual profile names a model and a material by Resources path. A path with no file
+# behind it is this project's oldest mistake, and it fails silently in exactly the same way
+# as everything else here.
+FACTORY_DEF="Assets/CatchIfYouCan/Scripts/Equipment/EquipmentDefinitionFactory.cs"
+RES="Assets/CatchIfYouCan/Resources"
+
+# Both arguments off the one ApplyModel call that names the flashlight model. Read from the
+# call itself rather than by counting lines from the id: there is a paragraph of comment
+# between them, and a guard that depends on how long a comment is will break when someone
+# edits the comment.
+fl_call=$(sed 's://.*::' "$FACTORY_DEF" | tr -d '\n' | tr -s ' ' \
+          | grep -oE 'ApplyModel\("Props/CIYC_Flashlight" *, *"[^"]+"' | head -1)
+fl_model=$(printf '%s' "$fl_call" | sed 's/ApplyModel("//; s/".*//')
+fl_mat=$(printf '%s' "$fl_call" | sed 's/.*, *"//; s/"//')
+
+if [ -n "$fl_model" ] && ls "$RES/$fl_model".* >/dev/null 2>&1; then
+  ok "the flashlight model path resolves to a real file ($fl_model)"
+else
+  fail "the flashlight model path resolves to a real file"
+  printf '        looked for %s/%s.* \n' "$RES" "${fl_model:-<unparsed>}"
+fi
+
+if [ -n "$fl_mat" ] && [ -f "$RES/$fl_mat.mat" ]; then
+  ok "the flashlight material path resolves to a real file ($fl_mat)"
+else
+  fail "the flashlight material path resolves to a real file"
+  printf '        looked for %s/%s.mat\n' "$RES" "${fl_mat:-<unparsed>}"
+fi
+
+# A Resources path is relative to a Resources folder and carries no extension. All three of
+# these wrong shapes have shipped in this repository before.
+if [ -n "$fl_model" ] && ! printf '%s' "$fl_model" \
+     | grep -qE '(^Assets/|^Resources/|\.fbx$|\.prefab$|\.mat$)'; then
+  ok "the flashlight Resources path has no folder prefix and no extension"
+else
+  fail "the flashlight Resources path has no folder prefix and no extension" 
+fi
+
+# The torch is finished art, not a grey box. If this ever becomes a placeholder it means the
+# real profile stopped being reached.
+if sed 's://.*::' "$FACTORY_DEF" | grep -A4 'EquipmentIds.Flashlight,' | grep -q 'ApplyDevPlaceholder'; then
+  fail "the flashlight uses its real model rather than the DEV placeholder"
+else
+  ok "the flashlight uses its real model rather than the DEV placeholder"
+fi
+
 printf '\npassed: %s   failed: %s\n\n' "$passed" "$failed"
 
 if [ "$failed" -gt 0 ]; then
