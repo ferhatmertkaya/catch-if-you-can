@@ -1183,6 +1183,31 @@ else
       "the lowest quality level must not be a function of the highest"
 fi
 
+# ---------------------------------------------------------------- der Ankunftspunkt
+
+BOOT="$ROOT/Assets/CatchIfYouCan/Scripts/Procedural/InvestigationBootstrap.cs"
+
+# Das Portal bindet seine Ansicht an ArrivalPoint. Bleibt der null, wird nie gebunden - die
+# Oeffnungsroutine haelt das fuer eine fehlgeschlagene Vorbereitung und laesst die Tuer nach
+# gut einer Sekunde zusammenfallen, mit dem Diagnoseraum darin. Er kam vom Van, und ohne Van
+# gab es keinen. Also gibt es jetzt immer einen.
+if code "$BOOT" | grep -qE 'private void EnsureFallbackArrival\(\)' \
+   && code "$BOOT" | grep -qE '_van\.PlayerSpawnPoint : _fallbackArrival'; then
+  ok "es gibt immer einen Ankunftspunkt, auch ohne Van"
+else
+  bad "es gibt immer einen Ankunftspunkt, auch ohne Van" \
+      "ohne ihn bindet das Portal nie und faellt nach der Oeffnungsdauer zusammen"
+fi
+
+# Und er wird in BEIDEN Zweigen angelegt, nicht nur im generierten.
+prep=$(code "$BOOT" | sed -n '/private bool PrepareWorld/,/^        private void EnsureFallbackArrival/p')
+if [ "$(printf '%s' "$prep" | grep -c 'EnsureFallbackArrival();')" -ge 2 ]; then
+  ok "der Ankunftspunkt entsteht in beiden Zweigen der Vorbereitung"
+else
+  bad "der Ankunftspunkt entsteht in beiden Zweigen der Vorbereitung" \
+      "einer davon laesst das Portal wieder zusammenfallen"
+fi
+
 echo
 echo "  $PASS passed, $FAIL failed"
 if [ "$FAIL" -ne 0 ]; then

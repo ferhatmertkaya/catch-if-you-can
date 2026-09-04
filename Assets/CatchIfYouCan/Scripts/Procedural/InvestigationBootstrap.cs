@@ -74,7 +74,7 @@ namespace CatchIfYouCan.Procedural
                  "Nichts an der Generierung ist geloescht: der Schalter fuehrt sie nur nicht " +
                  "aus. Wieder anschalten stellt genau denselben Ablauf wieder her, und der " +
                  "Seed bestimmt weiterhin dasselbe Haus wie vorher.")]
-        [SerializeField] private bool generateWorld;
+        [SerializeField] private bool generateWorld = true;
 
         [Tooltip("Groesse der leeren Ebene in Metern, wenn oben nichts generiert wird. Sie wird " +
                  "erst beim Betreten gebaut, nicht schon beim Vorbereiten - sonst haengt sie als " +
@@ -113,7 +113,22 @@ namespace CatchIfYouCan.Procedural
         /// Where a player arriving from the lobby stands, and what the portal camera is aimed
         /// through: the van's own spawn point, which is where this mission has always begun.
         /// </summary>
-        public Transform ArrivalPoint => _van != null ? _van.PlayerSpawnPoint : null;
+        private Transform _fallbackArrival;
+
+        /// <summary>
+        /// Wo der Spieler ankommt, und wohin die Portalkamera schaut.
+        ///
+        /// <para>
+        /// Normalerweise der Spawnpunkt am Van. Ohne Van gibt es einen Ersatzpunkt, und das ist
+        /// keine Kosmetik: das Portal bindet seine Ansicht an DIESEN Transform, und solange er
+        /// null ist, wird es nie gebunden - dann laeuft die Oeffnungsroutine ab, haelt das fuer
+        /// eine fehlgeschlagene Vorbereitung und laesst die Tuer nach gut einer Sekunde wieder
+        /// zusammenfallen, waehrend der Diagnoseraum durchscheint. Genau das ist passiert, als
+        /// generateWorld ausgeschaltet wurde und mit dem Van auch der Ankunftspunkt wegfiel.
+        /// </para>
+        /// </summary>
+        public Transform ArrivalPoint =>
+            _van != null && _van.PlayerSpawnPoint != null ? _van.PlayerSpawnPoint : _fallbackArrival;
 
         /// <summary>
         /// Hands this bootstrap the anchors its scene already carries.
@@ -245,6 +260,8 @@ namespace CatchIfYouCan.Procedural
                 // _generatedHouse bleibt null, und das ist in Ordnung: die Schritte danach - der
                 // Geist, die Raumanker, das Hauslicht, das Wetter - pruefen alle darauf und
                 // ueberspringen sich selbst. Sie starten also nicht halb.
+                EnsureFallbackArrival();
+
                 CIYCLog.Warn("[CIYC][Investigation] generateWorld ist AUS: es wird keine Welt " +
                              "gebaut. Kein Haus, kein Van, keine Props, kein Geist. Der Boden " +
                              "entsteht erst beim Betreten. Wieder anschalten am " +
@@ -264,8 +281,29 @@ namespace CatchIfYouCan.Procedural
                 return false;
             }
 
+            // Auch im normalen Pfad: wenn der Van keinen Spawnpunkt geliefert hat, faellt das
+            // Portal sonst genauso zusammen, nur seltener und schwerer zu finden.
+            EnsureFallbackArrival();
+
             _worldPrepared = true;
             return true;
+        }
+
+        /// <summary>
+        /// Ein Ankunftspunkt, falls keiner aus der Welt kommt. Am Hausanker, sonst am Ursprung.
+        /// </summary>
+        private void EnsureFallbackArrival()
+        {
+            if (_fallbackArrival != null)
+                return;
+
+            var go = new GameObject("ArrivalPoint_Fallback");
+            go.transform.SetParent(worldRoot != null ? worldRoot : transform, false);
+            go.transform.position = houseAnchor != null
+                ? houseAnchor.position + Vector3.up * 0.05f
+                : new Vector3(0f, 0.05f, 0f);
+            go.transform.rotation = houseAnchor != null ? houseAnchor.rotation : Quaternion.identity;
+            _fallbackArrival = go.transform;
         }
 
         /// <summary>
