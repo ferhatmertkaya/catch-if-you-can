@@ -1183,6 +1183,32 @@ else
       "the lowest quality level must not be a function of the highest"
 fi
 
+# ---------------------------------------------------------------- keine authored Tuer
+
+# Die Lobbywand traegt keine Tuer mehr. Der Tuerrahmen und die gruene Tuer-Inszenierung aus
+# der Zeit vor dem echten Portal sind in 01_MainMenu abgeschaltet: bis START INVESTIGATION
+# gedrueckt wird, ist die Wand eine Wand, und danach reisst das Portal sie auf. Eine authored
+# Tuer daneben macht daraus wieder eine Tuer neben einem Loch.
+#
+# Geprueft wird das m_IsActive DIREKT unter dem Namen - eine Suche im Umkreis wuerde das
+# Flag des Nachbarobjekts lesen und dann alles fuer in Ordnung halten.
+door_on=""
+for obj in Lobby_DoorJamb_Left Lobby_DoorJamb_Right Lobby_DoorLintel \
+           Door_Green_Portal_Cube Door_BackGlow Door_Green_Fog \
+           Door_Green_Spot Door_Green_Fill DoorFog_Root; do
+  state=$(grep -A5 "^  m_Name: $obj\$" "$SCENE" 2>/dev/null | grep -m1 'm_IsActive:' | tr -d ' ')
+  case "$state" in
+    "m_IsActive:0") ;;
+    "")             ;;   # geloescht ist auch weg - das ist der Endzustand, nicht ein Fehler
+    *)              door_on="$door_on $obj" ;;
+  esac
+done
+if [ -n "$door_on" ]; then
+  bad "die authored Lobby-Tuer ist aus" "wieder aktiv:$door_on"
+else
+  ok "die authored Lobby-Tuer ist aus"
+fi
+
 echo
 echo "  $PASS passed, $FAIL failed"
 if [ "$FAIL" -ne 0 ]; then
