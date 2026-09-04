@@ -881,32 +881,42 @@ if [ -f "$PROBE" ]; then
   fi
 fi
 
-# ---- V9.5: die Nordwand existiert nicht ----------------------------------------------------
-# Sie war einmal in Segmente mit einer Tuerluecke zerlegt, dann ein durchgezogener Quader,
-# und jetzt gar nichts mehr. Auf Wunsch entfernt: an der Nordseite steht keine Geometrie.
-#
-# Das ist bewusst kein "abgeschaltet". Die Objekte sind aus der Szene geloescht, damit sie
-# auch nicht als leere Eintraege in der Hierarchie stehen bleiben.
-north=""
-for obj in Lobby_Wall_North Lobby_Skirting_North \
-           Lobby_Wall_North_Left Lobby_Wall_North_Right Lobby_Wall_North_Header \
-           Lobby_Wall_North_Fill Lobby_DoorJamb_Left Lobby_DoorJamb_Right Lobby_DoorLintel \
-           Lobby_Skirting_North_L Lobby_Skirting_North_R; do
-  grep -qE "^  m_Name: $obj\$" "$SCENE" && north="$north $obj"
-done
-if [ -n "$north" ]; then
-  bad "an der Nordseite der Lobby steht keine Geometrie" "noch da:$north"
+# ---- V9.6: eine Nordwand, keine Sockelleisten ----------------------------------------------
+# Die Nordwand ist EIN Quader ueber die volle Breite. Sie war einmal in Segmente mit einer
+# Tuerluecke zerlegt, dazu ein Rahmen und ein Laufzeit-Flicken; nichts davon darf zurueck.
+if grep -qE '^  m_Name: Lobby_Wall_North$' "$SCENE"; then
+  ok "die Lobby hat eine Nordwand"
 else
-  ok "an der Nordseite der Lobby steht keine Geometrie"
+  bad "die Lobby hat eine Nordwand" "ohne sie steht die Lobby zum Nachthimmel hin offen"
 fi
 
-# Die Ostwand bleibt zerlegt - da ist ein Fenster drin, das braucht seine Teile.
+split=""
+for obj in Lobby_Wall_North_Left Lobby_Wall_North_Right Lobby_Wall_North_Header \
+           Lobby_Wall_North_Fill Lobby_DoorJamb_Left Lobby_DoorJamb_Right Lobby_DoorLintel; do
+  grep -qE "^  m_Name: $obj\$" "$SCENE" && split="$split $obj"
+done
+if [ -n "$split" ]; then
+  bad "die Nordwand ist nicht wieder in Teile zerlegt" "noch da:$split"
+else
+  ok "die Nordwand ist nicht wieder in Teile zerlegt"
+fi
+
+# Keine Sockelleisten mehr, an keiner Wand. Sie waren der letzte Ort, an dem die alte
+# Tuerluecke noch als Form ueberlebt hat.
+skirt=$(grep -oE '^  m_Name: Lobby_Skirting\w*' "$SCENE" | sed 's/^  m_Name: //' | tr '\n' ' ')
+if [ -n "$skirt" ]; then
+  bad "an keiner Wand haengt eine Sockelleiste" "noch da: $skirt"
+else
+  ok "an keiner Wand haengt eine Sockelleiste"
+fi
+
+# Die Ostwand bleibt zerlegt - da ist ein Fenster drin.
 if grep -qE '^  m_Name: Lobby_Wall_East_North$' "$SCENE" \
    && grep -qE '^  m_Name: Lobby_Window_Glass$' "$SCENE"; then
   ok "die Fensterwand im Osten ist unangetastet"
 else
   bad "die Fensterwand im Osten ist unangetastet" \
-      "beim Aufraeumen der Nordseite darf das Fenster nicht mitgehen"
+      "beim Aufraeumen darf das Fenster nicht mitgehen"
 fi
 
 if code "$ENV/LobbyPortal.cs" | grep -qE 'EnsureWallPlug|_wallPlug|wallPlugDepth'; then
