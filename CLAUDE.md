@@ -70,7 +70,8 @@ place that number lives; everything else derives it.
   `HeldEquipmentBase`'s per-frame methods, and the flashlight's model and material
   paths resolve to real files, an item is not given its visual before it knows what it is,
   a failed model load never becomes a silent placeholder, and the flashlight's diagnostic
-  pose ships switched off. 40 checks.
+  pose ships switched off, a model's size is measured in its own space rather than as a
+  world AABB, and the achieved size is checked against the wanted one. 43 checks.
 - `Scripts/check_multiplayer_architecture.sh` — the deterministic assembly stays
   engine-free, gameplay never reaches a Relay API, remote players never read
   local input, ghost decisions stay host-only, online capacity has exactly one
@@ -226,7 +227,13 @@ Repeating one of these is the most likely way to break something.
    C# calls it CS0108 and the offline typecheck harness was printing errors only, so the
    warning that names the bug exactly was never on screen. `check_equipment_catalog.sh`
    checks the shape now; the harness prints warnings now.
-12. **One value asked to mean two things.** `-1` was the offline player's client
+12. **A world AABB used to compute a local scale.** `Renderer.bounds` is world space.
+   Reading it and dividing a target size by it gives a LOCAL scale that is only right while
+   every ancestor has scale 1 - otherwise the parent chain is applied a second time. The
+   same line, in two files, looked like two unrelated bugs: a flashlight arriving in the
+   hand 2 mm long, and room walls a hundred times too big. Measure in the model's own
+   space, and check the size you got against the size you wanted.
+13. **One value asked to mean two things.** `-1` was the offline player's client
    id, and `-1` was about to become "nobody owns this item", which would have
    made the solo player's carried torch read as unowned and let the first person
    past take it. `MultiplayerProtocol.LocalOnlyClientId` and `NoClientId` are

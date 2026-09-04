@@ -171,13 +171,23 @@ namespace CatchIfYouCan.EditorTools
             if (source == null)
                 return;
 
-            var instance = Object.Instantiate(source, parent);
+            // LOSE instanziiert, nicht direkt unter parent.
+            //
+            // Renderer.bounds ist eine Welt-AABB. Direkt unter parent gemessen enthaelt sie
+            // bereits die Skalierung der ganzen Elternkette - und daraus wird gleich eine
+            // LOKALE Skalierung berechnet, die diese Kette ein zweites Mal anwendet. Bei einem
+            // Elternteil mit Skalierung 0.01 kommt eine Wand hundertmal zu gross heraus, und
+            // genau so sahen sie aus. Am Ursprung ohne Eltern gemessen ist die Welt-AABB die
+            // Groesse des Modells und sonst nichts.
+            var instance = Object.Instantiate(source);
             instance.name = name;
-            instance.transform.localPosition = localPosition;
 
             var renderers = instance.GetComponentsInChildren<Renderer>(true);
             if (renderers.Length == 0)
+            {
+                Object.DestroyImmediate(instance);
                 return;
+            }
 
             var bounds = renderers[0].bounds;
             for (int i = 1; i < renderers.Length; i++)
@@ -192,6 +202,12 @@ namespace CatchIfYouCan.EditorTools
             float sz = targetSize.z / size.z;
             float uniform = axisDominantScale(targetSize, sx, sy, sz);
             instance.transform.localScale = Vector3.one * uniform;
+
+            // Erst jetzt einhaengen: die Skalierung oben ist gegen die eigene Groesse des
+            // Modells gerechnet, und ab hier darf die Elternkette sie einmal - und nur einmal -
+            // anwenden.
+            instance.transform.SetParent(parent, false);
+            instance.transform.localPosition = localPosition;
 
             bounds = renderers[0].bounds;
             for (int i = 1; i < renderers.Length; i++)

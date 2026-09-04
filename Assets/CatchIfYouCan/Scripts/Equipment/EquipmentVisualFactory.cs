@@ -131,10 +131,6 @@ namespace CatchIfYouCan.Equipment
                 return BuildPlaceholder(profile, carried, CiycShaders.FindLit());
             }
 
-            var bounds = renderers[0].bounds;
-            for (int i = 1; i < renderers.Length; i++)
-                bounds.Encapsulate(renderers[i].bounds);
-
             model.transform.SetParent(carried, false);
             model.transform.localPosition = Vector3.zero;
             model.transform.localRotation = Quaternion.identity;
@@ -158,6 +154,24 @@ namespace CatchIfYouCan.Equipment
                 for (int m = 0; m < slots; m++)
                     materials[m] = pinned;
                 renderers[i].sharedMaterials = materials;
+            }
+
+            // Gemessen wird im LOKALEN Raum des Modellwurzel-Objekts, nicht in Weltkoordinaten.
+            //
+            // Renderer.bounds ist eine Welt-AABB. Sie hier zu lesen und daraus eine LOKALE
+            // Skalierung zu berechnen stimmt nur, solange jeder Vorfahre Skalierung 1 hat und
+            // die Bounds zum Messzeitpunkt schon aktuell sind - und genau das hielt nicht: der
+            // Torso des Modells kam mit 0.002 m in der Hand an statt mit 0.24 m, also war die
+            // gemessene Ausdehnung rund hundertzwanzigmal zu gross. Mesh-Bounds in den Raum der
+            // Modellwurzel gerechnet haengen von nichts davon ab: nicht davon, wo der Spieler
+            // steht, nicht davon, was ueber dem Objekt in der Hierarchie haengt, und nicht
+            // davon, in welchem Frame gemessen wird.
+            if (!TryMeasureLocal(model, renderers, out Bounds bounds))
+            {
+                Debug.LogError("[CIYC][Equipment] " + carried.name + ": kein Mesh mit Groesse " +
+                               "gefunden, die Skalierung waere geraten. Das Modell bleibt " +
+                               "ungeskaliert.");
+                return profile.Length;
             }
 
             float target = profile.Length;
@@ -186,6 +200,23 @@ namespace CatchIfYouCan.Equipment
                 renderers[i].receiveShadows = true;
             }
 
+            // Nachgemessen, statt der Rechnung zu glauben. Ein Gegenstand, der als
+            // Millimeter in der Hand landet, sieht aus wie eine leere Hand - und genau so ist
+            // dieser Fehler ueber Wochen unbemerkt geblieben.
+            float achieved = 0f;
+            for (int i = 0; i < renderers.Length; i++)
+                achieved = Mathf.Max(achieved, Mathf.Abs(Vector3.Dot(renderers[i].bounds.size,
+                                                                     Abs(Vector3.up))));
+            if (achieved > 0f && (achieved < target * 0.5f || achieved > target * 2f))
+            {
+                Debug.LogError("[CIYC][Equipment] " + carried.name + " ist nach dem Skalieren " +
+                               achieved.ToString("F4") + " m hoch, gewuenscht waren " +
+                               target.ToString("F3") + " m. Gemessene Modellausdehnung " +
+                               bounds.size.ToString("F4") + ", Faktor " + scale.ToString("F6") +
+                               ". Bei dieser Abweichung ist der Gegenstand in der Hand nicht zu " +
+                               "sehen.");
+            }
+
             if (profile.LogState)
             {
                 var used = renderers[0].sharedMaterial != null
@@ -211,6 +242,60 @@ namespace CatchIfYouCan.Equipment
         /// The stand-in: a capsule in an unmistakable colour, named so that a screenshot of it
         /// is self-explaining. It is meant to look wrong.
         /// </summary>
+        /// <summary>
+        /// Die Ausdehnung des Modells in seinem eigenen Raum, aus den Mesh-Bounds.
+        ///
+        /// <para>
+        /// Jede Ecke jedes Meshes wird ueber die Weltmatrix des jeweiligen Renderers in den
+        /// Raum der Modellwurzel zurueckgerechnet. Das Ergebnis ist dieselbe Zahl, egal wo im
+        /// Level das Objekt gerade haengt und was ueber ihm skaliert ist - was eine Welt-AABB
+        /// eben nicht ist.
+        /// </para>
+        /// </summary>
+        private static bool TryMeasureLocal(GameObject model, Renderer[] renderers,
+                                            out Bounds local)
+        {
+            local = new Bounds(Vector3.zero, Vector3.zero);
+            Transform root = model.transform;
+            bool any = false;
+
+            for (int i = 0; i < renderers.Length; i++)
+            {
+                var filter = renderers[i].GetComponent<MeshFilter>();
+                Mesh mesh = filter != null ? filter.sharedMesh : null;
+                if (mesh == null && renderers[i] is SkinnedMeshRenderer skinned)
+                    mesh = skinned.sharedMesh;
+                if (mesh == null)
+                    continue;
+
+                Bounds mb = mesh.bounds;
+                Vector3 c = mb.center;
+                Vector3 e = mb.extents;
+                Transform t = renderers[i].transform;
+
+                for (int corner = 0; corner < 8; corner++)
+                {
+                    var offset = new Vector3(
+                        (corner & 1) == 0 ? -e.x : e.x,
+                        (corner & 2) == 0 ? -e.y : e.y,
+                        (corner & 4) == 0 ? -e.z : e.z);
+
+                    Vector3 inRoot = root.InverseTransformPoint(t.TransformPoint(c + offset));
+                    if (!any)
+                    {
+                        local = new Bounds(inRoot, Vector3.zero);
+                        any = true;
+                    }
+                    else
+                    {
+                        local.Encapsulate(inRoot);
+                    }
+                }
+            }
+
+            return any && local.size.sqrMagnitude > 1e-12f;
+        }
+
         private static float BuildPlaceholder(EquipmentVisualProfile profile, Transform carried,
                                               Shader shader)
         {

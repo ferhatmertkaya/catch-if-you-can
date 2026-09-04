@@ -529,6 +529,40 @@ else
   fail "die Diagnosepose schaltet jede automatische Platzierung ab"
 fi
 
+# ---------------------------------------------------------------- gemessen wird lokal
+
+# Renderer.bounds ist eine Welt-AABB. Sie zu lesen und daraus eine LOKALE Skalierung zu
+# berechnen stimmt nur, solange jeder Vorfahre Skalierung 1 hat - sonst wird die Elternkette
+# ein zweites Mal angewendet. Das ist zweimal in diesem Projekt passiert und sah beide Male
+# vollkommen verschieden aus: eine Taschenlampe mit 2 mm Laenge in der Hand, und Waende
+# hundertmal zu gross. Dieselbe Zeile, zwei Dateien.
+if sed 's://.*::' "Assets/CatchIfYouCan/Scripts/Equipment/EquipmentVisualFactory.cs" \
+     | grep -qE 'TryMeasureLocal\(model, renderers, out Bounds bounds\)'; then
+  ok "das Ausruestungs-Visual wird im eigenen Raum des Modells gemessen"
+else
+  fail "das Ausruestungs-Visual wird im eigenen Raum des Modells gemessen" \
+       "eine Welt-AABB haengt davon ab, wo der Spieler steht und was ueber dem Objekt haengt"
+fi
+
+# Und die Skalierung wird nachgemessen statt geglaubt.
+if sed 's://.*::' "Assets/CatchIfYouCan/Scripts/Equipment/EquipmentVisualFactory.cs" \
+     | grep -qE 'achieved < target \* 0\.5f \|\| achieved > target \* 2f'; then
+  ok "die erreichte Groesse wird gegen die gewuenschte geprueft"
+else
+  fail "die erreichte Groesse wird gegen die gewuenschte geprueft" \
+       "ein Gegenstand, der als Millimeter ankommt, sieht aus wie eine leere Hand"
+fi
+
+# Der Raumbauer hatte dieselbe Zeile. Er misst jetzt lose und haengt erst danach ein.
+KRB="Assets/CatchIfYouCan/Editor/KenneyRoomPrefabBuilder.cs"
+if sed 's://.*::' "$KRB" | grep -qE 'Object\.Instantiate\(source\);' \
+   && sed 's://.*::' "$KRB" | grep -qE 'instance\.transform\.SetParent\(parent, false\);'; then
+  ok "der Raumbauer misst ohne Eltern und haengt erst danach ein"
+else
+  fail "der Raumbauer misst ohne Eltern und haengt erst danach ein" \
+       "unter parent gemessen enthaelt die Welt-AABB die Elternskalierung schon"
+fi
+
 printf '\npassed: %s   failed: %s\n\n' "$passed" "$failed"
 
 if [ "$failed" -gt 0 ]; then
