@@ -99,7 +99,8 @@ place that number lives; everything else derives it.
   entry, a crossing needs a prepared destination, a refused crossing returns the controls, the
   intro overlay is cleared whatever happens, and the first-person hand target, elbow hint and
   anchor agree on one side with the fist clear of the near clip plane, and the probe room
-  stays outside the playable world without ever making the portal enterable. 97 checks.
+  stays outside the playable world without ever making the portal enterable, and the lobby's
+  authored doorway is filled so the wall is a wall until a portal tears it. 101 checks.
 
 - `Scripts/check_agent_architecture.sh` — the roster holds 40 unique roles with
   every field, the roster and `AGENT_OWNERSHIP.md` name the same roles, the

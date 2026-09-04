@@ -29,10 +29,24 @@ bad ()  { FAIL=$((FAIL+1)); printf '  FAIL  %s\n' "$1"; [ $# -gt 1 ] && printf '
 # Code with every full-line comment removed. A guard that greps a whole file is a guard a
 # doc comment can satisfy, and one that forbids a call will match the comment warning
 # against it - this project has been bitten by both directions.
-code () { sed 's://.*::' "$1" | grep -v '^[[:space:]]*\*' ; }
+#
+# Stripped ONCE PER FILE into a cache, not once per check. This ran sed and grep on every
+# invocation, and with a hundred checks that is two hundred short-lived processes; under fork
+# pressure some of them simply fail, and a check whose pipeline failed reports the code as
+# broken. That is what made this guard fail on a different, random check each run while the
+# project underneath it never changed.
+CODE_CACHE_DIR="${TMPDIR:-/tmp}/ciyc_guard_cache_$$"
+mkdir -p "$CODE_CACHE_DIR"
 
-TMPDIR_GUARD="$(mktemp -d)"
-trap 'rm -rf "$TMPDIR_GUARD"' EXIT
+code () {
+  local key
+  key="$(printf '%s' "$1" | tr -c 'a-zA-Z0-9' '_')"
+  local cached="$CODE_CACHE_DIR/$key"
+  if [ ! -f "$cached" ]; then
+    sed 's://.*::' "$1" | grep -v '^[[:space:]]*\*' > "$cached" || true
+  fi
+  cat "$cached"
+}
 
 echo "== UI and portal guard =="
 echo
@@ -518,15 +532,14 @@ fi
 
 # Every shader property really exists in the material, and vice versa. A name that only
 # exists on one side is CLAUDE.md mistake 3 in shader form: it fails silently forever.
-cat > "$TMPDIR_GUARD/propcheck.py" <<'PYEOF'
+MISMATCH="$(python3 -c '
 import re, sys
 sh = open(sys.argv[1]).read()
 block = sh[sh.index("Properties"):sh.index("SubShader")]
 props = set(re.findall(r"^\s*(?:\[[^\]]*\]\s*)?(_\w+)\s*\(", block, re.M))
 mat = set(re.findall(r"^\s*-\s*(_\w+):", open(sys.argv[2]).read(), re.M))
 print(" ".join(sorted(props ^ mat)))
-PYEOF
-MISMATCH="$(python3 "$TMPDIR_GUARD/propcheck.py" "$SHADER" "$MAT")"
+' "$SHADER" "$MAT")"
 if [ -z "$MISMATCH" ]; then
   ok "shader and material agree on every property name"
 else
@@ -667,7 +680,7 @@ code "$ENV/LobbyPortal.cs" | grep -qE 'private void ReportOpening\(\)' \
 # condition. Indentation is the test rather than the mere presence of a log call, because the
 # bind line genuinely does fire once - latched by `bound` - and forbidding it outright would
 # push a useful diagnostic out of the only place it can be written.
-cat > "$TMPDIR_GUARD/loglevel.py" <<'PYEOF'
+PERFRAME_LOG="$(python3 -c '
 import sys
 src = open(sys.argv[1]).read().splitlines()
 start = next((i for i, l in enumerate(src) if "while (t < openDuration" in l), None)
@@ -684,8 +697,7 @@ for line in src[start + 1:]:
         if len(line) - len(line.lstrip()) <= body:
             bad.append(stripped[:60])
 print(" | ".join(bad))
-PYEOF
-PERFRAME_LOG="$(python3 "$TMPDIR_GUARD/loglevel.py" "$ENV/LobbyPortal.cs")"
+' "$ENV/LobbyPortal.cs")"
 if [ -z "$PERFRAME_LOG" ]; then
   ok "the portal does not log every frame"
 elif [ "$PERFRAME_LOG" = "NO-LOOP" ]; then
@@ -867,6 +879,42 @@ if [ -f "$PROBE" ]; then
     bad "showing the probe room cannot make the portal enterable" \
         "entry must still require a prepared mission world"
   fi
+fi
+
+# ---- V9.3: the lobby wall is a wall until the portal tears it ------------------------------
+# The lobby's north wall is authored with a real doorway in it - two panels and a header with a
+# gap - so the player saw the night sky through it from the moment they walked in. There is no
+# door here; there is a wall that a portal opens.
+if code "$ENV/LobbyPortal.cs" | grep -qE 'private void EnsureWallPlug\(\)'; then
+  ok "the doorway is filled with a wall"
+else
+  bad "the doorway is filled with a wall" \
+      "without a plug the lobby has a hole onto the skybox before any portal exists"
+fi
+
+# Built in Awake, before a mission can be chosen - not when the portal opens.
+if code "$ENV/LobbyPortal.cs" | sed -n '/private void Awake/,/^        }$/p' \
+     | grep -qE 'EnsureWallPlug\(\)'; then
+  ok "the wall is filled before a mission is chosen"
+else
+  bad "the wall is filled before a mission is chosen" \
+      "filling it later leaves the hole visible on entering the lobby"
+fi
+
+# Behind the surface, or it hides the portal instead of backing it.
+if code "$ENV/LobbyPortal.cs" | grep -qE 'new Vector3\(0f, opening\.y \* 0\.5f, -wallPlugDepth\)'; then
+  ok "the wall fill sits behind the portal surface"
+else
+  bad "the wall fill sits behind the portal surface" \
+      "PortalSurface local +Z is the player's side; a plug there covers the portal"
+fi
+
+# Nothing may switch it off. It is what the transparent parts of the portal show.
+if code "$ENV/LobbyPortal.cs" | grep -qE '_wallPlug\.(gameObject\.SetActive|enabled) *= *false'; then
+  bad "the wall fill is never switched off" \
+      "the portal is transparent outside its breach; the fill is what shows there"
+else
+  ok "the wall fill is never switched off"
 fi
 
 echo
