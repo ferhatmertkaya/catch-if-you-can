@@ -917,6 +917,69 @@ else
   ok "the wall fill is never switched off"
 fi
 
+# ---------------------------------------------------------------- the portal camera maths
+#
+# A portal view is the destination scene rendered from the player's eye carried through the
+# pair, into an off-screen buffer, sampled in SCREEN space. Three things have to agree for
+# that to be a window rather than a picture hanging on a wall, and each of them fails
+# silently and differently.
+
+SURF="$ART/PortalSurface.cs"
+SHADER="$ROOT/Assets/CatchIfYouCan/Shaders/Portal.shader"
+
+# 1. The image is sampled where the fragment is on screen, not where it is on the quad.
+#    Sampling the mesh UV instead gives a texture pasted flat on the surface: it does not
+#    shift with the head, which is the whole illusion.
+if grep -q 'ComputeScreenPos' "$SHADER" && grep -qE 'screenPos\.xy */ *max\(.*screenPos\.w' "$SHADER"; then
+  ok "the destination is sampled in screen space, not by the quad's own UV"
+else
+  bad "the destination is sampled in screen space, not by the quad's own UV" \
+      "without the perspective divide on ComputeScreenPos the far room is a flat decal"
+fi
+
+# 2. The buffer is rendered at the shape it is sampled at. Screen-space sampling reads the
+#    image as if it covered the screen, so a buffer rendered at a different aspect is
+#    stretched - and ResolveTextureSize clamps the width, so the two can disagree.
+if code "$SURF" | tr -d '\n' | tr -s ' ' \
+     | grep -qE '_portalCamera\.aspect = _textureHeight > 0'; then
+  ok "the portal camera's aspect comes from the buffer it renders into"
+else
+  bad "the portal camera's aspect comes from the buffer it renders into" \
+      "taking it from the source camera leaves the render and the lookup different shapes"
+fi
+
+# 3. The oblique near plane keeps the far ROOM and clips the far room's own wall. Which half
+#    that is depends on which way the destination Transform faces, and nothing constrains
+#    that - so the side has to be derived from where the camera actually is. Assumed, it is a
+#    coin flip, and the losing side clips the whole room away and leaves the sky: a black
+#    interior behind a lit rim, which is exactly what was reported.
+if code "$SURF" | grep -qE 'Mathf\.Sign\(Vector3\.Dot\(normal, cameraPosition - point\)\)'; then
+  ok "the oblique clip side is derived from the camera, not assumed"
+else
+  bad "the oblique clip side is derived from the camera, not assumed" \
+      "CalculateObliqueMatrix keeps the half its normal points into; passing destination.forward raw clips the room when that transform faces the other way"
+fi
+
+# The offset that lifts the plane off the destination wall has to follow the DERIVED normal.
+# Following the raw one shaves the offset off the room instead of off the wall on the
+# flipped case, which is the same bug wearing a 2 cm hat.
+if code "$SURF" | grep -qE 'offsetPoint = point \+ kept \* clipPlaneOffset'; then
+  ok "the clip-plane offset follows the derived normal"
+else
+  bad "the clip-plane offset follows the derived normal" \
+      "offsetting along the raw normal pushes the plane into the room when the side is flipped"
+fi
+
+# The projection must be reset before it is skewed: CalculateObliqueMatrix reads the camera's
+# CURRENT projection, so skewing an already-skewed matrix compounds every frame.
+if code "$SURF" | tr -d '\n' | tr -s ' ' \
+     | grep -qE 'ResetProjectionMatrix\(\); .*projectionMatrix = _portalCamera\.CalculateObliqueMatrix'; then
+  ok "the projection is reset before it is made oblique"
+else
+  bad "the projection is reset before it is made oblique" \
+      "CalculateObliqueMatrix reads the current projection; without a reset the skew accumulates"
+fi
+
 echo
 echo "  $PASS passed, $FAIL failed"
 if [ "$FAIL" -ne 0 ]; then

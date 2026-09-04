@@ -475,8 +475,25 @@ namespace CatchIfYouCan.Art
 
             _portalCamera.orthographic = false;
             _portalCamera.fieldOfView = source.fieldOfView;
-            _portalCamera.aspect = source.aspect;
+
+            // Taken from the buffer, not from the source. The view is sampled in screen space -
+            // the fragment shader divides ComputeScreenPos by w - so the image has to be shaped
+            // like the screen. Width follows the source aspect in ResolveTextureSize, but it is
+            // clamped there, and on a display wide enough for that clamp to bite the two numbers
+            // stop agreeing. Reading the aspect back off the texture makes the render and the
+            // lookup the same shape by construction rather than by arithmetic that holds most
+            // of the time.
+            _portalCamera.aspect = _textureHeight > 0
+                ? (float)_textureWidth / _textureHeight
+                : source.aspect;
+
             _portalCamera.nearClipPlane = Mathf.Max(0.01f, nearPlane);
+
+            // Set, but not what ends up bounding the view: the oblique matrix below moves the
+            // near plane onto an arbitrary plane, and doing that destroys the conventional far
+            // plane - the frustum becomes a shape whose far bound is wherever the skewed near
+            // plane leaves it. That is inherent to the technique, not a bug to fix here, and
+            // farPlane survives only as the value ResetProjectionMatrix starts from.
             _portalCamera.farClipPlane = farPlane;
             _portalCamera.ResetProjectionMatrix();
 
@@ -502,17 +519,75 @@ namespace CatchIfYouCan.Art
             return flip * _surface.worldToLocalMatrix;
         }
 
-        /// <summary>The destination plane in the portal camera's own space, for the oblique clip.</summary>
+        /// <summary>
+        /// The destination plane in the portal camera's own space, for the oblique clip.
+        ///
+        /// <para>
+        /// <b>The side is derived, never assumed.</b> CalculateObliqueMatrix keeps the half-space
+        /// the plane's normal points into and clips the other one away. The portal camera stands
+        /// behind the destination plane looking through it, so the half to keep is the far room -
+        /// the side the camera is NOT on. This used to pass <c>destination.forward</c> straight
+        /// through, which is only correct while that transform happens to face into the room.
+        /// <c>destination</c> is an authored or loaded Transform and nothing constrains its
+        /// orientation, so that was a coin flip; and when it landed wrong the matrix clipped the
+        /// entire room away and left the sky, which reads on screen as <i>a black hole behind a
+        /// lit rim</i> - the portal interior being dark with the frame still burning.
+        /// </para>
+        ///
+        /// <para>
+        /// So the normal is flipped to point away from the camera, and the offset that lifts the
+        /// plane clear of the destination wall follows the flipped normal - otherwise on the
+        /// wrong-facing case it would push the plane the wrong way and shave 2 cm off the room
+        /// instead of off the wall.
+        /// </para>
+        /// </summary>
         private Vector4 CameraSpacePlane(Vector3 point, Vector3 normal)
         {
-            Vector3 offsetPoint = point + normal * clipPlaneOffset;
+            Vector3 cameraPosition = _portalCamera.transform.position;
+
+            // Positive when the camera is on the side the normal points at. Mathf.Sign never
+            // returns zero, so a camera exactly on the plane picks a side rather than
+            // collapsing the plane to nothing.
+            float onNormalSide = Mathf.Sign(Vector3.Dot(normal, cameraPosition - point));
+
+            // Away from the camera: that is the half being kept.
+            Vector3 kept = normal * -onNormalSide;
+
+            Vector3 offsetPoint = point + kept * clipPlaneOffset;
             Matrix4x4 view = _portalCamera.worldToCameraMatrix;
 
             Vector3 viewPoint = view.MultiplyPoint(offsetPoint);
-            Vector3 viewNormal = view.MultiplyVector(normal).normalized;
+            Vector3 viewNormal = view.MultiplyVector(kept).normalized;
+
+            ReportClipSide(onNormalSide);
 
             return new Vector4(viewNormal.x, viewNormal.y, viewNormal.z,
                                -Vector3.Dot(viewPoint, viewNormal));
+        }
+
+        private bool _clipSideReported;
+
+        /// <summary>
+        /// Says once which way the destination is facing, because both ways now work and that
+        /// makes a mis-authored destination invisible. It is still worth knowing: a destination
+        /// whose forward points out of the far room rather than into it will also send anything
+        /// that reads that forward - a spawn direction, an arrival rotation - the wrong way.
+        /// </summary>
+        private void ReportClipSide(float onNormalSide)
+        {
+            if (_clipSideReported)
+                return;
+
+            _clipSideReported = true;
+
+            if (onNormalSide < 0f)
+                return;
+
+            Core.CIYCLog.Warn(
+                "[CIYC][Portal] '" + name + "': the destination's forward points back at the " +
+                "portal camera rather than into the far room. The oblique clip plane has been " +
+                "flipped so the view is correct, but anything else reading " +
+                destination.name + ".forward as \"into the room\" is pointing the wrong way.");
         }
 
         private Camera ResolveSource()

@@ -100,7 +100,13 @@ place that number lives; everything else derives it.
   intro overlay is cleared whatever happens, and the first-person hand target, elbow hint and
   anchor agree on one side with the fist clear of the near clip plane, and the probe room
   stays outside the playable world without ever making the portal enterable, and the lobby's
-  authored doorway is filled so the wall is a wall until a portal tears it. 101 checks.
+  authored doorway is filled so the wall is a wall until a portal tears it. It also holds the
+  portal camera to the technique it implements: the far room is sampled in screen space rather
+  than by the quad's own UV, the buffer is rendered at the shape it is sampled at, the
+  projection is reset before it is made oblique, and the oblique near plane's side is derived
+  from where the camera actually is instead of assumed - assumed, it clips the whole room away
+  whenever the destination Transform faces the other way, which is a black interior behind a
+  lit rim. 106 checks.
 
 - `Scripts/check_agent_architecture.sh` — the roster holds 40 unique roles with
   every field, the roster and `AGENT_OWNERSHIP.md` name the same roles, the
