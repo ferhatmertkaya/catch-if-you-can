@@ -74,7 +74,7 @@ namespace CatchIfYouCan.Procedural
                  "Nichts an der Generierung ist geloescht: der Schalter fuehrt sie nur nicht " +
                  "aus. Wieder anschalten stellt genau denselben Ablauf wieder her, und der " +
                  "Seed bestimmt weiterhin dasselbe Haus wie vorher.")]
-        [SerializeField] private bool generateWorld = true;
+        [SerializeField] private bool generateWorld;
 
         [Tooltip("Groesse der leeren Ebene in Metern, wenn oben nichts generiert wird. Sie wird " +
                  "erst beim Betreten gebaut, nicht schon beim Vorbereiten - sonst haengt sie als " +
@@ -262,6 +262,13 @@ namespace CatchIfYouCan.Procedural
                 // ueberspringen sich selbst. Sie starten also nicht halb.
                 EnsureFallbackArrival();
 
+                // Nicht nur nichts bauen, sondern auch nichts stehen lassen. Die Raeume und
+                // Waende sind Laufzeitobjekte - Room_Storage(Clone) und so weiter - und sie
+                // stehen in keiner Szenendatei; was von einer frueheren Vorbereitung uebrig
+                // ist, verschwindet also nur, wenn es hier wirklich zerstoert wird. Destroy,
+                // nicht SetActive(false): ein abgeschaltetes Zimmer ist immer noch ein Zimmer.
+                ClearGeneratedWorld();
+
                 CIYCLog.Warn("[CIYC][Investigation] generateWorld ist AUS: es wird keine Welt " +
                              "gebaut. Kein Haus, kein Van, keine Props, kein Geist. Der Boden " +
                              "entsteht erst beim Betreten. Wieder anschalten am " +
@@ -287,6 +294,34 @@ namespace CatchIfYouCan.Procedural
 
             _worldPrepared = true;
             return true;
+        }
+
+        /// <summary>
+        /// Loescht alles, was unter der Weltwurzel steht.
+        ///
+        /// <para>
+        /// Zerstoert wird, nicht abgeschaltet. Der Ankunftspunkt ueberlebt, weil das Portal ihn
+        /// braucht - ohne ihn bindet es nicht und faellt nach seiner Oeffnungsdauer zusammen.
+        /// </para>
+        /// </summary>
+        private void ClearGeneratedWorld()
+        {
+            Transform root = worldRoot != null ? worldRoot : transform;
+            int removed = 0;
+
+            for (int i = root.childCount - 1; i >= 0; i--)
+            {
+                Transform child = root.GetChild(i);
+                if (child == null || child == _fallbackArrival)
+                    continue;
+
+                Destroy(child.gameObject);
+                removed++;
+            }
+
+            if (removed > 0)
+                CIYCLog.Info("[CIYC][Investigation] " + removed + " Objekte unter '" + root.name +
+                             "' geloescht, weil keine Welt gebaut wird.");
         }
 
         /// <summary>

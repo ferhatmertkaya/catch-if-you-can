@@ -453,6 +453,19 @@ else:
 # Der Boden gehoert ins Betreten, nicht ins Vorbereiten. Beim Vorbereiten gebaut haengt er
 # als grosse leere Flaeche hinter dem Portal, wo der Spieler ihn weder braucht noch sehen
 # soll - und vor dem Spawn, weil der Spawn per Strahl nach unten auf ihm einrastet.
+# Geloescht, nicht abgeschaltet. Die Raeume sind Laufzeitobjekte und stehen in keiner
+# Szenendatei; ein SetActive(false) daran waere ein Zimmer, das immer noch da ist.
+if "ClearGeneratedWorld" in boot_code and "Destroy(child.gameObject);" in boot_code:
+    ok("ohne Generierung werden vorhandene Weltobjekte geloescht")
+else:
+    bad("ohne Generierung werden vorhandene Weltobjekte geloescht",
+        "nicht erzeugen reicht nicht, wenn von vorher noch etwas steht")
+
+if "SetActive(false)" not in boot_code.split("ClearGeneratedWorld")[-1][:600]:
+    ok("das Aufraeumen schaltet nicht ab, sondern zerstoert")
+else:
+    bad("das Aufraeumen schaltet nicht ab, sondern zerstoert")
+
 seq = boot_code.split("private IEnumerator ActivateSequence")
 if len(seq) > 1 and "BuildEmptyFloor();" in seq[1].split("SpawnPlayer();")[0]:
     ok("der Ersatzboden entsteht beim Betreten, vor dem Spawn")
