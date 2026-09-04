@@ -137,7 +137,10 @@ place that number lives; everything else derives it.
   an evidence signature, and the mission still recommends those four tools. It also keeps the
   identification a decision: selecting an entity is not an answer, the confirm step goes
   through `MissionManager.SubmitIdentification`, a second answer is refused, and the
-  identification bonus is paid for being right rather than for turning up. It also keeps the
+  identification bonus is paid for being right rather than for turning up. It also keeps
+  the world generation switchable without being removable: `generateWorld` can skip it
+  entirely for looking at the character and the equipment, but the calls stay and an
+  empty floor stands in, so switching it back on restores the same run from the same seed. It also keeps the
   house lighting out of generation: the director derives from the seed locally rather than
   from a `CiycRandom` stream, and it runs on entry rather than while the world is only being
   previewed through the portal, and the tool that writes ghost prefabs writes them where the

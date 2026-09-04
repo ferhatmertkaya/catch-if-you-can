@@ -423,6 +423,33 @@ for model, _mat, _l, _a in calls:
         bad("%s is real content or an LFS pointer" % name,
             "the file is neither; it will import as an empty model")
 
+# ---------------------------------------------------------------- die Generierung ist da
+
+# generateWorld schaltet die Weltgenerierung ab, damit Charakter, Ausruestung und Portal ohne
+# eine halb richtige Welt drumherum angesehen werden koennen. Der Schalter darf NIE bedeuten,
+# dass die Generierung entfernt wurde: wieder anschalten muss denselben Ablauf und aus
+# demselben Seed dasselbe Haus ergeben.
+boot = io.open(root + "/Assets/CatchIfYouCan/Scripts/Procedural/InvestigationBootstrap.cs",
+               encoding="utf-8").read()
+boot_code = "\n".join(l.split("//")[0] for l in boot.splitlines())
+
+if "private bool generateWorld" in boot_code:
+    ok("die Weltgenerierung hat einen Schalter")
+else:
+    bad("die Weltgenerierung hat einen Schalter")
+
+if "BuildVan();" in boot_code and "GenerateHouse(_mission.Seed);" in boot_code:
+    ok("die Weltgenerierung ist noch da, nur uebersprungen")
+else:
+    bad("die Weltgenerierung ist noch da, nur uebersprungen",
+        "der Schalter darf nicht bedeuten, dass der Aufruf entfernt wurde")
+
+if "BuildEmptyFloor" in boot_code:
+    ok("ohne Generierung gibt es einen Boden statt eines Lochs")
+else:
+    bad("ohne Generierung gibt es einen Boden statt eines Lochs",
+        "der Spieler faellt beim Betreten sonst durch die Welt")
+
 print()
 print("  %d passed, %d failed" % (passed, failed))
 sys.exit(1 if failed else 0)

@@ -65,6 +65,21 @@ namespace CatchIfYouCan.Procedural
         [SerializeField] private Transform houseAnchor;
         [SerializeField] private Transform playerPrefab;
 
+        [Header("World")]
+        [Tooltip("AUS: START INVESTIGATION baut kein Haus, keinen Van und keine Props - nur " +
+                 "eine leere Ebene, auf der der Spieler steht. Zum Untersuchen des " +
+                 "Spielercharakters, der Ausruestung und des Portals, ohne dass eine halb " +
+                 "richtige Welt drumherum davon ablenkt.\n\n" +
+                 "AN: der normale Ablauf - deterministisch aus dem Missions-Seed erzeugt.\n\n" +
+                 "Nichts an der Generierung ist geloescht: der Schalter fuehrt sie nur nicht " +
+                 "aus. Wieder anschalten stellt genau denselben Ablauf wieder her, und der " +
+                 "Seed bestimmt weiterhin dasselbe Haus wie vorher.")]
+        [SerializeField] private bool generateWorld;
+
+        [Tooltip("Groesse der leeren Ebene in Metern, wenn oben nichts generiert wird. Ohne " +
+                 "Boden faellt der Spieler beim Betreten durch die Welt.")]
+        [SerializeField, Min(4f)] private float emptyFloorSize = 40f;
+
         [Header("Systems")]
         [SerializeField] private ProceduralHouseGenerator houseGenerator;
         [SerializeField] private GhostSpawnManager ghostSpawnManager;
@@ -215,6 +230,25 @@ namespace CatchIfYouCan.Procedural
             if (fadeOverlay != null)
                 fadeOverlay.alpha = 1f;
 
+            if (!generateWorld)
+            {
+                // Nichts wird gebaut - kein Van, kein Haus, keine Props, kein NavMesh. Nur eine
+                // Ebene, damit der Spieler beim Betreten nicht durch die Welt faellt.
+                //
+                // _generatedHouse bleibt null, und das ist in Ordnung: die Schritte danach - der
+                // Geist, die Raumanker, das Hauslicht, das Wetter - pruefen alle darauf und
+                // ueberspringen sich selbst. Sie starten also nicht halb.
+                BuildEmptyFloor();
+
+                CIYCLog.Warn("[CIYC][Investigation] generateWorld ist AUS: es wurde keine Welt " +
+                             "gebaut, nur eine leere Ebene von " + emptyFloorSize.ToString("F0") +
+                             " m. Kein Haus, kein Van, keine Props, kein Geist. Wieder " +
+                             "anschalten am InvestigationBootstrap in 03_Investigation.");
+
+                _worldPrepared = true;
+                return true;
+            }
+
             BuildVan();
             GenerateHouse(_mission.Seed);
 
@@ -227,6 +261,28 @@ namespace CatchIfYouCan.Procedural
 
             _worldPrepared = true;
             return true;
+        }
+
+        /// <summary>
+        /// Eine Ebene und sonst nichts, fuer den Fall, dass nicht generiert wird.
+        ///
+        /// <para>
+        /// Bewusst ein Primitive und kein Stueck der Generierung: was hier steht, soll nicht so
+        /// aussehen, als waere es die Welt, und es soll nichts von dem anfassen, was
+        /// abgeschaltet wurde.
+        /// </para>
+        /// </summary>
+        private void BuildEmptyFloor()
+        {
+            var floor = GameObject.CreatePrimitive(PrimitiveType.Plane);
+            floor.name = "EmptyFloor_NoWorldGenerated";
+            floor.transform.SetParent(worldRoot != null ? worldRoot : transform, false);
+            floor.transform.localPosition = Vector3.zero;
+
+            // Ein Plane-Primitive ist 10 m gross, die Skalierung ist also ein Zehntel der
+            // gewuenschten Kantenlaenge.
+            floor.transform.localScale = Vector3.one * (emptyFloorSize * 0.1f);
+            floor.tag = "Environment";
         }
 
         /// <summary>
