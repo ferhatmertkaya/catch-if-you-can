@@ -58,3 +58,7 @@ Assets/TutorialInfo.meta
 
 # Unity-Absturzprotokolle
 mono_crash.mem.*.blob
+
+# Local Unity Asset Store pack
+/Assets/HQ Modular House/
+/Assets/HQ Modular House.meta
