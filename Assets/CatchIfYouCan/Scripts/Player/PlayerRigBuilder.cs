@@ -53,7 +53,10 @@ namespace CatchIfYouCan.Player
 
             var handAnchor = new GameObject("HandAnchor");
             handAnchor.transform.SetParent(cameraRoot.transform, false);
-            handAnchor.transform.localPosition = new Vector3(0.12f, -0.08f, 0.35f);
+            // Left, matching the hand target in PlayerBodyMotion. This is only the fallback
+            // for an item whose hand bone cannot be found; the two must agree on a side or a
+            // fallback item appears on the opposite side from the arm holding it.
+            handAnchor.transform.localPosition = new Vector3(-0.12f, -0.08f, 0.35f);
 
             // A transform of its own between the pitch pivot and the camera, purely so the
             // idle breathing has somewhere to live. Three systems already write to the two

@@ -674,6 +674,145 @@ else
   bad "the portal does not log every frame" "unconditional in the loop: $PERFRAME_LOG"
 fi
 
+# ---- V9.1: entry is the player's, never a timer ---------------------------------------------
+#
+# The observed bug: press START INVESTIGATION, watch the portal form, and a couple of seconds
+# later be teleported into a broken investigation without having walked anywhere. The cause was
+# a failure fallback that called SceneLoader.LoadInvestigation(), reachable with no crossing at
+# all. These checks are that class of bug made unrepeatable.
+
+LP="$ENV/LobbyPortal.cs"
+
+if code "$LP" | grep -qE 'LoadInvestigation\(|SceneLoader\.Instance'; then
+  bad "the portal never loads the investigation by itself" \
+      "any scene load reachable without a crossing is an automatic teleport"
+else
+  ok "the portal never loads the investigation by itself"
+fi
+
+# Entry commits from exactly one place, and that place is the crossing test.
+COMMITS="$(code "$LP" | grep -cE 'BeginInvestigation\(\);')"
+if [ "$COMMITS" = "1" ]; then
+  ok "entry commits from exactly one call site"
+else
+  bad "entry commits from exactly one call site" "found $COMMITS"
+fi
+
+if code "$LP" | grep -qE 'private void LateUpdate\(\)' &&
+   code "$LP" | grep -qE 'Vector3\.Dot\(probe - planePoint, planeNormal\)'; then
+  ok "entry is decided by a plane-side crossing test"
+else
+  bad "entry is decided by a plane-side crossing test" \
+      "a trigger volume cannot tell walking through from standing near"
+fi
+
+# The sign must actually change. Without this the test is just "is on the far side", which a
+# player standing beyond the doorway satisfies forever.
+if code "$LP" | grep -qE 'if \(previous <= 0f \|\| side > 0f\)'; then
+  ok "the crossing needs the side sign to change"
+else
+  bad "the crossing needs the side sign to change" \
+      "testing only the current side re-fires every frame past the plane"
+fi
+
+# Walking beside the frame is not entry.
+if code "$LP" | grep -qE 'apertureTolerance' && code "$LP" | grep -qE 'Mathf\.Abs\(across\)'; then
+  ok "the crossing is bounded by the aperture"
+else
+  bad "the crossing is bounded by the aperture" "brushing past the jamb would count"
+fi
+
+# No trigger component survives that could commit entry behind the test's back.
+if code "$LP" | grep -qE 'OnTriggerEnter|class LobbyPortalThreshold'; then
+  bad "no trigger volume can commit entry" \
+      "OnTriggerEnter fires on touch, which is the bug this replaced"
+else
+  ok "no trigger volume can commit entry"
+fi
+
+# Entry requires a finished destination, checked at the crossing rather than assumed.
+if code "$LP" | grep -qE 'CanBeEntered' && code "$LP" | grep -qE 'MissionWorldLoader\.WorldReady'; then
+  ok "entry requires a prepared destination"
+else
+  bad "entry requires a prepared destination" "crossing into a half-built world is a race"
+fi
+
+# Open must mean "waiting for the player", so the state machine needs somewhere else to sit
+# while the world is still building.
+if grep -qE '^\s+PreparingDestination,' "$LP"; then
+  ok "a charging portal has its own state"
+else
+  bad "a charging portal has its own state" \
+      "without it Open covers both 'ready' and 'still building'"
+fi
+
+# A refused crossing gives the controls back rather than stranding the player behind a gate.
+REFUSE="$(code "$LP" | sed -n '/private void BeginInvestigation/,/^        }$/p')"
+if printf '%s' "$REFUSE" | grep -qE 'MenuInputGate\.Pop'; then
+  ok "a refused crossing returns the player's controls"
+else
+  bad "a refused crossing returns the player's controls" \
+      "pushing the gate then bailing out locks the player out of their own game"
+fi
+
+# ---- V9.1: the handover cannot leave the screen covered -------------------------------------
+BOOT="$ROOT/Assets/CatchIfYouCan/Scripts/Procedural/InvestigationBootstrap.cs"
+
+if code "$BOOT" | grep -qE 'fadeOverlay != null && fadeOverlay\.alpha > 0'; then
+  ok "the intro overlay is cleared whatever happens"
+else
+  bad "the intro overlay is cleared whatever happens" \
+      "PrepareWorld sets it opaque; a skipped fade leaves a black sheet over a working world"
+fi
+
+if code "$BOOT" | grep -qE 'private void ReportEntry\(\)'; then
+  ok "entry reports its own state once"
+else
+  bad "entry reports its own state once" "a black screen with no report says nothing"
+fi
+
+# ---- V9.1: the first-person hand ------------------------------------------------------------
+PBM="$ROOT/Assets/CatchIfYouCan/Scripts/Player/PlayerBodyMotion.cs"
+HELD="$ROOT/Assets/CatchIfYouCan/Scripts/Equipment/HeldEquipmentBase.cs"
+RIGB="$ROOT/Assets/CatchIfYouCan/Scripts/Player/PlayerRigBuilder.cs"
+
+# The hand bone suffix has to be one that Nathan's bones actually end with. The old value was
+# "_hand_r" and the bones are named "hand_r", so it matched nothing and every held item fell
+# back to the anchor - which is why the torch was never in the hand.
+SUFFIX="$(grep -oE 'handBoneSuffix = "[^"]*"' "$HELD" | head -1 | sed 's/.*"\(.*\)"/\1/')"
+case "$SUFFIX" in
+  _*) bad "the hand bone suffix can match a real bone" \
+          "'$SUFFIX' starts with an underscore; Nathan's bones are hand_l / hand_r" ;;
+  hand_*) ok "the hand bone suffix can match a real bone ($SUFFIX)" ;;
+  *) bad "the hand bone suffix can match a real bone" "found '$SUFFIX'" ;;
+esac
+
+# One side, agreed by all three. A hand target on one side and a fallback anchor on the other
+# puts the item in the opposite hand from the arm holding it.
+HT="$(grep -oE 'handTargetLocalPosition = new Vector3\(-?[0-9.]+f' "$PBM" | grep -oE '\(-?[0-9.]+' | tr -d '(')"
+EH="$(grep -oE 'elbowHintLocalPosition = new Vector3\(-?[0-9.]+f' "$PBM" | grep -oE '\(-?[0-9.]+' | tr -d '(')"
+HA="$(grep -oE 'handAnchor.transform.localPosition = new Vector3\(-?[0-9.]+f' "$RIGB" | grep -oE '\(-?[0-9.]+' | tr -d '(')"
+SIDES_OK=1
+for v in "$HT" "$EH" "$HA"; do
+  case "$v" in -*) ;; *) SIDES_OK=0 ;; esac
+done
+if [ "$SIDES_OK" = "1" ]; then
+  ok "hand target, elbow hint and anchor are all on the left ($HT / $EH / $HA)"
+else
+  bad "hand target, elbow hint and anchor are all on the left" \
+      "found $HT / $EH / $HA - a split side puts the item in the other hand"
+fi
+
+# The fist must not sit inside the near clip plane. 0.06 m in front of the camera pivot is what
+# folded the arm against the face and filled the corner of the screen with skin.
+HTZ="$(grep -oE 'handTargetLocalPosition = new Vector3\([^)]*\)' "$PBM" | grep -oE '[0-9.]+f\)' | tr -d 'f)')"
+if [ -n "$HTZ" ] && awk "BEGIN{exit !($HTZ >= 0.2)}"; then
+  ok "the fist sits clear of the camera (z=$HTZ)"
+else
+  bad "the fist sits clear of the camera" \
+      "z=$HTZ is inside the near clip plane; the arm folds into the face to reach it"
+fi
+
 echo
 echo "  $PASS passed, $FAIL failed"
 if [ "$FAIL" -ne 0 ]; then

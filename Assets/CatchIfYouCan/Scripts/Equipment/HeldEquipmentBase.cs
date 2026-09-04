@@ -34,7 +34,14 @@ namespace CatchIfYouCan.Equipment
         [Header("Carry")]
         [Tooltip("Bone the item is held by, matched by name suffix. Falls back to the anchor " +
                  "the inventory equipped it to.")]
-        [SerializeField] protected string handBoneSuffix = "_hand_r";
+        // "hand_l", not "_hand_r", and the leading underscore is the whole bug rather than a
+        // detail. Nathan's bones are named hand_l and hand_r exactly - no prefix - so
+        // "hand_r".EndsWith("_hand_r") is FALSE and this NEVER resolved. Every held item fell
+        // through to HandAnchor, a bare transform 12 cm right of the camera pivot, while
+        // PlayerBodyMotion went on dragging the real arm to its own target somewhere else. The
+        // torch was not invisible; it was parented to a point the hand never reaches.
+        // The side is now left, which is where the first-person presentation lives.
+        [SerializeField] protected string handBoneSuffix = "hand_l";
 
         [Tooltip("Character root searched for that bone.")]
         [SerializeField] protected Transform characterVisual;

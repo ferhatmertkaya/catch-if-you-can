@@ -19,6 +19,13 @@ namespace CatchIfYouCan.Environment
         /// <summary>The opening is coming up: the edge is lighting, the view is fading in.</summary>
         Opening,
 
+        /// <summary>
+        /// The energy is up but the far world is not finished. The portal looks like it is
+        /// charging and the threshold REFUSES entry - crossing a half-built world is the race
+        /// this state exists to make impossible.
+        /// </summary>
+        PreparingDestination,
+
         /// <summary>Live. The far room is visible through the doorway and can be walked into.</summary>
         Open,
 
@@ -87,7 +94,18 @@ namespace CatchIfYouCan.Environment
         [Tooltip("The volume that counts as walking through. Sits in the opening, not past it.")]
         [SerializeField] private Vector3 entryTriggerSize = new Vector3(1.2f, 2.4f, 0.8f);
 
+        [Tooltip("How far up the player's own origin the crossing is measured, in metres. " +
+                 "Chest height: a capsule's origin is on the floor, and the floor crosses the " +
+                 "plane a step before the body does.")]
+        [SerializeField, Min(0f)] private float crossingProbeHeight = 1.1f;
+
+        [Tooltip("How much of the opening counts as the aperture, 1 being exactly its size. " +
+                 "Slightly under 1 so brushing the jamb is not an entry.")]
+        [SerializeField, Range(0.2f, 1.2f)] private float apertureTolerance = 0.95f;
+
         private BoxCollider _threshold;
+        private float _previousSide;
+        private bool _hasPreviousSide;
         private PortalEffects _effects;
         private Coroutine _opening;
         private string _missionName;
@@ -227,10 +245,14 @@ namespace CatchIfYouCan.Environment
             go.transform.SetParent(transform, false);
             go.transform.localPosition = new Vector3(0f, entryTriggerSize.y * 0.5f, 0f);
 
+            // A DISABLED collider, kept only so the aperture is visible in the scene view and
+            // so the destabilise path has something to switch off. Nothing listens to it: entry
+            // is decided by the plane-crossing test in LateUpdate, because a trigger volume
+            // cannot tell walking through from standing near.
             _threshold = go.AddComponent<BoxCollider>();
             _threshold.isTrigger = true;
             _threshold.size = entryTriggerSize;
-            go.AddComponent<LobbyPortalThreshold>().Bind(this);
+            _threshold.enabled = false;
         }
 
         // ---- opening ---------------------------------------------------------------------------
@@ -346,6 +368,13 @@ namespace CatchIfYouCan.Environment
                                              Mathf.Max(0.0001f, style.destinationFadeDuration));
                     surface.SetViewOpacity(viewFade * viewFade * (3f - 2f * viewFade));
                 }
+                else if (State == LobbyPortalState.Opening && t >= openDuration)
+                {
+                    // The energy is up and the world is not. Named, so the difference between
+                    // "still charging" and "waiting for you" is visible rather than implied -
+                    // and the threshold refuses either way until CanBeEntered says otherwise.
+                    SetState(LobbyPortalState.PreparingDestination);
+                }
 
                 // Preparation finished and produced nothing: stop waiting rather than holding a
                 // burning doorway open forever over a world that is never coming.
@@ -439,7 +468,20 @@ namespace CatchIfYouCan.Environment
             UI.MenuInputGate.Pop(nameof(LobbyPortal));
 
             SetState(LobbyPortalState.Inactive);
-            FallBackToDirectLoad();
+
+            // NOTHING is loaded here, and that is the fix. This used to call
+            // FallBackToDirectLoad(), which ran SceneLoader.LoadInvestigation() - a full scene
+            // load, reached WITHOUT the player ever walking anywhere. A preparation that failed
+            // roughly a second after the press therefore looked exactly like "the portal opened
+            // and then teleported me on its own", and dropped the player into an investigation
+            // that had been entered by a route the handover was never written for.
+            //
+            // A failure now fails where it happened: the player keeps their controls, keeps
+            // their lobby, and can press START INVESTIGATION again.
+            CIYCLog.Error(LogTag + "The doorway has collapsed and the player has NOT been " +
+                          "moved. They are still in the lobby with their controls. Fix the " +
+                          "preparation failure above; there is deliberately no automatic " +
+                          "route into a mission that could not be built.");
         }
 
         /// <summary>
@@ -464,51 +506,102 @@ namespace CatchIfYouCan.Environment
             _prepareFinished = true;
         }
 
-        /// <summary>
-        /// The route this game shipped with: load the investigation, behind a loading screen,
-        /// with no doorway to walk through.
-        ///
-        /// <para>
-        /// A named alternative rather than a silent fallback. It is worse - the walk is the
-        /// whole point of the portal - but a player who reaches their mission by the old road
-        /// still has a game, and one who presses START and watches nothing happen does not.
-        /// </para>
-        /// </summary>
-        private void FallBackToDirectLoad()
-        {
-            if (SceneLoader.Instance == null)
-            {
-                CIYCLog.Error(LogTag + "No portal world AND no SceneLoader: the mission was " +
-                              "accepted and there is no way to reach it. SceneLoader lives on " +
-                              "the boot object and persists; starting from " +
-                              CiycScenes.MainMenu + " directly skips it.");
-                return;
-            }
-
-            CIYCLog.Warn(LogTag + "Falling back to a direct scene load for '" +
-                         (_missionName ?? "the mission") + "'.");
-            SceneLoader.Instance.LoadInvestigation();
-        }
-
         // ---- crossing ----------------------------------------------------------------------------
 
         /// <summary>
-        /// Called by the threshold when something enters it. Only the local player counts, and
-        /// only while the portal is actually open.
+        /// Whether the doorway will accept somebody walking into it right now.
+        ///
+        /// <para>
+        /// Open is not enough. The far world has to be finished, or a player who reaches the
+        /// doorway before the house does walks into a scene that is still being built.
+        /// </para>
         /// </summary>
-        internal void ThresholdEntered(Collider other)
+        public bool CanBeEntered =>
+            State == LobbyPortalState.Open && !_handedOver && MissionWorldLoader.WorldReady;
+
+        /// <summary>
+        /// Watches the player against the plane of the opening and commits exactly once, when
+        /// they actually go through it.
+        ///
+        /// <para>
+        /// <b>A trigger volume is not a crossing.</b> The threshold used to be a
+        /// 1.2 x 2.4 x 0.8 m box with <c>OnTriggerEnter</c>, which fires when a collider so much
+        /// as touches the volume - brushing the door frame, standing in the doorway as the
+        /// portal reached Open, or being nudged into it. It cannot tell walking through from
+        /// standing near, and it has no idea which way anybody was going.
+        /// </para>
+        ///
+        /// <para>
+        /// This tracks the signed distance from the plane of the surface between frames. Entry
+        /// needs the sign to actually change from the lobby side to the far side, AND the
+        /// crossing point to be inside the opening, so walking past the frame does nothing.
+        /// </para>
+        /// </summary>
+        private void LateUpdate()
         {
-            if (State != LobbyPortalState.Open || _handedOver || other == null)
+            if (!CanBeEntered || surface == null)
+            {
+                _hasPreviousSide = false;
+                return;
+            }
+
+            Transform player = LocalPlayerService.Root != null
+                ? LocalPlayerService.Root.transform
+                : null;
+
+            if (player == null)
+            {
+                _hasPreviousSide = false;
+                return;
+            }
+
+            // The plane of the opening, taken from the surface rather than from this transform:
+            // the surface is what the player can see and therefore what they aim at.
+            Transform plane = surface.transform;
+            Vector3 planePoint = plane.position + plane.up * (style.openingSize.y * 0.5f);
+            Vector3 planeNormal = plane.forward;
+
+            // Chest height, not the feet: a capsule's origin is on the floor, and the floor
+            // crosses the plane a step before the body does.
+            Vector3 probe = player.position + Vector3.up * crossingProbeHeight;
+            float side = Vector3.Dot(probe - planePoint, planeNormal);
+
+            if (!_hasPreviousSide)
+            {
+                _previousSide = side;
+                _hasPreviousSide = true;
+                return;
+            }
+
+            float previous = _previousSide;
+            _previousSide = side;
+
+            // The lobby is the positive side, because the surface's forward is the side the
+            // player looks in from. Only lobby -> destination counts; backing out through the
+            // far side is not an entry.
+            if (previous <= 0f || side > 0f)
                 return;
 
-            GameObject local = LocalPlayerService.Root;
-            if (local == null)
-                return;
+            // Inside the opening, not beside it. Measured on the plane's own axes at the point
+            // the player is standing, so a doorway they walked PAST cannot swallow them.
+            Vector3 offset = probe - planePoint;
+            float across = Vector3.Dot(offset, plane.right);
+            float up = Vector3.Dot(offset, plane.up);
 
-            // Compared by root, not by tag or by layer: the collider that trips this is the
-            // character controller several levels below the player root.
-            if (other.transform.root != local.transform.root)
+            float halfWidth = style.openingSize.x * 0.5f * apertureTolerance;
+            float halfHeight = style.openingSize.y * 0.5f * apertureTolerance;
+
+            if (Mathf.Abs(across) > halfWidth || Mathf.Abs(up) > halfHeight)
+            {
+                CIYCLog.Info(LogTag + "Plane crossed beside the opening (across=" +
+                             across.ToString("F2") + "m up=" + up.ToString("F2") +
+                             "m); not an entry.");
                 return;
+            }
+
+            CIYCLog.Info(LogTag + "Threshold crossed: " + previous.ToString("F3") + " -> " +
+                         side.ToString("F3") + " at across=" + across.ToString("F2") +
+                         "m up=" + up.ToString("F2") + "m.");
 
             BeginInvestigation();
         }
@@ -524,10 +617,13 @@ namespace CatchIfYouCan.Environment
 
             if (!MissionWorldLoader.WorldReady)
             {
-                CIYCLog.Error(LogTag + "Player crossed the threshold but the mission world is " +
-                              "no longer prepared. Falling back to a direct scene load.");
-                SetState(LobbyPortalState.Loading);
-                FallBackToDirectLoad();
+                // Refuse, and give the player back what was taken. Loading the mission anyway
+                // is how somebody ends up inside an investigation that was never built.
+                CIYCLog.Error(LogTag + "Crossing refused: the mission world is not prepared. " +
+                              "The player stays in the lobby with their controls.");
+                UI.MenuInputGate.Pop(nameof(LobbyPortal));
+                _handedOver = false;
+                SetState(LobbyPortalState.Open);
                 return;
             }
 
@@ -596,26 +692,4 @@ namespace CatchIfYouCan.Environment
         private static void ResetOnPlay() => Instance = null;
     }
 
-    /// <summary>
-    /// The trigger in the doorway, forwarding to the portal that owns it.
-    ///
-    /// <para>
-    /// Separate from <see cref="LobbyPortal"/> because the collider has to sit on its own
-    /// object in the plane of the opening, and a trigger message only reaches a component on
-    /// the object carrying the collider.
-    /// </para>
-    /// </summary>
-    [DisallowMultipleComponent]
-    public sealed class LobbyPortalThreshold : MonoBehaviour
-    {
-        private LobbyPortal _owner;
-
-        internal void Bind(LobbyPortal owner) => _owner = owner;
-
-        private void OnTriggerEnter(Collider other)
-        {
-            if (_owner != null)
-                _owner.ThresholdEntered(other);
-        }
-    }
 }

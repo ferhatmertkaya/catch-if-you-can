@@ -230,7 +230,13 @@ namespace CatchIfYouCan.Player
         [Tooltip("Where the hand target starts, in the camera pivot's own axes. This is the " +
                  "value the created target is built with, and the one to overwrite once a better " +
                  "one has been found in Play Mode.")]
-        [SerializeField] private Vector3 handTargetLocalPosition = new Vector3(0.2f, -0.02f, 0.06f);
+        // LEFT, and forward. The old value put the fist 20 cm to the RIGHT and only 6 cm in
+        // front of the camera pivot - which is inside the near clip plane, at eye height. The
+        // IK then folded the whole arm up against the face to reach it, which is the bent
+        // raised arm visible in the lobby mirror and the wall of skin filling the corner of
+        // every screenshot. Only this authored offset changes; the pose maths below is
+        // byte-identical.
+        [SerializeField] private Vector3 handTargetLocalPosition = new Vector3(-0.20f, -0.22f, 0.34f);
 
         [Tooltip("Where the hand target starts turned to, in the camera pivot's own axes. Zero " +
                  "points the barrel exactly where the player is looking; the roll is what turns " +
@@ -239,7 +245,7 @@ namespace CatchIfYouCan.Player
 
         [Tooltip("Where the elbow hint starts, in the player root's own axes: out to the right, " +
                  "up from the floor, forward. Below the shoulder and outside the ribs.")]
-        [SerializeField] private Vector3 elbowHintLocalPosition = new Vector3(0.42f, 1.02f, 0.06f);
+        [SerializeField] private Vector3 elbowHintLocalPosition = new Vector3(-0.42f, 1.02f, 0.06f);
 
         [Tooltip("Lift of the right collarbone, degrees. Small: the shoulder should follow the " +
                  "arm, not shrug into the ear.")]

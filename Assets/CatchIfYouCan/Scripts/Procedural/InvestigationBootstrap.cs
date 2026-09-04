@@ -234,8 +234,76 @@ namespace CatchIfYouCan.Procedural
             else
                 yield return null;
 
+            // The last word on the overlay, whoever was meant to clear it.
+            //
+            // PrepareWorld sets fadeOverlay.alpha to 1 - a FULL-SCREEN OPAQUE CANVAS GROUP -
+            // and the only thing that ever took it back down was FadeIn(), which the branch
+            // above skips whenever an intro presenter exists. If that presenter's routine does
+            // not finish (its object destroyed with the lobby, an exception, a scene swap
+            // mid-fade) the overlay stays at 1 and the player is left looking at a black
+            // rectangle with the HUD drawn on top of it - world rendering perfectly behind it,
+            // lighting fine, camera fine, and nothing in any log to say so.
+            //
+            // This is not a fade. It is the guarantee that the screen is never handed to the
+            // player still covered.
+            if (fadeOverlay != null && fadeOverlay.alpha > 0.001f)
+            {
+                CIYCLog.Warn("[CIYC][Investigation] The intro overlay was still at alpha " +
+                             fadeOverlay.alpha.ToString("F2") + " when the mission went live. " +
+                             "Clearing it - the world was behind it the whole time.");
+                fadeOverlay.alpha = 0f;
+            }
+
             GameManager.Instance?.SetInvestigating();
             MissionManager.Instance?.MarkInvestigationEntered();
+
+            ReportEntry();
+        }
+
+        /// <summary>
+        /// One block, once, the moment the mission goes live.
+        ///
+        /// <para>
+        /// Every field here is one of the things that was individually invisible when this
+        /// handover broke: a black screen tells you nothing about whether the camera was off,
+        /// the overlay was up, the HUD was suppressed or the equipment went to a player that no
+        /// longer exists. Reported together they say which.
+        /// </para>
+        /// </summary>
+        private void ReportEntry()
+        {
+            var camera = Core.LocalPlayerService.ResolveViewCamera();
+            int listeners = 0;
+            var listenerBuffer = Object.FindObjectsByType<AudioListener>(
+                FindObjectsInactive.Exclude, FindObjectsSortMode.None);
+            for (int i = 0; i < listenerBuffer.Length; i++)
+                if (listenerBuffer[i].enabled)
+                    listeners++;
+
+            var inventory = _playerInstance != null
+                ? _playerInstance.GetComponentInChildren<Player.PlayerInventory>()
+                : null;
+
+            CIYCLog.Info("[CIYC][PortalEntry] " +
+                "activeScene=" + UnityEngine.SceneManagement.SceneManager.GetActiveScene().name +
+                " entryAnchor=" + (ArrivalPoint != null ? ArrivalPoint.name : "<none>") +
+                " newPlayer=" + (_playerInstance != null ? _playerInstance.name : "<none>") +
+                " playerAt=" + (_playerInstance != null
+                    ? _playerInstance.transform.position.ToString("F1") : "<none>") +
+                " localPlayerRegistered=" + (Core.LocalPlayerService.Root != null) +
+                " camera=" + (camera != null ? camera.name : "<none>") +
+                " cameraEnabled=" + (camera != null && camera.enabled) +
+                " listenerCount=" + listeners +
+                " menuGateHolds=" + UI.MenuInputGate.HolderCount +
+                " hudVisible=" + Player.PlayerSpawner.IsHudVisible +
+                " inputEnabled=" + Player.PlayerSpawner.IsInputEnabled +
+                " inventoryFreeSlot=" + (inventory != null
+                    ? inventory.HasFreeSlot.ToString() : "<none>") +
+                " torch=" + (inventory != null ? inventory.HasTorch.ToString() : "<none>") +
+                " fadeOverlayAlpha=" + (fadeOverlay != null
+                    ? fadeOverlay.alpha.ToString("F2") : "<none>") +
+                " ambient=" + RenderSettings.ambientIntensity.ToString("F2") +
+                " ghost=" + (_spawnedGhost != null ? _spawnedGhost.name : "<none>"));
         }
 
         private void EnsureManagers()
