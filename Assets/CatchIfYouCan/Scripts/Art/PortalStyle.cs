@@ -157,11 +157,24 @@ namespace CatchIfYouCan.Art
         // ---- performance --------------------------------------------------------------------
 
         [Header("Performance")]
-        [Tooltip("Height of the view buffer in pixels at the top quality level. Width follows " +
-                 "the screen aspect, because the view is sampled in screen space.")]
-        [Min(128)] public int viewResolution = 1024;
+        // The buffer height ladder. Width always follows the screen aspect, because the view is
+        // sampled in screen space - only the height is a quality decision.
+        //
+        // These are the two ENDS, and the quality level slides between them. There is
+        // deliberately no tier enum here: the project has exactly one notion of how much
+        // machine this is, QualitySettings.GetQualityLevel(), and a second one that could
+        // disagree with it is worse than a coarse one that cannot. A four-level project
+        // therefore lands on roughly 640 / 787 / 933 / 1080, which is the mobile-low to
+        // desktop-high span the platform tiers ask for; maxViewResolution is what an Ultra
+        // level is allowed to reach past that.
+        [Tooltip("Buffer height in pixels at the LOWEST quality level. Mobile low sits here.")]
+        [Min(128)] public int minViewResolution = 640;
 
-        [Min(128)] public int maxViewResolution = 2048;
+        [Tooltip("Buffer height in pixels at the TOP quality level.")]
+        [Min(128)] public int viewResolution = 1080;
+
+        [Tooltip("Hard ceiling. Only reached if a quality level and an aspect ratio ask for it.")]
+        [Min(128)] public int maxViewResolution = 2160;
 
         [Tooltip("Stop rendering the far room beyond this. A second pass over a whole house is " +
                  "not something to run while the player is across the lobby.")]

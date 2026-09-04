@@ -767,9 +767,14 @@ namespace CatchIfYouCan.Art
             // level sits inside QualitySettings.names. Mobile lands low and gets half the
             // buffer; nothing here decides what "mobile" is on its own.
             float t = PortalStyle.QualityFraction01();
-            int resolution = Mathf.Max(128, _style.viewResolution);
-            int maxResolution = Mathf.Max(resolution, _style.maxViewResolution);
-            int target = Mathf.RoundToInt(Mathf.Lerp(resolution * 0.5f, resolution, t));
+            int top = Mathf.Max(128, _style.viewResolution);
+            int bottom = Mathf.Clamp(_style.minViewResolution, 128, top);
+            int maxResolution = Mathf.Max(top, _style.maxViewResolution);
+
+            // Named ends rather than "the top one, halved". Halving made the lowest level a
+            // function of the highest, so raising the desktop buffer silently raised the phone's
+            // too - which is the opposite of what a quality ladder is for.
+            int target = Mathf.RoundToInt(Mathf.Lerp(bottom, top, t));
 
             height = Mathf.Clamp(target, 128, maxResolution);
 
