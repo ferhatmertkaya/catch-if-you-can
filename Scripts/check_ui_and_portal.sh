@@ -31,6 +31,9 @@ bad ()  { FAIL=$((FAIL+1)); printf '  FAIL  %s\n' "$1"; [ $# -gt 1 ] && printf '
 # against it - this project has been bitten by both directions.
 code () { sed 's://.*::' "$1" | grep -v '^[[:space:]]*\*' ; }
 
+TMPDIR_GUARD="$(mktemp -d)"
+trap 'rm -rf "$TMPDIR_GUARD"' EXIT
+
 echo "== UI and portal guard =="
 echo
 
@@ -515,7 +518,7 @@ fi
 
 # Every shader property really exists in the material, and vice versa. A name that only
 # exists on one side is CLAUDE.md mistake 3 in shader form: it fails silently forever.
-MISMATCH="$(python3 - "$SHADER" "$MAT" <<'PYEOF'
+cat > "$TMPDIR_GUARD/propcheck.py" <<'PYEOF'
 import re, sys
 sh = open(sys.argv[1]).read()
 block = sh[sh.index("Properties"):sh.index("SubShader")]
@@ -523,7 +526,7 @@ props = set(re.findall(r"^\s*(?:\[[^\]]*\]\s*)?(_\w+)\s*\(", block, re.M))
 mat = set(re.findall(r"^\s*-\s*(_\w+):", open(sys.argv[2]).read(), re.M))
 print(" ".join(sorted(props ^ mat)))
 PYEOF
-)"
+MISMATCH="$(python3 "$TMPDIR_GUARD/propcheck.py" "$SHADER" "$MAT")"
 if [ -z "$MISMATCH" ]; then
   ok "shader and material agree on every property name"
 else
@@ -664,8 +667,8 @@ code "$ENV/LobbyPortal.cs" | grep -qE 'private void ReportOpening\(\)' \
 # condition. Indentation is the test rather than the mere presence of a log call, because the
 # bind line genuinely does fire once - latched by `bound` - and forbidding it outright would
 # push a useful diagnostic out of the only place it can be written.
-PERFRAME_LOG="$(python3 - "$ENV/LobbyPortal.cs" <<'PYEOF'
-import re, sys
+cat > "$TMPDIR_GUARD/loglevel.py" <<'PYEOF'
+import sys
 src = open(sys.argv[1]).read().splitlines()
 start = next((i for i, l in enumerate(src) if "while (t < openDuration" in l), None)
 if start is None:
@@ -682,7 +685,7 @@ for line in src[start + 1:]:
             bad.append(stripped[:60])
 print(" | ".join(bad))
 PYEOF
-)"
+PERFRAME_LOG="$(python3 "$TMPDIR_GUARD/loglevel.py" "$ENV/LobbyPortal.cs")"
 if [ -z "$PERFRAME_LOG" ]; then
   ok "the portal does not log every frame"
 elif [ "$PERFRAME_LOG" = "NO-LOOP" ]; then

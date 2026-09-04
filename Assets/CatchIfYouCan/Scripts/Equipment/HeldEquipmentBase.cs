@@ -82,6 +82,14 @@ namespace CatchIfYouCan.Equipment
         [SerializeField, Min(0.005f)] protected float dropRadius = 0.026f;
 
         private Transform _handBone;
+
+        /// <summary>
+        /// The character bone this item ended up parented to, or null when the suffix matched
+        /// nothing. Exposed for diagnostics: an unresolved bone is the difference between an
+        /// item in the hand and an item at a fallback anchor the hand never reaches, and that
+        /// is exactly the failure this project spent weeks not seeing.
+        /// </summary>
+        protected Transform HandBone => _handBone;
         private Transform _view;
         private PlayerBodyMotion _bodyMotion;
         protected CapsuleCollider _dropCollider;

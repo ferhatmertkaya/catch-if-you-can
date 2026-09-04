@@ -175,13 +175,18 @@ namespace CatchIfYouCan.Equipment
         /// article rather than whatever existed a line into construction.
         /// </para>
         /// </summary>
+        // A second in, so the inventory, the definition and any late rebuild have all happened.
+        private float _reportAfter = 1f;
+
         private void ReportVisual()
         {
             _visualReported = true;
 
             if (CarriedRoot == null)
             {
-                Core.CIYCLog.Error("[CIYC][FlashlightVisual] no visual was built at all.");
+                Core.CIYCLog.Error("[CIYC][FlashlightVisual] state=" + LifecycleState +
+                                   " NO VISUAL WAS BUILT AT ALL. Either BuildCarried never ran " +
+                                   "or the root was destroyed after it did.");
                 return;
             }
 
@@ -218,7 +223,10 @@ namespace CatchIfYouCan.Equipment
                 : "<no profile>";
 
             Core.CIYCLog.Info(
-                "[CIYC][FlashlightVisual] resource=" + source +
+                "[CIYC][FlashlightVisual] state=" + LifecycleState +
+                " handBone=" + (HandBone != null ? HandBone.name : "<UNRESOLVED>") +
+                " parent=" + (CarriedRoot.parent != null ? CarriedRoot.parent.name : "<none>") +
+                " resource=" + source +
                 " instance=" + CarriedRoot.name +
                 " renderers=" + enabled + "/" + renderers.Length +
                 " material=" + materials +
@@ -269,7 +277,11 @@ namespace CatchIfYouCan.Equipment
         /// </summary>
         private void LateUpdate()
         {
-            if (!_visualReported && LifecycleState == EquipmentLifecycleState.Equipped)
+            // Reported once, WHATEVER the state. This used to wait for Equipped, which is why
+            // nobody has ever seen this line: a torch sitting in the inventory unselected is
+            // never equipped, so the one diagnostic that could say what is wrong with it stayed
+            // silent, and the visual was debugged by guessing instead of by reading.
+            if (!_visualReported && Time.time > _reportAfter)
                 ReportVisual();
 
             if (_light == null || _head == null)
