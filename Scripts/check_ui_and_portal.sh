@@ -826,6 +826,29 @@ else
       "z=$HTZ is inside the near clip plane; the arm folds into the face to reach it"
 fi
 
+# ---- V9.2: the probe room is a diagnostic, never a destination -------------------------------
+PROBE="$ART/PortalProbeRoom.cs"
+if [ -f "$PROBE" ]; then
+  # It must sit far outside the playable world, or it becomes scenery somebody can reach.
+  if code "$PROBE" | grep -qE 'new Vector3\(0f, -[0-9]{3}'; then
+    ok "the probe room is built far outside the playable world"
+  else
+    bad "the probe room is built far outside the playable world" \
+        "a diagnostic the player can walk into is level geometry"
+  fi
+
+  # Entry must still demand a real prepared world, so binding the probe cannot make the
+  # threshold enterable.
+  if code "$ENV/LobbyPortal.cs" | grep -qE 'CanBeEntered =>' &&
+     code "$ENV/LobbyPortal.cs" | sed -n '/public bool CanBeEntered/,/;/p' \
+       | grep -qE 'MissionWorldLoader\.WorldReady'; then
+    ok "showing the probe room cannot make the portal enterable"
+  else
+    bad "showing the probe room cannot make the portal enterable" \
+        "entry must still require a prepared mission world"
+  fi
+fi
+
 echo
 echo "  $PASS passed, $FAIL failed"
 if [ "$FAIL" -ne 0 ]; then

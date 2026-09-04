@@ -94,6 +94,11 @@ namespace CatchIfYouCan.Environment
         [Tooltip("The volume that counts as walking through. Sits in the opening, not past it.")]
         [SerializeField] private Vector3 entryTriggerSize = new Vector3(1.2f, 2.4f, 0.8f);
 
+        [Tooltip("Show a lit magenta room through the opening until the mission world is ready. " +
+                 "It cannot be walked into - entry still needs a prepared world - and it is the " +
+                 "one thing that tells a broken render path apart from a dark destination.")]
+        [SerializeField] private bool showProbeRoomUntilWorldReady = true;
+
         [Tooltip("How far up the player's own origin the crossing is measured, in metres. " +
                  "Chest height: a capsule's origin is on the floor, and the floor crosses the " +
                  "plane a step before the body does.")]
@@ -326,6 +331,21 @@ namespace CatchIfYouCan.Environment
             _prepareFinished = false;
             StartCoroutine(PrepareWorldRoutine());
 
+            // Something to look at while the world is built, and a diagnostic in its own right.
+            // A dark portal centre has two causes that look identical from a screenshot - the
+            // render path is broken, or it works and the far side is black - and this separates
+            // them: magenta means the path is fine. It is never enterable; CanBeEntered still
+            // demands MissionWorldLoader.WorldReady, which this is not.
+            if (showProbeRoomUntilWorldReady)
+            {
+                var probe = PortalProbeRoom.Ensure();
+                if (probe != null && probe.ViewPoint != null)
+                {
+                    surface.SetDestination(probe.ViewPoint);
+                    surface.SetViewOpacity(1f);
+                }
+            }
+
             float openDuration = Mathf.Max(0.0001f, style.openDuration);
             float t = 0f;
             bool bound = false;
@@ -357,6 +377,11 @@ namespace CatchIfYouCan.Environment
                                  _pendingWorld.ArrivalPoint.position.ToString("F1"));
                     surface.SetDestination(_pendingWorld.ArrivalPoint);
                     bound = true;
+
+                    // The probe was standing in; the real world takes the opening from here and
+                    // fades in on its own ramp.
+                    surface.SetViewOpacity(0f);
+                    viewFade = 0f;
                 }
 
                 // The far room has its own fade, started when the destination camera exists and

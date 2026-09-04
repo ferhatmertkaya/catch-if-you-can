@@ -78,6 +78,7 @@ namespace CatchIfYouCan.Player
         private float _speedBlendVelocity;
         private float _standingCameraHeight;
         private bool _hasCameraRoot;
+        private bool _standingHeightCaptured;
         private PlayerBodyMotion _bodyMotion;
 
         public bool IsSprinting { get; private set; }
@@ -289,6 +290,17 @@ namespace CatchIfYouCan.Player
             // LateUpdate and read here in Update, so it was always a frame stale.
             //
             // Nothing in PlayerBodyMotion changes. This reads the number it already publishes.
+            // Captured on the first frame the player is genuinely standing, not once in Awake.
+            // PlayerFactory adds this component and positions the camera root, and the order
+            // between those two is not guaranteed - a standing height read before the eyes were
+            // placed leaves this whole expression working from the wrong origin, or from zero,
+            // which is a camera that never appears to follow the crouch at all.
+            if (!_standingHeightCaptured && CrouchAmount01 <= 0.001f)
+            {
+                _standingCameraHeight = cameraRoot.localPosition.y;
+                _standingHeightCaptured = true;
+            }
+
             Vector3 local = cameraRoot.localPosition;
             local.y = _standingCameraHeight - cameraCrouchDrop * CrouchAmount01;
             cameraRoot.localPosition = local;
