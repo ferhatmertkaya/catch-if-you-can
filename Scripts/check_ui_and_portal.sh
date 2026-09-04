@@ -422,6 +422,258 @@ code "$PS" | grep -qE 'LocalPlayerService\.Register' \
      "PortalSurface must not touch LocalPlayerService registration" \
   || ok "the portal camera never registers as the local view"
 
+# ---- V9: the production portal pass ---------------------------------------------------------
+#
+# The portal was a glowing RECTANGLE: its rim came from min(uv, 1-uv), which is a box, and at
+# full opacity the whole quad including its corners showed the far room. These checks are the
+# architectural invariants of the rebuild, not its visual taste.
+
+SHADER="$ROOT/Assets/CatchIfYouCan/Shaders/Portal.shader"
+MAT="$ROOT/Assets/CatchIfYouCan/Resources/Materials/MAT_Portal.mat"
+FX="$ART/PortalEffects.cs"
+STYLE="$ART/PortalStyle.cs"
+
+for f in "$SHADER" "$MAT" "$FX" "$STYLE"; do
+  [ -f "$f" ] || bad "$(basename "$f") exists" "the portal cannot be built without it"
+done
+
+# The silhouette. A rectangular distance field is exactly the bug being fixed, so the shader
+# has to derive its mask from a length() and must not go back to the per-axis minimum.
+if grep -qE 'float +r *= *length\(' "$SHADER"; then
+  ok "the portal mask is an ellipse, not a box"
+else
+  bad "the portal mask is an ellipse, not a box" \
+      "the rim must come from a radial distance field, not from min(uv, 1-uv)"
+fi
+
+if grep -qE 'min\(IN\.uv, *1\.0 *- *IN\.uv\)' "$SHADER"; then
+  bad "the rectangular distance field is gone" \
+      "min(uv, 1-uv) is a box; that is what made the portal a glowing rectangle"
+else
+  ok "the rectangular distance field is gone"
+fi
+
+# Two noise layers on DIFFERENT frequencies. Identical frequencies read as one repeating
+# pattern, which is the thing procedural energy is supposed to avoid.
+if grep -q '_NoiseScale' "$SHADER" && grep -q '_SecondaryNoiseScale' "$SHADER"; then
+  ok "the energy uses two independent noise layers"
+else
+  bad "the energy uses two independent noise layers" \
+      "one scrolling layer is a texture on a ring"
+fi
+
+# Colour is data. A hard-coded blue or green in the shader body would mean the portal cannot
+# be re-tinted without an edit, which is the one thing the brief was explicit about.
+for prop in _CoreColor _EnergyColor _OuterColor _CoreIntensity _EnergyIntensity _RimWidth \
+            _RimSoftness _NoiseStrength _NoiseSpeed _SecondaryNoiseSpeed _DistortionStrength \
+            _RotationSpeed _PulseSpeed _PulseStrength _Opacity; do
+  grep -q "$prop" "$SHADER" || bad "the shader exposes $prop" "artistic control must be serialized"
+done
+ok "every named energy control is a shader property"
+
+# URP only. A Built-in or HDRP shader reached from here draws solid magenta under URP, which
+# is CLAUDE.md mistake 2.
+if grep -qE 'RenderPipeline"="UniversalPipeline' "$SHADER"; then
+  ok "the portal shader declares the universal pipeline"
+else
+  bad "the portal shader declares the universal pipeline" \
+      "without the tag URP will not pick this SubShader"
+fi
+
+if grep -qE 'Shader\.Find\("(Standard|Particles/|HDRenderPipeline|Hidden/)' "$SHADER" "$FX" "$ART/PortalSurface.cs" "$ENV/LobbyPortal.cs" 2>/dev/null; then
+  bad "no built-in or HDRP shader is reached for" "a built-in shader under URP is magenta"
+else
+  ok "no built-in or HDRP shader is reached for"
+fi
+
+# The material carries the authored defaults AND keeps the shader out of the stripper.
+if grep -q '_EnergyColor' "$MAT" && grep -q '_CoreColor' "$MAT"; then
+  ok "MAT_Portal carries the authored energy colours"
+else
+  bad "MAT_Portal carries the authored energy colours" \
+      "an empty material cannot be tuned and teaches the stripper nothing"
+fi
+
+# Every shader property really exists in the material, and vice versa. A name that only
+# exists on one side is CLAUDE.md mistake 3 in shader form: it fails silently forever.
+MISMATCH="$(python3 - "$SHADER" "$MAT" <<'PYEOF'
+import re, sys
+sh = open(sys.argv[1]).read()
+block = sh[sh.index("Properties"):sh.index("SubShader")]
+props = set(re.findall(r"^\s*(?:\[[^\]]*\]\s*)?(_\w+)\s*\(", block, re.M))
+mat = set(re.findall(r"^\s*-\s*(_\w+):", open(sys.argv[2]).read(), re.M))
+print(" ".join(sorted(props ^ mat)))
+PYEOF
+)"
+if [ -z "$MISMATCH" ]; then
+  ok "shader and material agree on every property name"
+else
+  bad "shader and material agree on every property name" "only on one side:$MISMATCH"
+fi
+
+# Two fades, not one. The destination has to be able to be black behind a burning rim while
+# the world is still being prepared - that is the whole "react on the press frame" promise.
+code "$ART/PortalSurface.cs" | grep -qE 'public void SetViewOpacity\(' \
+  && ok "the destination fades independently of the opening" \
+  || bad "the destination fades independently of the opening" \
+         "one opacity means the rim cannot burn over an unready world"
+
+# Allocation policy. A RenderTexture or a Material created inside LateUpdate is a per-frame
+# leak, and this file runs LateUpdate on every frame the portal is visible.
+PERFRAME="$(code "$ART/PortalSurface.cs" | sed -n '/private void LateUpdate/,/^        }/p')"
+if printf '%s' "$PERFRAME" | grep -qE 'new RenderTexture|new Material'; then
+  bad "no buffer or material is allocated per frame" \
+      "LateUpdate must reuse the texture and the material it already has"
+else
+  ok "no buffer or material is allocated per frame"
+fi
+
+if printf '%s' "$PERFRAME" | grep -qE 'FindObjectOfType|FindObjectsOfType|GameObject\.Find'; then
+  bad "the portal does not search the scene per frame" "cache the camera, do not find it"
+else
+  ok "the portal does not search the scene per frame"
+fi
+
+FXUPDATE="$(code "$FX" | sed -n '/private void Update/,/^        }/p')"
+if printf '%s' "$FXUPDATE" | grep -qE 'new Material|new GameObject|AddComponent'; then
+  bad "the portal effects allocate nothing per frame" \
+      "particle systems are configured once and driven by their emission rate"
+else
+  ok "the portal effects allocate nothing per frame"
+fi
+
+# The portal camera stays off when it cannot be seen. Without this the far world is rendered
+# a second time every frame the player is anywhere in the lobby.
+code "$ART/PortalSurface.cs" | grep -qE 'TestPlanesAABB' \
+  && ok "the portal camera is culled when the opening is off screen" \
+  || bad "the portal camera is culled when the opening is off screen" \
+         "a second full render must not run while the opening is behind the player"
+
+code "$ART/PortalSurface.cs" | grep -qE '_style\.renderDistance' \
+  && ok "the portal camera is distance-gated" \
+  || bad "the portal camera is distance-gated" "render distance must be honoured"
+
+# One system, scaled - not three portals. The quality fraction is the project's shared
+# convention; a private tier enum here would be a parallel quality system.
+code "$STYLE" | grep -qE 'QualitySettings\.GetQualityLevel\(\)' \
+  && ok "portal quality derives from the project's own quality level" \
+  || bad "portal quality derives from the project's own quality level" \
+         "do not invent a second tier system for the portal"
+
+if code "$STYLE" | grep -qE 'enum +QualityTier|enum +PortalQuality'; then
+  bad "the portal declares no parallel quality tiers" \
+      "PLATFORM_QUALITY_TIERS.md: one system, scalable, not three portals"
+else
+  ok "the portal declares no parallel quality tiers"
+fi
+
+# Failure is seen, not merely logged, and it leaves nothing armed behind it.
+code "$ENV/LobbyPortal.cs" | grep -qE 'private IEnumerator DestabiliseRoutine\(\)' \
+  && ok "a failed preparation visibly destabilises the portal" \
+  || bad "a failed preparation visibly destabilises the portal" \
+         "hiding the surface silently is indistinguishable from a button that did nothing"
+
+DESTAB="$(code "$ENV/LobbyPortal.cs" | sed -n '/private IEnumerator DestabiliseRoutine/,/^        }$/p')"
+if printf '%s' "$DESTAB" | grep -qE '_threshold\.enabled = false' &&
+   printf '%s' "$DESTAB" | grep -qE 'MenuInputGate\.Pop'; then
+  ok "a collapsed portal leaves no live trigger and no held input"
+else
+  bad "a collapsed portal leaves no live trigger and no held input" \
+      "a dead portal with an armed threshold or a held gate strands the player"
+fi
+
+# Exactly one portal controller and one surface type in the production path.
+CONTROLLERS="$(grep -rlE 'class .*: *MonoBehaviour' "$ENV" "$ART" 2>/dev/null \
+               | xargs grep -lE 'RenderTexture|targetTexture' 2>/dev/null \
+               | xargs -r -n1 basename | sort -u | tr '\n' ' ')"
+case "$CONTROLLERS" in
+  *PortalSurface.cs*) ok "one portal surface owns the render texture ($CONTROLLERS)" ;;
+  *) bad "one portal surface owns the render texture" "found: $CONTROLLERS" ;;
+esac
+
+# The effects emit on the oval. A Box the size of the doorway put wisps through the middle of
+# the view, and a plain Circle is round around a 1.06 x 2.4 opening.
+if code "$FX" | grep -qE 'ParticleSystemShapeType\.Circle' &&
+   code "$FX" | grep -qE 'shape\.radiusThickness = 0f' &&
+   code "$FX" | grep -qE 'shape\.scale'; then
+  ok "particles emit on the oval contour, not in a box"
+else
+  bad "particles emit on the oval contour, not in a box" \
+      "a Box emitter fires through the view; an unscaled Circle is round"
+fi
+
+for system in Sparks EnergyStreaks AmbientWisps; do
+  code "$FX" | grep -q "\"$system\"" \
+    && ok "the portal builds $system" \
+    || bad "the portal builds $system" "the brief names sparks, streaks and wisps"
+done
+
+code "$FX" | grep -qE 'trails\.enabled = true' \
+  && ok "the streaks carry trails" \
+  || bad "the streaks carry trails" "a discharge without a trail is a dot"
+
+code "$FX" | grep -qE 'GradientAlphaKey\(0f, 1f\)' \
+  && ok "particles fade on alpha rather than popping at zero size" \
+  || bad "particles fade on alpha rather than popping at zero size"
+
+# One light. The lobby already pays for a mirror and a portal camera.
+LIGHTS="$(code "$FX" | grep -cE 'AddComponent<Light>')"
+if [ "$LIGHTS" = "1" ]; then
+  ok "the portal adds exactly one real-time light"
+else
+  bad "the portal adds exactly one real-time light" "found $LIGHTS"
+fi
+
+if code "$FX" | grep -qE 'LightShadows\.None'; then
+  ok "the portal light casts no shadows"
+else
+  bad "the portal light casts no shadows" "a shadowed doorway light is the frame's most expensive object"
+fi
+
+# No second gameplay camera anywhere in the portal path.
+CAMERAS="$(code "$FX" | grep -cE 'AddComponent<Camera>')"
+if [ "$CAMERAS" = "0" ]; then
+  ok "the effects add no camera of their own"
+else
+  bad "the effects add no camera of their own" "one portal camera, owned by PortalSurface"
+fi
+
+# The diagnostic exists, reports the pieces, and is not per frame.
+code "$ENV/LobbyPortal.cs" | grep -qE 'private void ReportOpening\(\)' \
+  && ok "the portal reports its state once when it opens" \
+  || bad "the portal reports its state once when it opens"
+
+# A log at the loop's OWN statement depth runs every frame; one nested deeper sits inside a
+# condition. Indentation is the test rather than the mere presence of a log call, because the
+# bind line genuinely does fire once - latched by `bound` - and forbidding it outright would
+# push a useful diagnostic out of the only place it can be written.
+PERFRAME_LOG="$(python3 - "$ENV/LobbyPortal.cs" <<'PYEOF'
+import re, sys
+src = open(sys.argv[1]).read().splitlines()
+start = next((i for i, l in enumerate(src) if "while (t < openDuration" in l), None)
+if start is None:
+    print("NO-LOOP"); raise SystemExit
+depth = len(src[start]) - len(src[start].lstrip())
+body = depth + 4
+bad = []
+for line in src[start + 1:]:
+    stripped = line.strip()
+    if stripped == "}" and len(line) - len(line.lstrip()) == depth:
+        break
+    if "CIYCLog." in stripped or "Debug.Log" in stripped:
+        if len(line) - len(line.lstrip()) <= body:
+            bad.append(stripped[:60])
+print(" | ".join(bad))
+PYEOF
+)"
+if [ -z "$PERFRAME_LOG" ]; then
+  ok "the portal does not log every frame"
+elif [ "$PERFRAME_LOG" = "NO-LOOP" ]; then
+  bad "the portal does not log every frame" "the opening loop could not be found to check"
+else
+  bad "the portal does not log every frame" "unconditional in the loop: $PERFRAME_LOG"
+fi
+
 echo
 echo "  $PASS passed, $FAIL failed"
 if [ "$FAIL" -ne 0 ]; then

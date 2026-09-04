@@ -49,17 +49,7 @@ namespace CatchIfYouCan.Art
                  "player looks in from.")]
         [SerializeField] private Vector3 surfaceLocalPosition = new Vector3(0f, 1.2f, 0f);
 
-        [Header("Quality")]
-        [Tooltip("Height of the view buffer in pixels at the top quality level. The width " +
-                 "follows the screen's aspect, because the view is sampled in screen space.")]
-        [SerializeField, Min(128)] private int resolution = 1024;
-
-        [SerializeField, Min(128)] private int maxResolution = 2048;
-
-        [Tooltip("Stop rendering beyond this. A second pass over a whole apartment is not " +
-                 "something to run while the player is across the lobby.")]
-        [SerializeField, Min(1f)] private float renderDistance = 9f;
-
+        [Header("Camera")]
         [Tooltip("What the portal camera may see. The player's own body and the HUD are off: " +
                  "seeing yourself standing in the far room is the one thing that breaks it.")]
         [SerializeField] private LayerMask viewLayers = ~((1 << 5) | (1 << 8) | (1 << 15) | (1 << 16));
@@ -70,18 +60,9 @@ namespace CatchIfYouCan.Art
         [Tooltip("How far past the destination plane the oblique clip sits, in metres.")]
         [SerializeField, Range(0.001f, 0.2f)] private float clipPlaneOffset = 0.02f;
 
-        [Header("Look")]
-        [Tooltip("The energy at the EDGE of the opening. Green, because that is this game's " +
-                 "colour, and at the edge only - the middle of a portal is the far room, not a " +
-                 "sheet of brand colour.")]
-        [SerializeField] private Color rimColour = new Color(0.16f, 0.84f, 0.42f);
-
-        [Tooltip("Where the rim fades inward. Paler, so the edge reads as heat rather than as " +
-                 "a painted border.")]
-        [SerializeField] private Color rimInnerColour = new Color(0.55f, 1f, 0.72f);
-
-        [SerializeField, Range(0f, 6f)] private float rimIntensity = 2.1f;
-        [SerializeField, Range(0f, 0.06f)] private float distortion = 0.014f;
+        // Every artistic number lives on the style, which the doorway that owns this surface
+        // pushes down. Nothing here holds a second copy of a colour or a noise scale.
+        private PortalStyle _style = new PortalStyle();
 
         private Transform _surface;
         private Camera _portalCamera;
@@ -90,7 +71,9 @@ namespace CatchIfYouCan.Art
         private Camera _cachedSource;
 
         private bool _usingRealShader;
-        private float opacity = 1f;
+        private float _opacity = 1f;
+        private float _viewOpacity;
+        private float _energyScale = 1f;
 
         private Vector3 _planePoint;
         private Vector3 _planeNormal;
@@ -135,48 +118,139 @@ namespace CatchIfYouCan.Art
         }
 
         /// <summary>
-        /// How hot the edge burns. Written by whatever animates the opening.
+        /// Hands this surface the numbers it should look like.
         ///
         /// <para>
-        /// Stored on the serialized field as well as pushed to the material, so a value set
-        /// before <see cref="Build"/> is not lost - a portal is normally told how to look while
-        /// its GameObject is still inactive, which is exactly when the material does not exist
-        /// yet.
+        /// Safe before the surface is built, which is the normal case: a portal is described
+        /// while its GameObject is still inactive, and that is exactly when the material does
+        /// not exist yet. The style is kept and re-applied by <see cref="Build"/>.
         /// </para>
         /// </summary>
-        public void SetRimIntensity(float value)
+        public void ApplyStyle(PortalStyle value)
         {
-            rimIntensity = Mathf.Max(0f, value);
-            if (_material != null)
-                SetFloat("_RimIntensity", rimIntensity);
+            if (value == null)
+                return;
+
+            _style = value;
+            PushStyle();
         }
 
-        /// <summary>How much the surface ripples. Zero is a still opening.</summary>
-        public void SetDistortion(float value)
+        /// <summary>The style this surface is drawing with. Never null.</summary>
+        public PortalStyle Style => _style;
+
+        /// <summary>
+        /// How strongly the energy burns, 0 to 1. Written by whatever animates the opening.
+        ///
+        /// <para>
+        /// A SCALE on the authored intensities rather than an absolute value, so the ramp
+        /// cannot quietly overwrite what the artist set - the old <c>SetRimIntensity</c> took
+        /// an absolute number, which meant the opening animation and the Inspector were two
+        /// sources for one thing.
+        /// </para>
+        /// </summary>
+        public void SetEnergy(float value01)
         {
-            distortion = Mathf.Max(0f, value);
-            if (_material != null)
-                SetFloat("_Distortion", distortion);
+            _energyScale = Mathf.Clamp01(value01);
+            if (_material == null || !_usingRealShader)
+                return;
+
+            SetFloat("_CoreIntensity", _style.coreIntensity * _energyScale);
+            SetFloat("_EnergyIntensity", _style.energyIntensity * _energyScale);
+            SetFloat("_DistortionStrength", _style.viewDistortionStrength * _energyScale);
         }
 
         /// <summary>
         /// How far open the surface is, 0 to 1. Zero is an empty doorway; one is a hole.
         ///
         /// <para>
-        /// Stored as well as pushed, like the rim, because the opening is normally described
-        /// while the object is still inactive - which is exactly when the material does not
-        /// exist yet.
+        /// Stored as well as pushed, because the opening is normally described while the
+        /// object is still inactive - which is exactly when the material does not exist yet.
         /// </para>
         /// </summary>
         public void SetOpacity(float value)
         {
-            opacity = Mathf.Clamp01(value);
+            _opacity = Mathf.Clamp01(value);
             if (_material != null && _usingRealShader)
-                SetFloat("_Opacity", opacity);
+                SetFloat("_Opacity", _opacity);
+        }
+
+        /// <summary>
+        /// How far the FAR ROOM has faded in, 0 to 1, independently of the opening itself.
+        ///
+        /// <para>
+        /// Two fades, not one, because the destination is not ready when the doorway starts
+        /// reacting. At zero the centre is black behind a burning rim, which is what an opening
+        /// that has not finished forming should look like; the view then comes up on its own
+        /// when the far camera exists.
+        /// </para>
+        /// </summary>
+        public void SetViewOpacity(float value)
+        {
+            _viewOpacity = Mathf.Clamp01(value);
+            if (_material != null && _usingRealShader)
+                SetFloat("_ViewOpacity", _viewOpacity);
+        }
+
+        /// <summary>Everything the style says, pushed at once. Silent when nothing is built.</summary>
+        private void PushStyle()
+        {
+            if (_material == null || !_usingRealShader)
+                return;
+
+            SetColour("_CoreColor", _style.coreColor);
+            SetColour("_EnergyColor", _style.energyColor);
+            SetColour("_OuterColor", _style.outerColor);
+            SetColour("_Tint", _style.viewTint);
+
+            SetFloat("_RimWidth", _style.rimWidth);
+            SetFloat("_RimSoftness", _style.rimSoftness);
+            SetFloat("_NoiseScale", _style.noiseScale);
+            SetFloat("_NoiseStrength", _style.noiseStrength);
+            SetFloat("_NoiseSpeed", _style.noiseSpeed);
+            SetFloat("_SecondaryNoiseScale", _style.secondaryNoiseScale);
+            SetFloat("_SecondaryNoiseSpeed", _style.secondaryNoiseSpeed);
+            SetFloat("_RotationSpeed", _style.rotationSpeed);
+            SetFloat("_PulseSpeed", _style.pulseSpeed);
+            SetFloat("_PulseStrength", _style.pulseStrength);
+
+            // The oval and the noise both need to know the shape of the quad they are drawn on.
+            // Derived here rather than authored twice: the surface already knows its own size.
+            Vector2 fit = new Vector2(Mathf.Clamp(_style.ovalFit.x, 0.05f, 1f),
+                                      Mathf.Clamp(_style.ovalFit.y, 0.05f, 1f));
+            _material.SetVector("_Fit", new Vector4(fit.x, fit.y, 0f, 0f));
+            SetFloat("_Aspect", openingSize.y > 0.001f ? openingSize.x / openingSize.y : 1f);
+
+            SetFloat("_Opacity", _opacity);
+            SetFloat("_ViewOpacity", _viewOpacity);
+            SetEnergy(_energyScale);
         }
 
         /// <summary>True when the finished portal shader is in use rather than the fallback.</summary>
         public bool UsingRealShader => _usingRealShader;
+
+        /// <summary>
+        /// What this surface actually resolved to, for the one diagnostic line the portal
+        /// prints when it opens. Reports what IS, including the nulls - a diagnostic that only
+        /// describes the healthy case cannot tell you which piece is missing.
+        /// </summary>
+        public string Describe()
+        {
+            string shaderName = _material != null && _material.shader != null
+                ? _material.shader.name
+                : "<none>";
+
+            return "surface=" + (_surface != null ? "OK" : "MISSING") +
+                   " shader=" + shaderName + (_usingRealShader ? "" : " (FALLBACK)") +
+                   " material=" + (_material != null ? _material.name : "<none>") +
+                   " portalCamera=" + (_portalCamera != null
+                       ? (_portalCamera.gameObject.activeSelf ? "active" : "idle")
+                       : "<none>") +
+                   " renderTexture=" + (_texture != null
+                       ? _textureWidth + "x" + _textureHeight
+                       : "<none>") +
+                   " destination=" + (destination != null ? destination.name : "<unbound>") +
+                   " playerCamera=" + (_cachedSource != null ? _cachedSource.name : "<unresolved>");
+        }
 
         private void Start()
         {
@@ -282,14 +356,7 @@ namespace CatchIfYouCan.Art
             _usingRealShader = real;
 
             SetTexture(real ? "_PortalTex" : "_BaseMap", _texture);
-            if (real)
-            {
-                SetColour("_RimColor", rimColour);
-                SetColour("_RimInner", rimInnerColour);
-                SetFloat("_RimIntensity", rimIntensity);
-                SetFloat("_Distortion", distortion);
-                SetFloat("_Opacity", opacity);
-            }
+            PushStyle();
 
             renderer.sharedMaterial = _material;
 
@@ -349,7 +416,7 @@ namespace CatchIfYouCan.Art
             // Behind the opening, too far, or not on screen - each skips a whole second render
             // of the far room. The last one matters most: a player crossing the lobby faces the
             // portal for a fraction of the time.
-            bool visible = inFront > 0.05f && distance <= renderDistance;
+            bool visible = inFront > 0.05f && distance <= _style.renderDistance;
             if (visible)
             {
                 GeometryUtility.CalculateFrustumPlanes(source, _sourceFrustum);
@@ -477,13 +544,15 @@ namespace CatchIfYouCan.Art
 
         private void ResolveTextureSize(Camera source, out int width, out int height)
         {
-            int levels = Mathf.Max(1, QualitySettings.names != null ? QualitySettings.names.Length : 1);
-            int level = Mathf.Clamp(QualitySettings.GetQualityLevel(), 0, levels - 1);
-
-            float t = levels <= 1 ? 1f : (float)level / (levels - 1);
+            // The project's one quality convention, shared with MirrorCorner: where the active
+            // level sits inside QualitySettings.names. Mobile lands low and gets half the
+            // buffer; nothing here decides what "mobile" is on its own.
+            float t = PortalStyle.QualityFraction01();
+            int resolution = Mathf.Max(128, _style.viewResolution);
+            int maxResolution = Mathf.Max(resolution, _style.maxViewResolution);
             int target = Mathf.RoundToInt(Mathf.Lerp(resolution * 0.5f, resolution, t));
 
-            height = Mathf.Clamp(target, 128, Mathf.Max(128, maxResolution));
+            height = Mathf.Clamp(target, 128, maxResolution);
 
             float aspect = source != null && source.aspect > 0.01f
                 ? source.aspect

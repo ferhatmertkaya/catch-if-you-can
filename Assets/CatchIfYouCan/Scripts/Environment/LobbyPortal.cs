@@ -78,20 +78,10 @@ namespace CatchIfYouCan.Environment
                  "until a mission is accepted so no second camera runs in an idle lobby.")]
         [SerializeField] private PortalSurface surface;
 
-        [Tooltip("The clear hole in metres. The lobby doorway measures 1.07 between the jamb " +
-                 "faces and 2.4 to the lintel; the surface sits just inside that so the jambs " +
-                 "frame it instead of intersecting it.")]
-        [SerializeField] private Vector2 openingSize = new Vector2(1.06f, 2.4f);
-
-        [Header("Opening")]
-        [Tooltip("How long the edge takes to come up to full. The view behind it is live from " +
-                 "the first frame; this is the energy at the rim, not a fade of the room.")]
-        [SerializeField, Min(0f)] private float openDuration = 1.1f;
-
-        [SerializeField, Min(0f)] private float openRimIntensity = 2.4f;
-
-        [Tooltip("How much the air bends at the edge once the opening is fully up.")]
-        [SerializeField, Range(0f, 0.06f)] private float openDistortion = 0.02f;
+        [Tooltip("Everything the portal looks like and how fast it gets there. One object so " +
+                 "the shape, the colours, the shader, the particles, the light, the timings " +
+                 "and the render budget can all be tuned without opening a script.")]
+        [SerializeField] private PortalStyle style = new PortalStyle();
 
         [Header("Threshold")]
         [Tooltip("The volume that counts as walking through. Sits in the opening, not past it.")]
@@ -200,7 +190,9 @@ namespace CatchIfYouCan.Environment
             // The doorway owns the size of its own hole, whether the surface was authored in
             // the scene or built here. Applied before the object is ever enabled, which is the
             // only time a PortalSurface can still be sized.
-            surface.SetOpening(openingSize, new Vector3(0f, openingSize.y * 0.5f, 0f));
+            Vector2 opening = style.openingSize;
+            surface.SetOpening(opening, new Vector3(0f, opening.y * 0.5f, 0f));
+            surface.ApplyStyle(style);
 
             surface.gameObject.SetActive(false);
         }
@@ -218,7 +210,7 @@ namespace CatchIfYouCan.Environment
             if (surface == null)
                 return;
 
-            _effects = PortalEffects.Build(surface.transform, openingSize);
+            _effects = PortalEffects.Build(surface.transform, style);
         }
 
         /// <summary>
@@ -253,6 +245,8 @@ namespace CatchIfYouCan.Environment
             }
 
             _missionName = missionName;
+            if (_threshold != null)
+                _threshold.enabled = true;
             SetState(LobbyPortalState.MissionSelected);
 
             if (_opening != null)
@@ -294,42 +288,42 @@ namespace CatchIfYouCan.Environment
         /// </summary>
         private IEnumerator OpenRoutine()
         {
-            // The doorway reacts on the frame of the press.
+            // ---- 0.00s: the doorway reacts on the frame of the press ------------------------
+            // Nothing here waits on anything. The energy is in the air; it does not need to
+            // know where the door leads.
             surface.SetOpacity(0f);
-            surface.SetRimIntensity(0f);
-            surface.SetDistortion(0f);
+            surface.SetViewOpacity(0f);
+            surface.SetEnergy(0f);
             surface.gameObject.SetActive(true);
             EnsureEffects();
 
             SetState(LobbyPortalState.Opening);
-            CIYCLog.Info(LogTag + "state Opening - the doorway is reacting; the far world is " +
-                         "being prepared.");
+            ReportOpening();
 
             _pendingWorld = null;
             _prepareFinished = false;
             StartCoroutine(PrepareWorldRoutine());
 
+            float openDuration = Mathf.Max(0.0001f, style.openDuration);
             float t = 0f;
             bool bound = false;
+            float viewFade = 0f;
 
-            while (t < openDuration || !_prepareFinished)
+            while (t < openDuration || !bound)
             {
                 if (surface == null)
                     yield break;
 
                 t += Time.deltaTime;
-                float k = openDuration <= 0f ? 1f : Mathf.Clamp01(t / openDuration);
+                float k = Mathf.Clamp01(t / openDuration);
                 float eased = k * k * (3f - 2f * k);
 
-                // The edge leads and the view follows, so the doorway reads as tearing open
-                // rather than as a picture being switched on.
-                surface.SetRimIntensity(openRimIntensity * Mathf.Clamp01(eased * 3f));
-                surface.SetDistortion(openDistortion * eased);
-
-                // The centre only clears once there is something behind it. Until then the rim
-                // burns over black, which is what an opening that has not finished forming
-                // should look like.
-                surface.SetOpacity(bound ? eased : 0f);
+                // The outline draws itself first and the body of the energy follows, so the
+                // doorway reads as tearing open rather than as a picture being switched on.
+                // Opacity leads energy: an outline at full brightness over a portal that is not
+                // yet there is what the first fifth of a second should look like.
+                surface.SetOpacity(Mathf.Clamp01(eased * 2.2f));
+                surface.SetEnergy(eased);
 
                 if (_effects != null)
                     _effects.SetIntensity(eased);
@@ -341,11 +335,22 @@ namespace CatchIfYouCan.Environment
                                  _pendingWorld.ArrivalPoint.position.ToString("F1"));
                     surface.SetDestination(_pendingWorld.ArrivalPoint);
                     bound = true;
-
-                    // The ramp restarts from here so the view has its own fade in rather than
-                    // snapping to whatever the edge had already reached.
-                    t = 0f;
                 }
+
+                // The far room has its own fade, started when the destination camera exists and
+                // NOT restarted from the energy ramp. Until then the centre is black behind a
+                // burning rim, which is an opening that has not finished forming.
+                if (bound)
+                {
+                    viewFade = Mathf.Min(1f, viewFade + Time.deltaTime /
+                                             Mathf.Max(0.0001f, style.destinationFadeDuration));
+                    surface.SetViewOpacity(viewFade * viewFade * (3f - 2f * viewFade));
+                }
+
+                // Preparation finished and produced nothing: stop waiting rather than holding a
+                // burning doorway open forever over a world that is never coming.
+                if (_prepareFinished && !bound && t >= openDuration)
+                    break;
 
                 yield return null;
             }
@@ -354,31 +359,103 @@ namespace CatchIfYouCan.Environment
 
             if (!bound)
             {
-                CIYCLog.Error(LogTag + "The mission world could not be prepared, so the doorway " +
-                              "has nothing to show. Closing it and falling back to a direct " +
-                              "scene load, which reaches the same mission without the walk.");
-                if (surface != null)
-                {
-                    surface.SetOpacity(0f);
-                    surface.gameObject.SetActive(false);
-                }
-                if (_effects != null)
-                    _effects.SetIntensity(0f);
-
-                SetState(LobbyPortalState.Inactive);
-                FallBackToDirectLoad();
+                yield return StartCoroutine(DestabiliseRoutine());
                 yield break;
             }
 
-            surface.SetRimIntensity(openRimIntensity);
             surface.SetOpacity(1f);
-            surface.SetDistortion(openDistortion);
+            surface.SetEnergy(1f);
+            surface.SetViewOpacity(1f);
             if (_effects != null)
                 _effects.SetIntensity(1f);
 
             SetState(LobbyPortalState.Open);
             CIYCLog.Info(LogTag + "state Open - '" + _missionName +
                          "'. Walk through the lobby doorway to begin.");
+        }
+
+        /// <summary>
+        /// The portal coming apart, seen rather than merely logged.
+        ///
+        /// <para>
+        /// A doorway that silently stops existing is indistinguishable from a button that did
+        /// nothing, which is the exact complaint this whole path was built to answer. So the
+        /// energy flickers, the view goes, the rim collapses, the particles stop emitting and
+        /// the light fades - and only then does the fallback take over. It leaves nothing
+        /// behind: no black portal, no live trigger, no held input gate.
+        /// </para>
+        /// </summary>
+        private IEnumerator DestabiliseRoutine()
+        {
+            CIYCLog.Error(LogTag + "The mission world could not be prepared, so the doorway has " +
+                          "nothing to show. Collapsing it and falling back to a direct scene " +
+                          "load, which reaches the same mission without the walk.");
+
+            if (_effects != null)
+                _effects.SetDestabilising(true);
+
+            float duration = Mathf.Max(0.0001f, style.destabiliseDuration);
+            float t = 0f;
+
+            while (t < duration && surface != null)
+            {
+                t += Time.deltaTime;
+                float k = Mathf.Clamp01(t / duration);
+
+                // Stutter on the way down rather than a clean fade: this is a failure, and it
+                // should not look like a graceful close.
+                float flicker = Mathf.PerlinNoise(Time.time * 22f, 0f);
+                float collapse = (1f - k) * Mathf.Lerp(0.35f, 1f, flicker);
+
+                surface.SetViewOpacity(0f);
+                surface.SetEnergy(collapse);
+                surface.SetOpacity(collapse);
+
+                if (_effects != null)
+                    _effects.SetIntensity(collapse * 0.6f);
+
+                yield return null;
+            }
+
+            if (surface != null)
+            {
+                surface.SetOpacity(0f);
+                surface.SetEnergy(0f);
+                surface.SetViewOpacity(0f);
+                surface.SetDestination(null);
+                surface.gameObject.SetActive(false);
+            }
+
+            if (_effects != null)
+            {
+                _effects.SetIntensity(0f);
+                _effects.SetDestabilising(false);
+            }
+
+            // The threshold must not be able to fire into a portal that no longer leads
+            // anywhere, and the input gate must not be left holding the player's controls.
+            if (_threshold != null)
+                _threshold.enabled = false;
+            UI.MenuInputGate.Pop(nameof(LobbyPortal));
+
+            SetState(LobbyPortalState.Inactive);
+            FallBackToDirectLoad();
+        }
+
+        /// <summary>
+        /// One block, once, when the doorway starts opening. Not per frame: a portal that logs
+        /// every frame buries the line that says which piece is missing.
+        /// </summary>
+        private void ReportOpening()
+        {
+            CIYCLog.Info(LogTag +
+                         "state=" + State +
+                         " mission=" + (_missionName ?? "<none>") +
+                         " " + (surface != null ? surface.Describe() : "surface=MISSING") +
+                         " destinationReady=" + MissionWorldLoader.WorldReady +
+                         " particles=" + (_effects != null ? "sparks/streaks/wisps" : "<none>") +
+                         " particleScale=" + style.ResolveParticleScale().ToString("F2") +
+                         " quality=" + PortalStyle.QualityFraction01().ToString("F2"));
         }
 
         private IEnumerator PrepareWorldRoutine()
@@ -489,9 +566,17 @@ namespace CatchIfYouCan.Environment
 
             if (surface != null)
             {
+                surface.SetOpacity(0f);
+                surface.SetEnergy(0f);
+                surface.SetViewOpacity(0f);
                 surface.SetDestination(null);
                 surface.gameObject.SetActive(false);
             }
+
+            // Emission off with the doorway. A closed portal that is still spitting sparks is
+            // the same bug as a closed portal that is still rendering.
+            if (_effects != null)
+                _effects.SetIntensity(0f);
 
             StartCoroutine(MissionWorldLoader.DiscardAsync(reason));
 

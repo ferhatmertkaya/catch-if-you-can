@@ -52579,8 +52579,4 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::CatchIfYouCan.Environment.LobbyPortal
   surface: {fileID: 0}
-  openingSize: {x: 1.06, y: 2.4}
-  destinationOffset: {x: 0, y: -400, z: 0}
-  openDuration: 1.1
-  openRimIntensity: 2.4
   entryTriggerSize: {x: 1.2, y: 2.4, z: 0.8}

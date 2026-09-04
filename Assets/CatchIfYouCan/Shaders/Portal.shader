@@ -13,18 +13,53 @@ Shader "CatchIfYouCan/Portal"
     // set no Transform can hold - so its shader flips screen u to supply the handedness the
     // pose could not. A portal is a rigid motion: the basis stays right-handed, nothing is
     // flipped, and flipping here would put the far room's left on the player's right.
+    //
+    // THE SILHOUETTE IS AN ELLIPSE, CUT HERE. The mesh is still a quad, because a quad is what
+    // screen-space sampling and a rectangular render texture want, but everything outside the
+    // oval ends at alpha zero. The previous version derived its rim from min(uv, 1-uv), which
+    // is a RECTANGLE - so the "portal" was a glowing box, and at full opacity the whole quad
+    // including its corners showed the far room. That is the single biggest reason this never
+    // looked like a portal.
     Properties
     {
         _PortalTex      ("Portal View", 2D) = "black" {}
-        _RimColor       ("Rim Colour", Color) = (0.35, 0.75, 1.0, 1)
-        _RimInner       ("Rim Inner Colour", Color) = (0.75, 0.45, 1.0, 1)
-        _RimWidth       ("Rim Width", Range(0.002, 0.35)) = 0.09
-        _RimPower       ("Rim Falloff", Range(0.5, 8)) = 2.4
-        _RimIntensity   ("Rim Intensity", Range(0, 6)) = 2.1
-        _Distortion     ("Edge Distortion", Range(0, 0.06)) = 0.014
-        _DistortSpeed   ("Distortion Speed", Range(0, 4)) = 0.7
-        _Tint           ("View Tint", Color) = (0.92, 0.95, 1.0, 1)
-        _Opacity        ("Opacity", Range(0, 1)) = 1
+
+        // Colour is authored, never hard-coded: the game ships spectral green but the same
+        // shader has to be able to be blue, red or violet without an edit.
+        [HDR] _CoreColor   ("Core Colour", Color) = (0.90, 1.00, 0.94, 1)
+        [HDR] _EnergyColor ("Energy Colour", Color) = (0.34, 1.00, 0.41, 1)
+        [HDR] _OuterColor  ("Outer Colour", Color) = (0.09, 0.36, 0.19, 1)
+
+        _CoreIntensity   ("Core Intensity", Range(0, 16)) = 6.0
+        _EnergyIntensity ("Energy Intensity", Range(0, 16)) = 2.6
+
+        _RimWidth        ("Rim Width", Range(0.01, 0.9)) = 0.26
+        _RimSoftness     ("Rim Softness", Range(0.05, 4)) = 1.15
+
+        _NoiseScale      ("Noise A Scale", Range(0.5, 24)) = 5.5
+        _NoiseStrength   ("Noise Strength", Range(0, 0.6)) = 0.16
+        _NoiseSpeed      ("Noise A Speed", Range(0, 4)) = 0.35
+
+        _SecondaryNoiseScale ("Noise B Scale", Range(0.5, 40)) = 13.0
+        _SecondaryNoiseSpeed ("Noise B Speed", Range(0, 6)) = 0.85
+
+        _DistortionStrength ("View Distortion", Range(0, 0.12)) = 0.018
+        _RotationSpeed      ("Rotation Speed", Range(-3, 3)) = 0.22
+
+        _PulseSpeed      ("Pulse Speed", Range(0, 12)) = 2.1
+        _PulseStrength   ("Pulse Strength", Range(0, 1)) = 0.14
+
+        _Opacity         ("Opacity", Range(0, 1)) = 1
+        _ViewOpacity     ("Destination Opacity", Range(0, 1)) = 1
+
+        _Tint            ("View Tint", Color) = (0.92, 0.98, 0.94, 1)
+
+        // Semi-axes of the oval in normalised (-1..1) surface space, and the quad's own
+        // width/height. Written by PortalSurface from the doorway it was sized to; leaving the
+        // oval a little inside the quad is what gives the outer energy somewhere to live
+        // without the glow being clipped by the door frame.
+        _Fit             ("Oval Fit", Vector) = (0.86, 0.94, 0, 0)
+        _Aspect          ("Surface Aspect", Float) = 0.44
     }
 
     SubShader
@@ -50,16 +85,30 @@ Shader "CatchIfYouCan/Portal"
 
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
 
+            // Every non-texture property lives here, in declaration order, or the SRP Batcher
+            // quietly drops this material out of its batch.
             CBUFFER_START(UnityPerMaterial)
-                float4 _RimColor;
-                float4 _RimInner;
+                float4 _CoreColor;
+                float4 _EnergyColor;
+                float4 _OuterColor;
                 float4 _Tint;
+                float4 _Fit;
+                float  _CoreIntensity;
+                float  _EnergyIntensity;
                 float  _RimWidth;
-                float  _RimPower;
-                float  _RimIntensity;
-                float  _Distortion;
-                float  _DistortSpeed;
+                float  _RimSoftness;
+                float  _NoiseScale;
+                float  _NoiseStrength;
+                float  _NoiseSpeed;
+                float  _SecondaryNoiseScale;
+                float  _SecondaryNoiseSpeed;
+                float  _DistortionStrength;
+                float  _RotationSpeed;
+                float  _PulseSpeed;
+                float  _PulseStrength;
                 float  _Opacity;
+                float  _ViewOpacity;
+                float  _Aspect;
             CBUFFER_END
 
             TEXTURE2D(_PortalTex);
@@ -98,40 +147,96 @@ Shader "CatchIfYouCan/Portal"
                             lerp(hash21(i + float2(0, 1)), hash21(i + float2(1, 1)), f.x), f.y);
             }
 
+            // Two octaves. A single octave of value noise reads as blobs; four would look
+            // better and cost twice as much on a phone for a difference nobody sees through a
+            // burning rim.
+            float fbm2(float2 p)
+            {
+                return vnoise(p) * 0.65 + vnoise(p * 2.17 + 11.3) * 0.35;
+            }
+
+            float2 rot2(float2 v, float a)
+            {
+                float s = sin(a), c = cos(a);
+                return float2(c * v.x - s * v.y, s * v.x + c * v.y);
+            }
+
             half4 frag(Varyings IN) : SV_Target
             {
+                float t = _Time.y;
+
+                // -1..1 across the quad, then divided by the oval's semi-axes so that the
+                // ellipse edge is exactly where this length reaches 1. Aspect only enters the
+                // NOISE domain: the mask has to follow the quad's own proportions (a tall
+                // doorway wants a tall oval) while the turbulence has to stay isotropic in
+                // metres, or the cells come out stretched on a narrow portal.
+                float2 c = (IN.uv - 0.5) * 2.0;
+                float2 fit = max(_Fit.xy, 1e-3);
+                float2 e = c / fit;
+                float r = length(e);
+
+                float2 iso = float2(c.x * _Aspect, c.y);
+
+                // Two layers that share nothing: different scale, different speed, opposite
+                // rotation. Identical frequencies are what make procedural energy read as a
+                // repeating pattern instead of as plasma.
+                float2 qa = rot2(iso, t * _RotationSpeed) * _NoiseScale;
+                float2 qb = rot2(iso, -t * _RotationSpeed * 0.63) * _SecondaryNoiseScale;
+
+                float nA = fbm2(qa + float2(0.0, -t * _NoiseSpeed));
+                float nB = fbm2(qb + float2(t * _SecondaryNoiseSpeed, t * _SecondaryNoiseSpeed * 0.37));
+
+                // The oval's own edge is pushed in and out by the turbulence, so the silhouette
+                // wavers instead of being a drawn outline. This is the difference between
+                // "energy" and "a glowing ring".
+                float wob = (nA - 0.5) * _NoiseStrength + (nB - 0.5) * _NoiseStrength * 0.6;
+                float rd = r + wob;
+
+                float w = max(_RimWidth, 1e-4);
+                float pulse = 1.0 + sin(t * _PulseSpeed) * _PulseStrength;
+
+                // Three masks off one distance field.
+                //   view  - the clean centre, where the far room shows
+                //   rim   - the burning band, peaked on the wavering edge
+                //   outer - what spills beyond it, which is the volumetric part
+                float view = 1.0 - smoothstep(1.0 - w, 1.0 - w * 0.15, rd);
+                float band = 1.0 - saturate(abs(rd - 1.0) / w);
+                float rim = pow(saturate(band), max(_RimSoftness, 1e-3));
+                float outer = (1.0 - smoothstep(1.0, 1.0 + w * 1.6, rd)) * (1.0 - view);
+
+                // ---- the destination ------------------------------------------------------
+                // Screen space, not mesh UV. Dragged sideways only near the boundary, so the
+                // middle of the opening stays readable - the brief is a spatial opening, and a
+                // wobbling centre is a screen effect.
                 float2 screenUV = IN.screenPos.xy / max(IN.screenPos.w, 1e-5);
+                float bend = saturate(1.0 - view) * saturate(rd);
+                float2 wobble = float2(nA - 0.5, nB - 0.5);
+                screenUV += wobble * _DistortionStrength * bend;
 
-                // How close this fragment is to the edge of the opening, 0 in the middle and 1
-                // at the frame. Everything paranormal below is driven by this, so the centre -
-                // the part that has to stay a clean view of the far room - is untouched.
-                float2 d = min(IN.uv, 1.0 - IN.uv);
-                float edge = 1.0 - saturate(min(d.x, d.y) / max(_RimWidth, 1e-4));
-                float rim = pow(edge, _RimPower);
+                half3 destination = SAMPLE_TEXTURE2D(_PortalTex, sampler_PortalTex, screenUV).rgb;
+                destination *= _Tint.rgb;
 
-                // The view is dragged very slightly sideways near the boundary, which reads as
-                // air bending round the opening. Scaled by rim so the middle is undistorted:
-                // the brief is a spatial opening, and a wobbling centre is a screen effect.
-                float t = _Time.y * _DistortSpeed;
-                float2 wobble = float2(vnoise(IN.uv * 7.0 + t) - 0.5,
-                                       vnoise(IN.uv * 7.0 - t + 19.7) - 0.5);
-                screenUV += wobble * _Distortion * rim;
+                // ---- the energy -----------------------------------------------------------
+                // Outer to energy to core as the band gets hotter, so the narrow inside of the
+                // rim approaches white and the spill outside loses colour gradually. HDR, and
+                // intensity is separate from colour, so Bloom has something above 1 to find
+                // without the colour being pushed to white to fake it.
+                float hot = saturate(rim * (0.85 + 0.4 * nA));
+                half3 energy = lerp(_OuterColor.rgb, _EnergyColor.rgb, saturate(hot * 1.5));
+                energy = lerp(energy, _CoreColor.rgb, saturate(pow(hot, 2.6)));
 
-                half3 view = SAMPLE_TEXTURE2D(_PortalTex, sampler_PortalTex, screenUV).rgb;
-                view *= _Tint.rgb;
+                float emission = (_EnergyIntensity * rim + _CoreIntensity * pow(hot, 5.0)) * pulse;
+                half3 glow = energy * emission + _OuterColor.rgb * outer * _EnergyIntensity * 0.35;
 
-                // Two colours across the band, so the ring has depth rather than being one
-                // flat glow. Added, not blended, because a portal edge is light rather than paint.
-                half3 rimColour = lerp(_RimColor.rgb, _RimInner.rgb, saturate(edge * 1.4));
-                float shimmer = 0.75 + 0.25 * vnoise(IN.uv * 14.0 + t * 1.7);
+                // The far room is multiplied by its OWN fade, not by the portal's. Before the
+                // destination camera exists the centre is black behind a burning rim, which is
+                // an opening that has not finished forming - honest, and visibly different from
+                // an empty doorway.
+                half3 col = destination * view * _ViewOpacity + glow;
 
-                half3 col = view + rimColour * rim * _RimIntensity * shimmer;
-
-                // The edge comes up before the middle does. While the opening is forming, the
-                // rim is already burning and the view behind it is still fading in, which is
-                // what makes it read as something tearing open rather than as a picture being
-                // switched on.
-                float alpha = saturate(_Opacity + rim * _Opacity * 0.6);
+                // Outside the oval plus its spill, this is zero, and that is what makes the
+                // quad's corners disappear.
+                float alpha = saturate((view + rim + outer * 0.45) * _Opacity);
 
                 return half4(col, alpha);
             }
