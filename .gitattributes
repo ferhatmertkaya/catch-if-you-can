@@ -9,3 +9,5 @@ Assets/CatchIfYouCan/Art/Environment/Doors/CIYC_VictorianHauntedDoor/Models/CIYC
 Assets/CatchIfYouCan/Resources/Video/Intro/CIYC_StartupIntro.mp4 filter=lfs diff=lfs merge=lfs -text
 Assets/CatchIfYouCan/Art/Characters/Nathan/Models/*.fbx filter=lfs diff=lfs merge=lfs -text
 Assets/CatchIfYouCan/Art/Characters/Nathan/Textures/*.jpg filter=lfs diff=lfs merge=lfs -text
+Assets/CatchIfYouCan/Resources/Props/CIYC_DotsProjector.fbx filter=lfs diff=lfs merge=lfs -text
+Assets/CatchIfYouCan/Resources/Props/CIYC_UvLight.fbx filter=lfs diff=lfs merge=lfs -text
