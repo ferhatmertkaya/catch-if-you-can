@@ -76,9 +76,11 @@ namespace CatchIfYouCan.Procedural
                  "Seed bestimmt weiterhin dasselbe Haus wie vorher.")]
         [SerializeField] private bool generateWorld;
 
-        [Tooltip("Groesse der leeren Ebene in Metern, wenn oben nichts generiert wird. Ohne " +
-                 "Boden faellt der Spieler beim Betreten durch die Welt.")]
-        [SerializeField, Min(4f)] private float emptyFloorSize = 40f;
+        [Tooltip("Groesse der leeren Ebene in Metern, wenn oben nichts generiert wird. Sie wird " +
+                 "erst beim Betreten gebaut, nicht schon beim Vorbereiten - sonst haengt sie als " +
+                 "grosse leere Flaeche hinter dem Portal. Ohne Boden faellt der Spieler beim " +
+                 "Betreten durch die Welt.")]
+        [SerializeField, Min(4f)] private float emptyFloorSize = 16f;
 
         [Header("Systems")]
         [SerializeField] private ProceduralHouseGenerator houseGenerator;
@@ -232,18 +234,21 @@ namespace CatchIfYouCan.Procedural
 
             if (!generateWorld)
             {
-                // Nichts wird gebaut - kein Van, kein Haus, keine Props, kein NavMesh. Nur eine
-                // Ebene, damit der Spieler beim Betreten nicht durch die Welt faellt.
+                // Nichts wird gebaut - kein Van, kein Haus, keine Props, kein NavMesh, und
+                // auch KEIN Boden.
+                //
+                // Der Boden entsteht erst beim tatsaechlichen Betreten. Waehrend die Welt nur
+                // Kulisse hinter dem Portal ist, schaut der Spieler sonst aus der Lobby auf eine
+                // Platte, die er weder braucht noch sehen soll - und die als riesige leere
+                // Flaeche unter allem haengt.
                 //
                 // _generatedHouse bleibt null, und das ist in Ordnung: die Schritte danach - der
                 // Geist, die Raumanker, das Hauslicht, das Wetter - pruefen alle darauf und
                 // ueberspringen sich selbst. Sie starten also nicht halb.
-                BuildEmptyFloor();
-
-                CIYCLog.Warn("[CIYC][Investigation] generateWorld ist AUS: es wurde keine Welt " +
-                             "gebaut, nur eine leere Ebene von " + emptyFloorSize.ToString("F0") +
-                             " m. Kein Haus, kein Van, keine Props, kein Geist. Wieder " +
-                             "anschalten am InvestigationBootstrap in 03_Investigation.");
+                CIYCLog.Warn("[CIYC][Investigation] generateWorld ist AUS: es wird keine Welt " +
+                             "gebaut. Kein Haus, kein Van, keine Props, kein Geist. Der Boden " +
+                             "entsteht erst beim Betreten. Wieder anschalten am " +
+                             "InvestigationBootstrap in 03_Investigation.");
 
                 _worldPrepared = true;
                 return true;
@@ -308,6 +313,11 @@ namespace CatchIfYouCan.Procedural
             _activated = true;
             if (Prepared == this)
                 Prepared = null;
+
+            // Vor dem Spawn, nicht danach: der Spawn rastet den Spieler mit einem Strahl nach
+            // unten auf den Boden, und ohne Boden faellt er stattdessen.
+            if (!generateWorld)
+                BuildEmptyFloor();
 
             SpawnPlayer();
             SpawnGhost(_mission);

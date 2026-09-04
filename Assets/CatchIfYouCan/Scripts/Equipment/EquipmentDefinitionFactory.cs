@@ -173,17 +173,18 @@ namespace CatchIfYouCan.Equipment
 
             if (string.Equals(id, EquipmentIds.Flashlight, System.StringComparison.Ordinal))
             {
-                // +X, not -X. The axis was always right - the mesh runs along X, which is why
-                // the torch would otherwise be laid in the hand sideways - but the SIGN was a
-                // coin flip nobody had ever seen land, because until the late-binding fix the
-                // torch was a placeholder capsule. Reading the mesh settles it: the +X end
-                // carries the bell (max radius 0.193 against the barrel's 0.106) and its cap is
-                // concave, which is a reflector; the -X end is narrow and convex, which is a
-                // tail cap. ModelForwardAxis is turned onto the carried root's +Y and that is
-                // where HeldFlashlight hangs the lens and the spot light, so -X pointed the
-                // beam out of the battery cap and buried the reflector in the fist.
+                // -X. The mesh runs along X, so the axis was never in doubt; the SIGN was,
+                // and it was decided from a radius measurement rather than from looking at the
+                // torch in a hand. That measurement said the +X end is the wider one and called
+                // it the bell - but wider is not the same as the emitting end on this model,
+                // and with the torch finally visible it points the wrong way round: the front
+                // is at the back.
+                //
+                // Held in a real hand it is now the other way. ModelForwardAxis is turned onto
+                // the carried root's +Y, and that is where HeldFlashlight hangs the lens and
+                // the spot light, so this is also which end the beam leaves from.
                 profile.ApplyModel("Props/CIYC_Flashlight", "Props/MAT_Flashlight",
-                                   0.24f, new Vector3(1f, 0f, 0f));
+                                   0.24f, new Vector3(-1f, 0f, 0f));
                 return profile;
             }
 

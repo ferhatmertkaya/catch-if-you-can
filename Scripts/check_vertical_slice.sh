@@ -450,6 +450,17 @@ else:
     bad("ohne Generierung gibt es einen Boden statt eines Lochs",
         "der Spieler faellt beim Betreten sonst durch die Welt")
 
+# Der Boden gehoert ins Betreten, nicht ins Vorbereiten. Beim Vorbereiten gebaut haengt er
+# als grosse leere Flaeche hinter dem Portal, wo der Spieler ihn weder braucht noch sehen
+# soll - und vor dem Spawn, weil der Spawn per Strahl nach unten auf ihm einrastet.
+seq = boot_code.split("private IEnumerator ActivateSequence")
+if len(seq) > 1 and "BuildEmptyFloor();" in seq[1].split("SpawnPlayer();")[0]:
+    ok("der Ersatzboden entsteht beim Betreten, vor dem Spawn")
+else:
+    bad("der Ersatzboden entsteht beim Betreten, vor dem Spawn",
+        "beim Vorbereiten gebaut ist er Kulisse hinter dem Portal; nach dem Spawn faellt "
+        "der Spieler durch")
+
 print()
 print("  %d passed, %d failed" % (passed, failed))
 sys.exit(1 if failed else 0)
