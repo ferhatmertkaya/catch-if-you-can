@@ -124,9 +124,7 @@ namespace CatchIfYouCan.Environment
 
         [Tooltip("How far behind the portal surface the wall fill sits, in metres. Far enough " +
                  "not to z-fight with it, near enough not to show a gap at a grazing angle.")]
-        [SerializeField, Range(0.005f, 0.2f)] private float wallPlugDepth = 0.04f;
 
-        private Renderer _wallPlug;
         private bool _sealedByHunt;
         private Coroutine _sealing;
         private BoxCollider _threshold;
@@ -194,7 +192,6 @@ namespace CatchIfYouCan.Environment
             Instance = this;
             // Before anything else: the wall must never be a hole, not even for the frames
             // before a mission is chosen.
-            EnsureWallPlug();
             EnsureSurface();
             EnsureThreshold();
             SetState(LobbyPortalState.Inactive);
@@ -260,115 +257,7 @@ namespace CatchIfYouCan.Environment
             _effects = PortalEffects.Build(surface.transform, style);
         }
 
-        /// <summary>
-        /// Fills the doorway the lobby was built with, so the wall is a wall.
-        ///
-        /// <para>
-        /// <b>The lobby's north wall has a real hole in it.</b> It is authored as a left panel,
-        /// a right panel and a header with a gap between them, framed by jambs and a lintel -
-        /// an actual doorway, through which the player sees the night sky and the mountains
-        /// from the moment they walk in. That is wrong: there is no door here and there should
-        /// be nothing to see until a portal tears the wall open.
-        /// </para>
-        ///
-        /// <para>
-        /// So the gap is filled, permanently. The plug is opaque and stays for the whole
-        /// session; the portal surface is a TRANSPARENT quad that draws in front of it, so
-        /// where the breach is you see the far world and everywhere else you see this. Nothing
-        /// has to be switched off at the right moment and there is no frame where both are
-        /// wrong.
-        /// </para>
-        ///
-        /// <para>
-        /// Its material is copied from the wall beside it rather than invented, so the fill
-        /// cannot be a slightly different shade of the surface it is pretending to be part of.
-        /// </para>
-        /// </summary>
-        private void EnsureWallPlug()
-        {
-            if (_wallPlug != null)
-                return;
 
-            var go = GameObject.CreatePrimitive(PrimitiveType.Quad);
-            go.name = "Portal_WallPlug";
-            go.transform.SetParent(transform, false);
-
-            Vector2 opening = style.openingSize;
-            // A little larger than the hole, so no seam of night sky survives at the jambs.
-            go.transform.localScale = new Vector3(opening.x * 1.06f, opening.y * 1.04f, 1f);
-            // NEGATIVE Z. PortalSurface documents local +Z as the side the player looks in
-            // from, so a plug in front of the surface would hide the portal entirely rather
-            // than backing it.
-            go.transform.localPosition = new Vector3(0f, opening.y * 0.5f, -wallPlugDepth);
-            // Turned to face the player. A Quad's own normal is +Z, and one facing away is
-            // culled - an invisible plug is the same as no plug at all.
-            go.transform.localRotation = Quaternion.identity;
-
-            var collider = go.GetComponent<Collider>();
-            if (collider != null)
-                Destroy(collider);
-
-            _wallPlug = go.GetComponent<Renderer>();
-            if (_wallPlug == null)
-                return;
-
-            _wallPlug.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
-
-            Material wall = FindWallMaterial();
-            if (wall != null)
-            {
-                _wallPlug.sharedMaterial = wall;
-                return;
-            }
-
-            // No wall to copy: a flat dark fill is still better than a hole onto the skybox,
-            // and it says so rather than looking deliberate.
-            Shader lit = Art.CiycShaders.FindLit();
-            if (lit != null)
-            {
-                var fallback = new Material(lit) { name = "Portal_WallPlug_Fallback" };
-                fallback.color = new Color(0.08f, 0.08f, 0.09f);
-                if (fallback.HasProperty("_BaseColor"))
-                    fallback.SetColor("_BaseColor", new Color(0.08f, 0.08f, 0.09f));
-                _wallPlug.sharedMaterial = fallback;
-            }
-
-            CIYCLog.Warn(LogTag + "No lobby wall was found to copy a material from, so the " +
-                         "doorway is filled with a flat dark panel. Name a wall object " +
-                         "Lobby_Wall_North_Left or Lobby_Wall_North_Right and it will match.");
-        }
-
-        /// <summary>
-        /// The material of the wall this doorway is cut into, or null.
-        ///
-        /// <para>
-        /// Walked from this portal's own parent rather than through GameObject.Find. A global
-        /// find sweeps every object in every loaded scene, and the lobby has the investigation
-        /// world sitting additively behind it by the time this could matter; the wall is a
-        /// sibling, so there is no reason to look further than the room.
-        /// </para>
-        /// </summary>
-        private Material FindWallMaterial()
-        {
-            Transform room = transform.parent != null ? transform.parent : transform;
-            var renderers = room.GetComponentsInChildren<Renderer>(true);
-
-            for (int n = 0; n < WallSiblingNames.Length; n++)
-            {
-                for (int i = 0; i < renderers.Length; i++)
-                {
-                    if (renderers[i].sharedMaterial == null)
-                        continue;
-                    if (!string.Equals(renderers[i].gameObject.name, WallSiblingNames[n],
-                                       System.StringComparison.Ordinal))
-                        continue;
-
-                    return renderers[i].sharedMaterial;
-                }
-            }
-
-            return null;
-        }
 
         private static readonly string[] WallSiblingNames =
         {

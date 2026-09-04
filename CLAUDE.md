@@ -105,7 +105,8 @@ place that number lives; everything else derives it.
   intro overlay is cleared whatever happens, and the first-person hand target, elbow hint and
   anchor agree on one side with the fist clear of the near clip plane, and the probe room
   stays outside the playable world without ever making the portal enterable, and the lobby's
-  authored doorway is filled so the wall is a wall until a portal tears it. It also holds the
+  north wall is one solid object rather than segments around a gap, with no door frame and
+  no runtime patch behind it - the portal draws in front of the wall, not into a hole. It also holds the
   portal camera to the technique it implements: the far room is sampled in screen space rather
   than by the quad's own UV, the buffer is rendered at the shape it is sampled at, the
   projection is reset before it is made oblique, and the oblique near plane's side is derived

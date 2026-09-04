@@ -881,40 +881,37 @@ if [ -f "$PROBE" ]; then
   fi
 fi
 
-# ---- V9.3: the lobby wall is a wall until the portal tears it ------------------------------
-# The lobby's north wall is authored with a real doorway in it - two panels and a header with a
-# gap - so the player saw the night sky through it from the moment they walked in. There is no
-# door here; there is a wall that a portal opens.
-if code "$ENV/LobbyPortal.cs" | grep -qE 'private void EnsureWallPlug\(\)'; then
-  ok "the doorway is filled with a wall"
+# ---- V9.4: die Nordwand ist EIN durchgezogenes Objekt --------------------------------------
+# Sie war frueher in Segmente mit einer Luecke zerlegt - zwei Platten, ein Sturz, dazu ein
+# Tuerrahmen - und der Spieler sah durch das Loch in den Nachthimmel. Dafuer gab es einen
+# Laufzeit-Flicken (Portal_WallPlug), der die Luecke zustopfte.
+#
+# Jetzt ist die Wand eine Wand: ein Quader ueber die ganze Breite. Damit ist der Flicken
+# ueberfluessig, und eine zweite Flaeche an derselben Stelle waere nur eine Gelegenheit fuer
+# Z-Fighting. Das Portal zeichnet vor der Wand, nicht in ein Loch.
+if grep -qE '^  m_Name: Lobby_Wall_North$' "$SCENE"; then
+  ok "die Lobby hat eine durchgezogene Nordwand"
 else
-  bad "the doorway is filled with a wall" \
-      "without a plug the lobby has a hole onto the skybox before any portal exists"
+  bad "die Lobby hat eine durchgezogene Nordwand" \
+      "ohne sie steht die Lobby zum Nachthimmel hin offen"
 fi
 
-# Built in Awake, before a mission can be chosen - not when the portal opens.
-if code "$ENV/LobbyPortal.cs" | sed -n '/private void Awake/,/^        }$/p' \
-     | grep -qE 'EnsureWallPlug\(\)'; then
-  ok "the wall is filled before a mission is chosen"
+gone=""
+for obj in Lobby_Wall_North_Left Lobby_Wall_North_Right Lobby_Wall_North_Header \
+           Lobby_Wall_North_Fill Lobby_DoorJamb_Left Lobby_DoorJamb_Right Lobby_DoorLintel; do
+  grep -qE "^  m_Name: $obj\$" "$SCENE" && gone="$gone $obj"
+done
+if [ -n "$gone" ]; then
+  bad "die zerlegte Nordwand und ihr Tuerrahmen sind weg" "noch da:$gone"
 else
-  bad "the wall is filled before a mission is chosen" \
-      "filling it later leaves the hole visible on entering the lobby"
+  ok "die zerlegte Nordwand und ihr Tuerrahmen sind weg"
 fi
 
-# Behind the surface, or it hides the portal instead of backing it.
-if code "$ENV/LobbyPortal.cs" | grep -qE 'new Vector3\(0f, opening\.y \* 0\.5f, -wallPlugDepth\)'; then
-  ok "the wall fill sits behind the portal surface"
+if code "$ENV/LobbyPortal.cs" | grep -qE 'EnsureWallPlug|_wallPlug|wallPlugDepth'; then
+  bad "kein Laufzeit-Flicken mehr in der Wand" \
+      "die Wand ist durchgezogen; ein zweites Quad davor ist nur Z-Fighting"
 else
-  bad "the wall fill sits behind the portal surface" \
-      "PortalSurface local +Z is the player's side; a plug there covers the portal"
-fi
-
-# Nothing may switch it off. It is what the transparent parts of the portal show.
-if code "$ENV/LobbyPortal.cs" | grep -qE '_wallPlug\.(gameObject\.SetActive|enabled) *= *false'; then
-  bad "the wall fill is never switched off" \
-      "the portal is transparent outside its breach; the fill is what shows there"
-else
-  ok "the wall fill is never switched off"
+  ok "kein Laufzeit-Flicken mehr in der Wand"
 fi
 
 # ---------------------------------------------------------------- the portal camera maths
