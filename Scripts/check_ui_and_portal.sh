@@ -889,8 +889,9 @@ fi
 # Jetzt ist die Wand eine Wand: ein Quader ueber die ganze Breite. Damit ist der Flicken
 # ueberfluessig, und eine zweite Flaeche an derselben Stelle waere nur eine Gelegenheit fuer
 # Z-Fighting. Das Portal zeichnet vor der Wand, nicht in ein Loch.
-if grep -qE '^  m_Name: Lobby_Wall_North$' "$SCENE"; then
-  ok "die Lobby hat eine durchgezogene Nordwand"
+if grep -qE '^  m_Name: Lobby_Wall_North$' "$SCENE" \
+   && grep -qE '^  m_Name: Lobby_Skirting_North$' "$SCENE"; then
+  ok "die Lobby hat eine durchgezogene Nordwand mit einer durchgezogenen Sockelleiste"
 else
   bad "die Lobby hat eine durchgezogene Nordwand" \
       "ohne sie steht die Lobby zum Nachthimmel hin offen"
@@ -898,7 +899,8 @@ fi
 
 gone=""
 for obj in Lobby_Wall_North_Left Lobby_Wall_North_Right Lobby_Wall_North_Header \
-           Lobby_Wall_North_Fill Lobby_DoorJamb_Left Lobby_DoorJamb_Right Lobby_DoorLintel; do
+           Lobby_Wall_North_Fill Lobby_DoorJamb_Left Lobby_DoorJamb_Right Lobby_DoorLintel \
+           Lobby_Skirting_North_L Lobby_Skirting_North_R; do
   grep -qE "^  m_Name: $obj\$" "$SCENE" && gone="$gone $obj"
 done
 if [ -n "$gone" ]; then
