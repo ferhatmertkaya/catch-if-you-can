@@ -45,8 +45,11 @@ namespace CatchIfYouCan.UI
             scaler.matchWidthOrHeight = 0.5f;
             canvasGo.AddComponent<GraphicRaycaster>();
 
-            var safe = canvasGo.AddComponent<SafeAreaFitter>();
-            safe.enabled = true;
+            // NO SafeAreaFitter here. A root Canvas has its RectTransform driven by the
+            // canvas itself, so the fitter can never apply anything - it detects that in
+            // OnEnable, refuses, disables itself and logs an error. Adding it and then setting
+            // enabled = true logged that error TWICE per canvas, on every scene, forever.
+            // The safe area belongs on a stretched child; TouchHudFactory does it that way.
 
             return canvas;
         }
@@ -616,14 +619,20 @@ namespace CatchIfYouCan.UI
             caseIcon.GetComponent<RectTransform>().sizeDelta = new Vector2(64, 64);
             var journalBtn = CreateButton(topBar.transform, "JOURNAL", null, false, 48);
 
-            // Above the touch HUD's action cluster, which owns the bottom right corner from
-            // roughly y 0.04 to y 0.30. Interact and use are the two controls this screen still
-            // owns, and neither may sit where a thumb is already reaching for sprint.
+            // LEFT of the touch HUD's action cluster, not above it. The previous comment said
+            // that cluster owns "roughly y 0.04 to y 0.30" and put these two at y 0.26-0.45 to
+            // clear it - but the cluster actually reaches to about y 0.55 and spans x 0.82-0.97,
+            // so the black INTERACT and USE bars ran straight underneath the round sprint and
+            // carry buttons. That is the two-HUDs-on-top-of-each-other look in the captures:
+            // one HUD, drawn into itself.
+            //
+            // Moved into the gap between the inventory strip and the round cluster, where
+            // nothing else draws.
             var interactBtn = CreateButton(root, "INTERACT", null, true, 64);
-            Position(interactBtn.gameObject, 0.70f, 0.36f, 0.92f, 0.45f);
+            Position(interactBtn.gameObject, 0.46f, 0.30f, 0.78f, 0.39f);
 
             var useBtn = CreateButton(root, "USE", null, true, 52);
-            Position(useBtn.gameObject, 0.70f, 0.26f, 0.92f, 0.34f);
+            Position(useBtn.gameObject, 0.46f, 0.19f, 0.78f, 0.28f);
 
             var selector = BuildInventorySlots(root);
             BuildEquipmentPanel(root);

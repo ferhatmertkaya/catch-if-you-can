@@ -158,9 +158,16 @@ namespace CatchIfYouCan.Art
             ShapeToOval(ps);
 
             // Tangential drift, so they curl off the edge instead of firing straight out.
+            // All THREE orbital axes, in the SAME MinMaxCurve mode. Unity refuses a module
+            // whose axes disagree - setting only orbitalZ leaves X and Y on Constant while Z is
+            // TwoConstants - and logs "Particle Orbital Velocity curves must all be in the same
+            // mode" every frame, per system. Three systems is an endless wall of errors that
+            // buries every other line in the console.
             ParticleSystem.VelocityOverLifetimeModule velocity = ps.velocityOverLifetime;
             velocity.enabled = true;
             velocity.space = ParticleSystemSimulationSpace.Local;
+            velocity.orbitalX = new ParticleSystem.MinMaxCurve(0f, 0f);
+            velocity.orbitalY = new ParticleSystem.MinMaxCurve(0f, 0f);
             velocity.orbitalZ = new ParticleSystem.MinMaxCurve(-0.6f, 0.6f);
             velocity.radial = new ParticleSystem.MinMaxCurve(0.05f, 0.35f);
 
@@ -196,9 +203,16 @@ namespace CatchIfYouCan.Art
             ShapeToOval(ps);
 
             // The curve. Straight identical lines are lasers; a discharge bends.
+            // All THREE orbital axes, in the SAME MinMaxCurve mode. Unity refuses a module
+            // whose axes disagree - setting only orbitalZ leaves X and Y on Constant while Z is
+            // TwoConstants - and logs "Particle Orbital Velocity curves must all be in the same
+            // mode" every frame, per system. Three systems is an endless wall of errors that
+            // buries every other line in the console.
             ParticleSystem.VelocityOverLifetimeModule velocity = ps.velocityOverLifetime;
             velocity.enabled = true;
             velocity.space = ParticleSystemSimulationSpace.Local;
+            velocity.orbitalX = new ParticleSystem.MinMaxCurve(0f, 0f);
+            velocity.orbitalY = new ParticleSystem.MinMaxCurve(0f, 0f);
             velocity.orbitalZ = new ParticleSystem.MinMaxCurve(-2.2f, 2.2f);
             velocity.radial = new ParticleSystem.MinMaxCurve(0.2f, 1.4f);
 
@@ -249,9 +263,16 @@ namespace CatchIfYouCan.Art
 
             ShapeToOval(ps);
 
+            // All THREE orbital axes, in the SAME MinMaxCurve mode. Unity refuses a module
+            // whose axes disagree - setting only orbitalZ leaves X and Y on Constant while Z is
+            // TwoConstants - and logs "Particle Orbital Velocity curves must all be in the same
+            // mode" every frame, per system. Three systems is an endless wall of errors that
+            // buries every other line in the console.
             ParticleSystem.VelocityOverLifetimeModule velocity = ps.velocityOverLifetime;
             velocity.enabled = true;
             velocity.space = ParticleSystemSimulationSpace.Local;
+            velocity.orbitalX = new ParticleSystem.MinMaxCurve(0f, 0f);
+            velocity.orbitalY = new ParticleSystem.MinMaxCurve(0f, 0f);
             velocity.orbitalZ = new ParticleSystem.MinMaxCurve(-0.35f, 0.35f);
 
             // Expanding while losing opacity, which is what makes them read as dissipating gas
