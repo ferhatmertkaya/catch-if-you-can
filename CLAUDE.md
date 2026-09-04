@@ -71,7 +71,7 @@ place that number lives; everything else derives it.
   paths resolve to real files, an item is not given its visual before it knows what it is,
   a failed model load never becomes a silent placeholder, and the flashlight's diagnostic
   pose ships switched off, a model's size is measured in its own space rather than as a
-  world AABB, and the achieved size is checked against the wanted one. 43 checks.
+  world AABB, and the achieved size is checked against the wanted one. 42 checks.
 - `Scripts/check_multiplayer_architecture.sh` — the deterministic assembly stays
   engine-free, gameplay never reaches a Relay API, remote players never read
   local input, ghost decisions stay host-only, online capacity has exactly one
@@ -162,7 +162,7 @@ place that number lives; everything else derives it.
   runtime factories, compared by the NavMesh source filter and assigned by the prop
   builder while being defined nowhere, and `LightSwitch` was assigned one statement
   before the switch got its component. Both are checked now, along with the editor
-  setup's ability to restore them. 25 checks.
+  setup's ability to restore them. 24 checks.
 
 - `Scripts/check_asset_references.sh` — every asset a scene names really arrives on the
   machine that opens it. Every git-lfs rule matches a tracked file, every git-lfs file is
@@ -252,7 +252,16 @@ Repeating one of these is the most likely way to break something.
    made the solo player's carried torch read as unowned and let the first person
    past take it. `MultiplayerProtocol.LocalOnlyClientId` and `NoClientId` are
    now separate, and the harness asserts they differ.
-14. **A file that is correct in the repository and absent on the machine.** The scene said
+14. **Content removed without removing what pointed at it.** The Kenney house interior —
+   120 furniture models, 115 prop prefabs, 15 room prefabs, 115 prop definitions, 15 room
+   definitions — was deleted because a purchased modular pack replaces it. Deleting the
+   assets alone would have left the content catalog naming 130 GUIDs that resolve nowhere,
+   `ExternalAssetPaths` naming two folders that no longer exist, and `ExternalAssetIntegrator`
+   calling a builder that was gone. A catalog full of missing references looks exactly like a
+   working one until it is opened, which is the same failure as mistake 3 wearing different
+   clothes. The catalog is written empty instead, `PropDefinitionFactory.ModelSources` is an
+   empty array with the machinery intact behind it, and no constant names a deleted folder.
+15. **A file that is correct in the repository and absent on the machine.** The scene said
    `Missing Prefab with guid: cbaf2094dea28…` in red for `CIYC_HauntedRotaryPhone`, and
    every part of the repository was right: the `.meta` declared that guid, the scene
    reference matched it byte for byte, the git-lfs pointer's sha256 matched the file, and

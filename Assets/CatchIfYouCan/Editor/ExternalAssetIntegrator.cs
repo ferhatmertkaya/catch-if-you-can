@@ -4,7 +4,6 @@ using System.Linq;
 using System.Text;
 using CatchIfYouCan.Content;
 using CatchIfYouCan.Ghost;
-using CatchIfYouCan.Interaction;
 using CatchIfYouCan.Procedural;
 using UnityEditor;
 using UnityEditor.Animations;
@@ -32,9 +31,10 @@ namespace CatchIfYouCan.EditorTools
 
             ExternalAssetDownloader.EnsureBundledAssetsPresent();
 
-            if (!Directory.Exists(ExternalAssetPaths.KenneyFurnitureModels))
+            if (!Directory.Exists(ExternalAssetPaths.GhostCharacterModels))
             {
-                report.AppendLine("ERROR: Kenney furniture models missing.");
+                report.AppendLine("ERROR: ghost character models missing at " +
+                                  ExternalAssetPaths.GhostCharacterModels + ".");
                 return report.ToString();
             }
 
@@ -42,14 +42,14 @@ namespace CatchIfYouCan.EditorTools
             ConfigureImportSettings(report);
             AssetDatabase.Refresh(ImportAssetOptions.ForceUpdate);
 
-            var propPrefabs = BuildAllPropPrefabs(report);
-            var propDefinitions = BuildPropDefinitions(propPrefabs, report);
-            var roomDefinitions = KenneyRoomPrefabBuilder.BuildAllRoomDefinitions(report);
-            var doorPrefab = BuildDoorPrefab(report);
+            // The house interior half of this tool is gone with the Kenney kit it read. It
+            // built prop prefabs, prop definitions, room prefabs and the door from a folder
+            // of furniture models; the purchased modular pack that replaces them is not
+            // integrated yet. What remains is the ghost half, which never depended on it.
             var ghostPrefabs = BuildGhostPrefabs(report);
             BuildAllMonsterShowcasePrefabs(report);
             WireGhostDefinitions(ghostPrefabs, report);
-            BuildContentCatalog(propDefinitions, roomDefinitions, doorPrefab, report);
+            BuildContentCatalog(report);
 
             AssetDatabase.SaveAssets();
             AssetDatabase.Refresh();
@@ -62,21 +62,16 @@ namespace CatchIfYouCan.EditorTools
         private static void EnsureFolders()
         {
             EnsureFolder(Ghost.GhostVisualCatalog.PrefabAssetFolder);
-            EnsureFolder(ExternalAssetPaths.PropPrefabsRoot);
             EnsureFolder(ExternalAssetPaths.GhostPrefabsRoot);
             EnsureFolder(MonsterPrefabsRoot);
-            EnsureFolder(ExternalAssetPaths.PropDefinitionsRoot);
             EnsureFolder("Assets/CatchIfYouCan/ScriptableObjects/Content");
-            EnsureFolder("Assets/CatchIfYouCan/ScriptableObjects/Rooms");
-            EnsureFolder("Assets/CatchIfYouCan/Prefabs/Rooms/Kenney");
             EnsureFolder("Assets/CatchIfYouCan/Materials");
         }
 
         private static void ConfigureImportSettings(StringBuilder report)
         {
             int configured = 0;
-            configured += ConfigureModelsInFolder(ExternalAssetPaths.KenneyFurnitureModels, false);
-            configured += ConfigureModelsInFolder(ExternalAssetPaths.KenneyDungeonModels, IsAnimatedModel);
+            configured += ConfigureModelsInFolder(ExternalAssetPaths.GhostCharacterModels, IsAnimatedModel);
             configured += ConfigureModelsInFolder(ExternalAssetPaths.QuaterniusMonsters, true);
             report.AppendLine($"Import settings configured: {configured} models.");
         }
@@ -121,135 +116,6 @@ namespace CatchIfYouCan.EditorTools
         private static int ConfigureModelsInFolder(string folder, bool humanoid)
         {
             return ConfigureModelsInFolder(folder, _ => humanoid);
-        }
-
-        private static Dictionary<string, GameObject> BuildAllPropPrefabs(StringBuilder report)
-        {
-            var map = new Dictionary<string, GameObject>();
-            var blueprints = PropDefinitionFactory.CreateAllBlueprints();
-
-            for (int i = 0; i < blueprints.Length; i++)
-            {
-                var bp = blueprints[i];
-                if (bp.IsArchitecture)
-                    continue;
-
-                string modelPath = ResolveModelPath(bp.ModelFileName);
-                if (modelPath == null)
-                    continue;
-
-                string prefabPath = $"{ExternalAssetPaths.PropPrefabsRoot}/{SanitizeFileName(bp.PropName)}_{bp.ModelFileName}.prefab";
-                var prefab = BuildStaticPropPrefab(modelPath, prefabPath, bp.PropName, bp.BoundsSize);
-                if (prefab != null)
-                    map[bp.ModelFileName] = prefab;
-            }
-
-            report.AppendLine($"Prop prefabs built: {map.Count} / {blueprints.Length} blueprints.");
-            return map;
-        }
-
-        private static string ResolveModelPath(string modelFileName)
-        {
-            string furniture = $"{ExternalAssetPaths.KenneyFurnitureModels}/{modelFileName}.fbx";
-            if (File.Exists(furniture))
-                return furniture;
-
-            string dungeon = $"{ExternalAssetPaths.KenneyDungeonModels}/{modelFileName}.fbx";
-            if (File.Exists(dungeon))
-                return dungeon;
-
-            return null;
-        }
-
-        private static GameObject BuildStaticPropPrefab(string modelPath, string prefabPath, string objectName, Vector3 targetBounds)
-        {
-            var source = AssetDatabase.LoadAssetAtPath<GameObject>(modelPath);
-            if (source == null)
-                return null;
-
-            var root = new GameObject(objectName);
-            var visual = Object.Instantiate(source, root.transform);
-            visual.name = "Visual";
-            NormalizeScale(visual.transform, targetBounds);
-
-            if (root.GetComponentInChildren<Collider>() == null)
-            {
-                var box = root.AddComponent<BoxCollider>();
-                box.size = targetBounds;
-                box.center = new Vector3(0f, targetBounds.y * 0.5f, 0f);
-            }
-
-            var prefab = SavePrefab(root, prefabPath);
-            Object.DestroyImmediate(root);
-            return prefab;
-        }
-
-        private static PropDefinition[] BuildPropDefinitions(Dictionary<string, GameObject> prefabs, StringBuilder report)
-        {
-            var list = new List<PropDefinition>();
-            var blueprints = PropDefinitionFactory.CreateAllBlueprints();
-
-            for (int i = 0; i < blueprints.Length; i++)
-            {
-                var bp = blueprints[i];
-                if (bp.IsArchitecture)
-                    continue;
-
-                if (!prefabs.TryGetValue(bp.ModelFileName, out var prefab) || prefab == null)
-                    continue;
-
-                string assetPath = $"{ExternalAssetPaths.PropDefinitionsRoot}/prop_{bp.ModelFileName}.asset";
-                var existing = AssetDatabase.LoadAssetAtPath<PropDefinition>(assetPath);
-                if (existing != null)
-                {
-                    existing.PropName = bp.PropName;
-                    existing.Prefab = prefab;
-                    existing.CategoryTags = bp.RoomTags;
-                    existing.BoundsSize = bp.BoundsSize;
-                    existing.Weight = bp.Weight;
-                    EditorUtility.SetDirty(existing);
-                    list.Add(existing);
-                    continue;
-                }
-
-                var def = PropDefinitionFactory.CreateDefinition(bp, prefab);
-                AssetDatabase.CreateAsset(def, assetPath);
-                list.Add(def);
-            }
-
-            report.AppendLine($"Prop definitions: {list.Count}.");
-            return list.ToArray();
-        }
-
-        private static GameObject BuildDoorPrefab(StringBuilder report)
-        {
-            string modelPath = $"{ExternalAssetPaths.KenneyDungeonModels}/door.fbx";
-            string prefabPath = "Assets/CatchIfYouCan/Prefabs/Interactables/Door_Kenney.prefab";
-
-            if (!File.Exists(modelPath))
-            {
-                report.AppendLine("Door model missing — keeping existing door prefab if any.");
-                return AssetDatabase.LoadAssetAtPath<GameObject>("Assets/CatchIfYouCan/Prefabs/Door.prefab");
-            }
-
-            var source = AssetDatabase.LoadAssetAtPath<GameObject>(modelPath);
-            var root = new GameObject("Door_Kenney");
-            var visual = Object.Instantiate(source, root.transform);
-            visual.name = "Visual";
-            NormalizeScale(visual.transform, new Vector3(1.2f, 2.2f, 0.2f));
-
-            var hinge = new GameObject("Hinge").transform;
-            hinge.SetParent(root.transform, false);
-            hinge.localPosition = new Vector3(-0.55f, 0f, 0f);
-            visual.transform.SetParent(hinge, true);
-
-            var door = root.AddComponent<InteractiveDoor>();
-            SetPrivateField(door, "hinge", hinge);
-
-            var prefab = SavePrefab(root, prefabPath);
-            Object.DestroyImmediate(root);
-            report.AppendLine($"Door prefab: {prefabPath}");
-            return prefab;
         }
 
         private static Dictionary<string, GameObject> BuildGhostPrefabs(StringBuilder report)
@@ -306,7 +172,7 @@ namespace CatchIfYouCan.EditorTools
         {
             var paths = new List<string>();
             AppendModels(paths, ExternalAssetPaths.QuaterniusMonsters, "*.gltf", "*.glb");
-            AppendModels(paths, ExternalAssetPaths.KenneyDungeonModels, "character-*.fbx");
+            AppendModels(paths, ExternalAssetPaths.GhostCharacterModels, "character-*.fbx");
             return paths.Distinct().ToList();
         }
 
@@ -567,12 +433,19 @@ namespace CatchIfYouCan.EditorTools
             report.AppendLine($"Ghost definitions wired: {wired}.");
         }
 
-        private static void BuildContentCatalog(
-            PropDefinition[] propDefinitions,
-            RoomDefinition[] roomDefinitions,
-            GameObject doorPrefab,
-            StringBuilder report)
+        /// <summary>
+        /// Writes the catalog with no props, no rooms and no door. That is the truthful state:
+        /// the Kenney house interior was removed and its replacement is not integrated. An
+        /// empty catalog makes a mission world with nothing in it; a catalog still naming the
+        /// deleted assets would make one full of missing references, which is worse and looks
+        /// the same until it is opened.
+        /// </summary>
+        private static void BuildContentCatalog(StringBuilder report)
         {
+            var propDefinitions = new PropDefinition[0];
+            var roomDefinitions = new RoomDefinition[0];
+            GameObject doorPrefab = null;
+
             var catalog = AssetDatabase.LoadAssetAtPath<InvestigationContentCatalog>(ExternalAssetPaths.ContentCatalogAsset);
             if (catalog == null)
             {
@@ -598,33 +471,6 @@ namespace CatchIfYouCan.EditorTools
             foreach (char c in Path.GetInvalidFileNameChars())
                 value = value.Replace(c, '_');
             return value.Replace(' ', '_');
-        }
-
-        private static void NormalizeScale(Transform visual, Vector3 targetBounds)
-        {
-            var renderers = visual.GetComponentsInChildren<Renderer>(true);
-            if (renderers.Length == 0)
-                return;
-
-            var bounds = renderers[0].bounds;
-            for (int i = 1; i < renderers.Length; i++)
-                bounds.Encapsulate(renderers[i].bounds);
-
-            var size = bounds.size;
-            if (size.x <= 0.001f || size.y <= 0.001f || size.z <= 0.001f)
-                return;
-
-            float sx = targetBounds.x / size.x;
-            float sy = targetBounds.y / size.y;
-            float sz = targetBounds.z / size.z;
-            float uniform = Mathf.Min(sx, sy, sz);
-            visual.localScale = Vector3.one * uniform;
-
-            bounds = renderers[0].bounds;
-            for (int i = 1; i < renderers.Length; i++)
-                bounds.Encapsulate(renderers[i].bounds);
-
-            visual.position -= new Vector3(0f, bounds.min.y, 0f);
         }
 
         private static GameObject SavePrefab(GameObject root, string path)

@@ -9,7 +9,7 @@
 # -1 and the object quietly lands on layer 0.
 #
 # Both had already happened here. "Environment" was assigned by two runtime factories, compared
-# by the NavMesh source filter and assigned by the Kenney prop builder, while being defined
+# by the NavMesh source filter and assigned by the room prefab builder, while being defined
 # nowhere - so the van floor, the primitive rooms, the NavMesh sources and five of the 120 prop
 # prefabs all died at that line. "LightSwitch" was assigned one statement before the switch got
 # its InteractiveLightSwitch component, which took the breaker box down with it. The editor's
@@ -233,8 +233,6 @@ WITNESSES = [
      "the NavMesh source filter compares against a tag"),
     ("Assets/CatchIfYouCan/Scripts/Procedural/ProceduralHouseGenerator.cs", "LightSwitch",
      "the light switch is tagged before it gets its component"),
-    ("Assets/CatchIfYouCan/Editor/KenneyRoomPrefabBuilder.cs", "Environment",
-     "the Kenney prop builder tags what it scales"),
 ]
 
 for rel, tag, what in WITNESSES:

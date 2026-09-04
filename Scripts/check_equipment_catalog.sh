@@ -553,15 +553,18 @@ else
        "ein Gegenstand, der als Millimeter ankommt, sieht aus wie eine leere Hand"
 fi
 
-# Der Raumbauer hatte dieselbe Zeile. Er misst jetzt lose und haengt erst danach ein.
-KRB="Assets/CatchIfYouCan/Editor/KenneyRoomPrefabBuilder.cs"
-if sed 's://.*::' "$KRB" | grep -qE 'Object\.Instantiate\(source\);' \
-   && sed 's://.*::' "$KRB" | grep -qE 'instance\.transform\.SetParent\(parent, false\);'; then
-  ok "der Raumbauer misst ohne Eltern und haengt erst danach ein"
-else
-  fail "der Raumbauer misst ohne Eltern und haengt erst danach ein" \
-       "unter parent gemessen enthaelt die Welt-AABB die Elternskalierung schon"
-fi
+# Der Raumbauer, der frueher hier geprueft wurde, ist mit dem Kenney-Hausbestand entfernt
+# worden. Eine allgemeine Fassung dieser Pruefung - "keine Methode rechnet eine lokale
+# Skalierung aus einer Welt-AABB" - wurde versucht und wieder verworfen: sie meldet
+# NathanCharacterSetup, EquipmentVisualFactory und HeldFlashlight, und alle drei lesen
+# Renderer.bounds nur, um zu MESSEN und zu berichten, nie um dadurch zu teilen. Ob eine
+# Groesse als Divisor dient, laesst sich mit grep nicht entscheiden, und ein Waechter, der
+# falsch anschlaegt, ist schlechter als keiner.
+#
+# Die Deckung gegen Fehler 12 bleibt trotzdem bestehen, und zwar dort, wo der Code noch steht:
+# zwei Zeilen weiter oben wird geprueft, dass EquipmentVisualFactory im eigenen Raum des
+# Modells misst (TryMeasureLocal) und dass die erreichte Groesse gegen die gewuenschte
+# geprueft wird. Das sind die beiden Zeilen, die der Fehler damals gebrochen hat.
 
 printf '\npassed: %s   failed: %s\n\n' "$passed" "$failed"
 

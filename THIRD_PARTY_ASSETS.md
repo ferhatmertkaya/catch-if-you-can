@@ -9,14 +9,14 @@ V1 of **CATCH IF YOU CAN** includes redistributed CC0 asset packs for furniture,
 | Input System | Unity Package Manager | `com.unity.inputsystem` | Unity Package license | Unity Technologies | Input |
 | AI Navigation | Unity Package Manager | `com.unity.ai.navigation` | Unity Package license | Unity Technologies | Ghost / player pathing |
 | uGUI / TextMeshPro | Unity Package Manager | `com.unity.ugui` / TMP | Unity Package license | Unity Technologies | UI |
-| Kenney Furniture Kit | OpenGameArt / Kenney.nl | https://kenney.nl/assets/furniture-kit | CC0 (verify on source page) | Kenney | Prop prefabs, house furniture via PropSpawner |
-| Kenney Mini Dungeon | OpenGameArt / Kenney.nl | https://kenney.nl/assets/mini-dungeon | CC0 (verify on source page) | Kenney | Door prefab, ghost humanoid/orc meshes |
+| Kenney Mini Dungeon | OpenGameArt / Kenney.nl | https://kenney.nl/assets/mini-dungeon | CC0 (verify on source page) | Kenney | Ghost humanoid and orc meshes only — the house interior half of this kit was removed |
 | Quaternius Ultimate Monsters (subset) | Quaternius / descent-3d-assets mirror | https://quaternius.com/packs/ultimatemonsters.html | CC0 (verify on source page) | Quaternius | Rigged ghost prefabs (Orc, Demon, BlueDemon, CreepCreature) |
 
 ## Imported model files (bundled)
 
-- `Assets/External/Kenney/FurnitureKit/Models/*.fbx` — 120 furniture models
-- `Assets/External/Kenney/MiniDungeon/Models/*.fbx` — 21 dungeon/environment models
+- `Assets/External/Kenney/MiniDungeon/Models/character-human.fbx`, `character-orc.fbx` — the
+  two ghost meshes. The other 19 models of that kit, and the whole Furniture Kit, were removed
+  with the rest of the Kenney house interior; a purchased modular pack replaces them.
 - `Assets/External/Quaternius/Monsters/*` — Demon.gltf, Orc.gltf, BlueDemon.gltf, CreepCreature.glb
 
 When you import additional packs, append a row here with:

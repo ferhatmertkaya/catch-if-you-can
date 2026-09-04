@@ -77,7 +77,7 @@ namespace CatchIfYouCan.EditorTools
             EnsureLayers(report);
             EnsureTags(report);
             EnsureScriptableObjects(report);
-            if (AssetDatabase.IsValidFolder("Assets/External/Kenney/FurnitureKit/Models"))
+            if (AssetDatabase.IsValidFolder(Content.ExternalAssetPaths.GhostCharacterModels))
             {
                 ExternalAssetDownloader.EnsureBundledAssetsPresent();
                 try
@@ -91,7 +91,7 @@ namespace CatchIfYouCan.EditorTools
             }
             else
             {
-                report.AppendLine("External assets not found — skipped Integrate External Assets.");
+                report.AppendLine("Ghost character models not found — skipped Integrate External Assets.");
             }
 
             EnsureBuildScenes(report);

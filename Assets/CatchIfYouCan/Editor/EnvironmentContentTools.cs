@@ -16,7 +16,7 @@ namespace CatchIfYouCan.EditorTools
     /// <para>
     /// Zwei Werkzeuge, ein Fenster, weil sie dieselbe Frage aus zwei Richtungen stellen: was
     /// der Generator an Raeumen und Props tatsaechlich erreichen kann. Die Pruefung sieht auf
-    /// den vorhandenen Kenney-Bestand, das Audit auf ein neu importiertes Paket.
+    /// den vorhandenen Raum- und Prop-Bestand, das Audit auf ein neu importiertes Paket.
     /// </para>
     ///
     /// <para>
@@ -55,7 +55,8 @@ namespace CatchIfYouCan.EditorTools
         private void OnGUI()
         {
             EditorGUILayout.HelpBox(
-                "Pruefen liest den vorhandenen Kenney-Bestand. Paket pruefen sieht sich einen " +
+                "Pruefen liest den vorhandenen Raum- und Prop-Bestand (nach der Entfernung des " +
+                "Kenney-Hausbestands zunaechst leer). Paket pruefen sieht sich einen " +
                 "neu importierten Ordner an und sagt, um was fuer ein Paket es sich handelt.",
                 MessageType.Info);
 
