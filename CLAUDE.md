@@ -106,7 +106,11 @@ place that number lives; everything else derives it.
   projection is reset before it is made oblique, and the oblique near plane's side is derived
   from where the camera actually is instead of assumed - assumed, it clips the whole room away
   whenever the destination Transform faces the other way, which is a black interior behind a
-  lit rim. 106 checks.
+  lit rim. The camera is gated by its component rather than its GameObject and is enabled only
+  once the pose and the clip plane are written; the orientation convention is validated rather
+  than compensated for; the view refreshes on a cadence the quality level drives; the edge
+  distortion is capped at 1.5% of the screen and falls to zero at the centre; no per-platform
+  flip is hand-coded; the debug readout is opt-in; and nothing renders recursively. 116 checks.
 
 - `Scripts/check_agent_architecture.sh` — the roster holds 40 unique roles with
   every field, the roster and `AGENT_OWNERSHIP.md` name the same roles, the

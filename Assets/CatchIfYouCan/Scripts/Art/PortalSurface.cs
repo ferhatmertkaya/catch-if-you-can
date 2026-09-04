@@ -57,8 +57,22 @@ namespace CatchIfYouCan.Art
         [SerializeField, Min(0.01f)] private float nearPlane = 0.05f;
         [SerializeField, Min(1f)] private float farPlane = 60f;
 
-        [Tooltip("How far past the destination plane the oblique clip sits, in metres.")]
+        [Tooltip("How far past the destination plane the oblique clip sits, in metres. Small on " +
+                 "purpose: it exists to stop the destination wall z-fighting the clip plane, not " +
+                 "to hide metres of the far room.")]
         [SerializeField, Range(0.001f, 0.2f)] private float clipPlaneOffset = 0.02f;
+
+        [Tooltip("Stop rendering when the destination is authored facing the wrong way, rather " +
+                 "than showing a view whose traversal would send the player out backwards. " +
+                 "Clearing this renders anyway - the view is correct either way, but anything " +
+                 "reading the destination's forward as \"into the room\" is not.")]
+        [SerializeField] private bool refuseOnOrientationMismatch = true;
+
+        [Header("Diagnostics")]
+        [Tooltip("Off in production. On, the doorway's readout gains the full portal state: " +
+                 "both poses, the camera-space clip plane, the buffer size and whether this " +
+                 "frame actually rendered.")]
+        [SerializeField] private bool debugReadout;
 
         // Every artistic number lives on the style, which the doorway that owns this surface
         // pushes down. Nothing here holds a second copy of a colour or a noise scale.
@@ -82,6 +96,14 @@ namespace CatchIfYouCan.Art
         private readonly Plane[] _sourceFrustum = new Plane[6];
         private Bounds _openingBounds;
         private bool _built;
+
+        // Per-frame state, kept only so the debug readout can describe the frame that happened
+        // rather than recompute a second, different one.
+        private bool _visible;
+        private bool _orientationValid = true;
+        private bool _orientationReported;
+        private float _lastRenderTime = -999f;
+        private Vector4 _clipPlane;
 
         private static readonly int PortalTexId = Shader.PropertyToID("_PortalTex");
 
@@ -264,13 +286,49 @@ namespace CatchIfYouCan.Art
                    " shader=" + shaderName + (_usingRealShader ? "" : " (FALLBACK)") +
                    " material=" + (_material != null ? _material.name : "<none>") +
                    " portalCamera=" + (_portalCamera != null
-                       ? (_portalCamera.gameObject.activeSelf ? "active" : "idle")
+                       ? (_portalCamera.enabled ? "rendering" : "idle")
                        : "<none>") +
                    " renderTexture=" + (_texture != null
                        ? _textureWidth + "x" + _textureHeight
                        : "<none>") +
                    " destination=" + (destination != null ? destination.name : "<unbound>") +
-                   " playerCamera=" + (_cachedSource != null ? _cachedSource.name : "<unresolved>");
+                   " playerCamera=" + (_cachedSource != null ? _cachedSource.name : "<unresolved>") +
+                   DescribeDebug();
+        }
+
+        /// <summary>
+        /// The whole portal state, and only when asked for.
+        ///
+        /// <para>
+        /// Everything here answers a question that is otherwise guesswork from a screenshot:
+        /// whether the frame rendered at all, where the virtual camera actually is, and what the
+        /// oblique plane came out as. It is off by default because a portal that logs its matrix
+        /// every frame is a portal nobody can read the console around.
+        /// </para>
+        /// </summary>
+        private string DescribeDebug()
+        {
+            if (!debugReadout)
+                return string.Empty;
+
+            var cam = _portalCamera != null ? _portalCamera.transform : null;
+            float interval = _style.RefreshInterval();
+
+            return "\n    visible=" + _visible +
+                   " rendered=" + (_portalCamera != null && _portalCamera.enabled) +
+                   " lastRender=" + (Time.unscaledTime - _lastRenderTime).ToString("F3") + "s ago" +
+                   " refresh=" + (interval <= 0f ? "every frame"
+                                                 : (1f / interval).ToString("F0") + " Hz") +
+                   "\n    orientation=" + (_orientationValid ? "OK" : "MISMATCHED") +
+                   " refuseOnMismatch=" + refuseOnOrientationMismatch +
+                   "\n    portalCameraPos=" + (cam != null ? cam.position.ToString("F2") : "<none>") +
+                   " portalCameraRot=" + (cam != null ? cam.rotation.eulerAngles.ToString("F1") : "<none>") +
+                   "\n    clipPlane(cameraSpace)=" + _clipPlane.ToString("F3") +
+                   " offset=" + clipPlaneOffset.ToString("F3") + "m" +
+                   "\n    fov=" + (_portalCamera != null ? _portalCamera.fieldOfView.ToString("F1") : "?") +
+                   " aspect=" + (_portalCamera != null ? _portalCamera.aspect.ToString("F3") : "?") +
+                   " planePoint=" + _planePoint.ToString("F2") +
+                   " planeNormal=" + _planeNormal.ToString("F2");
         }
 
         private void Start()
@@ -413,7 +471,22 @@ namespace CatchIfYouCan.Art
 
             // Nothing else goes on this object, ever: no AudioListener, no PlayerLook, no
             // gameplay component. Built from a bare GameObject precisely so none can arrive.
-            go.SetActive(false);
+
+            // The GameObject stays ACTIVE and the camera component is what gets switched.
+            //
+            // Unity renders an enabled camera automatically, in depth order, after LateUpdate -
+            // which is where the pose and the clip plane are written - so "enable it on the
+            // frames it should draw" already gives exact ordering, one render per frame at most,
+            // and nothing to switch off afterwards. Deactivating the GameObject instead churns
+            // the whole hierarchy through OnDisable/OnEnable every time the player looks away.
+            //
+            // The alternative - leaving it disabled and calling Render() by hand - is not
+            // available: Camera.Render() is unsupported under a scriptable render pipeline and
+            // logs on every call. Unity 6 replaces it with RenderPipeline.SubmitRenderRequest,
+            // and that signature cannot be verified from here (every Unity documentation and
+            // package host answers 403 in this environment), so it is not being guessed at.
+            // SubmitRenderRequest belongs exactly here if someone with an Editor wants it.
+            _portalCamera.enabled = false;
         }
 
         // ---- per frame ------------------------------------------------------------------------
@@ -426,28 +499,46 @@ namespace CatchIfYouCan.Art
             Camera source = ResolveSource();
             if (source == null)
             {
-                _portalCamera.gameObject.SetActive(false);
+                _portalCamera.enabled = false;
                 return;
             }
 
             Vector3 eye = source.transform.position;
+
+            // Which side of the portal plane the eye is on, and how far. A signed distance, not
+            // a screen-space test: Camera.WorldToScreenPoint divides by a z that is negative
+            // behind the camera, so a portal directly behind the player comes back with
+            // plausible-looking coordinates on screen. A dot product cannot lie about the side.
             float inFront = Vector3.Dot(eye - _planePoint, _planeNormal);
             float distance = Vector3.Distance(eye, _planePoint);
 
             // Behind the opening, too far, or not on screen - each skips a whole second render
             // of the far room. The last one matters most: a player crossing the lobby faces the
-            // portal for a fraction of the time.
-            bool visible = inFront > 0.05f && distance <= _style.renderDistance;
-            if (visible)
+            // portal for a fraction of the time. The frustum test is against the opening's own
+            // bounds, so facing away is covered by the same test as looking past it.
+            _visible = inFront > 0.05f && distance <= _style.renderDistance;
+            if (_visible)
             {
                 GeometryUtility.CalculateFrustumPlanes(source, _sourceFrustum);
-                visible = GeometryUtility.TestPlanesAABB(_sourceFrustum, _openingBounds);
+                _visible = GeometryUtility.TestPlanesAABB(_sourceFrustum, _openingBounds);
             }
 
-            if (_portalCamera.gameObject.activeSelf != visible)
-                _portalCamera.gameObject.SetActive(visible);
-            if (!visible)
+            if (!_visible)
+            {
+                _portalCamera.enabled = false;
                 return;
+            }
+
+            // Cadence. Zero interval is every frame, which is what the top quality level asks
+            // for; a phone can be told to refresh at 30 Hz while the game runs at 60. The buffer
+            // keeps its last contents on a skipped frame, so the portal does not flicker - it
+            // updates its parallax half as often, which is the trade being made.
+            float interval = _style.RefreshInterval();
+            if (interval > 0f && Time.unscaledTime - _lastRenderTime < interval)
+            {
+                _portalCamera.enabled = false;
+                return;
+            }
 
             EnsureTexture(source);
 
@@ -487,6 +578,34 @@ namespace CatchIfYouCan.Art
                 ? (float)_textureWidth / _textureHeight
                 : source.aspect;
 
+            // ---- the orientation convention, checked rather than compensated for -------------
+            //
+            // One rule, for both transforms: local +Z points OUT of the visible surface. The
+            // half turn folded into PortalToWorldInverse then lands the portal camera BEHIND the
+            // destination plane looking through it, which is what makes walking in one side come
+            // out forwards rather than backwards.
+            //
+            // So the camera must be on the destination's -Z side. If it is not, the destination
+            // was authored facing the other way, and the consequences are not confined to this
+            // component: destination.forward is read elsewhere as "the direction the player
+            // emerges facing". Rendering anyway would produce a view that looks plausible and a
+            // traversal that sends the player out backwards, which is worse than a hole that
+            // says what is wrong with it.
+            float destinationSide =
+                Vector3.Dot(destination.forward,
+                            _portalCamera.transform.position - destination.position);
+
+            _orientationValid = destinationSide <= 0f;
+            if (!_orientationValid)
+            {
+                ReportOrientation();
+                if (refuseOnOrientationMismatch)
+                {
+                    _portalCamera.enabled = false;
+                    return;
+                }
+            }
+
             _portalCamera.nearClipPlane = Mathf.Max(0.01f, nearPlane);
 
             // Set, but not what ends up bounding the view: the oblique matrix below moves the
@@ -500,8 +619,39 @@ namespace CatchIfYouCan.Art
             // The near plane is moved onto the destination plane, so the far room's own doorway
             // wall - which sits right where this camera stands - is removed exactly, at the
             // surface, rather than approximately at whatever depth a near value lands on.
-            _portalCamera.projectionMatrix = _portalCamera.CalculateObliqueMatrix(
-                CameraSpacePlane(destination.position, destination.forward));
+            _clipPlane = CameraSpacePlane(destination.position, destination.forward);
+            _portalCamera.projectionMatrix = _portalCamera.CalculateObliqueMatrix(_clipPlane);
+
+            // Last: everything the render depends on is written, so enabling it here is the one
+            // point at which this frame's far room can be drawn. Unity picks it up after
+            // LateUpdate and draws it before the player's camera, because its depth is lower.
+            _portalCamera.enabled = true;
+            _lastRenderTime = Time.unscaledTime;
+        }
+
+        /// <summary>
+        /// Names both objects and the fix, once. A convention violation is a content bug and the
+        /// person who can fix it is looking at a Hierarchy, not at this file.
+        /// </summary>
+        private void ReportOrientation()
+        {
+            if (_orientationReported)
+                return;
+
+            _orientationReported = true;
+            Core.CIYCLog.Error(
+                "[CIYC][Portal] Orientation mismatch between source '" + name +
+                "' and destination '" + destination.name + "'. The convention is that local +Z " +
+                "points OUT of the visible surface for both, which puts the portal camera " +
+                "behind the destination plane; here it came out in front, so '" +
+                destination.name + "' is facing the wrong way. Rotate it 180 degrees about Y. " +
+                (refuseOnOrientationMismatch
+                    ? "Refusing to render until then rather than showing a view whose traversal " +
+                      "would send the player out backwards. Clear refuseOnOrientationMismatch on '" +
+                      name + "' to render anyway."
+                    : "Rendering anyway because refuseOnOrientationMismatch is off; the view is " +
+                      "correct but anything reading " + destination.name +
+                      ".forward as \"into the room\" is not."));
         }
 
         /// <summary>
@@ -559,35 +709,8 @@ namespace CatchIfYouCan.Art
             Vector3 viewPoint = view.MultiplyPoint(offsetPoint);
             Vector3 viewNormal = view.MultiplyVector(kept).normalized;
 
-            ReportClipSide(onNormalSide);
-
             return new Vector4(viewNormal.x, viewNormal.y, viewNormal.z,
                                -Vector3.Dot(viewPoint, viewNormal));
-        }
-
-        private bool _clipSideReported;
-
-        /// <summary>
-        /// Says once which way the destination is facing, because both ways now work and that
-        /// makes a mis-authored destination invisible. It is still worth knowing: a destination
-        /// whose forward points out of the far room rather than into it will also send anything
-        /// that reads that forward - a spawn direction, an arrival rotation - the wrong way.
-        /// </summary>
-        private void ReportClipSide(float onNormalSide)
-        {
-            if (_clipSideReported)
-                return;
-
-            _clipSideReported = true;
-
-            if (onNormalSide < 0f)
-                return;
-
-            Core.CIYCLog.Warn(
-                "[CIYC][Portal] '" + name + "': the destination's forward points back at the " +
-                "portal camera rather than into the far room. The oblique clip plane has been " +
-                "flipped so the view is correct, but anything else reading " +
-                destination.name + ".forward as \"into the room\" is pointing the wrong way.");
         }
 
         private Camera ResolveSource()

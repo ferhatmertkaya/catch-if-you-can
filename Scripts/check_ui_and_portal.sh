@@ -980,6 +980,102 @@ else
       "CalculateObliqueMatrix reads the current projection; without a reset the skew accumulates"
 fi
 
+# ---------------------------------------------------------------- the portal camera, continued
+
+# The camera object stays active and the COMPONENT is what is switched. Toggling the
+# GameObject churns the hierarchy through OnDisable/OnEnable every time the player looks
+# away, and it is also how a second camera ends up rendering on a frame its pose was never
+# written for.
+if code "$SURF" | grep -qE '_portalCamera\.gameObject\.SetActive'; then
+  bad "the portal camera is gated by its component, not by its GameObject" \
+      "SetActive on the camera object churns the hierarchy and decouples the render from the pose"
+else
+  ok "the portal camera is gated by its component, not by its GameObject"
+fi
+
+# It is enabled at the END of LateUpdate, after the pose, the aspect and the oblique plane are
+# all written - so the frame Unity draws is the frame that was set up, never a stale one.
+if code "$SURF" | tr -d '\n' | tr -s ' ' \
+     | grep -qE 'CalculateObliqueMatrix\(_clipPlane\); _portalCamera\.enabled = true;'; then
+  ok "the camera is enabled only after the pose and the clip plane are written"
+else
+  bad "the camera is enabled only after the pose and the clip plane are written" \
+      "enabling it earlier lets Unity draw a frame whose projection was not set up yet"
+fi
+
+# Nothing that makes a camera the player's may be on it. An AudioListener in particular gives
+# the scene two, and Unity then picks one at random and warns about it forever.
+if code "$SURF" | grep -qE 'AddComponent<AudioListener>|AddComponent<Player'; then
+  bad "the portal camera carries nothing that makes it the player's" \
+      "no AudioListener, no PlayerLook, no input or HUD component belongs on it"
+else
+  ok "the portal camera carries nothing that makes it the player's"
+fi
+
+# The orientation convention is checked, not compensated for in a dozen places. One rule -
+# local +Z out of the visible surface - and a destination that breaks it is named.
+if code "$SURF" | grep -q 'refuseOnOrientationMismatch' \
+   && code "$SURF" | grep -qE 'Vector3\.Dot\(destination\.forward,'; then
+  ok "the source/destination orientation convention is validated"
+else
+  bad "the source/destination orientation convention is validated" \
+      "a destination facing the wrong way renders a plausible view and traverses backwards"
+fi
+
+# The far room is re-rendered on a cadence the quality level chooses, so a phone can pay for
+# it half as often. Zero means every frame; the check is that the seam exists at all.
+if code "$ART/PortalStyle.cs" | grep -qE 'public float RefreshInterval\(\)' \
+   && code "$SURF" | grep -qE '_style\.RefreshInterval\(\)'; then
+  ok "the portal view has a render cadence the quality level drives"
+else
+  bad "the portal view has a render cadence the quality level drives" \
+      "a second pass over a whole house every frame is not a mobile budget"
+fi
+
+# The far room must stay readable. The distortion is confined to the edge by the shader, and
+# capped in magnitude by the range on the field rather than by whoever drags the slider.
+if code "$ART/PortalStyle.cs" | tr -d '\n' | tr -s ' ' \
+     | grep -qE '\[Range\(0f, 0\.01[0-5]f\)\] public float viewDistortionStrength'; then
+  ok "the view distortion is capped at 1.5% of the screen"
+else
+  bad "the view distortion is capped at 1.5% of the screen" \
+      "a portal whose centre wobbles is a screen effect, not an opening"
+fi
+
+# The bend is weighted to the boundary. Applied flat it drags the middle of the opening too.
+if grep -qE 'bend = saturate\(1\.0 - view\)' "$SHADER"; then
+  ok "the view distortion falls to zero toward the centre"
+else
+  bad "the view distortion falls to zero toward the centre" \
+      "an unweighted offset moves the whole far room, not just its edge"
+fi
+
+# Unity's own projection data decides the render-target flip, not a platform name. A
+# hand-written per-platform branch is how the portal ends up upside down on exactly one API.
+if grep -qE '#if +UNITY_(STANDALONE|IOS|ANDROID|EDITOR_WIN|EDITOR_OSX)' "$SHADER"; then
+  bad "no hand-coded per-platform flip in the portal shader" \
+      "ComputeScreenPos already carries _ProjectionParams.x, which is the convention data"
+else
+  ok "no hand-coded per-platform flip in the portal shader"
+fi
+
+# Debug output exists and is off unless asked for.
+if code "$SURF" | grep -qE 'private bool debugReadout' \
+   && code "$SURF" | grep -qE 'if \(!debugReadout\)'; then
+  ok "the portal debug readout exists and is opt-in"
+else
+  bad "the portal debug readout exists and is opt-in" \
+      "a portal that logs its matrix every frame is a console nobody can read"
+fi
+
+# No recursion. One portal seen through another is not needed and doubles the cost silently.
+if code "$SURF" | grep -qE 'maxRecursion|recursionDepth|RenderRecursive'; then
+  bad "the portal does not render recursively" \
+      "production default is one pass; recursion doubles the cost per level"
+else
+  ok "the portal does not render recursively"
+fi
+
 echo
 echo "  $PASS passed, $FAIL failed"
 if [ "$FAIL" -ne 0 ]; then

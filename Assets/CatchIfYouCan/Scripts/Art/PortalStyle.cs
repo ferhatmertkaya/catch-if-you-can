@@ -85,7 +85,12 @@ namespace CatchIfYouCan.Art
 
         [Tooltip("How far the far room is dragged sideways near the rim. Falls to zero toward " +
                  "the centre, which stays readable.")]
-        [Range(0f, 0.12f)] public float viewDistortionStrength = 0.018f;
+        // Screen-UV units, so this IS the percentage of the screen the far room can be
+        // dragged by. Capped at 1.5% by the range rather than by good intentions: the
+        // destination has to stay readable, and the shader already confines the bend to
+        // the outer edge, so a large value here does not read as refraction - it reads as
+        // the far room sliding around inside the hole.
+        [Range(0f, 0.015f)] public float viewDistortionStrength = 0.012f;
 
         [Range(-3f, 3f)] public float rotationSpeed = 0.22f;
         [Range(0f, 12f)] public float pulseSpeed = 2.1f;
@@ -165,6 +170,31 @@ namespace CatchIfYouCan.Art
         [Tooltip("Multiplies every emission rate. Scaled again by the quality level on top of " +
                  "this, so mobile gets far fewer without a second particle system existing.")]
         [Range(0f, 2f)] public float particleQuality = 1f;
+
+        [Tooltip("How often the far room is re-rendered at the TOP quality level, in hertz. " +
+                 "Zero means every frame, which is what a portal you can walk up to wants.")]
+        [Range(0f, 120f)] public float refreshHz = 0f;
+
+        [Tooltip("The same at the LOWEST quality level. The far room is a second pass over a " +
+                 "whole house, so halving its rate on a phone buys back most of that cost - but " +
+                 "the parallax stops being smooth as you strafe, so it is a trade, not a free " +
+                 "win. Zero means every frame here too.")]
+        [Range(0f, 120f)] public float mobileRefreshHz = 30f;
+
+        /// <summary>
+        /// Seconds between refreshes on this device, or zero for every frame.
+        ///
+        /// <para>
+        /// Interpolated across the quality levels by the same fraction the buffer size and the
+        /// particle rates use, so there is one notion of "how much machine is this" and not
+        /// three.
+        /// </para>
+        /// </summary>
+        public float RefreshInterval()
+        {
+            float hz = Mathf.Lerp(mobileRefreshHz, refreshHz, QualityFraction01());
+            return hz <= 0.01f ? 0f : 1f / hz;
+        }
 
         /// <summary>
         /// Where the quality level puts this device, 0 at the lowest and 1 at the highest.
