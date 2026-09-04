@@ -16,7 +16,7 @@ MonoBehaviour:
   modelResourcePath: Props/CIYC_Flashlight
   modelMaterialPath: Props/MAT_Flashlight
   length: 0.24
-  modelForwardAxis: {x: -1, y: 0, z: 0}
+  modelForwardAxis: {x: 1, y: 0, z: 0}
   fallbackSize: {x: 0.052, y: 0.24, z: 0.052}
   isDevPlaceholder: 0
   placeholderColor: {r: 0.18, g: 0.19, b: 0.2, a: 1}

@@ -13,11 +13,11 @@ MonoBehaviour:
   m_Name: VisualProfile_UvLight
   m_EditorClassIdentifier: 
   visualPrefab: {fileID: 0}
-  modelResourcePath: 
-  modelMaterialPath: 
-  length: 0.2
-  modelForwardAxis: {x: 0, y: 1, z: 0}
+  modelResourcePath: Props/CIYC_UvLight
+  modelMaterialPath: Props/MAT_UvLight
+  length: 0.18
+  modelForwardAxis: {x: -1, y: 0, z: 0}
   fallbackSize: {x: 0.1, y: 0.2, z: 0.08}
-  isDevPlaceholder: 1
+  isDevPlaceholder: 0
   placeholderColor: {r: 0.55, g: 0.25, b: 0.95, a: 1}
-  logState: 0
+  logState: 1

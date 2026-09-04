@@ -112,7 +112,7 @@ place that number lives; everything else derives it.
   instead of standing in a T-pose. It also stops a visual being built before the thing it is a
   visual OF: an item told what it is after `AddComponent` rebuilds, the doorway starts opening
   before its far world is ready, and Nathan's bound textures import at a size the material can
-  actually use. 36 checks.
+  actually use, and every model a visual profile names really exists under `Resources` with a non-zero forward axis. 48 checks.
 
 All seven run in CI (`.github/workflows/determinism.yml`). Run them locally before
 pushing; they need nothing but a shell (and `python3` for the roster checks).

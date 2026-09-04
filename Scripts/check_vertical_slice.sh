@@ -23,7 +23,7 @@ echo "== Vertical slice guard =="
 echo
 
 python3 - "$ROOT" <<'PY'
-import io, re, sys
+import glob, io, re, sys
 
 root = sys.argv[1]
 ghosts_src = io.open(root + "/Assets/CatchIfYouCan/Scripts/Ghost/GhostDefinitionFactory.cs",
@@ -375,6 +375,53 @@ for name, floor in [("rp_nathan_animated_003_dif.jpg.meta", 4096),
     else:
         bad("%s imports at a usable size" % name.split('.')[0][-10:],
             "found maxTextureSize=%d aniso=%d; the source is 8192 and the material binds it" % (size, a))
+
+# ---- every model a visual profile names is really under Resources ---------------------------
+# CLAUDE.md mistake 3: a Resources.Load path that has never existed misses silently for the
+# life of the project. ApplyModel takes two of them, and the item that gets a path with no file
+# behind it does not error at build time - it just holds the fallback capsule forever.
+factory = code("/Assets/CatchIfYouCan/Scripts/Equipment/EquipmentDefinitionFactory.cs")
+res = root + "/Assets/CatchIfYouCan/Resources/"
+calls = _re.findall(r'ApplyModel\("([^"]+)",\s*"([^"]+)",\s*([0-9.]+)f,\s*new Vector3\(([^)]*)\)',
+                    factory)
+if not calls:
+    bad("visual profiles name real models", "no ApplyModel call found at all")
+for model, mat, length, axis in calls:
+    name = model.split("/")[-1]
+    if glob.glob(res + model + ".*"):
+        ok("%s resolves to a model under Resources" % name)
+    else:
+        bad("%s resolves to a model under Resources" % name,
+            "nothing matches Resources/%s.*" % model)
+    if glob.glob(res + mat + ".mat"):
+        ok("%s resolves to a material under Resources" % mat.split("/")[-1])
+    else:
+        bad("%s resolves to a material under Resources" % mat.split("/")[-1],
+            "nothing matches Resources/%s.mat" % mat)
+    # The axis is turned onto the carried root's +Y, which is where every emitter in the game
+    # is hung. A zero vector silently becomes Vector3.up and lays the item across the hand.
+    comps = [c.strip() for c in axis.split(",")]
+    if len(comps) == 3 and any(c not in ("0f", "0") for c in comps):
+        ok("%s declares a non-zero forward axis" % name)
+    else:
+        bad("%s declares a non-zero forward axis" % name, "found new Vector3(%s)" % axis)
+
+# The art the factory names has to be real content or a proper LFS pointer to it. CI checks out
+# without lfs:true, so a pointer here is expected and fine - what is NOT fine is a file that is
+# neither, which is how a truncated or half-committed model imports as nothing at all.
+for model, _mat, _l, _a in calls:
+    hits = glob.glob(res + model + ".fbx")
+    if not hits:
+        continue
+    name = model.split("/")[-1]
+    head = io.open(hits[0], "rb").read(64)
+    if head.startswith(b"version https://git-lfs"):
+        ok("%s is an LFS pointer (content not needed here)" % name)
+    elif head.startswith(b"Kaydara FBX"):
+        ok("%s is a real FBX" % name)
+    else:
+        bad("%s is real content or an LFS pointer" % name,
+            "the file is neither; it will import as an empty model")
 
 print()
 print("  %d passed, %d failed" % (passed, failed))

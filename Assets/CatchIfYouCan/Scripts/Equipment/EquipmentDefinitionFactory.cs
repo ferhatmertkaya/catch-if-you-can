@@ -159,10 +159,10 @@ namespace CatchIfYouCan.Equipment
         /// </para>
         ///
         /// <para>
-        /// Only the torch has finished art in the project today. The rest get a placeholder
-        /// that <b>says</b> it is one, which is the honest state and not something to paper
-        /// over: an item that looks finished and is not is worse than an item that looks
-        /// unfinished.
+        /// The torch, the UV light and the spectral grid projector have finished art. The
+        /// rest get a placeholder that <b>says</b> it is one, which is the honest state and not
+        /// something to paper over: an item that looks finished and is not is worse than an
+        /// item that looks unfinished.
         /// </para>
         /// </summary>
         private static EquipmentVisualProfile BuildVisualProfile(string id, string displayName)
@@ -173,11 +173,42 @@ namespace CatchIfYouCan.Equipment
 
             if (string.Equals(id, EquipmentIds.Flashlight, System.StringComparison.Ordinal))
             {
-                // Matches the authored VisualProfile_Flashlight asset exactly, including the
-                // model's own forward axis - the mesh runs along -X, which is why the torch
-                // would otherwise be laid in the hand sideways.
+                // +X, not -X. The axis was always right - the mesh runs along X, which is why
+                // the torch would otherwise be laid in the hand sideways - but the SIGN was a
+                // coin flip nobody had ever seen land, because until the late-binding fix the
+                // torch was a placeholder capsule. Reading the mesh settles it: the +X end
+                // carries the bell (max radius 0.193 against the barrel's 0.106) and its cap is
+                // concave, which is a reflector; the -X end is narrow and convex, which is a
+                // tail cap. ModelForwardAxis is turned onto the carried root's +Y and that is
+                // where HeldFlashlight hangs the lens and the spot light, so -X pointed the
+                // beam out of the battery cap and buried the reflector in the fist.
                 profile.ApplyModel("Props/CIYC_Flashlight", "Props/MAT_Flashlight",
-                                   0.24f, new Vector3(-1f, 0f, 0f));
+                                   0.24f, new Vector3(1f, 0f, 0f));
+                return profile;
+            }
+
+            if (string.Equals(id, EquipmentIds.UvLight, System.StringComparison.Ordinal))
+            {
+                // The tactical torch runs along X like the other one but is built the other way
+                // round: the stepped bezel is the -X end (max radius 0.244, and the brightest
+                // part of the base map) and the switch tail is +X.
+                profile.ApplyModel("Props/CIYC_UvLight", "Props/MAT_UvLight",
+                                   0.18f, new Vector3(-1f, 0f, 0f));
+                return profile;
+            }
+
+            if (string.Equals(id, EquipmentIds.SpectralGrid, System.StringComparison.Ordinal))
+            {
+                // Not a torch: a brick with the lens in the middle of one large face rather
+                // than on an end. The emissive patch in the base map sits on the face that
+                // imports as -Z, so THAT is the direction the grid has to leave the device -
+                // SpectralGridProjection builds its cone along the head's +Y and the head
+                // inherits the carried root. Length is therefore the device's DEPTH, not its
+                // long side: 0.055 m deep puts it in the hand at 0.225 x 0.111 m, which is a
+                // projector you could hold. Using the long side instead would have aimed the
+                // lens sideways out of the player's palm.
+                profile.ApplyModel("Props/CIYC_DotsProjector", "Props/MAT_DotsProjector",
+                                   0.055f, new Vector3(0f, 0f, -1f));
                 return profile;
             }
 

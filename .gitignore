@@ -42,3 +42,13 @@ ExportedObj/
 Tools/**/bin/
 Tools/**/obj/
 !Tools/DeterminismHarness/DeterminismHarness.csproj
+
+# Meshy's plugin and its import scratch folder, and Unity's template tutorial
+# folder. The folders themselves were never committed, so committing their .meta
+# files left three orphans pointing at nothing.
+Assets/MeshyImports/
+Assets/MeshyImports.meta
+Assets/ai.meshy/
+Assets/ai.meshy.meta
+Assets/TutorialInfo/
+Assets/TutorialInfo.meta
