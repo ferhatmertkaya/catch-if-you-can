@@ -244,6 +244,74 @@ namespace CatchIfYouCan.Equipment
             BuildDropCollider(measured);
         }
 
+        /// <summary>
+        /// Rebuilds the visual once the definition has arrived.
+        ///
+        /// <para>
+        /// <b>This is why every code-spawned item was a placeholder.</b> An item is created with
+        /// <c>AddComponent</c> and told what it is on the NEXT line - and AddComponent runs Awake
+        /// synchronously, so <see cref="BuildCarried"/> had already run with <c>definition</c>
+        /// still null. <see cref="VisualProfile"/> therefore returned the fallback, the factory
+        /// built its honest placeholder capsule, and <c>BuildCarried</c>'s
+        /// <c>if (CarriedRoot != null) return;</c> guard meant it never ran again. Binding the
+        /// definition afterwards set the stats and left the capsule standing.
+        /// </para>
+        ///
+        /// <para>
+        /// The flashlight is the visible case - the finished CIYC_Flashlight model is in
+        /// Resources and was never reached - but every item built by
+        /// <c>EquipmentRuntimeFactory</c> follows the same two lines and had the same result.
+        /// </para>
+        ///
+        /// <para>
+        /// Only when the visual really was built from the fallback and the definition really
+        /// does carry a profile. An item constructed correctly - definition first - never
+        /// rebuilds, so nothing that already works pays for this.
+        /// </para>
+        /// </summary>
+        public override void BindDefinition(EquipmentDefinition def)
+        {
+            bool builtBlind = CarriedRoot != null && definition == null;
+
+            base.BindDefinition(def);
+
+            if (!builtBlind || def == null || def.VisualProfile == null)
+                return;
+
+            RebuildCarried();
+        }
+
+        /// <summary>
+        /// Throws away the visual and builds it again from the definition now in hand.
+        /// Subclasses rebuild whatever they hang off it - the torch its lens and beam - because
+        /// this goes back through <see cref="BuildCarried"/>, which they already override.
+        /// </summary>
+        protected void RebuildCarried()
+        {
+            if (CarriedRoot != null)
+            {
+                Object.Destroy(CarriedRoot.gameObject);
+                CarriedRoot = null;
+            }
+
+            // BuildDropCollider adds one unconditionally, so without this a rebuild leaves the
+            // item wearing two capsules - and the stale one is sized for the placeholder.
+            if (_dropCollider != null)
+            {
+                Object.Destroy(_dropCollider);
+                _dropCollider = null;
+            }
+
+            BuildCarried();
+            OnCarriedRebuilt();
+        }
+
+        /// <summary>
+        /// Called after the visual has been replaced, so anything holding a reference into the
+        /// old one can pick the new one up.
+        /// </summary>
+        protected virtual void OnCarriedRebuilt() { }
+
         private float _measuredLength;
 
         /// <summary>

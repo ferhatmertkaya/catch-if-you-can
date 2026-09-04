@@ -109,7 +109,10 @@ place that number lives; everything else derives it.
   opaque sheets over the game, and every volume slider reaches the mixer. It also keeps the
   player honest: the crouch camera has one source of truth (a measured depth times the shared
   crouch progress, never the head's current drop), and a rig that cannot animate says so
-  instead of standing in a T-pose. 30 checks.
+  instead of standing in a T-pose. It also stops a visual being built before the thing it is a
+  visual OF: an item told what it is after `AddComponent` rebuilds, the doorway starts opening
+  before its far world is ready, and Nathan's bound textures import at a size the material can
+  actually use. 36 checks.
 
 All seven run in CI (`.github/workflows/determinism.yml`). Run them locally before
 pushing; they need nothing but a shell (and `python3` for the roster checks).

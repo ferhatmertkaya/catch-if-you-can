@@ -270,80 +270,121 @@ namespace CatchIfYouCan.Environment
         /// and reads as a shader bug rather than as loading.
         /// </para>
         /// </summary>
+        private InvestigationBootstrap _pendingWorld;
+        private bool _prepareFinished;
+
+        /// <summary>
+        /// Opens the doorway NOW, and binds the far world to it when that world is ready.
+        ///
+        /// <para>
+        /// <b>The opening used to wait for the world.</b> PrepareAsync loads a scene additively
+        /// and generates a house before returning, and only then was the surface activated - so
+        /// for the whole of that the doorway was an ordinary hole in a wall, and if preparation
+        /// failed it stayed one and the player was teleported instead. Pressing START
+        /// INVESTIGATION and seeing nothing happen to the doorway is exactly that.
+        /// </para>
+        ///
+        /// <para>
+        /// The edge is energy in the air; it does not need to know where the door leads. So the
+        /// rim, the wisps and the surface come up immediately on the same frame as the press,
+        /// and the VIEW through them fades in separately when the destination arrives. An
+        /// unbound portal renders its rim over a black centre, which reads as an opening that
+        /// has not finished forming - honest, and visibly different from nothing at all.
+        /// </para>
+        /// </summary>
         private IEnumerator OpenRoutine()
         {
-            InvestigationBootstrap world = null;
-            yield return MissionWorldLoader.PrepareAsync(w => world = w);
+            // The doorway reacts on the frame of the press.
+            surface.SetOpacity(0f);
+            surface.SetRimIntensity(0f);
+            surface.SetDistortion(0f);
+            surface.gameObject.SetActive(true);
+            EnsureEffects();
 
-            if (world == null || world.ArrivalPoint == null)
+            SetState(LobbyPortalState.Opening);
+            CIYCLog.Info(LogTag + "state Opening - the doorway is reacting; the far world is " +
+                         "being prepared.");
+
+            _pendingWorld = null;
+            _prepareFinished = false;
+            StartCoroutine(PrepareWorldRoutine());
+
+            float t = 0f;
+            bool bound = false;
+
+            while (t < openDuration || !_prepareFinished)
             {
-                CIYCLog.Error(LogTag + "The mission world could not be prepared" +
-                              (world != null ? " (it has no arrival point)" : "") +
-                              ", so the doorway cannot show it. Falling back to a direct scene " +
-                              "load, which reaches the same mission without the walk.");
-                _opening = null;
+                if (surface == null)
+                    yield break;
+
+                t += Time.deltaTime;
+                float k = openDuration <= 0f ? 1f : Mathf.Clamp01(t / openDuration);
+                float eased = k * k * (3f - 2f * k);
+
+                // The edge leads and the view follows, so the doorway reads as tearing open
+                // rather than as a picture being switched on.
+                surface.SetRimIntensity(openRimIntensity * Mathf.Clamp01(eased * 3f));
+                surface.SetDistortion(openDistortion * eased);
+
+                // The centre only clears once there is something behind it. Until then the rim
+                // burns over black, which is what an opening that has not finished forming
+                // should look like.
+                surface.SetOpacity(bound ? eased : 0f);
+
+                if (_effects != null)
+                    _effects.SetIntensity(eased);
+
+                if (!bound && _pendingWorld != null && _pendingWorld.ArrivalPoint != null)
+                {
+                    CIYCLog.Info(LogTag + "preview camera bound to " +
+                                 _pendingWorld.ArrivalPoint.name + " at " +
+                                 _pendingWorld.ArrivalPoint.position.ToString("F1"));
+                    surface.SetDestination(_pendingWorld.ArrivalPoint);
+                    bound = true;
+
+                    // The ramp restarts from here so the view has its own fade in rather than
+                    // snapping to whatever the edge had already reached.
+                    t = 0f;
+                }
+
+                yield return null;
+            }
+
+            _opening = null;
+
+            if (!bound)
+            {
+                CIYCLog.Error(LogTag + "The mission world could not be prepared, so the doorway " +
+                              "has nothing to show. Closing it and falling back to a direct " +
+                              "scene load, which reaches the same mission without the walk.");
+                if (surface != null)
+                {
+                    surface.SetOpacity(0f);
+                    surface.gameObject.SetActive(false);
+                }
+                if (_effects != null)
+                    _effects.SetIntensity(0f);
+
                 SetState(LobbyPortalState.Inactive);
                 FallBackToDirectLoad();
                 yield break;
             }
 
-            // The van's own spawn point: where this mission has always begun, so what the player
-            // sees through the door is exactly where they will be standing when they step out
-            // of it.
-            CIYCLog.Info(LogTag + "preview camera bound to " + world.ArrivalPoint.name +
-                         " at " + world.ArrivalPoint.position.ToString("F1"));
-
-            surface.SetDestination(world.ArrivalPoint);
-
-            // Closed, and dark, before anything is shown. The surface is activated at zero
-            // opacity so the first frame of the opening is an empty doorway rather than a
-            // finished portal that then animates for no reason.
-            surface.SetOpacity(0f);
-            surface.SetRimIntensity(0f);
-            surface.SetDistortion(0f);
-            surface.gameObject.SetActive(true);
-
-            EnsureEffects();
-            SetState(LobbyPortalState.Opening);
-            CIYCLog.Info(LogTag + "state Opening");
-
-            float t = 0f;
-            while (t < openDuration && surface != null)
-            {
-                t += Time.deltaTime;
-                float k = openDuration <= 0f ? 1f : Mathf.Clamp01(t / openDuration);
-
-                // Smoothstep, so it swells rather than ramping linearly.
-                float eased = k * k * (3f - 2f * k);
-
-                // The edge leads and the view follows. The rim is at full by a third of the way
-                // through while the far room is still coming up, which is what makes the
-                // doorway read as tearing open rather than as a picture being switched on.
-                surface.SetRimIntensity(openRimIntensity * Mathf.Clamp01(eased * 3f));
-                surface.SetOpacity(eased);
-                surface.SetDistortion(openDistortion * eased);
-
-                if (_effects != null)
-                    _effects.SetIntensity(eased);
-
-                yield return null;
-            }
-
-            if (surface != null)
-            {
-                surface.SetRimIntensity(openRimIntensity);
-                surface.SetOpacity(1f);
-                surface.SetDistortion(openDistortion);
-            }
-
+            surface.SetRimIntensity(openRimIntensity);
+            surface.SetOpacity(1f);
+            surface.SetDistortion(openDistortion);
             if (_effects != null)
                 _effects.SetIntensity(1f);
 
-            _opening = null;
             SetState(LobbyPortalState.Open);
-
             CIYCLog.Info(LogTag + "state Open - '" + _missionName +
                          "'. Walk through the lobby doorway to begin.");
+        }
+
+        private IEnumerator PrepareWorldRoutine()
+        {
+            yield return MissionWorldLoader.PrepareAsync(w => _pendingWorld = w);
+            _prepareFinished = true;
         }
 
         /// <summary>

@@ -325,6 +325,57 @@ else:
     bad("a rig that cannot animate says so",
         "a null controller holds the bind pose, which for Nathan is a T-pose")
 
+
+# ---- built blind: a visual made before its definition arrived ------------------------------
+#
+# An item is created with AddComponent and told what it is on the NEXT line, and AddComponent
+# runs Awake synchronously - so BuildCarried ran with a null definition, took the fallback
+# profile, built the placeholder capsule, and its "already built" guard meant it never ran
+# again. Every code-spawned item was a placeholder, the flashlight included.
+
+held = code("/Assets/CatchIfYouCan/Scripts/Equipment/HeldEquipmentBase.cs")
+if "public override void BindDefinition(" in held and "RebuildCarried()" in held:
+    ok("a late definition rebuilds the visual")
+else:
+    bad("a late definition rebuilds the visual",
+        "HeldEquipmentBase must rebuild when the profile arrives after Awake")
+
+if "_dropCollider != null" in held.split("protected void RebuildCarried()")[-1][:600]:
+    ok("a rebuild does not stack drop colliders")
+else:
+    bad("a rebuild does not stack drop colliders",
+        "BuildDropCollider adds one unconditionally")
+
+# ---- the doorway reacts before the world is ready -------------------------------------------
+portal = code("/Assets/CatchIfYouCan/Scripts/Environment/LobbyPortal.cs")
+routine = portal[portal.index("private IEnumerator OpenRoutine()"):] if "private IEnumerator OpenRoutine()" in portal else ""
+if routine[:900].find("SetActive(true)") != -1 and routine[:900].find("PrepareAsync") == -1:
+    ok("the opening starts before the world is prepared")
+else:
+    bad("the opening starts before the world is prepared",
+        "gating the surface on PrepareAsync means a slow or failed prepare shows no portal")
+
+if "Portal_Opening" in portal or "PortalSurface" in portal:
+    ok("the portal owns a rendered surface")
+else:
+    bad("the portal owns a rendered surface")
+
+# ---- the character's bound textures are imported at a usable size ---------------------------
+import re as _re
+tex = root + "/Assets/CatchIfYouCan/Art/Characters/Nathan/Textures/"
+for name, floor in [("rp_nathan_animated_003_dif.jpg.meta", 4096),
+                    ("rp_nathan_animated_003_norm.jpg.meta", 4096)]:
+    meta = io.open(tex + name, encoding="utf-8").read()
+    top = _re.search(r"^  maxTextureSize: (\d+)$", meta, _re.M)
+    aniso = _re.search(r"^    aniso: (\d+)$", meta, _re.M)
+    size = int(top.group(1)) if top else 0
+    a = int(aniso.group(1)) if aniso else 0
+    if size >= floor and a >= 4:
+        ok("%s imports at %d with aniso %d" % (name.split('.')[0][-10:], size, a))
+    else:
+        bad("%s imports at a usable size" % name.split('.')[0][-10:],
+            "found maxTextureSize=%d aniso=%d; the source is 8192 and the material binds it" % (size, a))
+
 print()
 print("  %d passed, %d failed" % (passed, failed))
 sys.exit(1 if failed else 0)

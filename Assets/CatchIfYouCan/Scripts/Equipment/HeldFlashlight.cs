@@ -152,6 +152,85 @@ namespace CatchIfYouCan.Equipment
         /// <summary>The beam follows the torch wherever it ends up: hand, bag or floor.</summary>
         protected override void OnCarryChanged() => ApplyLight();
 
+        /// <summary>The visual was replaced once the definition arrived; relight the new one.</summary>
+        protected override void OnCarriedRebuilt()
+        {
+            ApplyLight();
+            _visualReported = false;
+        }
+
+        private bool _visualReported;
+
+        /// <summary>
+        /// Says exactly what ended up in the player's hand, once.
+        ///
+        /// <para>
+        /// Every way this can go wrong - no model loaded, a renderer disabled, zero scale, the
+        /// wrong layer, a mesh the camera cannot see - shows up on screen as "there is no
+        /// flashlight", and they are not the same bug. One line separates them.
+        /// </para>
+        ///
+        /// <para>
+        /// Deferred to the first frame the torch is actually held, so it reports the finished
+        /// article rather than whatever existed a line into construction.
+        /// </para>
+        /// </summary>
+        private void ReportVisual()
+        {
+            _visualReported = true;
+
+            if (CarriedRoot == null)
+            {
+                Core.CIYCLog.Error("[CIYC][FlashlightVisual] no visual was built at all.");
+                return;
+            }
+
+            var renderers = CarriedRoot.GetComponentsInChildren<Renderer>(true);
+            var bounds = new Bounds(CarriedRoot.position, Vector3.zero);
+            int enabled = 0;
+            string materials = "<none>";
+
+            for (int i = 0; i < renderers.Length; i++)
+            {
+                if (renderers[i].enabled)
+                {
+                    enabled++;
+                    bounds.Encapsulate(renderers[i].bounds);
+                }
+                if (i == 0 && renderers[i].sharedMaterial != null)
+                    materials = renderers[i].sharedMaterial.name;
+            }
+
+            Camera view = Core.LocalPlayerService.ResolveViewCamera();
+            string canSee = "no camera";
+            if (view != null && enabled > 0)
+            {
+                bool inMask = (view.cullingMask & (1 << CarriedRoot.gameObject.layer)) != 0;
+                GeometryUtility.CalculateFrustumPlanes(view, _visualFrustum);
+                canSee = (inMask && GeometryUtility.TestPlanesAABB(_visualFrustum, bounds))
+                    ? "true" : "false (mask=" + inMask + ")";
+            }
+
+            string source = definition != null && definition.VisualProfile != null
+                ? (definition.VisualProfile.IsDevPlaceholder
+                    ? "DEV PLACEHOLDER"
+                    : "Resources/" + definition.VisualProfile.ModelResourcePath)
+                : "<no profile>";
+
+            Core.CIYCLog.Info(
+                "[CIYC][FlashlightVisual] resource=" + source +
+                " instance=" + CarriedRoot.name +
+                " renderers=" + enabled + "/" + renderers.Length +
+                " material=" + materials +
+                " bounds=" + bounds.size.ToString("F3") +
+                " localScale=" + CarriedRoot.localScale.ToString("F3") +
+                " worldPosition=" + CarriedRoot.position.ToString("F2") +
+                " layer=" + LayerMask.LayerToName(CarriedRoot.gameObject.layer) +
+                " cameraCanSee=" + canSee);
+        }
+
+        private readonly Plane[] _visualFrustum = new Plane[6];
+
         [Header("Aim")]
         [Tooltip("How far down the crosshair ray the beam is aimed when nothing is hit. Far " +
                  "enough that the beam reads as parallel to the view rather than converging.")]
@@ -190,6 +269,9 @@ namespace CatchIfYouCan.Equipment
         /// </summary>
         private void LateUpdate()
         {
+            if (!_visualReported && LifecycleState == EquipmentLifecycleState.Equipped)
+                ReportVisual();
+
             if (_light == null || _head == null)
                 return;
 
