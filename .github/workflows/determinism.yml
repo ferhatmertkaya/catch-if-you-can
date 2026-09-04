@@ -43,3 +43,6 @@ jobs:
 
       - name: Vertical slice guard
         run: Scripts/check_vertical_slice.sh
+
+      - name: Project tag and layer guard
+        run: Scripts/check_project_tags.sh

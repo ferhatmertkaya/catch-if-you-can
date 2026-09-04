@@ -20,9 +20,18 @@ namespace CatchIfYouCan.EditorTools
             "Player", "Ghost", "Interactable", "Evidence", "Environment", "HideSpot", "Equipment", "PostProcessing"
         };
 
+        // Every tag the game assigns or compares. Assigning an undefined tag throws, and so
+        // does CompareTag against one, so a name missing from here is not a cosmetic gap -
+        // it aborts whatever was building at that line. "Environment" and "LightSwitch"
+        // were used by four runtime call sites and one editor builder while being in
+        // neither this list nor TagManager.asset. "Player" is deliberately absent: it is one
+        // of Unity's seven built-in tags, so adding it here would insert a second, duplicate
+        // "Player" into the dropdown rather than define anything.
+        // Scripts/check_project_tags.sh now fails if the two ever drift apart again.
         private static readonly string[] RequiredTags =
         {
-            "Interactable", "Ghost", "HideSpot", "Evidence", "Equipment", "Door", "Van", "Breaker", "Player"
+            "Interactable", "Ghost", "HideSpot", "Evidence", "Equipment", "Door", "Van", "Breaker",
+            "Environment", "LightSwitch"
         };
 
         private static readonly string[] RequiredFolders =

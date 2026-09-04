@@ -129,7 +129,15 @@ place that number lives; everything else derives it.
   before its far world is ready, and Nathan's bound textures import at a size the material can
   actually use, and every model a visual profile names really exists under `Resources` with a non-zero forward axis. 48 checks.
 
-All seven run in CI (`.github/workflows/determinism.yml`). Run them locally before
+- `Scripts/check_project_tags.sh` — every tag and layer the code names really exists.
+  Assigning an undefined tag throws and takes the rest of that build down with it; an
+  undefined layer name returns -1 and says nothing. `Environment` was assigned by two
+  runtime factories, compared by the NavMesh source filter and assigned by the prop
+  builder while being defined nowhere, and `LightSwitch` was assigned one statement
+  before the switch got its component. Both are checked now, along with the editor
+  setup's ability to restore them. 25 checks.
+
+All eight run in CI (`.github/workflows/determinism.yml`). Run them locally before
 pushing; they need nothing but a shell (and `python3` for the roster checks).
 
 ## The mistakes this project has already made
@@ -177,7 +185,15 @@ Repeating one of these is the most likely way to break something.
    would not compile in Unity. The harness passed for weeks. A real compiler on
    a real machine found it in minutes. When the stub is the only thing agreeing
    with you about an API, that is not verification.
-10. **One value asked to mean two things.** `-1` was the offline player's client
+10. **A name that resolves nowhere, twice more.** Mistake 3 was a `Resources.Load`
+   path. The same shape came back as tags: `go.tag = "Environment"` in four places and
+   `go.tag = "LightSwitch"` in one, with neither name in `TagManager.asset`. Unity
+   *throws* on an undefined tag, so each of those lines aborted the build it sat in -
+   the primitive rooms got a floor and no walls, the house got no light switches and no
+   breaker box, the NavMesh got no sources, and five prop prefabs of 120 never finished.
+   It logged loudly the whole time and nobody read it. `check_project_tags.sh` checks
+   every tag and layer literal against the project settings now.
+11. **One value asked to mean two things.** `-1` was the offline player's client
    id, and `-1` was about to become "nobody owns this item", which would have
    made the solo player's carried torch read as unowned and let the first person
    past take it. `MultiplayerProtocol.LocalOnlyClientId` and `NoClientId` are
