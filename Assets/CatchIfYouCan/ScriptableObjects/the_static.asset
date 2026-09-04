@@ -1,0 +1,39 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 2afbb20e89c1646c4a259a296c4b7657, type: 3}
+  m_Name: the_static
+  m_EditorClassIdentifier: Assembly-CSharp::CatchIfYouCan.Ghost.GhostDefinition
+  Id: the_static
+  DisplayName: THE STATIC
+  Description: Electromagnetic entity that scrambles devices and radios.
+  BehaviorNotes: Electronic distortion spikes during hunts.
+  Strengths: Disables equipment quickly.
+  Weaknesses: EMF spikes reveal location.
+  Evidence1: 0
+  Evidence2: 3
+  Evidence3: 7
+  Aggression: 0.6
+  Curiosity: 0.6
+  Activity: 0.72
+  RoamFrequency: 0.35
+  HuntThreshold: 0.63
+  SoundSensitivity: 0.52000004
+  ElectronicsSensitivity: 0.53
+  DoorInteractionChance: 0.35000002
+  LightInteractionChance: 0.294
+  ObjectThrowChance: 0.22000001
+  ManifestationChance: 0.19000001
+  ResponseFrequency: 0.48000002
+  Speed: 2.5
+  SearchAbility: 0.56
+  VisualProfile: 4
+  Prefab: {fileID: 7903747767106868492, guid: ec1e90c3f8fdc4cb898a50f6212b2294, type: 3}

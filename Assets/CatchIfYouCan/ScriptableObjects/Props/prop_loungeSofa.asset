@@ -1,0 +1,22 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 869cf6ff2c46f43f6a584cc728bb03c7, type: 3}
+  m_Name: prop_loungeSofa
+  m_EditorClassIdentifier: Assembly-CSharp::CatchIfYouCan.Procedural.PropDefinition
+  StableId: PROP_loungeSofa
+  PropName: LoungeSofa
+  Kind: 1
+  Prefab: {fileID: 4357632760255841915, guid: 402295c55a7504bd8951de9ec34143db, type: 3}
+  CategoryTags:
+  - LivingRoom
+  BoundsSize: {x: 2, y: 0.85, z: 0.9}
+  Weight: 1.1
