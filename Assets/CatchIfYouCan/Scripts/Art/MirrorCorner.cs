@@ -229,6 +229,11 @@ namespace CatchIfYouCan.Art
         /// </summary>
         private Bounds _glassBounds;
 
+        // The lobby's other secondary view is the portal, and neither knew the other
+        // existed. This is the slot the shared arbiter grants by; the mirror's own plane,
+        // capture and culling are untouched by it.
+        private int _viewSlot = -1;
+
         /// <summary>
         /// Reused every frame. The <c>Plane[]</c>-returning overload of
         /// <see cref="GeometryUtility.CalculateFrustumPlanes(Camera)"/> allocates an array per
@@ -599,6 +604,16 @@ namespace CatchIfYouCan.Art
             {
                 GeometryUtility.CalculateFrustumPlanes(source, _sourceFrustum);
                 visible = GeometryUtility.TestPlanesAABB(_sourceFrustum, _glassBounds);
+            }
+
+            // Asked only once the mirror already wants to render, so a mirror the player is
+            // not looking at never spends a share the portal needs. With one claimant this
+            // always grants; with two on a low quality level they alternate frames.
+            if (visible)
+            {
+                if (_viewSlot < 0)
+                    _viewSlot = SecondaryViewBudget.Reserve();
+                visible = SecondaryViewBudget.MayRender(_viewSlot);
             }
 
             if (_mirrorCamera.gameObject.activeSelf != visible)

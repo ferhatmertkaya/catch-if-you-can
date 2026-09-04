@@ -104,6 +104,7 @@ namespace CatchIfYouCan.Art
         private bool _orientationReported;
         private float _lastRenderTime = -999f;
         private Vector4 _clipPlane;
+        private int _viewSlot = -1;
 
         private static readonly int PortalTexId = Shader.PropertyToID("_PortalTex");
 
@@ -535,6 +536,19 @@ namespace CatchIfYouCan.Art
             // updates its parallax half as often, which is the trade being made.
             float interval = _style.RefreshInterval();
             if (interval > 0f && Time.unscaledTime - _lastRenderTime < interval)
+            {
+                _portalCamera.enabled = false;
+                return;
+            }
+
+            // The lobby's other secondary view is the mirror, and a player standing where both
+            // are on screen otherwise pays for three full renders of the room. Asked last, so a
+            // portal that is off screen or on a skipped cadence frame never spends a share the
+            // mirror needs; with one claimant this always grants.
+            if (_viewSlot < 0)
+                _viewSlot = SecondaryViewBudget.Reserve();
+
+            if (!SecondaryViewBudget.MayRender(_viewSlot))
             {
                 _portalCamera.enabled = false;
                 return;
