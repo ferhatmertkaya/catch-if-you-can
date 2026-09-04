@@ -68,7 +68,9 @@ place that number lives; everything else derives it.
   paths, the journal cannot prove evidence, nothing sweeps the scene per
   frame, no equipment id is looked up by string literal, no held item hides
   `HeldEquipmentBase`'s per-frame methods, and the flashlight's model and material
-  paths resolve to real files. 34 checks.
+  paths resolve to real files, an item is not given its visual before it knows what it is,
+  a failed model load never becomes a silent placeholder, and the flashlight's diagnostic
+  pose ships switched off. 40 checks.
 - `Scripts/check_multiplayer_architecture.sh` — the deterministic assembly stays
   engine-free, gameplay never reaches a Relay API, remote players never read
   local input, ghost decisions stay host-only, online capacity has exactly one

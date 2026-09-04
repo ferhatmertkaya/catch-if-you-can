@@ -52,9 +52,22 @@ namespace CatchIfYouCan.Equipment
                     return carried;
                 }
 
-                Debug.LogError("[CIYC] No model at Resources/" + profile.ModelResourcePath +
-                               " for '" + itemName + "'. What is in the hand is the fallback " +
-                               "stand-in, not the real item.");
+                Debug.LogError("[CIYC][Equipment] Resources.Load<GameObject>(\"" +
+                               profile.ModelResourcePath + "\") ergab NULL fuer '" + itemName +
+                               "'. Erwartet wird eine Datei unter " +
+                               "Assets/**/Resources/" + profile.ModelResourcePath +
+                               ".<endung>. Der Pfad ist relativ zu einem Resources-Ordner, " +
+                               "ohne Ordnerpraefix und ohne Dateiendung.");
+
+                // Produktionskunst bekommt KEINEN Ersatz. Ein Platzhalter an dieser Stelle
+                // sieht aus wie ein halbfertiger Gegenstand und nicht wie ein Ladefehler, und
+                // dann sucht wochenlang niemand nach dem Pfad. Leere Hand plus die Zeile
+                // darueber ist die ehrliche Anzeige.
+                if (!profile.IsDevPlaceholder)
+                {
+                    measuredLength = profile.Length;
+                    return carried;
+                }
             }
 
             measuredLength = BuildPlaceholder(profile, carried, shader);
@@ -103,6 +116,17 @@ namespace CatchIfYouCan.Equipment
             var renderers = model.GetComponentsInChildren<Renderer>(true);
             if (renderers.Length == 0)
             {
+                Debug.LogError("[CIYC][Equipment] Resources/" + profile.ModelResourcePath +
+                               " wurde geladen, hat aber KEINEN Renderer. Das Modell ist da " +
+                               "und kann nichts zeichnen - im Importer pruefen, ob Meshes " +
+                               "ueberhaupt importiert werden.");
+
+                if (!profile.IsDevPlaceholder)
+                {
+                    Object.Destroy(model);
+                    return profile.Length;
+                }
+
                 Object.Destroy(model);
                 return BuildPlaceholder(profile, carried, CiycShaders.FindLit());
             }

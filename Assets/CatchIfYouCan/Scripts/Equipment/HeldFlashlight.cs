@@ -178,6 +178,46 @@ namespace CatchIfYouCan.Equipment
         // A second in, so the inventory, the definition and any late rebuild have all happened.
         private float _reportAfter = 1f;
 
+        /// <summary>
+        /// Haengt das Modell stur an die Hand. Keine Griffrechnung, kein Anker, kein Zielen -
+        /// nur Elternobjekt, Nullpose und eine Groesse, die sicher sichtbar ist.
+        /// </summary>
+        private void ApplyDebugPose()
+        {
+            var carried = CarriedRoot;
+            Transform hand = HandBone != null ? HandBone : HandAnchor;
+            if (carried == null || hand == null)
+                return;
+
+            if (carried.parent != hand)
+                carried.SetParent(hand, false);
+
+            carried.localPosition = Vector3.zero;
+            carried.localRotation = Quaternion.identity;
+
+            // Die Skalierung des Handknochens herausrechnen, damit die Lampe ihre echte Laenge
+            // behaelt: ein Knochen mit Skalierung 0.01 wuerde sie sonst auf Millimeter ziehen,
+            // und das saehe wieder aus wie eine leere Hand.
+            Vector3 s = hand.lossyScale;
+            carried.localScale = new Vector3(
+                Mathf.Approximately(s.x, 0f) ? 1f : 1f / s.x,
+                Mathf.Approximately(s.y, 0f) ? 1f : 1f / s.y,
+                Mathf.Approximately(s.z, 0f) ? 1f : 1f / s.z);
+
+            if (!_debugPoseReported)
+            {
+                _debugPoseReported = true;
+                Core.CIYCLog.Warn("[CIYC][FlashlightVisual] DIAGNOSEPOSE AKTIV. Das Modell " +
+                                  "haengt starr an '" + hand.name + "'. Sichtbar heisst: " +
+                                  "Modell, Material, Layer und Kamera sind in Ordnung und der " +
+                                  "Fehler liegt in der Griffrechnung. Unsichtbar heisst: der " +
+                                  "Fehler liegt davor. Diesen Schalter nicht eingeschaltet " +
+                                  "ausliefern.");
+            }
+        }
+
+        private bool _debugPoseReported;
+
         private void ReportVisual()
         {
             _visualReported = true;
@@ -252,7 +292,9 @@ namespace CatchIfYouCan.Equipment
                 " worldPosition=" + CarriedRoot.position.ToString("F2") +
                 " distanceFromHandBone=" + fromHand.ToString("F3") + "m" +
                 " layer=" + LayerMask.LayerToName(CarriedRoot.gameObject.layer) +
-                " cameraCanSee=" + canSee);
+                " cameraCanSee=" + canSee +
+                "\n    hierarchie=" + HierarchyPath(CarriedRoot) +
+                DescribeRenderers(renderers));
 
             // Each of these is a different bug that looks identical on screen, so each says so
             // in its own words rather than leaving the reader to compare numbers in the line
@@ -285,6 +327,51 @@ namespace CatchIfYouCan.Equipment
                                   ", which is not in the hand. It was built correctly and then " +
                                   "left where it was parented - PlaceInHand is what moves it, " +
                                   "and something is stopping that from running.");
+        }
+
+        /// <summary>Der echte Pfad im Hierarchiefenster, damit man ihn aufklappen kann.</summary>
+        private static string HierarchyPath(Transform t)
+        {
+            if (t == null)
+                return "<none>";
+
+            var sb = new System.Text.StringBuilder(t.name);
+            for (Transform p = t.parent; p != null; p = p.parent)
+                sb.Insert(0, p.name + "/");
+            return sb.ToString();
+        }
+
+        /// <summary>
+        /// Jeder Renderer einzeln. Eine Zahl sagt nur, dass es welche gibt; ausgeschaltet,
+        /// materiallos, auf dem falschen Layer oder nur als Schattenwerfer sehen von aussen
+        /// alle gleich aus, und das sind vier verschiedene Fehler.
+        /// </summary>
+        private static string DescribeRenderers(Renderer[] renderers)
+        {
+            if (renderers == null || renderers.Length == 0)
+                return "\n    renderer: KEINE";
+
+            var sb = new System.Text.StringBuilder();
+            for (int i = 0; i < renderers.Length; i++)
+            {
+                var r = renderers[i];
+                if (r == null)
+                    continue;
+
+                sb.Append("\n    renderer").Append(i).Append('=').Append(r.name)
+                  .Append(" enabled=").Append(r.enabled)
+                  .Append(" aktiv=").Append(r.gameObject.activeInHierarchy)
+                  .Append(" material=")
+                  .Append(r.sharedMaterial != null ? r.sharedMaterial.name : "<KEINS>")
+                  .Append(" shader=")
+                  .Append(r.sharedMaterial != null && r.sharedMaterial.shader != null
+                          ? r.sharedMaterial.shader.name : "<keiner>")
+                  .Append(" layer=").Append(LayerMask.LayerToName(r.gameObject.layer))
+                  .Append(" schatten=").Append(r.shadowCastingMode)
+                  .Append(" boundsCenter=").Append(r.bounds.center.ToString("F2"))
+                  .Append(" boundsSize=").Append(r.bounds.size.ToString("F3"));
+            }
+            return sb.ToString();
         }
 
         private readonly Plane[] _visualFrustum = new Plane[6];
@@ -351,9 +438,23 @@ namespace CatchIfYouCan.Equipment
         /// The base call comes FIRST: place the item, then aim the beam out of where it ended up.
         /// </para>
         /// </summary>
+        [Header("Diagnose")]
+        [Tooltip("NUR ZUR FEHLERSUCHE. Haengt das echte Modell direkt an den Handknochen, auf " +
+                 "localPosition null und localRotation identity, und schaltet jede prozedurale " +
+                 "Griffrechnung ab. Ist die Lampe dann sichtbar, sind Modell, Material, Layer " +
+                 "und Kamera in Ordnung und der Fehler liegt in der Pose. Ist sie weiter " +
+                 "unsichtbar, liegt er davor. Nie eingeschaltet ausliefern.")]
+        [SerializeField] private bool forceFlashlightDebugPose;
+
+        /// <summary>Die Diagnosepose rechnet selbst; jede andere Platzierung ist dann aus.</summary>
+        protected override bool SuppressAutomaticPose => forceFlashlightDebugPose;
+
         protected override void LateUpdate()
         {
             base.LateUpdate();
+
+            if (forceFlashlightDebugPose)
+                ApplyDebugPose();
 
             // Reported once, WHATEVER the state. This used to wait for Equipped, which is why
             // nobody has ever seen this line: a torch sitting in the inventory unselected is

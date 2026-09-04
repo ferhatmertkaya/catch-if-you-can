@@ -472,6 +472,63 @@ else
   ok "the flashlight uses its real model rather than the DEV placeholder"
 fi
 
+# ---------------------------------------------------------------- ein Build, definitionsfest
+
+HEB="Assets/CatchIfYouCan/Scripts/Equipment/HeldEquipmentBase.cs"
+EVF="Assets/CatchIfYouCan/Scripts/Equipment/EquipmentVisualFactory.cs"
+
+# Awake darf nicht mehr blind bauen. AddComponent fuehrt Awake synchron aus, also ist die
+# Definition dort bei jedem per Code gebauten Gegenstand noch null - und ein blind gebautes
+# Visual muss danach weggeworfen und neu gebaut werden. Jeder Schritt in diesem Tanz ist eine
+# Gelegenheit, das Ergebnis zu verlieren, und genau das ist wiederholt passiert.
+if sed 's://.*::' "$HEB" | tr -d '\n' | tr -s ' ' \
+     | grep -qE 'if \(definition != null\) BuildCarried\(\);'; then
+  ok "Awake baut das Visual nur mit Definition"
+else
+  fail "Awake baut das Visual nur mit Definition" \
+       "ein blinder Build erzwingt ein spaeteres Wegwerfen und Neubauen"
+fi
+
+# BindDefinition baut direkt, wenn noch nichts da ist - das ist der Weg ohne Destroy.
+if sed 's://.*::' "$HEB" | tr -d '\n' | tr -s ' ' \
+     | grep -qE 'if \(CarriedRoot == null\) \{ BuildCarried\(\); OnCarriedRebuilt\(\);'; then
+  ok "BindDefinition baut das Visual direkt, ohne Umweg"
+else
+  fail "BindDefinition baut das Visual direkt, ohne Umweg"
+fi
+
+# Und ein Netz, das nichts ohne Visual stehen laesst.
+if sed 's://.*::' "$HEB" | grep -qE 'protected virtual void Start\(\)'; then
+  ok "ein Gegenstand ohne Definition bekommt sein Visual spaetestens in Start"
+else
+  fail "ein Gegenstand ohne Definition bekommt sein Visual spaetestens in Start"
+fi
+
+# Produktionskunst bekommt keinen Ersatz. Ein Platzhalter statt eines Ladefehlers sieht aus
+# wie ein halbfertiger Gegenstand, und dann sucht niemand nach dem Pfad.
+if sed 's://.*::' "$EVF" | tr -d '\n' | tr -s ' ' \
+     | grep -qE 'if \(!profile\.IsDevPlaceholder\) \{ measuredLength = profile\.Length; return carried;'; then
+  ok "ein fehlgeschlagener Modell-Ladevorgang bekommt keinen stillen Platzhalter"
+else
+  fail "ein fehlgeschlagener Modell-Ladevorgang bekommt keinen stillen Platzhalter" \
+       "echte Kunst muss laut scheitern statt als Kapsel weiterzulaufen"
+fi
+
+# Die Diagnosepose darf nie eingeschaltet ausgeliefert werden.
+if sed 's://.*::' "$FL" | grep -qE 'private bool forceFlashlightDebugPose *= *true'; then
+  fail "die Diagnosepose ist ausgeliefert ausgeschaltet"
+else
+  ok "die Diagnosepose ist ausgeliefert ausgeschaltet"
+fi
+
+# Und sie muss wirklich jede automatische Platzierung abschalten, sonst misst sie die andere.
+if sed 's://.*::' "$HEB" | tr -d '\n' | tr -s ' ' | grep -qE 'if \(SuppressAutomaticPose\) return;' \
+   && sed 's://.*::' "$FL" | grep -qE 'override bool SuppressAutomaticPose'; then
+  ok "die Diagnosepose schaltet jede automatische Platzierung ab"
+else
+  fail "die Diagnosepose schaltet jede automatische Platzierung ab"
+fi
+
 printf '\npassed: %s   failed: %s\n\n' "$passed" "$failed"
 
 if [ "$failed" -gt 0 ]; then

@@ -228,10 +228,41 @@ namespace CatchIfYouCan.Equipment
             if (view != null)
                 _view = view.transform;
 
-            BuildCarried();
+            // Gebaut wird nur, wenn wir wissen, WAS gebaut wird.
+            //
+            // Ein Prefab traegt seine Definition serialisiert - dort ist sie hier schon da und
+            // es aendert sich nichts. Ein per Code gebauter Gegenstand bekommt sie erst eine
+            // Zeile nach AddComponent, und AddComponent fuehrt Awake synchron aus: bis dahin
+            // ist jedes Visual geraten. Genau das war der Bau-dann-Wegwerfen-dann-Neubauen-Tanz,
+            // und jeder Schritt darin ist eine Gelegenheit, das Ergebnis zu verlieren.
+            //
+            // Ohne Definition wird hier nichts gebaut. BindDefinition baut dann sofort, und
+            // Start faengt als Netz alles ab, dem nie eine Definition gegeben wurde.
+            if (definition != null)
+                BuildCarried();
 
             if (playerBody != null)
                 _aim = playerBody.forward;
+        }
+
+        /// <summary>
+        /// Das Netz. Laeuft nach allen Awake-Aufrufen und nach dem synchronen Konstruktionscode,
+        /// der AddComponent und BindDefinition hintereinander ausfuehrt - wer bis hierher keine
+        /// Definition bekommen hat, bekommt keine mehr, und bekommt sein Ersatzobjekt plus eine
+        /// Zeile, die sagt warum.
+        /// </summary>
+        protected virtual void Start()
+        {
+            if (CarriedRoot != null)
+                return;
+
+            if (definition == null)
+                Core.CIYCLog.Warn("[CIYC][Equipment] '" + name + "' hat bis Start keine " +
+                                  "Definition bekommen. Das Visual wird jetzt ohne gebaut, was " +
+                                  "ein Platzhalter ist. Wer dieses Objekt erzeugt, muss " +
+                                  "BindDefinition unmittelbar nach AddComponent aufrufen.");
+
+            BuildCarried();
         }
 
         /// <summary>
@@ -289,10 +320,29 @@ namespace CatchIfYouCan.Equipment
 
             base.BindDefinition(def);
 
-            if (!builtBlind || def == null || def.VisualProfile == null)
+            if (def == null || def.VisualProfile == null)
                 return;
 
-            RebuildCarried();
+            // Der Normalfall seit Awake nicht mehr blind baut: es gibt noch nichts, also wird
+            // hier genau einmal gebaut - mit der Definition in der Hand. Kein Platzhalter, der
+            // erst entstehen und dann wieder verschwinden muss.
+            if (CarriedRoot == null)
+            {
+                BuildCarried();
+                OnCarriedRebuilt();
+                return;
+            }
+
+            // Der Altlastpfad: irgendetwas hat doch blind gebaut. Bleibt bestehen, damit ein
+            // Aufrufer, der die alte Reihenfolge benutzt, nicht mit einem Platzhalter endet -
+            // aber er ist ab jetzt die Ausnahme und sagt es auch.
+            if (builtBlind)
+            {
+                Core.CIYCLog.Info("[CIYC][Equipment] '" + name + "' wurde ohne Definition " +
+                                  "gebaut und wird jetzt neu gebaut. Der direkte Weg ist " +
+                                  "BindDefinition vor dem ersten Build.");
+                RebuildCarried();
+            }
         }
 
         /// <summary>
@@ -325,6 +375,12 @@ namespace CatchIfYouCan.Equipment
         /// old one can pick the new one up.
         /// </summary>
         protected virtual void OnCarriedRebuilt() { }
+
+        /// <summary>
+        /// Waehrend das true ist, wird der Gegenstand von niemandem automatisch in die Hand
+        /// gerechnet. Nur fuer Diagnose gedacht: wer das setzt, platziert selbst.
+        /// </summary>
+        protected virtual bool SuppressAutomaticPose => false;
 
         private float _measuredLength;
 
@@ -852,6 +908,14 @@ namespace CatchIfYouCan.Equipment
         public void PlaceInHand()
         {
             _placedFrame = Time.frameCount;
+
+            // Ein Unterklassen-Schalter, kein Feld hier: die Diagnose gehoert dem Gegenstand,
+            // der ein Problem hat. Ausgeschaltet wird die Pose an DIESER Stelle, weil sie von
+            // zwei Seiten aufgerufen wird - vom Pose-Callback der Koerperbewegung und vom
+            // LateUpdate-Netz - und eine Diagnose, die nur eine der beiden abschaltet, misst
+            // die andere.
+            if (SuppressAutomaticPose)
+                return;
 
             var carried = Carried;
             if (carried == null || !IsEquipped || playerBody == null)
