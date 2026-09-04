@@ -29,10 +29,17 @@ namespace CatchIfYouCan.Art
                  "faces and 2.4 to the lintel.")]
         public Vector2 openingSize = new Vector2(1.06f, 2.4f);
 
-        [Tooltip("How much of the quad the oval fills, per axis. Below 1 on purpose: the space " +
-                 "left over is where the outer energy spills, and it keeps that spill inside " +
-                 "the door frame instead of being clipped by the jamb.")]
-        public Vector2 ovalFit = new Vector2(0.86f, 0.94f);
+        [Tooltip("Half size of the torn breach, as a fraction of the quad. Below 1 on purpose: " +
+                 "the space left over is where the ragged edge and the outer energy spill.")]
+        public Vector2 breachHalfSize = new Vector2(0.78f, 0.90f);
+
+        [Tooltip("How far the wall's edge is chewed away from a clean rectangle. Zero is a neat " +
+                 "cut; higher is a hole something came through.")]
+        [Range(0f, 0.5f)] public float tearAmount = 0.16f;
+
+        [Tooltip("Size of the chunks the edge breaks into. Low is a few big pieces of plaster, " +
+                 "high is fine crumbling.")]
+        [Range(0.5f, 24f)] public float tearScale = 4.5f;
 
         [Tooltip("Width of the burning band, as a fraction of the oval's radius.")]
         [Range(0.01f, 0.9f)] public float rimWidth = 0.26f;
@@ -137,6 +144,10 @@ namespace CatchIfYouCan.Art
 
         [Tooltip("How long the portal takes to visibly come apart when preparation fails.")]
         [Min(0f)] public float destabiliseDuration = 0.9f;
+
+        [Tooltip("How long the tear takes to shut when a hunt seals it, and to reopen after. " +
+                 "Faster than the first opening: this is a wall slamming, not one tearing.")]
+        [Min(0f)] public float huntSealDuration = 0.35f;
 
         // ---- performance --------------------------------------------------------------------
 

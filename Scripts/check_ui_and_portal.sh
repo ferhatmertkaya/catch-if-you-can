@@ -437,20 +437,39 @@ for f in "$SHADER" "$MAT" "$FX" "$STYLE"; do
   [ -f "$f" ] || bad "$(basename "$f") exists" "the portal cannot be built without it"
 done
 
-# The silhouette. A rectangular distance field is exactly the bug being fixed, so the shader
-# has to derive its mask from a length() and must not go back to the per-axis minimum.
-if grep -qE 'float +r *= *length\(' "$SHADER"; then
-  ok "the portal mask is an ellipse, not a box"
+# The silhouette is a TORN RECTANGLE: a signed box distance field with its edge chewed away by
+# noise. The old naked min(uv, 1-uv) is still forbidden - that was a clean rectangle with no
+# signed field and no tear, which is a glowing picture frame rather than a hole in a wall.
+if grep -qE 'length\(max\(q, *0\.0\)\) *\+ *min\(max\(q\.x, *q\.y\), *0\.0\)' "$SHADER"; then
+  ok "the breach is a signed box distance field"
 else
-  bad "the portal mask is an ellipse, not a box" \
-      "the rim must come from a radial distance field, not from min(uv, 1-uv)"
+  bad "the breach is a signed box distance field" \
+      "a torn wall needs a signed rectangle, not an axis minimum and not an ellipse"
 fi
 
 if grep -qE 'min\(IN\.uv, *1\.0 *- *IN\.uv\)' "$SHADER"; then
-  bad "the rectangular distance field is gone" \
-      "min(uv, 1-uv) is a box; that is what made the portal a glowing rectangle"
+  bad "the naked rectangular field is gone" \
+      "min(uv, 1-uv) is a clean frame; the breach must be torn"
 else
-  ok "the rectangular distance field is gone"
+  ok "the naked rectangular field is gone"
+fi
+
+# The edge has to be broken by noise, or it is a neat cut rather than something that came
+# through the wall.
+if grep -q '_TearAmount' "$SHADER" && grep -qE 'ragged *\* *_TearAmount' "$SHADER"; then
+  ok "the breach edge is torn by noise"
+else
+  bad "the breach edge is torn by noise" "a straight-edged hole is a doorway, not a breach"
+fi
+
+# CLOSED MEANS NO HOLE. A collapsed box still measures zero distance at its own centre, so
+# without an explicit gate one pixel burns on a wall that is supposed to be whole.
+if grep -qE 'float +gate *= *smoothstep\(0\.0, *0\.02, *open\)' "$SHADER" &&
+   grep -qE 'alpha *=.*\* *gate' "$SHADER"; then
+  ok "a closed portal draws nothing at all"
+else
+  bad "a closed portal draws nothing at all" \
+      "at _Open = 0 the wall must be whole, with no lit pixel anywhere"
 fi
 
 # Two noise layers on DIFFERENT frequencies. Identical frequencies read as one repeating
@@ -591,15 +610,13 @@ case "$CONTROLLERS" in
   *) bad "one portal surface owns the render texture" "found: $CONTROLLERS" ;;
 esac
 
-# The effects emit on the oval. A Box the size of the doorway put wisps through the middle of
-# the view, and a plain Circle is round around a 1.06 x 2.4 opening.
-if code "$FX" | grep -qE 'ParticleSystemShapeType\.Circle' &&
-   code "$FX" | grep -qE 'shape\.radiusThickness = 0f' &&
-   code "$FX" | grep -qE 'shape\.scale'; then
-  ok "particles emit on the oval contour, not in a box"
+# The effects emit on the EDGE of the breach. A filled Box fires through the middle of the
+# view, and a Circle puts sparks in the corners of a rectangle where there is no edge at all.
+if code "$FX" | grep -qE 'ParticleSystemShapeType\.BoxEdge' && code "$FX" | grep -qE 'shape\.scale'; then
+  ok "particles emit on the breach edge, not through the view"
 else
-  bad "particles emit on the oval contour, not in a box" \
-      "a Box emitter fires through the view; an unscaled Circle is round"
+  bad "particles emit on the breach edge, not through the view" \
+      "BoxEdge traces the torn rectangle; Box fills it and Circle rounds it off"
 fi
 
 for system in Sparks EnergyStreaks AmbientWisps; do

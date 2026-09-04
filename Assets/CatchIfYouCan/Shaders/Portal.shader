@@ -58,8 +58,14 @@ Shader "CatchIfYouCan/Portal"
         // width/height. Written by PortalSurface from the doorway it was sized to; leaving the
         // oval a little inside the quad is what gives the outer energy somewhere to live
         // without the glow being clipped by the door frame.
-        _Fit             ("Oval Fit", Vector) = (0.86, 0.94, 0, 0)
+        _Fit             ("Breach Half Size", Vector) = (0.78, 0.90, 0, 0)
         _Aspect          ("Surface Aspect", Float) = 0.44
+
+        // How far open the tear is, 0 to 1. At ZERO the breach has no size at all and this
+        // shader draws nothing anywhere - the wall is whole. Everything else is unchanged by it.
+        _Open            ("Tear Open", Range(0, 1)) = 1
+        _TearAmount      ("Tear Ragged", Range(0, 0.5)) = 0.16
+        _TearScale       ("Tear Scale", Range(0.5, 24)) = 4.5
     }
 
     SubShader
@@ -109,6 +115,9 @@ Shader "CatchIfYouCan/Portal"
                 float  _Opacity;
                 float  _ViewOpacity;
                 float  _Aspect;
+                float  _Open;
+                float  _TearAmount;
+                float  _TearScale;
             CBUFFER_END
 
             TEXTURE2D(_PortalTex);
@@ -165,17 +174,34 @@ Shader "CatchIfYouCan/Portal"
             {
                 float t = _Time.y;
 
-                // -1..1 across the quad, then divided by the oval's semi-axes so that the
-                // ellipse edge is exactly where this length reaches 1. Aspect only enters the
-                // NOISE domain: the mask has to follow the quad's own proportions (a tall
-                // doorway wants a tall oval) while the turbulence has to stay isotropic in
-                // metres, or the cells come out stretched on a narrow portal.
+                // -1..1 across the quad. The breach is a RECTANGLE with a torn edge, not an
+                // oval and not a doorway: the fiction is that something came through the wall,
+                // so the opening is a hole punched in plaster with ragged sides.
                 float2 c = (IN.uv - 0.5) * 2.0;
-                float2 fit = max(_Fit.xy, 1e-3);
-                float2 e = c / fit;
-                float r = length(e);
 
+                // The tear grows. Height opens first and width follows, which reads as a crack
+                // splitting and then being pulled apart rather than a shape fading up. At
+                // _Open = 0 the half size is zero, the box distance is positive everywhere, and
+                // every mask below is zero - the wall has no hole in it at all.
+                float open = saturate(_Open);
+                float2 grow = float2(smoothstep(0.18, 1.0, open), smoothstep(0.0, 0.62, open));
+                float2 fit = max(_Fit.xy * grow, 1e-4);
+
+                // Signed distance to that rectangle: negative inside, positive outside.
+                float2 q = abs(c) - fit;
+                float box = length(max(q, 0.0)) + min(max(q.x, q.y), 0.0);
+
+                // Isotropic in metres, so the tear's chunks are the same size on a narrow wall
+                // as on a wide one rather than being stretched with the quad.
                 float2 iso = float2(c.x * _Aspect, c.y);
+
+                // The ragged edge. A big slow layer breaks the straight sides into chunks; the
+                // fine layer crumbles them. Both scale with how far open the tear is, so a
+                // barely-open crack is not already fringed like a finished hole.
+                float tearA = fbm2(iso * _TearScale + 13.7);
+                float tearB = fbm2(iso * _TearScale * 3.1 - 5.2);
+                float ragged = (tearA - 0.5) * 0.75 + (tearB - 0.5) * 0.25;
+                float r = 1.0 + box + ragged * _TearAmount * open;
 
                 // Two layers that share nothing: different scale, different speed, opposite
                 // rotation. Identical frequencies are what make procedural energy read as a
@@ -232,11 +258,16 @@ Shader "CatchIfYouCan/Portal"
                 // destination camera exists the centre is black behind a burning rim, which is
                 // an opening that has not finished forming - honest, and visibly different from
                 // an empty doorway.
-                half3 col = destination * view * _ViewOpacity + glow;
+                half3 col = (destination * view * _ViewOpacity + glow) * gate;
 
-                // Outside the oval plus its spill, this is zero, and that is what makes the
+                // Outside the breach plus its spill, this is zero, and that is what makes the
                 // quad's corners disappear.
-                float alpha = saturate((view + rim + outer * 0.45) * _Opacity);
+                //
+                // The gate is not decoration. A fully collapsed box still measures zero distance
+                // at its own centre, so without this one pixel would sit at r == 1 and burn on a
+                // wall that is supposed to be whole. Closed means NOTHING drawn.
+                float gate = smoothstep(0.0, 0.02, open);
+                float alpha = saturate((view + rim + outer * 0.45) * _Opacity) * gate;
 
                 return half4(col, alpha);
             }

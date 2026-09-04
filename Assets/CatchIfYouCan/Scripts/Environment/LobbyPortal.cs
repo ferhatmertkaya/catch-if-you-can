@@ -108,6 +108,8 @@ namespace CatchIfYouCan.Environment
                  "Slightly under 1 so brushing the jamb is not an entry.")]
         [SerializeField, Range(0.2f, 1.2f)] private float apertureTolerance = 0.95f;
 
+        private bool _sealedByHunt;
+        private Coroutine _sealing;
         private BoxCollider _threshold;
         private float _previousSide;
         private bool _hasPreviousSide;
@@ -321,6 +323,7 @@ namespace CatchIfYouCan.Environment
             surface.SetOpacity(0f);
             surface.SetViewOpacity(0f);
             surface.SetEnergy(0f);
+            surface.SetOpen(0f);
             surface.gameObject.SetActive(true);
             EnsureEffects();
 
@@ -364,6 +367,10 @@ namespace CatchIfYouCan.Environment
                 // doorway reads as tearing open rather than as a picture being switched on.
                 // Opacity leads energy: an outline at full brightness over a portal that is not
                 // yet there is what the first fifth of a second should look like.
+                // The wall tears. SetOpen grows the breach out of nothing, so the first frames
+                // are a crack in an intact wall rather than a shape fading in over a hole that
+                // was always there.
+                surface.SetOpen(eased);
                 surface.SetOpacity(Mathf.Clamp01(eased * 2.2f));
                 surface.SetEnergy(eased);
 
@@ -417,6 +424,7 @@ namespace CatchIfYouCan.Environment
                 yield break;
             }
 
+            surface.SetOpen(1f);
             surface.SetOpacity(1f);
             surface.SetEnergy(1f);
             surface.SetViewOpacity(1f);
@@ -464,6 +472,9 @@ namespace CatchIfYouCan.Environment
                 surface.SetViewOpacity(0f);
                 surface.SetEnergy(collapse);
                 surface.SetOpacity(collapse);
+                // The breach shuts as it dies, so the wall is whole again rather than left as
+                // a transparent hole.
+                surface.SetOpen(1f - k);
 
                 if (_effects != null)
                     _effects.SetIntensity(collapse * 0.6f);
@@ -473,6 +484,7 @@ namespace CatchIfYouCan.Environment
 
             if (surface != null)
             {
+                surface.SetOpen(0f);
                 surface.SetOpacity(0f);
                 surface.SetEnergy(0f);
                 surface.SetViewOpacity(0f);
@@ -542,7 +554,8 @@ namespace CatchIfYouCan.Environment
         /// </para>
         /// </summary>
         public bool CanBeEntered =>
-            State == LobbyPortalState.Open && !_handedOver && MissionWorldLoader.WorldReady;
+            State == LobbyPortalState.Open && !_handedOver && !_sealedByHunt &&
+            MissionWorldLoader.WorldReady;
 
         /// <summary>
         /// Watches the player against the plane of the opening and commits exactly once, when
@@ -661,6 +674,71 @@ namespace CatchIfYouCan.Environment
             // running it, which would leave the screen black at whatever point the unload
             // happened. The overlay is DontDestroyOnLoad, so it survives to fade itself back out.
             UI.TransitionFade.Ensure().StartCoroutine(MissionWorldLoader.EnterAsync());
+        }
+
+        /// <summary>
+        /// Shuts the tear for the duration of a hunt, and opens it again afterwards.
+        ///
+        /// <para>
+        /// <b>Not the same as closing.</b> Close discards the prepared world and ends the
+        /// mission's route in; this keeps the world standing by and only takes the way in away,
+        /// so a hunt can seal the players inside and the doorway is there again when it passes.
+        /// The state does not leave Open either - the portal is still this mission's portal, it
+        /// simply cannot be crossed, because <see cref="CanBeEntered"/> tests the tear.
+        /// </para>
+        /// </summary>
+        public void SetSealedByHunt(bool sealedShut)
+        {
+            if (_sealedByHunt == sealedShut || _handedOver)
+                return;
+
+            _sealedByHunt = sealedShut;
+
+            if (_sealing != null)
+                StopCoroutine(_sealing);
+            _sealing = StartCoroutine(SealRoutine(sealedShut));
+
+            CIYCLog.Info(LogTag + (sealedShut
+                ? "Sealed for the hunt: the way in is gone until it passes."
+                : "Unsealed: the way in is back."));
+        }
+
+        /// <summary>True while a hunt has taken the way in away.</summary>
+        public bool IsSealedByHunt => _sealedByHunt;
+
+        private IEnumerator SealRoutine(bool sealedShut)
+        {
+            float duration = Mathf.Max(0.0001f, style.huntSealDuration);
+            float from = sealedShut ? 1f : 0f;
+            float to = sealedShut ? 0f : 1f;
+            float t = 0f;
+
+            while (t < duration && surface != null)
+            {
+                t += Time.deltaTime;
+                float k = Mathf.Clamp01(t / duration);
+                float eased = k * k * (3f - 2f * k);
+                float open = Mathf.Lerp(from, to, eased);
+
+                surface.SetOpen(open);
+                surface.SetOpacity(open);
+                surface.SetEnergy(open);
+                if (_effects != null)
+                    _effects.SetIntensity(open);
+
+                yield return null;
+            }
+
+            if (surface != null)
+            {
+                surface.SetOpen(to);
+                surface.SetOpacity(to);
+                surface.SetEnergy(to);
+            }
+            if (_effects != null)
+                _effects.SetIntensity(to);
+
+            _sealing = null;
         }
 
         // ---- closing -----------------------------------------------------------------------------

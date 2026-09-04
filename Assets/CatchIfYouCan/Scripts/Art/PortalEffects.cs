@@ -320,19 +320,19 @@ namespace CatchIfYouCan.Art
         private void ShapeToOval(ParticleSystem ps)
         {
             Vector2 opening = _style.openingSize;
-            Vector2 fit = _style.ovalFit;
+            Vector2 fit = _style.breachHalfSize;
 
-            float halfWidth = Mathf.Max(0.01f, opening.x * 0.5f * Mathf.Clamp(fit.x, 0.05f, 1f));
-            float halfHeight = Mathf.Max(0.01f, opening.y * 0.5f * Mathf.Clamp(fit.y, 0.05f, 1f));
+            float width = Mathf.Max(0.02f, opening.x * Mathf.Clamp(fit.x, 0.05f, 1f) * 2f);
+            float height = Mathf.Max(0.02f, opening.y * Mathf.Clamp(fit.y, 0.05f, 1f) * 2f);
 
+            // BoxEdge, not Circle. The breach is a torn RECTANGLE now, and a circular emitter
+            // around a rectangular hole puts sparks in the corners where there is no edge and
+            // none along the middle of the sides where the wall is actually broken.
             ParticleSystem.ShapeModule shape = ps.shape;
             shape.enabled = true;
-            shape.shapeType = ParticleSystemShapeType.Circle;
-            shape.radius = 1f;
-            shape.radiusThickness = 0f;
-            shape.arc = 360f;
-            shape.scale = new Vector3(halfWidth, halfHeight, 1f);
-            shape.randomDirectionAmount = 0.18f;
+            shape.shapeType = ParticleSystemShapeType.BoxEdge;
+            shape.scale = new Vector3(width, height, 0.02f);
+            shape.randomDirectionAmount = 0.22f;
         }
 
         private ParticleSystem CreateSystem(string label, out ParticleSystemRenderer renderer)

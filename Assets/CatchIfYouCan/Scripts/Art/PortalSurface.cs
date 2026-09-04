@@ -74,6 +74,7 @@ namespace CatchIfYouCan.Art
         private float _opacity = 1f;
         private float _viewOpacity;
         private float _energyScale = 1f;
+        private float _open = 1f;
 
         private Vector3 _planePoint;
         private Vector3 _planeNormal;
@@ -191,6 +192,22 @@ namespace CatchIfYouCan.Art
                 SetFloat("_ViewOpacity", _viewOpacity);
         }
 
+        /// <summary>
+        /// How far the wall is torn open, 0 to 1.
+        ///
+        /// <para>
+        /// At ZERO the breach has no size and the shader draws nothing anywhere: the wall is
+        /// whole, with no hole in it. This is separate from opacity on purpose - opacity fades
+        /// what is drawn, this decides whether there is an opening to draw at all.
+        /// </para>
+        /// </summary>
+        public void SetOpen(float value01)
+        {
+            _open = Mathf.Clamp01(value01);
+            if (_material != null && _usingRealShader)
+                SetFloat("_Open", _open);
+        }
+
         /// <summary>Everything the style says, pushed at once. Silent when nothing is built.</summary>
         private void PushStyle()
         {
@@ -213,15 +230,19 @@ namespace CatchIfYouCan.Art
             SetFloat("_PulseSpeed", _style.pulseSpeed);
             SetFloat("_PulseStrength", _style.pulseStrength);
 
-            // The oval and the noise both need to know the shape of the quad they are drawn on.
-            // Derived here rather than authored twice: the surface already knows its own size.
-            Vector2 fit = new Vector2(Mathf.Clamp(_style.ovalFit.x, 0.05f, 1f),
-                                      Mathf.Clamp(_style.ovalFit.y, 0.05f, 1f));
+            SetFloat("_TearAmount", _style.tearAmount);
+            SetFloat("_TearScale", _style.tearScale);
+
+            // The breach and the noise both need to know the shape of the quad they are drawn
+            // on. Derived here rather than authored twice: the surface already knows its size.
+            Vector2 fit = new Vector2(Mathf.Clamp(_style.breachHalfSize.x, 0.05f, 1f),
+                                      Mathf.Clamp(_style.breachHalfSize.y, 0.05f, 1f));
             _material.SetVector("_Fit", new Vector4(fit.x, fit.y, 0f, 0f));
             SetFloat("_Aspect", openingSize.y > 0.001f ? openingSize.x / openingSize.y : 1f);
 
             SetFloat("_Opacity", _opacity);
             SetFloat("_ViewOpacity", _viewOpacity);
+            SetFloat("_Open", _open);
             SetEnergy(_energyScale);
         }
 

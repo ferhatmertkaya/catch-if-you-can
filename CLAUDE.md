@@ -85,18 +85,21 @@ place that number lives; everything else derives it.
   mission actually puts its loadout in the player's hands; the torch has a dedicated place
   outside the three investigation slots, a mission cannot be generated twice, finishing one
   returns to the lobby without replaying the cinematic, and the portal camera can never
-  become the player's. It also holds the production portal to its architecture: the energy mask is an
-  ellipse rather than the rectangle it used to be, two independent noise layers drive it, every
+  become the player's. It also holds the production portal to its architecture: the energy mask is a
+  torn rectangular breach built from a signed box field whose edge is chewed away by noise, a
+  closed portal draws no lit pixel at all so the wall reads as whole, two independent noise
+  layers drive it, every
   artistic control is a shader property that the material and the C# agree on, the portal camera
   stays culled and distance-gated, nothing allocates a buffer or a material per frame, quality comes
-  from the project's own quality level rather than a parallel tier system, particles emit on the oval
-  contour, there is exactly one shadowless light, and a failed preparation visibly collapses the
+  from the project's own quality level rather than a parallel tier system, particles emit on the breach
+  edge, there is exactly one shadowless light, and a failed preparation visibly collapses the
   portal instead of hiding it. It also keeps entry the player's: the portal never loads a scene
   itself, entry commits from exactly one call site behind a plane-side crossing whose sign must
   actually change and whose crossing point is inside the aperture, no trigger volume can commit
   entry, a crossing needs a prepared destination, a refused crossing returns the controls, the
   intro overlay is cleared whatever happens, and the first-person hand target, elbow hint and
-  anchor agree on one side with the fist clear of the near clip plane. 92 checks.
+  anchor agree on one side with the fist clear of the near clip plane, and the probe room
+  stays outside the playable world without ever making the portal enterable. 97 checks.
 
 - `Scripts/check_agent_architecture.sh` — the roster holds 40 unique roles with
   every field, the roster and `AGENT_OWNERSHIP.md` name the same roles, the
