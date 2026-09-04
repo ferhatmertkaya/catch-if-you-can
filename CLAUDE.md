@@ -110,7 +110,15 @@ place that number lives; everything else derives it.
   once the pose and the clip plane are written; the orientation convention is validated rather
   than compensated for; the view refreshes on a cadence the quality level drives; the edge
   distortion is capped at 1.5% of the screen and falls to zero at the centre; no per-platform
-  flip is hand-coded; the debug readout is opt-in; and nothing renders recursively. 116 checks.
+  flip is hand-coded; the debug readout is opt-in; and nothing renders recursively. It also
+  holds the one-world contract: there is exactly one portal implementation, no
+  `ReferenceApartment` stands in for the mission, the view is aimed at the prepared world the
+  player will actually enter, that world is prepared additively behind the lobby and reused
+  rather than regenerated, no timer can hand the player over, and a failed preparation has a
+  state of its own instead of reporting itself as a doorway nobody asked anything of. And it
+  bounds the lobby's cost: the mirror and the portal share one arbiter, both ask it before
+  rendering, its budget comes from the project's own quality level, and the view buffer's
+  ladder has named ends rather than a halved top. 128 checks.
 
 - `Scripts/check_agent_architecture.sh` — the roster holds 40 unique roles with
   every field, the roster and `AGENT_OWNERSHIP.md` name the same roles, the

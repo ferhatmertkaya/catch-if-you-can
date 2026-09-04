@@ -1076,6 +1076,113 @@ else
   ok "the portal does not render recursively"
 fi
 
+# ---------------------------------------------------------------- V8.5: one portal, one world
+
+MWL="$ROOT/Assets/CatchIfYouCan/Scripts/Missions/MissionWorldLoader.cs"
+BUDGET="$ART/SecondaryViewBudget.cs"
+
+# The hand-built flat the portal used to show instead of the mission. It is gone; this is
+# what stops it coming back as "something to look at while the world builds".
+if [ -f "$ROOT/Assets/CatchIfYouCan/Scripts/Environment/ReferenceApartment.cs" ]; then
+  bad "no ReferenceApartment stands in for the mission world" \
+      "the portal shows the world the player will enter, or it shows the probe room and says so"
+else
+  ok "no ReferenceApartment stands in for the mission world"
+fi
+
+# Exactly one portal architecture. A second one always arrives named like this.
+dupes=$(ls "$ART"/PortalSystem2.cs "$ART"/TruePortal*.cs "$ART"/AdvancedPortal*.cs \
+           "$ART"/PortalCameraNew.cs "$ART"/PortalV2.cs 2>/dev/null || true)
+if [ -n "$dupes" ]; then
+  bad "there is exactly one portal implementation" "$dupes"
+else
+  ok "there is exactly one portal implementation"
+fi
+
+# The view is bound to the PREPARED world's arrival point - the same InvestigationBootstrap
+# that EnterAsync activates - so what the player looks at is what they walk into.
+if code "$ENV/LobbyPortal.cs" | grep -qE 'SetDestination\(_pendingWorld\.ArrivalPoint\)'; then
+  ok "the portal is aimed at the prepared world the player will enter"
+else
+  bad "the portal is aimed at the prepared world the player will enter" \
+      "showing one world and loading another is the bug this whole flow exists to avoid"
+fi
+
+# One seed, one generation. The loader reuses the prepared bootstrap when the mission is the
+# same object; rolling again would give the player a different house than the one on show.
+if code "$MWL" | grep -qE 'ReferenceEquals\(InvestigationBootstrap\.Prepared\.Mission, mission\)'; then
+  ok "a prepared world is reused rather than regenerated"
+else
+  bad "a prepared world is reused rather than regenerated" \
+      "a second generation is a second house, and the portal was showing the first"
+fi
+
+# The world is prepared ADDITIVELY, behind the lobby, with the player still standing in it.
+if code "$MWL" | grep -qE 'LoadSceneAsync\([^,]+, *LoadSceneMode\.Additive\)'; then
+  ok "the mission world is prepared additively behind the lobby"
+else
+  bad "the mission world is prepared additively behind the lobby" \
+      "a single-scene load replaces the lobby, which IS the teleport this flow removed"
+fi
+
+# Nothing in the portal may start a timer that ends in a handover. Entry is the player's.
+if code "$ENV/LobbyPortal.cs" | grep -qE '(^|[^.])\bInvoke\("' \
+   || code "$ENV/LobbyPortal.cs" | grep -qE 'InvokeRepeating\('; then
+  bad "no timer can hand the player over" \
+      "world-ready or animation-complete must never mean 'therefore teleport'"
+else
+  ok "no timer can hand the player over"
+fi
+
+# A preparation that fails has a state of its own. Reporting it as Inactive - which is also
+# what a doorway nobody asked anything of reports - makes a failure invisible.
+if code "$ENV/LobbyPortal.cs" | grep -qE '^ *Failed,' \
+   && code "$ENV/LobbyPortal.cs" | grep -qE 'SetState\(LobbyPortalState\.Failed\)'; then
+  ok "a failed preparation has a state of its own"
+else
+  bad "a failed preparation has a state of its own" \
+      "the player stands in the lobby whether nothing was asked or everything went wrong"
+fi
+
+# ---------------------------------------------------------------- V8.5: the frame budget
+
+if [ -f "$BUDGET" ]; then
+  ok "the lobby's secondary views share an arbiter"
+else
+  bad "the lobby's secondary views share an arbiter" \
+      "mirror and portal each culling correctly still means three renders when both are on screen"
+fi
+
+for view in "$SURF" "$ART/MirrorCorner.cs"; do
+  vname="$(basename "$view" .cs)"
+  if code "$view" | grep -qE 'SecondaryViewBudget\.MayRender\('; then
+    ok "$vname asks the shared budget before rendering"
+  else
+    bad "$vname asks the shared budget before rendering" \
+        "a view that never asks cannot be arbitrated with"
+  fi
+done
+
+# The budget comes from the project's one quality signal. A parallel tier enum can disagree
+# with the buffer sizes and the particle rates, and then nothing is describable.
+if code "$BUDGET" | grep -qE 'PortalStyle\.QualityFraction01\(\)' \
+   && ! code "$BUDGET" | grep -qE 'enum +[A-Za-z]*Tier'; then
+  ok "the frame budget derives from the project's own quality level"
+else
+  bad "the frame budget derives from the project's own quality level" \
+      "a second notion of how much machine this is can disagree with the first"
+fi
+
+# The buffer ladder has named ends. Defining the bottom as half the top means raising the
+# desktop buffer silently raises the phone's.
+if code "$ART/PortalStyle.cs" | grep -qE 'public int minViewResolution *(=|;)' \
+   && ! code "$SURF" | grep -qE 'resolution \* 0\.5f'; then
+  ok "the view buffer ladder has named ends, not a halved top"
+else
+  bad "the view buffer ladder has named ends, not a halved top" \
+      "the lowest quality level must not be a function of the highest"
+fi
+
 echo
 echo "  $PASS passed, $FAIL failed"
 if [ "$FAIL" -ne 0 ]; then
