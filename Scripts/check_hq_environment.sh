@@ -253,6 +253,66 @@ else:
     else:
         ok("ExternalAssetPaths names only folders that exist")
 
+# ------------------------------- 6. the pack's URP conversion did not take our shaders
+
+# A "Built-in to URP" conversion run over the whole project rewrites m_Shader on every
+# material it can. Ours must not be among them: nine CIYC materials are driven by custom
+# shaders, and a converted one silently becomes URP/Lit - the dissolve stops dissolving, the
+# portal stops being a portal, and nothing errors. Each of these nine must still point at a
+# .shader file under Assets/CatchIfYouCan/Shaders.
+CUSTOM = {
+    "Ghost_RiggedDissolve": "GhostDissolve",
+    "MAT_GhostDissolve": "GhostDissolve",
+    "MAT_ElectronicGlitch": "ElectronicGlitch",
+    "MAT_PlanarMirror": "PlanarMirror",
+    "MAT_Portal": "Portal",
+    "MAT_SpectralGrid": "SpectralGrid",
+    "MAT_SpectralReveal": "SpectralReveal",
+    "MAT_UISlime": "UISlime",
+    "MAT_UVEvidence": "UVEvidence",
+}
+
+guid_to_asset = {}
+for dirpath, dirnames, filenames in os.walk(os.path.join(root, "Assets")):
+    for name in filenames:
+        if not name.endswith(".meta"):
+            continue
+        rel = os.path.relpath(os.path.join(dirpath, name), root)
+        try:
+            for line in io.open(os.path.join(root, rel), encoding="utf-8", errors="replace"):
+                if line.startswith("guid: "):
+                    guid_to_asset[line[6:].strip()] = rel[:-5]
+                    break
+        except OSError:
+            pass
+
+converted = []
+absent = []
+for material, shader in sorted(CUSTOM.items()):
+    found = None
+    for dirpath, dirnames, filenames in os.walk(os.path.join(root, "Assets/CatchIfYouCan")):
+        if material + ".mat" in filenames:
+            found = os.path.relpath(os.path.join(dirpath, material + ".mat"), root)
+            break
+
+    if found is None:
+        absent.append(material)
+        continue
+
+    body = read(found) or ""
+    m = re.search(r"m_Shader: \{fileID: \d+, guid: ([0-9a-f]{32})", body)
+    target = guid_to_asset.get(m.group(1)) if m else None
+    if target is None or not target.endswith(shader + ".shader"):
+        converted.append("%s -> %s (expected %s.shader)" % (material, target or "no project shader", shader))
+
+if absent:
+    bad("every CIYC material with a custom shader still has it", ["missing: " + ", ".join(absent)])
+elif converted:
+    bad("every CIYC material with a custom shader still has it",
+        ["a URP conversion pass rewrote these:"] + converted)
+else:
+    ok("every CIYC material with a custom shader still has it (%d checked)" % len(CUSTOM))
+
 gv = read("Assets/CatchIfYouCan/Scripts/Procedural/Deterministic/GenerationVersion.cs")
 m = re.search(r"Current\s*=\s*(\d+)", gv or "")
 if m:
