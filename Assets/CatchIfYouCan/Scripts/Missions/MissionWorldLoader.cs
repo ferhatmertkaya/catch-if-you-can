@@ -275,7 +275,15 @@ namespace CatchIfYouCan.Missions
                 SceneManager.MoveGameObjectToScene(host, scene);
             }
 
-            host.AddComponent<InvestigationBootstrap>();
+            var bootstrap = host.AddComponent<InvestigationBootstrap>();
+
+            // A component attached here has every serialized field null, so without this the
+            // van lands on a hard-coded (0, 0, -14), the house at the origin and the world root
+            // on the bootstrap object - none of which is what the scene says. It names all
+            // three; it simply never had the component that reads them.
+            bootstrap.BindSceneAnchors(FindInScene(scene, "WORLD"),
+                                       FindInScene(scene, "VanAnchor"),
+                                       FindInScene(scene, "HouseAnchor"));
 
             CIYCLog.Error(LogTag + "'" + scene.name + "' carried no InvestigationBootstrap, so " +
                           "one was attached to '" + host.name + "' at load. NOTHING in that " +
@@ -283,6 +291,38 @@ namespace CatchIfYouCan.Missions
                           "point, no lighting - which is why preparation timed out. Open the " +
                           "scene and add the component properly, so the scene declares what it " +
                           "needs instead of being repaired every time it loads.");
+        }
+
+        /// <summary>One named transform anywhere in a scene, or null. Depth-first by root.</summary>
+        private static Transform FindInScene(Scene scene, string objectName)
+        {
+            foreach (GameObject root in scene.GetRootGameObjects())
+            {
+                if (root.name == objectName)
+                    return root.transform;
+
+                Transform found = FindInChildren(root.transform, objectName);
+                if (found != null)
+                    return found;
+            }
+
+            return null;
+        }
+
+        private static Transform FindInChildren(Transform parent, string objectName)
+        {
+            for (int i = 0; i < parent.childCount; i++)
+            {
+                Transform child = parent.GetChild(i);
+                if (child.name == objectName)
+                    return child;
+
+                Transform found = FindInChildren(child, objectName);
+                if (found != null)
+                    return found;
+            }
+
+            return null;
         }
 
         // ---- entering --------------------------------------------------------------------------

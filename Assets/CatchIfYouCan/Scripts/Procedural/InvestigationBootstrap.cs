@@ -98,6 +98,36 @@ namespace CatchIfYouCan.Procedural
         /// </summary>
         public Transform ArrivalPoint => _van != null ? _van.PlayerSpawnPoint : null;
 
+        /// <summary>
+        /// Hands this bootstrap the anchors its scene already carries.
+        ///
+        /// <para>
+        /// Needed because a bootstrap ATTACHED AT RUNTIME has every serialized field null, and
+        /// then every fallback fires at once: the van is built at a hard-coded (0, 0, -14)
+        /// instead of at VanAnchor, the house at the origin instead of at HouseAnchor, and the
+        /// world is parented to this object instead of to WORLD. The scene names all three; it
+        /// simply never had the component that reads them.
+        /// </para>
+        ///
+        /// <para>
+        /// A public method rather than reflection into the private fields (CLAUDE.md mistake 4):
+        /// reflection compiles, reviews clean and dies silently on the next rename.
+        /// </para>
+        /// </summary>
+        public void BindSceneAnchors(Transform world, Transform van, Transform house)
+        {
+            if (_worldPrepared)
+            {
+                CIYCLog.Warn("[CIYC][Investigation] BindSceneAnchors after the world was built " +
+                             "is ignored; the van and the house are already placed.");
+                return;
+            }
+
+            if (world != null) worldRoot = world;
+            if (van != null) vanAnchor = van;
+            if (house != null) houseAnchor = house;
+        }
+
         private void Start()
         {
             InvestigationStartMode mode = PendingStartMode;
@@ -429,11 +459,14 @@ namespace CatchIfYouCan.Procedural
             // Input is live immediately here, which is what this scene always did: it fades
             // in over a player that is already in control, rather than handing control over
             // at the end of a transition the way the menu does.
-            var buildResult = PlayerSpawner.Spawn(
-                _van?.PlayerSpawnPoint,
-                enableInput: true,
-                prefabOverride: playerPrefab != null ? playerPrefab.gameObject : null,
-                contextForDiagnostics: name);
+            Transform arrival = _van?.PlayerSpawnPoint;
+
+            var buildResult = arrival != null
+                ? PlayerSpawner.Spawn(GroundedSpawn(arrival), arrival.rotation, true,
+                                      playerPrefab != null ? playerPrefab.gameObject : null)
+                : PlayerSpawner.Spawn(null, enableInput: true,
+                                      prefabOverride: playerPrefab != null ? playerPrefab.gameObject : null,
+                                      contextForDiagnostics: name);
 
             if (buildResult == null)
                 return;
@@ -441,6 +474,40 @@ namespace CatchIfYouCan.Procedural
             _playerInstance = buildResult.Root;
             WirePlayerEquipment(buildResult);
             SilenceSceneCameraAndListener(buildResult);
+        }
+
+        /// <summary>
+        /// The arrival point, dropped onto whatever floor is actually under it.
+        ///
+        /// <para>
+        /// The van's spawn point sits at its local Y of zero, while the van's own floor is a
+        /// slab whose top is 8 cm above that - and nothing in the spawn path has ever put the
+        /// player on a surface. They are placed at the anchor's exact height and gravity then
+        /// deals with the difference, which is a drop the player sees on the frame they arrive.
+        /// </para>
+        ///
+        /// <para>
+        /// Cast from two metres above and accept the first thing hit that is not the player
+        /// themselves - there is no player yet at this point, so a plain cast is enough. If
+        /// nothing is under the anchor at all the anchor's own position is used unchanged and
+        /// the miss is reported, because an arrival point suspended over nothing is a content
+        /// bug that should be seen rather than quietly patched.
+        /// </para>
+        /// </summary>
+        private static Vector3 GroundedSpawn(Transform arrival)
+        {
+            Vector3 from = arrival.position + Vector3.up * 2f;
+
+            if (Physics.Raycast(from, Vector3.down, out RaycastHit hit, 6f,
+                                ~0, QueryTriggerInteraction.Ignore))
+            {
+                return hit.point;
+            }
+
+            CIYCLog.Warn("[CIYC][Investigation] Nothing under the arrival point at " +
+                         arrival.position.ToString("F1") + ", so the player is placed at it " +
+                         "exactly and will fall until something catches them.");
+            return arrival.position;
         }
 
         /// <summary>
