@@ -52,3 +52,6 @@ Assets/ai.meshy/
 Assets/ai.meshy.meta
 Assets/TutorialInfo/
 Assets/TutorialInfo.meta
+
+# Gekaufte Asset-Packs: zu gross fuer Git
+/Assets/HQ Modular House Interior/
