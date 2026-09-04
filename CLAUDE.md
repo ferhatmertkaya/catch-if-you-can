@@ -164,7 +164,17 @@ place that number lives; everything else derives it.
   before the switch got its component. Both are checked now, along with the editor
   setup's ability to restore them. 25 checks.
 
-All eight run in CI (`.github/workflows/determinism.yml`). Run them locally before
+- `Scripts/check_asset_references.sh` — every asset a scene names really arrives on the
+  machine that opens it. Every git-lfs rule matches a tracked file, every git-lfs file is
+  stored as a pointer rather than as pack content, every `.meta` under `Assets` declares a
+  guid, no two share one, every tracked asset carries its `.meta`, and every prefab instance
+  in a scene or prefab resolves to an asset that exists. It also reads the working copy,
+  which is where the failure actually lives: all-pointers is a checkout that never asked for
+  LFS content and is fine, all-materialised is fine, and a mix of the two is a partial fetch
+  — it names the files that are still pointers, because those are the ones Unity shows in
+  red. It reports the LFS payload against GitHub's free 1 GiB allowance. 12 checks.
+
+All nine run in CI (`.github/workflows/determinism.yml`). Run them locally before
 pushing; they need nothing but a shell (and `python3` for the roster checks).
 
 ## The mistakes this project has already made
@@ -242,6 +252,16 @@ Repeating one of these is the most likely way to break something.
    made the solo player's carried torch read as unowned and let the first person
    past take it. `MultiplayerProtocol.LocalOnlyClientId` and `NoClientId` are
    now separate, and the harness asserts they differ.
+14. **A file that is correct in the repository and absent on the machine.** The scene said
+   `Missing Prefab with guid: cbaf2094dea28…` in red for `CIYC_HauntedRotaryPhone`, and
+   every part of the repository was right: the `.meta` declared that guid, the scene
+   reference matched it byte for byte, the git-lfs pointer's sha256 matched the file, and
+   the remote held the object. What was wrong was the working copy — a 134-byte pointer
+   where a 110 MB binary FBX belongs, because git-lfs had fetched some objects and not that
+   one. Nothing in the repository could say so, so nothing did. The whole LFS payload is
+   1.03 GiB, which is over GitHub's free 1 GiB storage and bandwidth allowance, and running
+   out mid-fetch leaves exactly this partial state. `check_asset_references.sh` reads the
+   working copy now and distinguishes "no LFS content at all" from "some of it".
 
 ## Unity Editor availability
 

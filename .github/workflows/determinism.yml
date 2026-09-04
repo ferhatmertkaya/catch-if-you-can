@@ -46,3 +46,6 @@ jobs:
 
       - name: Project tag and layer guard
         run: Scripts/check_project_tags.sh
+
+      - name: Asset reference and LFS payload guard
+        run: Scripts/check_asset_references.sh
