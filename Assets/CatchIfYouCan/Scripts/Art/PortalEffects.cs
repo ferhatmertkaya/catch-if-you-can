@@ -355,24 +355,38 @@ namespace CatchIfYouCan.Art
         // ---- shared ----------------------------------------------------------------------
 
         /// <summary>
-        /// The oval emitter. A Circle with zero thickness puts every particle on the contour,
-        /// and the shape's own scale - not the transform's, which would resize the particles
-        /// too - stretches that circle into the portal's proportions.
+        /// The oval emitter, sized from the opening and from nothing else.
+        ///
+        /// <para>
+        /// A Circle with zero radius thickness puts every particle on the contour, and the
+        /// SHAPE's own scale - not the transform's, which would resize the particles themselves
+        /// - stretches that circle into the portal's proportions.
+        /// </para>
+        ///
+        /// <para>
+        /// It was a BoxEdge, from when the breach was a torn rectangle. A rectangular emitter
+        /// around an oval hole puts sparks in the corners where there is no edge and thins them
+        /// along the sides where the wall is actually broken, which is the boxy spark pattern.
+        /// </para>
+        ///
+        /// <para>
+        /// The size is the opening, full stop. It used to be the opening times breachHalfSize
+        /// times two - a fraction of a half-extent multiplied back up, which came out LARGER
+        /// than the opening it was supposed to trace.
+        /// </para>
         /// </summary>
         private void ShapeToOval(ParticleSystem ps)
         {
             Vector2 opening = _style.openingSize;
-            Vector2 fit = _style.breachHalfSize;
+            float width = Mathf.Max(0.02f, opening.x);
+            float height = Mathf.Max(0.02f, opening.y);
 
-            float width = Mathf.Max(0.02f, opening.x * Mathf.Clamp(fit.x, 0.05f, 1f) * 2f);
-            float height = Mathf.Max(0.02f, opening.y * Mathf.Clamp(fit.y, 0.05f, 1f) * 2f);
-
-            // BoxEdge, not Circle. The breach is a torn RECTANGLE now, and a circular emitter
-            // around a rectangular hole puts sparks in the corners where there is no edge and
-            // none along the middle of the sides where the wall is actually broken.
             ParticleSystem.ShapeModule shape = ps.shape;
             shape.enabled = true;
-            shape.shapeType = ParticleSystemShapeType.BoxEdge;
+            shape.shapeType = ParticleSystemShapeType.Circle;
+            shape.radius = 0.5f;
+            shape.radiusThickness = 0f;
+            shape.arc = 360f;
             shape.scale = new Vector3(width, height, 0.02f);
             shape.randomDirectionAmount = 0.22f;
         }

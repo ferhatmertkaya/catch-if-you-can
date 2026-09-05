@@ -25,17 +25,24 @@ namespace CatchIfYouCan.Art
         // ---- shape -------------------------------------------------------------------------
 
         [Header("Portal")]
+        // ---- ONE authoritative size ----------------------------------------------------------
+        //
+        // openingSize is the ONLY thing that says how big the portal is. Everything derives from
+        // it: the drawn quad, the shader's breach, the wall's collision hole, the crossing
+        // aperture and the threshold volume.
+        //
+        // There used to be a second knob, breachHalfSize, a FRACTION of the quad that scaled the
+        // oval inside it. Two numbers that both had to be right produced exactly the bug it
+        // sounds like: the glow grew with openingSize while the hole you could walk through was
+        // still the fraction of an opening nobody had updated. It is deleted rather than
+        // defaulted to 1, because a knob that must always be 1 is a knob that will not be.
+
         [Tooltip("The clear hole in metres. Widened past the old 1.06 doorway width because the " +
                  "lobby's north wall is one solid object with no door frame - there are no jambs " +
                  "left for the breach to have to fit between, and a tall narrow oval in a wall " +
                  "reads as a window. This also widens where the player may cross, which is " +
                  "correct: the aperture should be the hole you can see.")]
         public Vector2 openingSize = new Vector2(4.7f, 2.4f);
-
-        [Tooltip("Trim on the oval, as a fraction of the opening. 1 means the tear fills the " +
-                 "opening exactly, which is what you usually want - the room for the glow comes " +
-                 "from Glow Margin below, not from shrinking the hole.")]
-        public Vector2 breachHalfSize = new Vector2(0.65f, 0.9f);
 
         [Tooltip("How much BIGGER than the opening the drawn quad is, as a fraction. This is " +
                  "pure canvas: the hole stays the size Opening Size says, and the extra area is " +
@@ -72,8 +79,7 @@ namespace CatchIfYouCan.Art
         public Vector2 ResolveFit()
         {
             float scale = 1f + Mathf.Max(0f, glowMargin);
-            return new Vector2(Mathf.Clamp(breachHalfSize.x, 0.05f, 1f) / scale,
-                               Mathf.Clamp(breachHalfSize.y, 0.05f, 1f) / scale);
+            return new Vector2(1f / scale, 1f / scale);
         }
 
         [Tooltip("How far the oval's edge is chewed away from a clean curve. Zero is a neat " +

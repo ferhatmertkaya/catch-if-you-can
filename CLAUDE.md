@@ -152,7 +152,10 @@ place that number lives; everything else derives it.
   and the portal's far anchor is raised to the portal's own height instead of being the
   floor-level spawn point, and the tear cuts the wall's COLLISION so the player can walk
   through it — physics only, so the wall stays one mesh with no z-fighting patch, and it
-  is solid again the moment the portal is not open. 155 checks.
+  is solid again the moment the portal is not open. And it holds the opening to ONE source:
+  `openingSize` alone sizes the quad, the shader breach, the collision hole, the crossing
+  test and the threshold — no second fraction, no third trigger size, and no orphaned
+  field left in the scene, where a serialized value silently beats every code default. 161 checks.
 
 - `Scripts/check_agent_architecture.sh` — the roster holds 40 unique roles with
   every field, the roster and `AGENT_OWNERSHIP.md` name the same roles, the

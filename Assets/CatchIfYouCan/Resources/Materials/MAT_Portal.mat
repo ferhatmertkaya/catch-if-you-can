@@ -64,7 +64,7 @@ Material:
     m_Colors:
     - _CoreColor: {r: 0.9, g: 1, b: 0.94, a: 1}
     - _EnergyColor: {r: 0.341, g: 1, b: 0.408, a: 1}
-    - _Fit: {r: 0.65, g: 0.9, b: 0, a: 0}
+    - _Fit: {r: 1, g: 1, b: 0, a: 0}
     - _OuterColor: {r: 0.09, g: 0.36, b: 0.19, a: 1}
     - _Tint: {r: 0.92, g: 0.98, b: 0.94, a: 1}
   m_BuildTextureStacks: []

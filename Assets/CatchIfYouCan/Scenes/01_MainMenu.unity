@@ -51623,18 +51623,18 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::CatchIfYouCan.Environment.LobbyPortal
   surface: {fileID: 0}
   style:
-    openingSize: {x: 1.06, y: 2.4}
-    breachHalfSize: {x: 0.78, y: 0.9}
-    tearAmount: 0.16
-    tearScale: 4.5
-    rimWidth: 0.26
-    rimSoftness: 1.15
+    openingSize: {x: 4.7, y: 2.4}
+    glowMargin: 0
+    tearAmount: 0.5
+    tearScale: 5.4
+    rimWidth: 0.162
+    rimSoftness: 1.95
     coreColor: {r: 0.9, g: 1, b: 0.94, a: 1}
     energyColor: {r: 0.341, g: 1, b: 0.408, a: 1}
     outerColor: {r: 0.09, g: 0.36, b: 0.19, a: 1}
     sparkColor: {r: 0.8, g: 1, b: 0.85, a: 1}
     viewTint: {r: 0.92, g: 0.98, b: 0.94, a: 1}
-    coreIntensity: 6
+    coreIntensity: 6.53
     energyIntensity: 2.6
     noiseScale: 5.5
     noiseStrength: 0.16
@@ -51674,7 +51674,7 @@ MonoBehaviour:
     particleQuality: 1
     refreshHz: 0
     mobileRefreshHz: 30
-  entryTriggerSize: {x: 1.2, y: 2.4, z: 0.8}
+  entryTriggerDepth: 0.8
   showProbeRoomUntilWorldReady: 1
   crossingProbeHeight: 1.1
   apertureTolerance: 0.95

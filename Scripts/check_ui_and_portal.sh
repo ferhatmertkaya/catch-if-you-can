@@ -633,13 +633,18 @@ case "$CONTROLLERS" in
   *) bad "one portal surface owns the render texture" "found: $CONTROLLERS" ;;
 esac
 
-# The effects emit on the EDGE of the breach. A filled Box fires through the middle of the
-# view, and a Circle puts sparks in the corners of a rectangle where there is no edge at all.
-if code "$FX" | grep -qE 'ParticleSystemShapeType\.BoxEdge' && code "$FX" | grep -qE 'shape\.scale'; then
+# The effects emit on the EDGE of the breach, and the emitter has to be the SHAPE of the breach.
+# It was BoxEdge, correctly, while the breach was a torn rectangle; the breach is an oval now, so
+# a rectangular emitter puts sparks in the corners where there is no edge and thins them along
+# the sides where the wall is actually broken. Circle with zero radius thickness is the contour;
+# a non-zero thickness fills the disc and fires particles through the middle of the view.
+if code "$FX" | grep -qE 'ParticleSystemShapeType\.Circle' &&
+   code "$FX" | grep -qE 'shape\.radiusThickness = 0f' &&
+   code "$FX" | grep -qE 'shape\.scale'; then
   ok "particles emit on the breach edge, not through the view"
 else
   bad "particles emit on the breach edge, not through the view" \
-      "BoxEdge traces the torn rectangle; Box fills it and Circle rounds it off"
+      "the emitter must be the breach's shape: an oval contour, not a rectangle and not a disc"
 fi
 
 for system in Sparks EnergyStreaks AmbientWisps; do
@@ -1582,6 +1587,76 @@ if code "$LP" | grep -qE 'Lobby_Wall|"Wall_North"'; then
       "a name that stops resolving is CLAUDE.md mistakes 3 and 10"
 else
   ok "the wall is found by geometry, not by name"
+fi
+
+# ---- V10: ONE authoritative opening size -----------------------------------------------------
+#
+# There were two. openingSize said how big the hole was, and breachHalfSize scaled the oval
+# inside it as a FRACTION - so the glow grew with the opening while the part you could walk
+# through stayed the fraction of an opening nobody had updated. A portal 4.7 m wide with a
+# breach still 1.4 m wide, and both numbers looked deliberate.
+if code "$STYLE" | grep -qE 'breachHalfSize'; then
+  bad "the opening size has exactly one source" \
+      "breachHalfSize is a second size that can disagree with openingSize"
+else
+  ok "the opening size has exactly one source"
+fi
+
+# ...and the shader's fit is derived from the margin alone, never from a second authored size.
+if code "$STYLE" | sed -n '/public Vector2 ResolveFit()/,/^        }$/p' \
+     | grep -qE 'return new Vector2\(1f / scale, 1f / scale\);'; then
+  ok "the shader breach is the opening, not a fraction of it"
+else
+  bad "the shader breach is the opening, not a fraction of it" \
+      "anything else here reintroduces a hole smaller than the hole"
+fi
+
+# Every consumer reads that one value: the drawn quad, the collision hole, the crossing test
+# and the threshold volume.
+LP="$ENV/LobbyPortal.cs"
+MISSING=""
+code "$STYLE" | sed -n '/public Vector2 QuadSize()/,/^        }$/p' \
+  | grep -qE 'openingSize\.x\)? \* scale' || MISSING="$MISSING quad"
+code "$LP" | sed -n '/private void EnsureWallAperture/,/^        }$/p' \
+  | grep -qE 'style\.openingSize\.x \* 0\.5f' || MISSING="$MISSING wall-hole"
+code "$LP" | grep -qE 'halfWidth = style\.openingSize\.x \* 0\.5f \* apertureTolerance' \
+  || MISSING="$MISSING crossing"
+code "$LP" | sed -n '/private void EnsureThreshold/,/^        }$/p' \
+  | grep -qE '_threshold\.size = new Vector3\(style\.openingSize\.x, style\.openingSize\.y' \
+  || MISSING="$MISSING threshold"
+if [ -z "$MISSING" ]; then
+  ok "quad, collision hole, crossing test and threshold all read openingSize"
+else
+  bad "quad, collision hole, crossing test and threshold all read openingSize" \
+      "these size themselves from something else:$MISSING"
+fi
+
+# The threshold must not carry its own width and height. That was a third opening size, and it
+# was still 1.2 x 2.4 while the portal was 4.7 wide.
+if code "$LP" | grep -qE 'entryTriggerSize'; then
+  bad "the threshold volume has no size of its own" \
+      "a trigger that is not the size of the hole is a third opening size"
+else
+  ok "the threshold volume has no size of its own"
+fi
+
+# ---- V10: the scene must not carry a field the code no longer has ----------------------------
+#
+# A serialized value ALWAYS beats a code default, which is why editing PortalStyle.cs changed
+# nothing here: 01_MainMenu.unity said 1.06 and went on saying it. An orphaned breachHalfSize
+# left in the scene is the same trap set for the next person.
+if grep -qE '^\s*breachHalfSize:' "$SCENE"; then
+  bad "the lobby scene carries no orphaned breach size" \
+      "a serialized field the code dropped is dead weight that reads as configuration"
+else
+  ok "the lobby scene carries no orphaned breach size"
+fi
+
+if grep -qE '^\s*entryTriggerSize:' "$SCENE"; then
+  bad "the lobby scene carries no orphaned trigger size" \
+      "entryTriggerSize was replaced by entryTriggerDepth"
+else
+  ok "the lobby scene carries no orphaned trigger size"
 fi
 
 echo

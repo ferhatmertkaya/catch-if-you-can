@@ -108,8 +108,10 @@ namespace CatchIfYouCan.Environment
         private Transform _viewAnchor;
 
         [Header("Threshold")]
-        [Tooltip("The volume that counts as walking through. Sits in the opening, not past it.")]
-        [SerializeField] private Vector3 entryTriggerSize = new Vector3(1.2f, 2.4f, 0.8f);
+        [Tooltip("How DEEP the threshold volume is, in metres. Its width and height are not " +
+                 "authored: they are the opening, because a threshold that is not the size of " +
+                 "the hole is a second opening size that can disagree with the first.")]
+        [SerializeField, Min(0.05f)] private float entryTriggerDepth = 0.8f;
 
         [Tooltip("Show a lit magenta room through the opening until the mission world is ready. " +
                  "It cannot be walked into - entry still needs a prepared world - and it is the " +
@@ -541,7 +543,7 @@ namespace CatchIfYouCan.Environment
 
             var go = new GameObject("Portal_Threshold");
             go.transform.SetParent(transform, false);
-            go.transform.localPosition = new Vector3(0f, entryTriggerSize.y * 0.5f, 0f);
+            go.transform.localPosition = new Vector3(0f, style.openingSize.y * 0.5f, 0f);
 
             // A DISABLED collider, kept only so the aperture is visible in the scene view and
             // so the destabilise path has something to switch off. Nothing listens to it: entry
@@ -549,7 +551,8 @@ namespace CatchIfYouCan.Environment
             // cannot tell walking through from standing near.
             _threshold = go.AddComponent<BoxCollider>();
             _threshold.isTrigger = true;
-            _threshold.size = entryTriggerSize;
+            _threshold.size = new Vector3(style.openingSize.x, style.openingSize.y,
+                                          Mathf.Max(0.05f, entryTriggerDepth));
             _threshold.enabled = false;
         }
 
