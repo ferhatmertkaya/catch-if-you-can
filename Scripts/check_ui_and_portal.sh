@@ -2079,7 +2079,9 @@ fi
 
 # The anchor is PROVEN against collision, not taken from a transform's name. A room's Root is
 # the room's origin, which is not necessarily its floor.
-EMA="$(code "$IB" | sed -n '/private void EnsureMissionEntryAnchor/,/^        }$/p')"
+# Both halves: the room chain and the floor probe it delegates to. Scoping this to one method
+# made three checks fail when the probe moved into TryAnchorInRoom, with the invariant unchanged.
+EMA="$(code "$IB" | sed -n '/private void EnsureMissionEntryAnchor/,/private void SpawnGhost/p')"
 if printf '%s' "$EMA" | grep -qE 'Physics\.RaycastAll\(root \+ Vector3\.up \* 3f, Vector3\.down' &&
    printf '%s' "$EMA" | grep -qE 'Physics\.SyncTransforms\(\)'; then
   ok "the entry anchor is measured against real floor collision"
@@ -2116,7 +2118,9 @@ else
       "the lobby's safety floor validates almost any arrival and is then unloaded"
 fi
 
-EMA="$(code "$IB" | sed -n '/private void EnsureMissionEntryAnchor/,/^        }$/p')"
+# Both halves: the room chain and the floor probe it delegates to. Scoping this to one method
+# made three checks fail when the probe moved into TryAnchorInRoom, with the invariant unchanged.
+EMA="$(code "$IB" | sed -n '/private void EnsureMissionEntryAnchor/,/private void SpawnGhost/p')"
 if printf '%s' "$EMA" | grep -qE 'hits\[i\]\.collider\.gameObject\.scene != here'; then
   ok "the entry anchor only stands on ground in its own scene"
 else
@@ -2132,6 +2136,32 @@ if printf '%s' "$SEAM" | grep -qE 'candidate\.distance < ground\.distance' &&
 else
   bad "the nearest valid surface is chosen, not the first one returned" \
       "RaycastAll is unsorted; the first hit can be a roof"
+fi
+
+# ---- V13: an unbound destination collapses the doorway -----------------------------------------
+#
+# OpenRoutine reads "no destination bound by the end of the opening" as a failed preparation and
+# answers by destabilising - correctly, because a doorway onto nothing should not stay open. So
+# anything that can leave MissionEntryAnchor null makes the portal close a second after opening,
+# and the cause is a room without a floor rather than anything in the portal itself.
+#
+# The anchor therefore tries EVERY room, entrance first, instead of the entrance alone.
+if printf '%s' "$EMA" | grep -qE '_generatedHouse\.Rooms\[i\]' &&
+   printf '%s' "$EMA" | grep -qE 'candidates\.Add\(_generatedHouse\.Entrance\)'; then
+  ok "the entry anchor tries every room, entrance first"
+else
+  bad "the entry anchor tries every room, entrance first" \
+      "one room without a floor must not collapse the doorway"
+fi
+
+# A total failure is still a refusal, and it names what it tried - "the portal closed again" is
+# not a report anybody can act on.
+if printf '%s' "$EMA" | grep -qE 'No room in the generated house has a floor' &&
+   printf '%s' "$EMA" | grep -qE 'Tried:'; then
+  ok "a failed anchor names every room it rejected"
+else
+  bad "a failed anchor names every room it rejected" \
+      "without it the only symptom is a doorway that shuts itself"
 fi
 
 echo

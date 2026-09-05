@@ -385,17 +385,53 @@ namespace CatchIfYouCan.Procedural
             if (_missionEntry != null)
                 return;
 
-            GeneratedRoomInstance entrance = _generatedHouse?.Entrance;
-            if (entrance?.Root == null)
+            if (_generatedHouse == null)
             {
-                CIYCLog.Error("[CIYC][Portal][Handoff] The generated house has no entrance room, " +
-                              "so there is nowhere for a portal to open onto. The crossing will " +
-                              "refuse rather than drop the player next to the van, where there " +
-                              "is no floor at all.");
+                CIYCLog.Error("[CIYC][Portal][Handoff] No generated house, so there is nowhere " +
+                              "for a portal to open onto.");
                 return;
             }
 
-            Vector3 root = entrance.Root.transform.position;
+            // The entrance first, because that is where a doorway belongs. Then any other room,
+            // because a portal into the wrong room is a game; a portal into nothing closes
+            // itself a second after opening and looks like a portal bug.
+            //
+            // This chain exists because the previous version tried the entrance ALONE, and when
+            // it found no floor there the anchor stayed null - which the opening routine reads
+            // as a failed preparation and answers by collapsing the doorway. The portal closing
+            // "too early" was this, one step upstream.
+            var candidates = new System.Collections.Generic.List<GeneratedRoomInstance>();
+            if (_generatedHouse.Entrance != null)
+                candidates.Add(_generatedHouse.Entrance);
+            for (int i = 0; i < _generatedHouse.Rooms.Count; i++)
+            {
+                if (_generatedHouse.Rooms[i] != null && _generatedHouse.Rooms[i] != _generatedHouse.Entrance)
+                    candidates.Add(_generatedHouse.Rooms[i]);
+            }
+
+            var tried = new System.Text.StringBuilder();
+            for (int i = 0; i < candidates.Count; i++)
+            {
+                GeneratedRoomInstance room = candidates[i];
+                if (room?.Root == null)
+                    continue;
+
+                if (TryAnchorInRoom(room, tried))
+                    return;
+            }
+
+            CIYCLog.Error("[CIYC][Portal][Handoff] No room in the generated house has a floor " +
+                          "this scene owns, so no mission entry anchor was built and the portal " +
+                          "will refuse rather than open onto nothing. Tried:" +
+                          (tried.Length > 0 ? tried.ToString() : " <no rooms at all>"));
+        }
+
+        /// <summary>
+        /// Anchors the portal in one room, if that room has a floor of its own to stand on.
+        /// </summary>
+        private bool TryAnchorInRoom(GeneratedRoomInstance room, System.Text.StringBuilder tried)
+        {
+            Vector3 root = room.Root.transform.position;
 
             // Physics is only synced at the fixed step, and this runs right after the house was
             // built - so ask, or the ray is cast against a world the physics scene has not seen.
@@ -425,11 +461,9 @@ namespace CatchIfYouCan.Procedural
 
             if (!found)
             {
-                CIYCLog.Error("[CIYC][Portal][Handoff] Nothing solid IN THIS SCENE under the " +
-                              "entrance room at " + root.ToString("F2") + ", so no mission entry " +
-                              "anchor was built. The house generated but its floor has no " +
-                              "collision of its own - a player put there would fall through it.");
-                return;
+                tried.Append(" ").Append(room.Root.name).Append("(no floor at ")
+                     .Append(root.ToString("F1")).Append(")");
+                return false;
             }
 
             var go = new GameObject("MissionEntryAnchor");
@@ -438,12 +472,13 @@ namespace CatchIfYouCan.Procedural
             go.transform.position = floor.point;
 
             // Facing into the room, so the player walks in forwards rather than into a wall.
-            go.transform.rotation = entrance.Root.transform.rotation;
+            go.transform.rotation = room.Root.transform.rotation;
             _missionEntry = go.transform;
 
             CIYCLog.Info("[CIYC][Portal][Handoff] mission entry anchor at " +
                          floor.point.ToString("F2") + " on '" + floor.collider.name +
-                         "' in room '" + entrance.Root.name + "'.");
+                         "' in room '" + room.Root.name + "'.");
+            return true;
         }
 
         /// <summary>

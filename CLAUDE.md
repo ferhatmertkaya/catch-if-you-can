@@ -190,7 +190,7 @@ place that number lives; everything else derives it.
   scene, and while a portal is open the lobby is loaded too — complete with a 40x40 m
   safety floor that sits under very nearly anywhere, so a scene-blind probe validates
   an arrival against a surface that is unloaded seconds later and the player lands and
-  then falls. 200 checks.
+  then falls. 202 checks.
 
 - `Scripts/check_agent_architecture.sh` — the roster holds 40 unique roles with
   every field, the roster and `AGENT_OWNERSHIP.md` name the same roles, the
@@ -257,7 +257,11 @@ place that number lives; everything else derives it.
   from a pack conversion: a "Built-in to URP" pass run over the whole project rewrites
   `m_Shader` on every material it can reach, and the nine CIYC materials driven by custom
   shaders must not be among them — a converted one silently becomes URP/Lit, the dissolve
-  stops dissolving, the portal stops being a portal, and nothing errors. 22 checks.
+  stops dissolving, the portal stops being a portal, and nothing errors. And a generated
+  primitive that could not be given a material has its RENDERER switched off rather than
+  left carrying Unity's built-in default, which is a Built-in-pipeline shader and draws
+  magenta under URP — the collider stays, so an invisible floor still holds the player
+  up. 23 checks.
 
 All ten run in CI (`.github/workflows/determinism.yml`). Run them locally before
 pushing; they need nothing but a shell (and `python3` for the roster checks).

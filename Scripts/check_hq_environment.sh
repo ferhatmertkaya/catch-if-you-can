@@ -26,6 +26,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
 echo "== HQ modular environment guard =="
+
 echo
 
 python3 - "$ROOT" <<'PY'
@@ -353,6 +354,22 @@ if m:
     ok("GenerationVersion is unchanged at %s - the layout contract did not move" % m.group(1))
 else:
     bad("GenerationVersion is readable")
+
+# ---- a primitive with no material is MAGENTA, not neutral ------------------------------------
+#
+# GameObject.CreatePrimitive arrives carrying Unity's built-in default material - a
+# Built-in-pipeline shader that draws solid magenta under URP. The neutral-material helper only
+# ASSIGNED when it had a material and did nothing when the shader lookup failed, so a missing
+# shader produced a magenta house and not one line of log. CLAUDE.md mistake 2, in the one place
+# that builds every fallback room.
+gen = read("Assets/CatchIfYouCan/Scripts/Procedural/ProceduralHouseGenerator.cs") or ""
+m = re.search(r"private static GameObject CreateNeutralPrimitive.*?\n        \}", gen, re.S)
+body = m.group(0) if m else ""
+if "renderer.enabled = false" in body and "[CIYC][WorldMaterial]" in body:
+    ok("a primitive with no material is hidden, not left magenta")
+else:
+    bad("a primitive with no material is hidden, not left magenta - skipping the "
+        "assignment leaves Unity's built-in default, which is magenta under URP")
 
 print()
 print("  %d passed, %d failed" % (passed, failed))
