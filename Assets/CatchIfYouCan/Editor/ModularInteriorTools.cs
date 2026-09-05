@@ -332,6 +332,176 @@ namespace CatchIfYouCan.EditorTools
                    kit.name + ". Der Generator liest jetzt dieses Kit.\n";
         }
 
+        /// <summary>
+        /// Picks the wall, floor and ceiling materials, and MEASURES the density each one is
+        /// authored at instead of assuming one.
+        ///
+        /// <para>
+        /// The pack normalises its UVs per piece: every wall maps its texture 0..1 across its
+        /// own width, so a tiling of 1.5 means 0.38 repeats per metre on a 3.95 m piece and 0.13
+        /// on an 11.90 m one. Generated geometry writes its UVs in metres, so the two only agree
+        /// if the density is restated in metres - and the only honest source for that number is
+        /// the asset itself: the material's own tiling divided by the piece it is used on.
+        /// </para>
+        /// <para>
+        /// Measured in the piece's OWN space. A world AABB would be right only while every
+        /// ancestor has scale 1, which is the mistake that once made a flashlight 2 mm long and
+        /// a room wall a hundred times too big.
+        /// </para>
+        /// <para>
+        /// Nothing is scanned for this. It reads the prefabs the classification already
+        /// selected, and no more.
+        /// </para>
+        /// </summary>
+        private static string ChooseSurfaces(ModularInteriorCatalog catalog, Classification c)
+        {
+            var sb = new StringBuilder();
+            sb.AppendLine("--- OBERFLAECHEN ---");
+
+            var found = new Dictionary<string, SurfaceCandidate>();
+
+            foreach (var pair in c.ByRole)
+            {
+                List<string> paths = pair.Value;
+                if (paths == null)
+                    continue;
+
+                for (int i = 0; i < paths.Count && i < SurfaceSampleLimit; i++)
+                    CollectSurfaces(paths[i], found);
+            }
+
+            if (found.Count == 0)
+            {
+                sb.AppendLine("Keine Materialien auf den klassifizierten Prefabs gefunden.");
+                sb.AppendLine("Die Raeume bleiben in den neutralen Grautoenen.");
+                return sb.ToString();
+            }
+
+            // Named preferences first, then whatever was measured most often. The names come
+            // from the measured material families in Docs/HQ_MODULAR_MIGRATION.md; falling back
+            // to the commonest material means a renamed pack still produces a textured room.
+            catalog.WallSurface = Choose(found, sb, "Wand", "wallpaper3", "wallpaper1", "beton");
+            catalog.FloorSurface = Choose(found, sb, "Boden", "tile1", "beton", "wallpaper1");
+            catalog.CeilingSurface = Choose(found, sb, "Decke", "white", "beton", "wallpaper1");
+
+            sb.AppendLine();
+            sb.AppendLine("Die Dichte ist GEMESSEN (Kachelung des Materials geteilt durch die");
+            sb.AppendLine("Groesse des Teils, auf dem es liegt), nicht geschaetzt. Wo sie falsch");
+            sb.AppendLine("aussieht, im Katalog-Asset korrigieren - es sind zwei Zahlen.");
+            return sb.ToString();
+        }
+
+        /// <summary>How many prefabs per role are opened to look for materials. Small on purpose.</summary>
+        private const int SurfaceSampleLimit = 6;
+
+        private struct SurfaceCandidate
+        {
+            public Material Material;
+            public Vector2 RepeatsPerMetre;
+            public int Seen;
+        }
+
+        private static void CollectSurfaces(string prefabPath, Dictionary<string, SurfaceCandidate> found)
+        {
+            var prefab = AssetDatabase.LoadAssetAtPath<GameObject>(prefabPath);
+            if (prefab == null)
+                return;
+
+            var renderers = prefab.GetComponentsInChildren<MeshRenderer>(true);
+            for (int r = 0; r < renderers.Length; r++)
+            {
+                var filter = renderers[r].GetComponent<MeshFilter>();
+                if (filter == null || filter.sharedMesh == null)
+                    continue;
+
+                // The mesh's own bounds, in the mesh's own space.
+                Vector3 local = filter.sharedMesh.bounds.size;
+                float width = Mathf.Max(local.x, local.z);
+                float height = local.y;
+                if (width < 0.01f || height < 0.01f)
+                    continue;
+
+                var materials = renderers[r].sharedMaterials;
+                for (int m = 0; m < materials.Length; m++)
+                {
+                    Material mat = materials[m];
+                    if (mat == null || mat.shader == null || !mat.HasProperty("_BaseMap"))
+                        continue;
+
+                    if (mat.GetTexture("_BaseMap") == null)
+                        continue;
+
+                    Vector2 tiling = mat.GetTextureScale("_BaseMap");
+                    if (tiling.x <= 0f || tiling.y <= 0f)
+                        continue;
+
+                    string key = mat.name;
+                    if (found.TryGetValue(key, out SurfaceCandidate existing))
+                    {
+                        existing.Seen++;
+                        found[key] = existing;
+                        continue;
+                    }
+
+                    found[key] = new SurfaceCandidate
+                    {
+                        Material = mat,
+                        RepeatsPerMetre = new Vector2(tiling.x / width, tiling.y / height),
+                        Seen = 1,
+                    };
+                }
+            }
+        }
+
+        private static SurfaceMaterial Choose(Dictionary<string, SurfaceCandidate> found,
+            StringBuilder sb, string role, params string[] preferred)
+        {
+            for (int p = 0; p < preferred.Length; p++)
+            {
+                foreach (var pair in found)
+                {
+                    if (pair.Key.IndexOf(preferred[p], StringComparison.OrdinalIgnoreCase) < 0)
+                        continue;
+
+                    return Report(sb, role, pair.Value, "Name '" + preferred[p] + "'");
+                }
+            }
+
+            SurfaceCandidate best = default;
+            int bestSeen = -1;
+            foreach (var pair in found)
+            {
+                if (pair.Value.Seen > bestSeen)
+                {
+                    bestSeen = pair.Value.Seen;
+                    best = pair.Value;
+                }
+            }
+
+            return Report(sb, role, best, "haeufigstes Material");
+        }
+
+        private static SurfaceMaterial Report(StringBuilder sb, string role,
+            SurfaceCandidate candidate, string why)
+        {
+            if (candidate.Material == null)
+            {
+                sb.AppendLine(string.Format("{0,-6} : <keins> - bleibt neutral grau", role));
+                return default;
+            }
+
+            sb.AppendLine(string.Format("{0,-6} : {1} ({2}), {3} Wiederholungen/m, Shader {4}",
+                role, candidate.Material.name, why,
+                candidate.RepeatsPerMetre.ToString("F4"),
+                candidate.Material.shader != null ? candidate.Material.shader.name : "<null>"));
+
+            return new SurfaceMaterial
+            {
+                Material = candidate.Material,
+                RepeatsPerMetre = candidate.RepeatsPerMetre,
+            };
+        }
+
         private static string BuildCatalog(Classification c)
         {
             if (c == null || c.Total == 0)
@@ -389,6 +559,9 @@ namespace CatchIfYouCan.EditorTools
             }
 
             catalog.Modules = sets.ToArray();
+            sb.AppendLine();
+            sb.Append(ChooseSurfaces(catalog, c));
+
             EditorUtility.SetDirty(catalog);
             AssetDatabase.SaveAssets();
             AssetDatabase.Refresh();

@@ -280,7 +280,19 @@ place that number lives; everything else derives it.
   0..1 whatever its size and one tile smeared over a 6 m wall reads exactly like no texture at
   all, a room primitive with no material is hidden and reported rather than left carrying Unity's
   magenta built-in default, and every material guid the catalog names resolves to a file that
-  exists. 31 checks.
+  exists. And it holds the first HQ room to the seam the migration measured: the pack supplies the
+  SURFACE, never the structure — it has zero floor and zero ceiling parts and its walls are not a
+  kit, with pivots up to 29 m from their own mesh — so the shell takes wall, floor and ceiling
+  materials from the modular catalog, an undrawable material is refused with the four ways in
+  named apart (null shader, unsupported shader, Unity's error shader, an HDRP shader in a URP
+  project — all four look identical on screen), the measured density goes onto a COPY so the
+  purchased material is never edited, the three surfaces are shared across every room rather than
+  per room, a density of zero means unknown and leaves the material as authored instead of
+  collapsing it to one texel, a vendor insert brings no collider and casts no shadow and is
+  switched off rather than destroyed by context, a window wall keeps one collider across its span
+  because a window is not a way through, the window opening fits under a 3 m ceiling, the catalog
+  no longer demands floor and ceiling modules the pack does not have, and the test-room tool
+  builds exactly one 6 x 3 x 6 cell while scanning, importing and refreshing nothing. 43 checks.
 
 All ten run in CI (`.github/workflows/determinism.yml`). Run them locally before
 pushing; they need nothing but a shell (and `python3` for the roster checks).

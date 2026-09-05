@@ -24,6 +24,35 @@ namespace CatchIfYouCan.Content
         Stairs = 7,
     }
 
+    /// <summary>
+    /// One material from the pack, and the texture density it is to be shown at.
+    ///
+    /// <para>
+    /// The density is not decoration. The pack normalises its UVs PER PIECE - every wall maps
+    /// its texture 0..1 across its own width, so the same material appears at a different size
+    /// on every prefab (measured: 0.25 U/m on the 3.95 m piece, 0.10 U/m on the 11.90 m one).
+    /// Those numbers cannot be inherited. Generated geometry writes its UVs in metres, so the
+    /// density has to be applied here, once, as the material's tiling.
+    /// </para>
+    /// <para>
+    /// Taking prefab 5 as the reference for wallpaper3: 1.5 tiling over a 3.95 m piece is
+    /// 0.3797 repeats per metre across, and 1.5 over 4.00 m is 0.3750 up. A 6 x 3 m wall then
+    /// spans U 2.278 and V 1.125 - the same pattern size as on the vendor piece beside it, with
+    /// no stretching and no seam. See Docs/HQ_MODULAR_MIGRATION.md.
+    /// </para>
+    /// </summary>
+    [Serializable]
+    public struct SurfaceMaterial
+    {
+        public Material Material;
+
+        [Tooltip("Texturwiederholungen pro Meter, gemessen am Paket. 0 heisst: unbekannt, " +
+                 "dann wird das Material so benutzt, wie es authored ist.")]
+        public Vector2 RepeatsPerMetre;
+
+        public bool IsSet => Material != null;
+    }
+
     /// <summary>One role, the room categories it serves, and the meshes that can play it.</summary>
     [Serializable]
     public struct ModuleSet
@@ -74,16 +103,36 @@ namespace CatchIfYouCan.Content
 
         public ModuleSet[] Modules = new ModuleSet[0];
 
+        [Header("Room Surfaces")]
+        [Tooltip("Die Materialien fuer die vom Code gebaute Huelle. Das Paket liefert KEINE " +
+                 "Boden- und Deckenteile - null davon unter interior/ - und seine Waende sind " +
+                 "kein Kit: die Pivots liegen bis zu 29 m neben dem Mesh. Deshalb baut CIYC " +
+                 "die Struktur und das Paket liefert die Oberflaeche.")]
+        public SurfaceMaterial WallSurface;
+        public SurfaceMaterial FloorSurface;
+        public SurfaceMaterial CeilingSurface;
+
         /// <summary>
-        /// The roles a house cannot be built without. A room needs something to stand on,
-        /// something overhead, walls, and a way through them. Windows, trim and stairs are
-        /// enrichment: missing them makes a plainer house, not an unbuildable one.
+        /// The roles a house cannot be built without.
+        ///
+        /// <para>
+        /// Floor and Ceiling are NOT among them, and that is a measurement rather than a
+        /// preference: the pack contains zero floor and zero ceiling parts - its own demo
+        /// builds both from a scaled Unity Plane. Requiring them made every catalog built from
+        /// this pack report itself invalid forever, which is a false failure, and a validator
+        /// that cries wolf is one nobody reads. CIYC generates both surfaces at exact size with
+        /// its own UVs; what the pack is asked for is the surface material and the small pieces
+        /// that genuinely fit - the door leaf and the window insert.
+        /// </para>
+        /// <para>
+        /// WallSolid and WallWithDoorway stay optional-to-supply too, for the same reason: the
+        /// builder generates the wall shell. They are listed because a catalog that supplies
+        /// NEITHER a wall variant nor a doorway variant has nothing of the pack in it at all,
+        /// and that is worth saying out loud. See Docs/HQ_MODULAR_MIGRATION.md.
+        /// </para>
         /// </summary>
         public static readonly ModuleRole[] RequiredStructuralRoles =
         {
-            ModuleRole.Floor,
-            ModuleRole.Ceiling,
-            ModuleRole.WallSolid,
             ModuleRole.WallWithDoorway,
         };
 

@@ -163,3 +163,75 @@ HQModularRoomAssembler
 
 The assembler consumes the layout and never produces one. That is checked by
 `Scripts/check_hq_environment.sh`.
+
+`ModularRoomBuilder` is that assembler. It is built and wired; what it draws depends
+entirely on what the catalog names.
+
+## The first room
+
+`Catch If You Can → Modular Interior → Build ONE Test Room` builds a single 6 × 3 × 6 cell
+through the production path — the same `ModularRoomBuilder` the house generator calls — and
+prints what it made: renderers, triangles, colliders, every material with its shader, its base
+map size and its achieved tiling, and the hierarchy.
+
+One room, deliberately. Processing the whole pack is what made the machine unusable, and
+converting a whole house before a single room has been looked at is how one mistake is made
+forty times. The tool scans nothing and imports nothing: it reads the catalog asset, which
+holds object references rather than a folder to walk.
+
+What the room contains: floor, ceiling, four walls, a doorway on the north wall at
+1.20 × 2.20, and a window on one of the open walls at **2.05 × 0.90 on a 1.55 m sill** — the
+pack's own measured window 7, whose head lands at 2.45 m with 0.55 m of wall left under a
+3.00 m ceiling. Windows 6 and 8 fit the same way. Window 9 does not, and neither arch does.
+
+Collision stays CIYC's: one box for a floor, one across a solid wall, one across a *window*
+wall — a window is not a way through, and splitting it around the opening would let the player
+climb out — and three (left, right, lintel) for a doorway, taken from the same rectangles the
+mesh was built from. Every collider a vendor insert brings is switched off, and its renderers
+stop casting shadows. Switched off rather than destroyed: `Destroy` is deferred and
+`DestroyImmediate` is edit-mode only, and choosing between them by context is how this project
+once got an editor house and a device house that differed.
+
+## Surfaces: measured, never assumed
+
+`ModularInteriorCatalog` carries three `SurfaceMaterial` entries — wall, floor, ceiling —
+each a material plus **repeats per metre**. The second half is not decoration. Because the
+pack normalises UVs per piece, a tiling of 1.5 is 0.38 repeats/m on the 3.95 m piece and 0.13
+on the 11.90 m one; generated geometry writes its UVs in metres, so the density has to be
+restated or the wallpaper is a different size on every surface.
+
+`Audit Pack → 2. Katalog bauen` now fills those three entries itself, and **measures** the
+density rather than assuming it: for each candidate material it takes the material's own
+`_BaseMap` tiling and divides by the size of the mesh it is used on, in that mesh's own space.
+Preference order is `wallpaper3 → wallpaper1 → beton` for walls, `tile1 → beton → wallpaper1`
+for floors, `white → beton → wallpaper1` for ceilings, and the commonest material if none of
+those names is present — so a renamed pack still produces a textured room.
+
+The vendor material is never edited. The density goes onto a **copy**, one per surface for the
+whole house, so this is three materials rather than three per room.
+
+A material that cannot be drawn is refused rather than assigned, and the four ways in are
+reported apart because all four look identical on screen: a null shader, a shader the platform
+does not support, Unity's internal error shader (which *is* the magenta), and an HDRP shader in
+a URP project. Refusing gives the neutral grey stand-in — wrong, but legibly wrong.
+
+A density of zero means *unknown* and leaves the material exactly as authored. Applying a zero
+would collapse the texture to a single texel, which reads on screen as a flat colour: the very
+symptom this work exists to remove.
+
+## Two material sources, and why that is not a duplicate
+
+`InvestigationContentCatalog.WallMaterial` and friends dress the **primitive fallback** with
+the project's own Victorian room textures. `ModularInteriorCatalog.WallSurface` and friends
+dress the **modular shell** with the pack's. They are not two implementations of one thing:
+one is the stand-in that runs when the pack is absent, the other is the production path. Do
+not merge them — a single field would mean the fallback silently becomes the production look,
+and a migration that never happened would once again be indistinguishable from one that did.
+
+## What is required of the pack, and what is not
+
+`RequiredStructuralRoles` no longer names `Floor` or `Ceiling`. That is a measurement, not a
+preference: the pack contains zero of each, so requiring them made every catalog built from it
+report itself invalid forever — and a validator that cries wolf is one nobody reads. CIYC
+generates both surfaces at exact size with its own UVs. What the pack is asked for is the
+surface material and the pieces that genuinely fit: the door leaf and the window insert.

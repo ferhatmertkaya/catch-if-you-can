@@ -472,6 +472,145 @@ else:
     bad("all four room materials named by the catalog resolve to files that exist",
         "unresolved: " + ", ".join(unresolved) + " - a guid pointing nowhere reads as wired")
 
+# ---- the pack supplies the SURFACE, not the structure -----------------------------------------
+#
+# Measured, not assumed (Docs/HQ_MODULAR_MIGRATION.md): the pack has ZERO floor and ceiling parts
+# - its own demo builds both from a scaled Unity Plane - and its walls are not a kit, with pivots
+# up to 29 m from the mesh they belong to and UVs normalised per piece. So CIYC generates the
+# structure at exact size and the pack is asked for the material and the small pieces that fit.
+mrb = read("Assets/CatchIfYouCan/Scripts/Procedural/ModularRoomBuilder.cs") or ""
+
+# Every "is this call present" test below reads the file with its COMMENTS STRIPPED. The comments
+# in this file name the exact things the guard forbids - an HDRP shader, DestroyImmediate - so a
+# grep over the raw text is satisfied by the warning against the bug. That has bitten this
+# project twice, in both directions.
+mrb_code = code("Assets/CatchIfYouCan/Scripts/Procedural/ModularRoomBuilder.cs") or ""
+
+# The builder must ask the CATALOG for its surfaces. It used to make three flat grey materials
+# and ignore the catalog entirely, so the modular path produced exactly the same untextured room
+# as the primitive fallback it was supposed to replace.
+if re.search(r"catalog\.WallSurface", mrb_code) and re.search(r"catalog\.FloorSurface", mrb_code) \
+        and re.search(r"catalog\.CeilingSurface", mrb_code):
+    ok("the room shell takes wall, floor and ceiling materials from the catalog")
+else:
+    bad("the room shell takes wall, floor and ceiling materials from the catalog",
+        "flat neutral colours make the modular path look exactly like the fallback it replaces")
+
+# A material that cannot be drawn must be REFUSED, not assigned. Four ways in, one appearance on
+# screen: null shader, unsupported shader, Unity's internal error shader, and an HDRP shader in a
+# URP project. Each is checked by name so the console says which one happened.
+drawable = re.search(r"private static bool IsDrawable.*?\n        \}", mrb_code, re.S)
+dbody = drawable.group(0) if drawable else ""
+# The STATEMENT, never the word. Each of these strings also appears in the error message that
+# reports the failure, so a needle of "HDRP" alone stays green with the test deleted - the
+# message keeps the word. Grep the test that decides, not the sentence that explains.
+checks = {
+    "null shader": "shader == null",
+    "unsupported shader": "!shader.isSupported",
+    "internal error shader": 'IndexOf("InternalErrorShader"',
+    "HDRP shader": 'IndexOf("HDRP"',
+}
+absent = [name for name, needle in checks.items() if needle not in dbody]
+if dbody and not absent:
+    ok("an undrawable material is refused, and the four ways in are named apart")
+else:
+    bad("an undrawable material is refused, and the four ways in are named apart",
+        ("IsDrawable is missing" if not dbody
+         else "unchecked: " + ", ".join(absent) + " - all four look identical on screen"))
+
+# The vendor material is never edited. A COPY carries the tiling, because the pack's UVs are
+# normalised per piece and generated UVs are in metres - one side has to be rescaled, and it must
+# not be the purchased asset.
+surface = re.search(r"private static Material Surface\(ref Material slot.*?\n        \}", mrb_code, re.S)
+sbody = surface.group(0) if surface else ""
+if "new Material(surface.Material)" in sbody and "SetTextureScale" in sbody:
+    ok("the density is applied to a copy, never to the vendor material")
+else:
+    bad("the density is applied to a copy, never to the vendor material",
+        "rescaling the pack's own material edits somebody's purchased asset")
+
+# Three materials for the whole house, not three per room. The slots are static and resolved once.
+if re.search(r"private static Material _wall;", mrb_code) and "if (slot != null)" in sbody:
+    ok("the surface materials are shared across every room, resolved once")
+else:
+    bad("the surface materials are shared across every room, resolved once",
+        "one material per room is forty materials and forty draw calls in a ten-room house")
+
+# A density of zero means UNKNOWN and must leave the material as authored. Applying a zero
+# collapses the texture to a single texel, which reads on screen as a flat colour - the exact
+# symptom of the missing texture this whole pass is about.
+if re.search(r"RepeatsPerMetre\.x <= 0f", sbody):
+    ok("an unknown density leaves the material as authored instead of collapsing it")
+else:
+    bad("an unknown density leaves the material as authored instead of collapsing it",
+        "a tiling of zero is one texel stretched over the wall, which looks like no texture")
+
+# A vendor insert brings no collision and casts no shadow. Gameplay collision is the generated
+# boxes' job, and a MeshCollider across vendor geometry is the expensive way to get it wrong.
+insert = re.search(r"private static void AddInsert.*?\n        \}", mrb_code, re.S)
+ibody = insert.group(0) if insert else ""
+
+icode = ibody
+if ibody and "enabled = false" in ibody and "ShadowCastingMode.Off" in ibody:
+    ok("a vendor insert brings no collider and casts no shadow")
+else:
+    bad("a vendor insert brings no collider and casts no shadow",
+        "vendor prefabs carry MeshColliders; gameplay collision is the generated boxes' job")
+
+# Disabled rather than destroyed: Destroy is deferred and DestroyImmediate is edit-mode only, and
+# choosing between them by context is how this project got an editor house and a device house
+# that differed.
+if icode and "DestroyImmediate" not in icode and "Object.Destroy(" not in icode:
+    ok("insert colliders are switched off rather than destroyed by context")
+else:
+    bad("insert colliders are switched off rather than destroyed by context",
+        "editor-only destruction is how the editor and the device stopped agreeing")
+
+# A window is not a way through. One box across the span; only a doorway is cut into three.
+if re.search(r"bool oneBoxAcross = !hasDoor \|\| hasWindow;", mrb_code):
+    ok("a window wall keeps one collider across its span")
+else:
+    bad("a window wall keeps one collider across its span",
+        "splitting a window wall around the opening lets the player climb through it")
+
+# The window has to FIT. Measured window 7 is 2.05 x 0.90 on a 1.55 sill: head at 2.45 m under a
+# 3.00 m ceiling. Window 9 (sill 2.00, height 1.25) reaches 3.25 m and would cut the ceiling.
+m = re.search(r"WindowSill\s*=\s*([0-9.]+)f", mrb_code)
+h = re.search(r"WindowHeight\s*=\s*([0-9.]+)f", mrb_code)
+if m and h and float(m.group(1)) + float(h.group(1)) <= 3.0:
+    ok("the window opening fits under a 3 m ceiling (head at %.2f m)"
+       % (float(m.group(1)) + float(h.group(1))))
+else:
+    bad("the window opening fits under a 3 m ceiling",
+        "sill plus height must stay under the room height or the opening cuts the ceiling")
+
+# Floor and Ceiling must NOT be required of the pack: it has none, so requiring them made every
+# catalog built from it report itself invalid forever. A validator that cries wolf is not read.
+cat2 = read("Assets/CatchIfYouCan/Scripts/Content/ModularInteriorCatalog.cs") or ""
+req = re.search(r"RequiredStructuralRoles\s*=\s*\{(.*?)\};", cat2, re.S)
+rbody = req.group(1) if req else ""
+if rbody and "ModuleRole.Floor" not in rbody and "ModuleRole.Ceiling" not in rbody:
+    ok("the catalog does not demand floor and ceiling modules the pack does not have")
+else:
+    bad("the catalog does not demand floor and ceiling modules the pack does not have",
+        "zero floor and zero ceiling parts exist in the pack; requiring them is a false failure")
+
+# The test room builds ONE room and scans nothing. Processing the whole pack is what made the
+# machine unusable, and converting the whole house before looking at one room is how a mistake
+# gets made forty times.
+tool = read("Assets/CatchIfYouCan/Editor/HQTestRoomTool.cs") or ""
+if tool and "FindAssets" not in tool and "ImportAsset" not in tool and "Refresh()" not in tool:
+    ok("the test-room tool scans, imports and refreshes nothing")
+else:
+    bad("the test-room tool scans, imports and refreshes nothing",
+        "a pack-wide scan or reimport is the thing that made the editor unusable")
+
+if re.search(r"new Vec3i\(6000, 3000, 6000\)", tool):
+    ok("the test room is the logical 6 x 3 x 6 cell, not a size of its own")
+else:
+    bad("the test room is the logical 6 x 3 x 6 cell, not a size of its own",
+        "a room at any other size is testing something the game will never build")
+
 print()
 print("  %d passed, %d failed" % (passed, failed))
 sys.exit(1 if failed else 0)

@@ -43,6 +43,17 @@ namespace CatchIfYouCan.Procedural
         public const float DoorHeight = 2.20f;
 
         /// <summary>
+        /// The window opening, taken from the pack's own measured window 7 (2.05 x 0.90, sill
+        /// 1.55). Head height is 1.55 + 0.90 = 2.45 m, which leaves 0.55 m of wall under a
+        /// 3.00 m ceiling. Windows 6 and 8 fit the same way; window 9 does not - its sill is at
+        /// 2.00 and it reaches 3.25 m, straight through the ceiling. Docs/HQ_MODULAR_MIGRATION.md
+        /// carries the measurements.
+        /// </summary>
+        public const float WindowWidth = 2.05f;
+        public const float WindowHeight = 0.90f;
+        public const float WindowSill = 1.55f;
+
+        /// <summary>
         /// Builds the room's shell from generated geometry.
         ///
         /// Everything it needs is already in the LayoutRoom, decided in Stage A and folded into
@@ -71,11 +82,11 @@ namespace CatchIfYouCan.Procedural
             roomRoot.transform.SetParent(parent, false);
             roomRoot.transform.position = worldPosition;
 
-            BuildFloor(roomRoot.transform, size);
-            BuildCeiling(roomRoot.transform, size);
+            BuildFloor(roomRoot.transform, size, catalog);
+            BuildCeiling(roomRoot.transform, size, catalog);
 
             for (int d = 0; d < Directions.Cardinal.Length; d++)
-                BuildWall(roomRoot.transform, room, Directions.Cardinal[d], size);
+                BuildWall(roomRoot.transform, room, Directions.Cardinal[d], size, catalog);
 
             var module = roomRoot.GetComponent<RoomModule>();
             if (module == null)
@@ -89,10 +100,10 @@ namespace CatchIfYouCan.Procedural
 
         // ------------------------------------------------------------------ surfaces
 
-        private static void BuildFloor(Transform parent, Vector3 size)
+        private static void BuildFloor(Transform parent, Vector3 size, ModularInteriorCatalog catalog)
         {
             var mesh = StructuralMeshFactory.Floor(size.x, size.z, FloorThickness);
-            var go = Piece(parent, "Floor", mesh, FloorMaterial());
+            var go = Piece(parent, "Floor", mesh, FloorMaterial(catalog));
             go.transform.localPosition = Vector3.zero;
 
             var box = go.AddComponent<BoxCollider>();
@@ -100,10 +111,10 @@ namespace CatchIfYouCan.Procedural
             box.size = new Vector3(size.x, FloorThickness, size.z);
         }
 
-        private static void BuildCeiling(Transform parent, Vector3 size)
+        private static void BuildCeiling(Transform parent, Vector3 size, ModularInteriorCatalog catalog)
         {
             var mesh = StructuralMeshFactory.Ceiling(size.x, size.z, CeilingThickness);
-            var go = Piece(parent, "Ceiling", mesh, CeilingMaterial());
+            var go = Piece(parent, "Ceiling", mesh, CeilingMaterial(catalog));
             go.transform.localPosition = new Vector3(0f, size.y, 0f);
 
             // No collider. The player cannot reach it and every one that exists is one the
@@ -113,22 +124,35 @@ namespace CatchIfYouCan.Procedural
         // --------------------------------------------------------------------- walls
 
         private static void BuildWall(Transform parent, LayoutRoom room,
-            SocketDirection direction, Vector3 size)
+            SocketDirection direction, Vector3 size, ModularInteriorCatalog catalog)
         {
             // The layout decides what this wall is. A door connection means a real hole, not a
             // solid wall with a door drawn on it.
             bool hasDoor = room.HasDoor(direction);
-            ModuleRole role = hasDoor ? ModuleRole.WallWithDoorway : ModuleRole.WallSolid;
+
+            // A window only where there is no door and the wall faces outside. Derived from the
+            // room's identity, never rolled: a draw from a CiycRandom stream would advance that
+            // stream and reach back into generation.
+            bool hasWindow = !hasDoor && room.IsOpen(direction) && WantsWindow(room, direction);
+
+            ModuleRole role = hasDoor ? ModuleRole.WallWithDoorway
+                            : hasWindow ? ModuleRole.WallWithWindow
+                            : ModuleRole.WallSolid;
 
             bool alongX = direction == SocketDirection.North || direction == SocketDirection.South;
             float span = alongX ? size.x : size.z;
 
-            Mesh mesh = hasDoor
-                ? StructuralMeshFactory.WallWithOpening(span, size.y, WallThickness,
-                    DoorWidth, DoorHeight, 0f)
-                : StructuralMeshFactory.SolidWall(span, size.y, WallThickness);
+            Mesh mesh;
+            if (hasDoor)
+                mesh = StructuralMeshFactory.WallWithOpening(span, size.y, WallThickness,
+                    DoorWidth, DoorHeight, 0f);
+            else if (hasWindow)
+                mesh = StructuralMeshFactory.WallWithOpening(span, size.y, WallThickness,
+                    WindowWidth, WindowHeight, WindowSill);
+            else
+                mesh = StructuralMeshFactory.SolidWall(span, size.y, WallThickness);
 
-            var go = Piece(parent, role + "_" + direction, mesh, WallMaterial());
+            var go = Piece(parent, role + "_" + direction, mesh, WallMaterial(catalog));
 
             // The wall's own space is centred on X across its span and centred on Z across its
             // thickness, rising from y = 0. So it goes on the wall line with no correction, and
@@ -153,8 +177,70 @@ namespace CatchIfYouCan.Procedural
                     break;
             }
 
-            AddWallColliders(go, hasDoor, span, size.y);
+            AddWallColliders(go, hasDoor, hasWindow, span, size.y);
+
+            // The pack's contribution to a wall: the leaf that swings in a doorway, the frame
+            // and glass that sit in a window. Never a whole vendor wall - its pivot can be 29 m
+            // from its own mesh and its UVs are normalised to its own width.
+            if (hasDoor)
+                AddInsert(go.transform, catalog, ModuleRole.WallWithDoorway, room, direction,
+                          new Vector3(0f, 0f, 0f));
+            else if (hasWindow)
+                AddInsert(go.transform, catalog, ModuleRole.WallWithWindow, room, direction,
+                          new Vector3(0f, WindowSill + WindowHeight * 0.5f, 0f));
         }
+
+        /// <summary>
+        /// Puts one vendor piece into the opening this wall already has.
+        ///
+        /// <para>
+        /// Instantiated as a child of the generated wall, so it inherits the wall's placement
+        /// and rotation and cannot drift from the hole it belongs to. Every collider it brings
+        /// is removed: gameplay collision is the generated boxes' job, and a MeshCollider across
+        /// vendor geometry is the expensive way to get the same answer wrong. Shadow casting on
+        /// a decorative insert is switched off for the same reason - it is a door leaf, not a
+        /// wall.
+        /// </para>
+        /// </summary>
+        private static void AddInsert(Transform wall, ModularInteriorCatalog catalog,
+            ModuleRole role, LayoutRoom room, SocketDirection direction, Vector3 localPosition)
+        {
+            if (catalog == null)
+                return;
+
+            GameObject prefab = Pick(catalog.FindVariants(role, room.Category),
+                                     room.RoomId, (int)role, (int)direction);
+            if (prefab == null)
+                return;
+
+            GameObject insert = Object.Instantiate(prefab, wall);
+            insert.name = role + "_Insert";
+            insert.transform.localPosition = localPosition;
+            insert.transform.localRotation = Quaternion.identity;
+
+            // Switched OFF rather than destroyed. A disabled collider contributes no physics
+            // geometry, which is the whole point, and it does it identically in the editor and
+            // in a build - Destroy is deferred and DestroyImmediate is edit-mode-only, and
+            // picking between them by context is exactly how this project once got an editor
+            // house and a device house that differed.
+            insert.GetComponentsInChildren(true, _insertColliders);
+            for (int i = 0; i < _insertColliders.Count; i++)
+                _insertColliders[i].enabled = false;
+            _insertColliders.Clear();
+
+            insert.GetComponentsInChildren(true, _insertRenderers);
+            for (int i = 0; i < _insertRenderers.Count; i++)
+            {
+                _insertRenderers[i].shadowCastingMode =
+                    UnityEngine.Rendering.ShadowCastingMode.Off;
+            }
+            _insertRenderers.Clear();
+        }
+
+        private static readonly System.Collections.Generic.List<Collider> _insertColliders =
+            new System.Collections.Generic.List<Collider>(8);
+        private static readonly System.Collections.Generic.List<Renderer> _insertRenderers =
+            new System.Collections.Generic.List<Renderer>(8);
 
         /// <summary>
         /// Collision that matches the geometry, taken from the same sections the mesh was built
@@ -162,9 +248,14 @@ namespace CatchIfYouCan.Procedural
         /// to the body is the failure this exists to prevent, and computing the rectangles
         /// twice is how it happens.
         /// </summary>
-        private static void AddWallColliders(GameObject go, bool hasDoor, float span, float height)
+        private static void AddWallColliders(GameObject go, bool hasDoor, bool hasWindow,
+            float span, float height)
         {
-            if (!hasDoor)
+            // Only a doorway is cut. A window is not a way through, so a window wall gets ONE
+            // box across the whole span: correct, cheaper than three, and splitting it around
+            // the opening would let the player climb through the window.
+            bool oneBoxAcross = !hasDoor || hasWindow;
+            if (oneBoxAcross)
             {
                 var solid = go.AddComponent<BoxCollider>();
                 solid.center = new Vector3(0f, height * 0.5f, 0f);
@@ -200,15 +291,134 @@ namespace CatchIfYouCan.Procedural
 
         // ----------------------------------------------------------------- materials
 
-        // Three materials for the whole house, created once. One per wall would be forty
-        // materials in a ten-room house and forty separate draw calls to go with them.
+        // Three materials for the whole house, resolved once. One per wall would be forty
+        // materials in a ten-room house and forty separate draw calls to go with them - so
+        // these are shared across every room, and the density below is applied once rather
+        // than per surface.
         private static Material _wall;
         private static Material _floor;
         private static Material _ceiling;
 
-        private static Material WallMaterial() => Neutral(ref _wall, new Color(0.72f, 0.70f, 0.67f), "CIYC_RawWall");
-        private static Material FloorMaterial() => Neutral(ref _floor, new Color(0.42f, 0.39f, 0.36f), "CIYC_RawFloor");
-        private static Material CeilingMaterial() => Neutral(ref _ceiling, new Color(0.86f, 0.86f, 0.84f), "CIYC_RawCeiling");
+        private static Material WallMaterial(ModularInteriorCatalog catalog) =>
+            Surface(ref _wall, catalog != null ? catalog.WallSurface : default,
+                    new Color(0.72f, 0.70f, 0.67f), "CIYC_Wall");
+
+        private static Material FloorMaterial(ModularInteriorCatalog catalog) =>
+            Surface(ref _floor, catalog != null ? catalog.FloorSurface : default,
+                    new Color(0.42f, 0.39f, 0.36f), "CIYC_Floor");
+
+        private static Material CeilingMaterial(ModularInteriorCatalog catalog) =>
+            Surface(ref _ceiling, catalog != null ? catalog.CeilingSurface : default,
+                    new Color(0.86f, 0.86f, 0.84f), "CIYC_Ceiling");
+
+        /// <summary>A fresh process has resolved nothing. Unity keeps statics across play mode.</summary>
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+        private static void ResetSurfaces()
+        {
+            _wall = null;
+            _floor = null;
+            _ceiling = null;
+        }
+
+        /// <summary>
+        /// The pack's material for this surface, at the density it was measured at - or the
+        /// neutral stand-in if the catalog names none, or names one that cannot be drawn.
+        ///
+        /// <para>
+        /// The vendor material is never modified. A COPY carries the tiling, because the pack
+        /// normalises its UVs per piece while generated geometry writes them in metres: the two
+        /// cannot agree unless one side is rescaled, and it must not be the side that is
+        /// somebody's purchased asset. One copy per surface for the whole house, so this is
+        /// three materials, not three per room.
+        /// </para>
+        /// </summary>
+        private static Material Surface(ref Material slot, Content.SurfaceMaterial surface,
+            Color fallbackColour, string name)
+        {
+            if (slot != null)
+                return slot;
+
+            if (surface.IsSet && IsDrawable(surface.Material, name))
+            {
+                // Density of zero means "unknown": use the material exactly as authored rather
+                // than inventing a number. Applying a zero would collapse the texture to one
+                // texel, which reads as a flat colour and looks like a missing texture.
+                if (surface.RepeatsPerMetre.x <= 0f || surface.RepeatsPerMetre.y <= 0f)
+                {
+                    slot = surface.Material;
+                    return slot;
+                }
+
+                slot = new Material(surface.Material)
+                {
+                    name = name + "_" + surface.Material.name + "_perMetre"
+                };
+
+                if (slot.HasProperty(BaseMapId)) slot.SetTextureScale(BaseMapId, surface.RepeatsPerMetre);
+                if (slot.HasProperty(BumpMapId)) slot.SetTextureScale(BumpMapId, surface.RepeatsPerMetre);
+                if (slot.HasProperty(MainTexId)) slot.SetTextureScale(MainTexId, surface.RepeatsPerMetre);
+                return slot;
+            }
+
+            return Neutral(ref slot, fallbackColour, "CIYC_Raw" + name);
+        }
+
+        private static readonly int BaseMapId = Shader.PropertyToID("_BaseMap");
+        private static readonly int BumpMapId = Shader.PropertyToID("_BumpMap");
+        private static readonly int MainTexId = Shader.PropertyToID("_MainTex");
+
+        /// <summary>
+        /// Whether this material will actually draw, rather than draw magenta.
+        ///
+        /// <para>
+        /// Four ways a material reaches here unusable, and all four look identical on screen:
+        /// a null shader, a shader the platform does not support, Unity's internal error shader
+        /// (which IS the magenta), and an HDRP shader in a URP project. None of them throws and
+        /// none of them logs, so each is checked and named. Refusing gives the neutral stand-in,
+        /// which is a dull grey room - wrong, but legibly wrong.
+        /// </para>
+        /// </summary>
+        private static bool IsDrawable(Material material, string role)
+        {
+            Shader shader = material.shader;
+
+            if (shader == null)
+            {
+                Core.CIYCLog.Error("[CIYC][House] " + role + ": Material '" + material.name +
+                                   "' hat keinen Shader. Es wird NICHT benutzt.");
+                return false;
+            }
+
+            string shaderName = shader.name ?? string.Empty;
+
+            if (!shader.isSupported)
+            {
+                Core.CIYCLog.Error("[CIYC][House] " + role + ": Shader '" + shaderName +
+                                   "' wird auf dieser Plattform nicht unterstuetzt. Das " +
+                                   "Material wird NICHT benutzt.");
+                return false;
+            }
+
+            if (shaderName.IndexOf("InternalErrorShader", System.StringComparison.OrdinalIgnoreCase) >= 0 ||
+                shaderName.StartsWith("Hidden/", System.StringComparison.Ordinal))
+            {
+                Core.CIYCLog.Error("[CIYC][House] " + role + ": Shader '" + shaderName +
+                                   "' ist Unitys Fehler-Shader - genau das, was als magenta " +
+                                   "Flaeche erscheint. Das Material wird NICHT benutzt.");
+                return false;
+            }
+
+            if (shaderName.IndexOf("HDRP", System.StringComparison.OrdinalIgnoreCase) >= 0 ||
+                shaderName.IndexOf("High Definition", System.StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                Core.CIYCLog.Error("[CIYC][House] " + role + ": Shader '" + shaderName +
+                                   "' ist HDRP. Dieses Projekt ist URP - HDRP-Shader zeichnen " +
+                                   "hier magenta. Das Material wird NICHT benutzt.");
+                return false;
+            }
+
+            return true;
+        }
 
         private static Material Neutral(ref Material slot, Color colour, string name)
         {
