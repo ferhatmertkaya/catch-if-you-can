@@ -214,7 +214,13 @@ namespace CatchIfYouCan.EditorTools
             public bool AlphaNameHint;         // the filename claims transparency
             public MapKind Kind;
             public Quality Quality;
-            public int CurrentMax;
+            public int CurrentMax;          // importer.maxTextureSize, wie er jetzt dasteht
+            public int ActualDesktop;       // Standalone-Override, oder CurrentMax ohne Override
+            public int ActualAndroid;
+            public int ActualIOS;
+            public bool OverriddenDesktop;
+            public bool OverriddenAndroid;
+            public bool OverriddenIOS;
             public int Desktop;
             public int Android;
             public int IOS;
@@ -363,6 +369,15 @@ namespace CatchIfYouCan.EditorTools
                     CurrentMax = importer.maxTextureSize,
                 };
 
+                // Der IST-Zustand, aus dem Importer gelesen. Ohne das wuerde ein Bericht nach
+                // dem Anwenden nur den Plan wiederholen und damit gar nichts beweisen.
+                ReadPlatform(importer, "Standalone", info.CurrentMax,
+                    out info.ActualDesktop, out info.OverriddenDesktop);
+                ReadPlatform(importer, "Android", info.CurrentMax,
+                    out info.ActualAndroid, out info.OverriddenAndroid);
+                ReadPlatform(importer, "iPhone", info.CurrentMax,
+                    out info.ActualIOS, out info.OverriddenIOS);
+
                 info.Kind = KindOf(lower, importer.textureType == TextureImporterType.NormalMap);
                 info.AlphaNameHint = ContainsAny(lowerPath, AlphaNameHints);
                 info.TransparentMaterial = transparentlyUsed.Contains(path);
@@ -454,6 +469,18 @@ namespace CatchIfYouCan.EditorTools
                                           .CompareTo(EstimateBytes(a.Width, a.Height, a.Mipmaps)));
             audit.Models.Sort((a, b) => b.Triangles.CompareTo(a.Triangles));
             return audit;
+        }
+
+        /// <summary>
+        /// What this importer really holds for a platform. Without an override the platform
+        /// falls back to the default max size, so an un-overridden entry reports that, flagged.
+        /// </summary>
+        private static void ReadPlatform(TextureImporter importer, string platform,
+            int defaultMax, out int actual, out bool overridden)
+        {
+            var settings = importer.GetPlatformTextureSettings(platform);
+            overridden = settings.overridden;
+            actual = overridden ? settings.maxTextureSize : defaultMax;
         }
 
         private static bool ContainsAny(string haystack, string[] needles)
@@ -636,6 +663,62 @@ namespace CatchIfYouCan.EditorTools
             }
             sb.AppendLine();
 
+            // ---- IST-ZUSTAND: was die Importer wirklich enthalten
+            var isDesk = new SortedDictionary<int, int>();
+            var isAndr = new SortedDictionary<int, int>();
+            var isIos = new SortedDictionary<int, int>();
+            long iDesk = 0, iAndr = 0, iIos = 0;
+            int ovDesk = 0, ovAndr = 0, ovIos = 0, matchesPlan = 0;
+
+            for (int i = 0; i < a.Textures.Count; i++)
+            {
+                var t = a.Textures[i];
+                int source = Mathf.Max(t.Width, t.Height);
+                int aD = Mathf.Min(source, t.ActualDesktop);
+                int aA = Mathf.Min(source, t.ActualAndroid);
+                int aI = Mathf.Min(source, t.ActualIOS);
+
+                Bump(isDesk, aD); Bump(isAndr, aA); Bump(isIos, aI);
+                iDesk += EstimateBytes(aD, aD, t.Mipmaps);
+                iAndr += EstimateBytes(aA, aA, t.Mipmaps);
+                iIos += EstimateBytes(aI, aI, t.Mipmaps);
+
+                if (t.OverriddenDesktop) ovDesk++;
+                if (t.OverriddenAndroid) ovAndr++;
+                if (t.OverriddenIOS) ovIos++;
+                if (aD == t.Desktop && aA == t.Android && aI == t.IOS) matchesPlan++;
+            }
+
+            sb.AppendLine("--- IST-ZUSTAND DER IMPORTER (zurueckgelesen, nicht der Plan) ---");
+            sb.AppendLine(string.Format("  {0,8} {1,10} {2,10} {3,10}",
+                "PIXEL", "DESKTOP", "ANDROID", "iOS"));
+            foreach (int side in new[] { 4096, 2048, 1024, 512, 256, 128, 64, 32 })
+            {
+                if (Count(isDesk, side) + Count(isAndr, side) + Count(isIos, side) == 0)
+                    continue;
+
+                sb.AppendLine(string.Format("  {0,8} {1,10} {2,10} {3,10}",
+                    side, Count(isDesk, side), Count(isAndr, side), Count(isIos, side)));
+            }
+            sb.AppendLine();
+            sb.AppendLine("  Plattform-Overrides gesetzt:  Standalone " + ovDesk +
+                          "   Android " + ovAndr + "   iOS " + ovIos +
+                          "   von " + a.Textures.Count);
+            sb.AppendLine("  IST entspricht dem Plan bei:  " + matchesPlan + " von " + a.Textures.Count);
+            if (matchesPlan == a.Textures.Count)
+                sb.AppendLine("  -> Der Plan ist vollstaendig angewendet.");
+            else if (matchesPlan == 0)
+                sb.AppendLine("  -> Der Plan ist NOCH NICHT angewendet.");
+            else
+                sb.AppendLine("  -> TEILWEISE angewendet. " + (a.Textures.Count - matchesPlan) +
+                              " Texturen weichen ab.");
+            sb.AppendLine();
+            sb.AppendLine("  Speicher im IST-Zustand:  Desktop " + Mb(iDesk) +
+                          "   Android " + Mb(iAndr) + "   iOS " + Mb(iIos));
+            sb.AppendLine("  verbleibende 4096:        Desktop " + Count(isDesk, 4096) +
+                          "   Android " + Count(isAndr, 4096) + "   iOS " + Count(isIos, 4096));
+            sb.AppendLine();
+
             sb.AppendLine("--- GESCHAETZTER TEXTURSPEICHER (RGBA32, inkl. Mipmaps) ---");
             sb.AppendLine(string.Format("  {0,-10} {1,14} {2,12}", "ZIEL", "SPEICHER", "ERSPARNIS"));
             sb.AppendLine(string.Format("  {0,-10} {1,14} {2,12}", "JETZT", Mb(mNow), "-"));
@@ -797,13 +880,28 @@ namespace CatchIfYouCan.EditorTools
             string prefix = a.Root.TrimEnd('/') + "/";
             int changedTex = 0, skipped = 0;
 
+            // StartAssetEditing wird bewusst NICHT benutzt. SaveAndReimport loest selbst einen
+            // Import aus; innerhalb eines StartAssetEditing-Blocks werden Importe zurueckgehalten,
+            // und die Kombination aus beidem ist die bekannte Falle, die aus einem langen Import
+            // einen doppelten macht. Stattdessen: ein Asset nach dem anderen, mit Fortschritt,
+            // damit ein Lauf ueber hunderte 70-MB-Texturen nicht wie ein Absturz aussieht.
+            bool cancelled = false;
+
             try
             {
-                AssetDatabase.StartAssetEditing();
-
                 for (int i = 0; i < a.Textures.Count; i++)
                 {
                     var t = a.Textures[i];
+
+                    if (EditorUtility.DisplayCancelableProgressBar(
+                            "HQ Pack Optimizer",
+                            "Import-Einstellungen: " + Path.GetFileName(t.Path) +
+                            "  (" + (i + 1) + "/" + a.Textures.Count + ")",
+                            (float)i / Mathf.Max(1, a.Textures.Count)))
+                    {
+                        cancelled = true;
+                        break;
+                    }
 
                     // A path outside the pack is never touched, whatever the audit said.
                     if (!t.Path.StartsWith(prefix, StringComparison.Ordinal))
@@ -830,15 +928,15 @@ namespace CatchIfYouCan.EditorTools
                     }
 
                     // Mipmaps on for world-space geometry. Without them a wall shimmers at
-                    // distance and costs MORE bandwidth, not less.
+                    // distance and costs MORE bandwidth, not less. Never switched OFF here.
                     if (importer.textureType == TextureImporterType.Default && !importer.mipmapEnabled)
                     {
                         importer.mipmapEnabled = true;
                         dirty = true;
                     }
 
-                    // Read/Write costs a second copy in system memory and nothing in this pack
-                    // reads pixels at runtime.
+                    // Read/Write costs a second copy in system memory. The audit found it already
+                    // off on all 388, so this is protection against a future import turning it on.
                     if (importer.isReadable)
                     {
                         importer.isReadable = false;
@@ -865,8 +963,15 @@ namespace CatchIfYouCan.EditorTools
             }
             finally
             {
-                AssetDatabase.StopAssetEditing();
+                EditorUtility.ClearProgressBar();
                 AssetDatabase.Refresh();
+            }
+
+            if (cancelled)
+            {
+                sb.AppendLine("ABGEBROCHEN. Was bis dahin geschrieben wurde, steht;");
+                sb.AppendLine("ein erneuter Lauf setzt den Rest.");
+                sb.AppendLine();
             }
 
             sb.AppendLine("Texturen geaendert: " + changedTex);
