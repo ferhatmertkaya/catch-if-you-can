@@ -292,7 +292,16 @@ place that number lives; everything else derives it.
   switched off rather than destroyed by context, a window wall keeps one collider across its span
   because a window is not a way through, the window opening fits under a 3 m ceiling, the catalog
   no longer demands floor and ceiling modules the pack does not have, and the test-room tool
-  builds exactly one 6 x 3 x 6 cell while scanning, importing and refreshing nothing. 43 checks.
+  builds exactly one 6 x 3 x 6 cell while scanning, importing and refreshing nothing. And it holds
+  the texture SIZE, which is three separate ways to warp a wall: a wall's UVs are projected from
+  each vertex rather than counted from each face's corner — counted, a wall with an opening is
+  four boxes that each restart the pattern at zero, so the wallpaper jumps at every doorway —
+  every texture map is rebased by one shared divisor rather than the colour map alone, because a
+  detail normal left behind puts the bumps on a pattern that moved, which reads as warped rather
+  than as mis-sized; and the density is measured in WORLD metres with the transform included
+  (this pack scales a Plane by 1.45) as the MEDIAN of every piece rather than whichever was
+  enumerated first (the same material runs 0.10 to 0.55 U/m across the pack), with an
+  inconsistent pack reported instead of silently averaged. 50 checks.
 
 All ten run in CI (`.github/workflows/determinism.yml`). Run them locally before
 pushing; they need nothing but a shell (and `python3` for the roster checks).

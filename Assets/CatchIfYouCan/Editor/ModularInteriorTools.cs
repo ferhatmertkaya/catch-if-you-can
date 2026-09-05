@@ -394,13 +394,31 @@ namespace CatchIfYouCan.EditorTools
         /// <summary>How many prefabs per role are opened to look for materials. Small on purpose.</summary>
         private const int SurfaceSampleLimit = 6;
 
-        private struct SurfaceCandidate
+        private class SurfaceCandidate
         {
             public Material Material;
-            public Vector2 RepeatsPerMetre;
-            public int Seen;
+            public readonly List<Vector2> Sizes = new List<Vector2>();
         }
 
+        /// <summary>
+        /// Every piece this material appears on, measured in WORLD metres.
+        ///
+        /// <para>
+        /// World, not the mesh's own space. The rule that says measure in the model's own space
+        /// answers a different question - what LOCAL scale reaches a wanted size - and applying
+        /// it here is wrong, because what the texture is stretched across is the piece's real
+        /// width. This pack's own demo scales a Unity Plane by 1.45 to reach 14.35 m; a mesh
+        /// read without its transform would report 10 and be off by nearly half.
+        /// </para>
+        /// <para>
+        /// Every piece, not the first one. The pack applies the same material at wildly
+        /// different densities - the forensics measured 0.55 U/m on one piece and 0.10 on
+        /// another, a spread of five and a half - so whichever prefab happened to be enumerated
+        /// first decided the texture size for the whole house. The median is taken instead, and
+        /// the spread is reported, because a pack this inconsistent has no single right answer
+        /// and pretending otherwise is what produced a warped room.
+        /// </para>
+        /// </summary>
         private static void CollectSurfaces(string prefabPath, Dictionary<string, SurfaceCandidate> found)
         {
             var prefab = AssetDatabase.LoadAssetAtPath<GameObject>(prefabPath);
@@ -414,11 +432,21 @@ namespace CatchIfYouCan.EditorTools
                 if (filter == null || filter.sharedMesh == null)
                     continue;
 
-                // The mesh's own bounds, in the mesh's own space.
                 Vector3 local = filter.sharedMesh.bounds.size;
-                float width = Mathf.Max(local.x, local.z);
-                float height = local.y;
-                if (width < 0.01f || height < 0.01f)
+                Vector3 scale = renderers[r].transform.lossyScale;
+                var world = new Vector3(local.x * Mathf.Abs(scale.x),
+                                        local.y * Mathf.Abs(scale.y),
+                                        local.z * Mathf.Abs(scale.z));
+
+                // A wall stands up and is thin: its height is real and its width is the larger
+                // of the two ground axes. A piece that is not shaped like a wall - a door leaf,
+                // a skirting board, a whole exported room - would set the density from geometry
+                // that is nothing like the surface being textured.
+                float width = Mathf.Max(world.x, world.z);
+                float thickness = Mathf.Min(world.x, world.z);
+                float height = world.y;
+
+                if (width < 1.0f || height < 1.0f || thickness > width * 0.5f)
                     continue;
 
                 var materials = renderers[r].sharedMaterials;
@@ -435,22 +463,36 @@ namespace CatchIfYouCan.EditorTools
                     if (tiling.x <= 0f || tiling.y <= 0f)
                         continue;
 
-                    string key = mat.name;
-                    if (found.TryGetValue(key, out SurfaceCandidate existing))
+                    // What the catalog wants is the size the material is authored ACROSS. The
+                    // piece is that size divided by however many times the pattern repeats on
+                    // it, so a wall carrying 1.5 repeats over 3.95 m is authored across 2.63 m.
+                    var authoredAcross = new Vector2(width / tiling.x, height / tiling.y);
+
+                    if (!found.TryGetValue(mat.name, out SurfaceCandidate candidate))
                     {
-                        existing.Seen++;
-                        found[key] = existing;
-                        continue;
+                        candidate = new SurfaceCandidate { Material = mat };
+                        found[mat.name] = candidate;
                     }
 
-                    found[key] = new SurfaceCandidate
-                    {
-                        Material = mat,
-                        RepeatsPerMetre = new Vector2(tiling.x / width, tiling.y / height),
-                        Seen = 1,
-                    };
+                    candidate.Sizes.Add(authoredAcross);
                 }
             }
+        }
+
+        /// <summary>The middle value, which one absurd piece cannot drag away from the truth.</summary>
+        private static Vector2 Median(List<Vector2> values)
+        {
+            var xs = new List<float>(values.Count);
+            var ys = new List<float>(values.Count);
+            for (int i = 0; i < values.Count; i++)
+            {
+                xs.Add(values[i].x);
+                ys.Add(values[i].y);
+            }
+
+            xs.Sort();
+            ys.Sort();
+            return new Vector2(xs[xs.Count / 2], ys[ys.Count / 2]);
         }
 
         private static SurfaceMaterial Choose(Dictionary<string, SurfaceCandidate> found,
@@ -467,15 +509,11 @@ namespace CatchIfYouCan.EditorTools
                 }
             }
 
-            SurfaceCandidate best = default;
-            int bestSeen = -1;
+            SurfaceCandidate best = null;
             foreach (var pair in found)
             {
-                if (pair.Value.Seen > bestSeen)
-                {
-                    bestSeen = pair.Value.Seen;
+                if (best == null || pair.Value.Sizes.Count > best.Sizes.Count)
                     best = pair.Value;
-                }
             }
 
             return Report(sb, role, best, "haeufigstes Material");
@@ -484,21 +522,39 @@ namespace CatchIfYouCan.EditorTools
         private static SurfaceMaterial Report(StringBuilder sb, string role,
             SurfaceCandidate candidate, string why)
         {
-            if (candidate.Material == null)
+            if (candidate == null || candidate.Material == null || candidate.Sizes.Count == 0)
             {
                 sb.AppendLine(string.Format("{0,-6} : <keins> - bleibt neutral grau", role));
                 return default;
             }
 
-            sb.AppendLine(string.Format("{0,-6} : {1} ({2}), {3} Wiederholungen/m, Shader {4}",
-                role, candidate.Material.name, why,
-                candidate.RepeatsPerMetre.ToString("F4"),
+            Vector2 median = Median(candidate.Sizes);
+
+            float lo = float.MaxValue, hi = 0f;
+            for (int i = 0; i < candidate.Sizes.Count; i++)
+            {
+                lo = Mathf.Min(lo, candidate.Sizes[i].x);
+                hi = Mathf.Max(hi, candidate.Sizes[i].x);
+            }
+
+            sb.AppendLine(string.Format(
+                "{0,-6} : {1} ({2})  Muster {3} m  aus {4} Teilen  Spanne {5:F2}-{6:F2} m  Shader {7}",
+                role, candidate.Material.name, why, median.ToString("F2"),
+                candidate.Sizes.Count, lo, hi,
                 candidate.Material.shader != null ? candidate.Material.shader.name : "<null>"));
+
+            // A pack that uses one material at two very different sizes has no single right
+            // answer, and the median is a choice rather than a measurement. Say so, instead of
+            // letting a number that was picked look like a number that was found.
+            if (hi > lo * 2f)
+                sb.AppendLine("         ACHTUNG: dieses Material liegt im Paket in sehr " +
+                              "unterschiedlichen Groessen. Der Mittelwert ist eine Wahl, keine " +
+                              "Messung - im Katalog nachjustieren, wenn es falsch aussieht.");
 
             return new SurfaceMaterial
             {
                 Material = candidate.Material,
-                RepeatsPerMetre = candidate.RepeatsPerMetre,
+                AuthoredAcrossMetres = median,
             };
         }
 

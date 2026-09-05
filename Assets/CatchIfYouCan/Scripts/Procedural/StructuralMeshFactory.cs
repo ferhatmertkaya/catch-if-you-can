@@ -270,31 +270,29 @@ namespace CatchIfYouCan.Procedural
         /// </summary>
         private static void AddBox(Vector3 min, Vector3 max)
         {
-            float u = UvUnitsPerMetre;
-
             // +X and -X: UV across Z (width of the face) and Y (height)
             Quad(new Vector3(max.x, min.y, max.z), new Vector3(max.x, min.y, min.z),
                  new Vector3(max.x, max.y, min.z), new Vector3(max.x, max.y, max.z),
-                 Vector3.right, (max.z - min.z) * u, (max.y - min.y) * u);
+                 Vector3.right, Vector3.back, Vector3.up);
             Quad(new Vector3(min.x, min.y, min.z), new Vector3(min.x, min.y, max.z),
                  new Vector3(min.x, max.y, max.z), new Vector3(min.x, max.y, min.z),
-                 Vector3.left, (max.z - min.z) * u, (max.y - min.y) * u);
+                 Vector3.left, Vector3.forward, Vector3.up);
 
             // +Y and -Y: UV across X and Z
             Quad(new Vector3(min.x, max.y, max.z), new Vector3(max.x, max.y, max.z),
                  new Vector3(max.x, max.y, min.z), new Vector3(min.x, max.y, min.z),
-                 Vector3.up, (max.x - min.x) * u, (max.z - min.z) * u);
+                 Vector3.up, Vector3.right, Vector3.back);
             Quad(new Vector3(min.x, min.y, min.z), new Vector3(max.x, min.y, min.z),
                  new Vector3(max.x, min.y, max.z), new Vector3(min.x, min.y, max.z),
-                 Vector3.down, (max.x - min.x) * u, (max.z - min.z) * u);
+                 Vector3.down, Vector3.right, Vector3.forward);
 
             // +Z and -Z: UV across X and Y
             Quad(new Vector3(min.x, min.y, max.z), new Vector3(max.x, min.y, max.z),
                  new Vector3(max.x, max.y, max.z), new Vector3(min.x, max.y, max.z),
-                 Vector3.forward, (max.x - min.x) * u, (max.y - min.y) * u);
+                 Vector3.forward, Vector3.right, Vector3.up);
             Quad(new Vector3(max.x, min.y, min.z), new Vector3(min.x, min.y, min.z),
                  new Vector3(min.x, max.y, min.z), new Vector3(max.x, max.y, min.z),
-                 Vector3.back, (max.x - min.x) * u, (max.y - min.y) * u);
+                 Vector3.back, Vector3.left, Vector3.up);
         }
 
         /// <summary>
@@ -303,16 +301,29 @@ namespace CatchIfYouCan.Procedural
         /// visible from outside and invisible from within, which is exactly where the player is.
         /// </summary>
         private static void Quad(Vector3 a, Vector3 b, Vector3 c, Vector3 d,
-            Vector3 normal, float uSpan, float vSpan)
+            Vector3 normal, Vector3 uAxis, Vector3 vAxis)
         {
             int start = _vertices.Count;
 
             _vertices.Add(a); _vertices.Add(b); _vertices.Add(c); _vertices.Add(d);
             _normals.Add(normal); _normals.Add(normal); _normals.Add(normal); _normals.Add(normal);
-            _uv.Add(new Vector2(0f, 0f));
-            _uv.Add(new Vector2(uSpan, 0f));
-            _uv.Add(new Vector2(uSpan, vSpan));
-            _uv.Add(new Vector2(0f, vSpan));
+
+            // PROJECTED from each vertex's own position, not counted from a corner.
+            //
+            // Every face used to start its UV at (0,0) and run to (span, span). One box, one
+            // wall, no problem - but a wall with an opening is FOUR boxes: left, right, header
+            // and sill. Each of them restarted the pattern at zero, so the wallpaper jumped at
+            // every doorway and the header showed a slice of pattern that lined up with nothing
+            // beside it. Projecting instead means the whole wall shares one continuous
+            // coordinate system and the sections cannot disagree, because none of them has an
+            // origin of its own.
+            //
+            // The axes carry the same direction the corner-counted version had, so nothing
+            // mirrors or rotates relative to what was there before.
+            AddProjectedUv(a, uAxis, vAxis);
+            AddProjectedUv(b, uAxis, vAxis);
+            AddProjectedUv(c, uAxis, vAxis);
+            AddProjectedUv(d, uAxis, vAxis);
 
             // Nachgerechnet, nicht geraten. Fuer die +X-Flaeche liegt der Bildschirm so:
             // rechts = Cross(+Y, -X) = +Z, oben = +Y. Die vier Ecken landen dann auf
@@ -322,6 +333,12 @@ namespace CatchIfYouCan.Procedural
             // die Seite ist, auf der der Spieler steht.
             _triangles.Add(start); _triangles.Add(start + 1); _triangles.Add(start + 2);
             _triangles.Add(start); _triangles.Add(start + 2); _triangles.Add(start + 3);
+        }
+
+        private static void AddProjectedUv(Vector3 vertex, Vector3 uAxis, Vector3 vAxis)
+        {
+            _uv.Add(new Vector2(Vector3.Dot(vertex, uAxis) * UvUnitsPerMetre,
+                                Vector3.Dot(vertex, vAxis) * UvUnitsPerMetre));
         }
 
         private static string Fmt(float v) => v.ToString("0.00");

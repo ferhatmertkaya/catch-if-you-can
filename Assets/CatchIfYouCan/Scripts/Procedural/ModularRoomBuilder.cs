@@ -340,10 +340,11 @@ namespace CatchIfYouCan.Procedural
 
             if (surface.IsSet && IsDrawable(surface.Material, name))
             {
-                // Density of zero means "unknown": use the material exactly as authored rather
-                // than inventing a number. Applying a zero would collapse the texture to one
-                // texel, which reads as a flat colour and looks like a missing texture.
-                if (surface.RepeatsPerMetre.x <= 0f || surface.RepeatsPerMetre.y <= 0f)
+                // An unknown size means "leave it alone": use the material exactly as authored
+                // rather than inventing a number. Dividing by a zero would blow the texture up
+                // to a single texel across the whole wall, which reads as a flat colour and
+                // looks exactly like the missing texture this is meant to fix.
+                if (!surface.HasDensity)
                 {
                     slot = surface.Material;
                     return slot;
@@ -354,18 +355,49 @@ namespace CatchIfYouCan.Procedural
                     name = name + "_" + surface.Material.name + "_perMetre"
                 };
 
-                if (slot.HasProperty(BaseMapId)) slot.SetTextureScale(BaseMapId, surface.RepeatsPerMetre);
-                if (slot.HasProperty(BumpMapId)) slot.SetTextureScale(BumpMapId, surface.RepeatsPerMetre);
-                if (slot.HasProperty(MainTexId)) slot.SetTextureScale(MainTexId, surface.RepeatsPerMetre);
+                RebaseToMetres(slot, surface.AuthoredAcrossMetres);
                 return slot;
             }
 
             return Neutral(ref slot, fallbackColour, "CIYC_Raw" + name);
         }
 
-        private static readonly int BaseMapId = Shader.PropertyToID("_BaseMap");
-        private static readonly int BumpMapId = Shader.PropertyToID("_BumpMap");
-        private static readonly int MainTexId = Shader.PropertyToID("_MainTex");
+        /// <summary>
+        /// Re-expresses a material whose UVs were normalised across one piece so that it reads
+        /// correctly on geometry whose UVs are in metres.
+        ///
+        /// <para>
+        /// EVERY texture property, not the colour map alone. A URP Lit material carries up to
+        /// eight of them, and the measured wall materials use several - wallpaper3 has a detail
+        /// normal and an occlusion map, beton adds a parallax map. Rescaling three of them and
+        /// leaving the rest is not "mostly right": the colour moves and the surface detail
+        /// stays, so the bumps stop sitting on the pattern they belong to. That is what a warped
+        /// wall actually is, and it is much harder to recognise than a plainly wrong size.
+        /// </para>
+        /// <para>
+        /// A single divisor for all of them, because they all shared one UV set to begin with.
+        /// Relative differences between the maps - a detail map deliberately tiled eight times
+        /// finer - survive, because each is divided rather than overwritten.
+        /// </para>
+        /// </summary>
+        private static void RebaseToMetres(Material material, Vector2 authoredAcrossMetres)
+        {
+            var divisor = new Vector2(1f / authoredAcrossMetres.x, 1f / authoredAcrossMetres.y);
+
+            string[] names = material.GetTexturePropertyNames();
+            if (names == null)
+                return;
+
+            for (int i = 0; i < names.Length; i++)
+            {
+                if (!material.HasProperty(names[i]))
+                    continue;
+
+                Vector2 authored = material.GetTextureScale(names[i]);
+                material.SetTextureScale(names[i],
+                    new Vector2(authored.x * divisor.x, authored.y * divisor.y));
+            }
+        }
 
         /// <summary>
         /// Whether this material will actually draw, rather than draw magenta.

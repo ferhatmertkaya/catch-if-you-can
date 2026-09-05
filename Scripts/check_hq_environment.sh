@@ -523,11 +523,30 @@ else:
 # not be the purchased asset.
 surface = re.search(r"private static Material Surface\(ref Material slot.*?\n        \}", mrb_code, re.S)
 sbody = surface.group(0) if surface else ""
-if "new Material(surface.Material)" in sbody and "SetTextureScale" in sbody:
+if "new Material(surface.Material)" in sbody and "RebaseToMetres(slot" in sbody:
     ok("the density is applied to a copy, never to the vendor material")
 else:
     bad("the density is applied to a copy, never to the vendor material",
         "rescaling the pack's own material edits somebody's purchased asset")
+
+# EVERY map, not the colour map alone. Rescaling three properties and leaving the detail normal,
+# the occlusion and the parallax where they were does not read as a wrong size - it reads as a
+# warped surface, because the bumps stop sitting on the pattern they belong to.
+rebase = re.search(r"private static void RebaseToMetres.*?\n        \}", mrb_code, re.S)
+rbody = rebase.group(0) if rebase else ""
+if rbody and "GetTexturePropertyNames()" in rbody and "GetTextureScale(names[i])" in rbody:
+    ok("every texture map is rebased, not just the colour")
+else:
+    bad("every texture map is rebased, not just the colour",
+        "a detail normal left at the authored tiling puts the bumps on a pattern that moved")
+
+# Divided, never overwritten, so a map deliberately tiled finer than the base keeps that
+# relationship instead of being flattened onto one value.
+if rbody and "authored.x * divisor.x" in rbody:
+    ok("maps are divided by one shared divisor, keeping their relative tiling")
+else:
+    bad("maps are divided by one shared divisor, keeping their relative tiling",
+        "overwriting each map with one absolute tiling destroys deliberate detail scales")
 
 # Three materials for the whole house, not three per room. The slots are static and resolved once.
 if re.search(r"private static Material _wall;", mrb_code) and "if (slot != null)" in sbody:
@@ -539,11 +558,11 @@ else:
 # A density of zero means UNKNOWN and must leave the material as authored. Applying a zero
 # collapses the texture to a single texel, which reads on screen as a flat colour - the exact
 # symptom of the missing texture this whole pass is about.
-if re.search(r"RepeatsPerMetre\.x <= 0f", sbody):
+if "if (!surface.HasDensity)" in sbody:
     ok("an unknown density leaves the material as authored instead of collapsing it")
 else:
     bad("an unknown density leaves the material as authored instead of collapsing it",
-        "a tiling of zero is one texel stretched over the wall, which looks like no texture")
+        "dividing by zero blows the texture up to one texel across the whole wall")
 
 # A vendor insert brings no collision and casts no shadow. Gameplay collision is the generated
 # boxes' job, and a MeshCollider across vendor geometry is the expensive way to get it wrong.
@@ -610,6 +629,59 @@ if re.search(r"new Vec3i\(6000, 3000, 6000\)", tool):
 else:
     bad("the test room is the logical 6 x 3 x 6 cell, not a size of its own",
         "a room at any other size is testing something the game will never build")
+
+# ---- a wall's sections share ONE texture coordinate system ------------------------------------
+#
+# A wall with an opening is four boxes: left, right, header and sill. Every face used to start
+# its UV at (0,0) and run to (span, span), so each section restarted the pattern at zero - the
+# wallpaper jumped at every doorway, and the header showed a slice that lined up with nothing
+# beside it. Projecting each vertex onto the face's own two axes instead means no section has an
+# origin of its own and they cannot disagree.
+smf = code("Assets/CatchIfYouCan/Scripts/Procedural/StructuralMeshFactory.cs") or ""
+
+if "AddProjectedUv" in smf and "Vector3.Dot(vertex, uAxis)" in smf:
+    ok("wall UVs are projected from each vertex, so sections cannot restart the pattern")
+else:
+    bad("wall UVs are projected from each vertex, so sections cannot restart the pattern",
+        "a per-face 0..span UV restarts the wallpaper at every doorway and window")
+
+if not re.search(r"_uv\.Add\(new Vector2\(uSpan", smf):
+    ok("no face counts its UV from its own corner any more")
+else:
+    bad("no face counts its UV from its own corner any more",
+        "the corner-counted version is what made every section start at zero")
+
+# ---- the density is measured in WORLD metres, and no single piece decides it -------------------
+#
+# The pack's demo scales a Unity Plane by 1.45 to reach 14.35 m, so a mesh read without its
+# transform is off by nearly half. And the same material appears at 0.55 U/m on one piece and
+# 0.10 on another - a spread of five and a half - so whichever prefab was enumerated first
+# decided the texture size for the whole house.
+tools = code("Assets/CatchIfYouCan/Editor/ModularInteriorTools.cs") or ""
+
+# Scoped to the method that measures. ModularInteriorTools is two thousand lines and the
+# forensics pass reads lossyScale of its own, so a file-wide grep for the word stays green with
+# the measurement gutted - which is exactly what it did on the first try.
+collect = re.search(r"private static void CollectSurfaces.*?\n        \}", tools, re.S)
+cbody = collect.group(0) if collect else ""
+
+if cbody and "lossyScale" in cbody:
+    ok("the surface density is measured in world metres, transform included")
+else:
+    bad("the surface density is measured in world metres, transform included",
+        "mesh bounds alone ignore a scaled piece, and this pack scales its pieces")
+
+if "private static Vector2 Median(" in tools and "Median(candidate.Sizes)" in tools:
+    ok("the density is the median of every piece, not whichever came first")
+else:
+    bad("the density is the median of every piece, not whichever came first",
+        "one absurd piece must not set the texture size for the whole house")
+
+if "hi > lo * 2f" in tools:
+    ok("an inconsistent pack is reported rather than silently averaged")
+else:
+    bad("an inconsistent pack is reported rather than silently averaged",
+        "a number that was chosen must not be presented as a number that was found")
 
 print()
 print("  %d passed, %d failed" % (passed, failed))

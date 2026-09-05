@@ -35,10 +35,16 @@ namespace CatchIfYouCan.Content
     /// density has to be applied here, once, as the material's tiling.
     /// </para>
     /// <para>
-    /// Taking prefab 5 as the reference for wallpaper3: 1.5 tiling over a 3.95 m piece is
-    /// 0.3797 repeats per metre across, and 1.5 over 4.00 m is 0.3750 up. A 6 x 3 m wall then
-    /// spans U 2.278 and V 1.125 - the same pattern size as on the vendor piece beside it, with
-    /// no stretching and no seam. See Docs/HQ_MODULAR_MIGRATION.md.
+    /// What is stored is the SIZE OF THE PIECE the material was authored across, because that
+    /// is the divisor: a texture stretched 0..1 over a 3.95 m wall needs every one of its maps
+    /// divided by 3.95 to be re-expressed per metre. Storing repeats-per-metre instead worked
+    /// only for the base map - every OTHER map on the material kept the tiling it was authored
+    /// with, so the detail normal, the occlusion and the parallax stayed at the old scale while
+    /// the colour moved. That does not read as a scale error. It reads as a warped surface.
+    /// </para>
+    /// <para>
+    /// Prefab 5 is the reference for wallpaper3: authored across 3.95 x 4.00 m. See
+    /// Docs/HQ_MODULAR_MIGRATION.md.
     /// </para>
     /// </summary>
     [Serializable]
@@ -46,11 +52,15 @@ namespace CatchIfYouCan.Content
     {
         public Material Material;
 
-        [Tooltip("Texturwiederholungen pro Meter, gemessen am Paket. 0 heisst: unbekannt, " +
-                 "dann wird das Material so benutzt, wie es authored ist.")]
-        public Vector2 RepeatsPerMetre;
+        [Tooltip("Die Groesse des Teils, ueber das dieses Material im Paket gespannt ist, in " +
+                 "Metern. JEDE Map wird durch diese Zahl geteilt, damit alle Ebenen zusammen " +
+                 "wandern. 0 heisst: unbekannt - dann bleibt das Material, wie es authored ist. " +
+                 "Groesser = groesseres Muster.")]
+        public Vector2 AuthoredAcrossMetres;
 
         public bool IsSet => Material != null;
+
+        public bool HasDensity => AuthoredAcrossMetres.x > 0.001f && AuthoredAcrossMetres.y > 0.001f;
     }
 
     /// <summary>One role, the room categories it serves, and the meshes that can play it.</summary>

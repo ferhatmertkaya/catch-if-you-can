@@ -200,15 +200,52 @@ pack normalises UVs per piece, a tiling of 1.5 is 0.38 repeats/m on the 3.95 m p
 on the 11.90 m one; generated geometry writes its UVs in metres, so the density has to be
 restated or the wallpaper is a different size on every surface.
 
-`Audit Pack → 2. Katalog bauen` now fills those three entries itself, and **measures** the
-density rather than assuming it: for each candidate material it takes the material's own
-`_BaseMap` tiling and divides by the size of the mesh it is used on, in that mesh's own space.
-Preference order is `wallpaper3 → wallpaper1 → beton` for walls, `tile1 → beton → wallpaper1`
-for floors, `white → beton → wallpaper1` for ceilings, and the commonest material if none of
-those names is present — so a renamed pack still produces a textured room.
+`Audit Pack → 2. Katalog bauen` fills those three entries itself. Preference order is
+`wallpaper3 → wallpaper1 → beton` for walls, `tile1 → beton → wallpaper1` for floors,
+`white → beton → wallpaper1` for ceilings, and the commonest material if none of those names is
+present — so a renamed pack still produces a textured room.
 
-The vendor material is never edited. The density goes onto a **copy**, one per surface for the
+Three things about that measurement, each of which produced a visibly warped room when it was
+wrong:
+
+**World metres, not the mesh's own space.** The rule that says measure in the model's own space
+answers a different question — what *local scale* reaches a wanted size — and it is the wrong
+rule here, because what the texture is stretched across is the piece's real width. This pack's
+own demo scales a Unity Plane by 1.45 to reach 14.35 m; read without its transform that piece
+reports 10 m and every density taken from it is off by a third.
+
+**The median of every piece, not the first one found.** The pack applies one material at
+0.55 U/m on one piece and 0.10 on another — a spread of five and a half — so whichever prefab
+happened to be enumerated first was setting the texture size for the whole house. Where the
+spread is worse than 2×, the report says so: the median is then a *choice*, and a number that
+was chosen must not look like a number that was found.
+
+**Every map, not the colour map.** What is stored is the size the material is authored across,
+because that is the divisor, and *every* texture property is divided by it. Rescaling the base
+map and the normal and leaving the detail normal, the occlusion and the parallax where they were
+does not read as a wrong size — it reads as a warped surface, because the bumps stop sitting on
+the pattern they belong to. Divided rather than overwritten, so a detail map deliberately tiled
+eight times finer keeps that relationship.
+
+The vendor material is never edited. The divisor goes onto a **copy**, one per surface for the
 whole house, so this is three materials rather than three per room.
+
+## Wall UVs are projected, not counted from a corner
+
+A wall with an opening is four boxes: left, right, header and sill. Each face used to start its
+UV at `(0,0)` and run to `(span, span)`, so every section restarted the pattern at zero — the
+wallpaper jumped at every doorway, and the header showed a slice of pattern that lined up with
+nothing beside it. `StructuralMeshFactory` now projects each vertex onto the face's own two
+axes, so the whole wall shares one coordinate system and no section has an origin to disagree
+from. The axes carry the same direction the corner-counted version had, so nothing mirrors or
+rotates relative to before.
+
+## If the pattern size still looks wrong
+
+It is two numbers, and the loop is short. Open `ModularInteriorCatalog.asset`, change
+**Authored Across Metres** on the surface in question — larger makes the pattern bigger — and
+press `Modular Interior → Build ONE Test Room` again. The tool prints the achieved tiling of
+every material, so the number on screen and the number in the asset can be compared directly.
 
 A material that cannot be drawn is refused rather than assigned, and the four ways in are
 reported apart because all four look identical on screen: a null shader, a shader the platform
