@@ -215,9 +215,15 @@ for member in ActiveInstance SetHandAnchor EquipByIndex CycleNext DropActive Try
 done
 ok "EquipmentManager is still loadout data only"
 
-grep -rq 'Shader.Find("Standard")\|Shader.Find("Particles/Standard' Assets/CatchIfYouCan/Scripts \
-  && fail "a built-in Standard shader fallback was reintroduced" \
-  || ok "no built-in shader fallback"
+# Kommentare zuerst weg. Diese Pruefung hat auf dem Kommentar angeschlagen, der vor genau
+# diesem Aufruf warnt - CLAUDE.md Fehler 8, in seiner umgekehrten Richtung. Ein Waechter, den
+# man nicht erklaeren darf, ohne ihn ausloesen, erzieht nur zum Schweigen.
+if find Assets/CatchIfYouCan/Scripts -name '*.cs' -exec sed 's://.*::' {} + \
+     | grep -q 'Shader\.Find("Standard")\|Shader\.Find("Particles/Standard'; then
+  fail "a built-in Standard shader fallback was reintroduced"
+else
+  ok "no built-in shader fallback"
+fi
 
 grep -rqE 'using Unity\.Netcode|NetworkBehaviour|NetworkVariable|ServerRpc|ClientRpc' \
      Assets/CatchIfYouCan/Scripts 2>/dev/null \

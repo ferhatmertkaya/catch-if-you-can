@@ -26,55 +26,56 @@ namespace CatchIfYouCan.Procedural
     /// </summary>
     public static class ModularRoomBuilder
     {
-        /// <summary>Wall pieces are placed against the inside face, not the centreline.</summary>
-        private const float WallInset = 0.0f;
+        /// <summary>
+        /// Thicknesses. Structural, not artistic: they decide where a collider stands, so they
+        /// live here rather than in a catalog that art can edit.
+        /// </summary>
+        public const float WallThickness = 0.15f;
+        public const float FloorThickness = 0.20f;
+        public const float CeilingThickness = 0.20f;
 
         /// <summary>
-        /// Builds the shell. Returns null and sets <paramref name="error"/> if the catalog
-        /// cannot supply a structural role - never a partial room, and never a substitute.
-        /// A room missing its north wall looks like a room until the player walks north.
+        /// The doorway the project already builds, unchanged. The pack's own opening is
+        /// 1.25 x 2.60 and would fit its door leaf untouched, but swapping to it is a later
+        /// phase - this one changes how the structure is made, not what size it is.
+        /// </summary>
+        public const float DoorWidth = 1.20f;
+        public const float DoorHeight = 2.20f;
+
+        /// <summary>
+        /// Builds the room's shell from generated geometry.
+        ///
+        /// Everything it needs is already in the LayoutRoom, decided in Stage A and folded into
+        /// the layout hash: the size, the category, which of the four walls carry a door. This
+        /// reads those fields and makes meshes. It cannot move a room, change a door or pick a
+        /// neighbour, because it is never asked to - which is why the layout hash does not move
+        /// when the art does.
         /// </summary>
         public static GameObject Build(LayoutRoom room, Vector3 worldPosition, Transform parent,
             ModularInteriorCatalog catalog, out string error)
         {
             error = null;
 
-            if (catalog == null)
-            {
-                error = "no modular interior catalog is assigned";
-                return null;
-            }
-
-            if (!catalog.TryValidate(out string catalogError))
-            {
-                error = "the modular interior catalog is incomplete: " + catalogError;
-                return null;
-            }
-
             var size = new Vector3(
                 Quantize.Metres(room.SizeMm.X),
                 Quantize.Metres(room.SizeMm.Y),
                 Quantize.Metres(room.SizeMm.Z));
 
+            if (size.x < 0.5f || size.y < 0.5f || size.z < 0.5f)
+            {
+                error = "die Raumgroesse " + size + " ist zu klein zum Bauen";
+                return null;
+            }
+
             var roomRoot = new GameObject($"Room_{room.Category}_{room.RoomId}");
             roomRoot.transform.SetParent(parent, false);
             roomRoot.transform.position = worldPosition;
 
-            BuildSurface(roomRoot.transform, room, catalog, ModuleRole.Floor, size, 0f);
-            BuildSurface(roomRoot.transform, room, catalog, ModuleRole.Ceiling, size, size.y);
+            BuildFloor(roomRoot.transform, size);
+            BuildCeiling(roomRoot.transform, size);
 
             for (int d = 0; d < Directions.Cardinal.Length; d++)
-            {
-                var direction = Directions.Cardinal[d];
-                if (!BuildWall(roomRoot.transform, room, catalog, direction, size, out string wallError))
-                {
-                    error = wallError;
-                    Object.DestroyImmediate(roomRoot);
-                    return null;
-                }
-            }
-
-            BuildBaseboard(roomRoot.transform, room, catalog, size);
+                BuildWall(roomRoot.transform, room, Directions.Cardinal[d], size);
 
             var module = roomRoot.GetComponent<RoomModule>();
             if (module == null)
@@ -88,194 +89,163 @@ namespace CatchIfYouCan.Procedural
 
         // ------------------------------------------------------------------ surfaces
 
-        private static void BuildSurface(Transform parent, LayoutRoom room,
-            ModularInteriorCatalog catalog, ModuleRole role, Vector3 size, float height)
+        private static void BuildFloor(Transform parent, Vector3 size)
         {
-            var variants = catalog.FindVariants(role, room.Category);
-            if (variants.Length == 0)
-                return;
+            var mesh = StructuralMeshFactory.Floor(size.x, size.z, FloorThickness);
+            var go = Piece(parent, "Floor", mesh, FloorMaterial());
+            go.transform.localPosition = Vector3.zero;
 
-            Vector3 tile = catalog.FindModuleSize(role, room.Category);
-            int countX = TileCount(size.x, tile.x);
-            int countZ = TileCount(size.z, tile.z);
+            var box = go.AddComponent<BoxCollider>();
+            box.center = new Vector3(0f, -FloorThickness * 0.5f, 0f);
+            box.size = new Vector3(size.x, FloorThickness, size.z);
+        }
 
-            float stepX = size.x / countX;
-            float stepZ = size.z / countZ;
+        private static void BuildCeiling(Transform parent, Vector3 size)
+        {
+            var mesh = StructuralMeshFactory.Ceiling(size.x, size.z, CeilingThickness);
+            var go = Piece(parent, "Ceiling", mesh, CeilingMaterial());
+            go.transform.localPosition = new Vector3(0f, size.y, 0f);
 
-            for (int ix = 0; ix < countX; ix++)
-            {
-                for (int iz = 0; iz < countZ; iz++)
-                {
-                    var prefab = Pick(variants, room.RoomId, (int)role, ix * 31 + iz);
-                    if (prefab == null)
-                        continue;
-
-                    var local = new Vector3(
-                        -size.x * 0.5f + stepX * (ix + 0.5f),
-                        height,
-                        -size.z * 0.5f + stepZ * (iz + 0.5f));
-
-                    var piece = Object.Instantiate(prefab, parent);
-                    piece.transform.localPosition = local;
-                    piece.transform.localRotation = role == ModuleRole.Ceiling
-                        ? Quaternion.Euler(180f, 0f, 0f)
-                        : Quaternion.identity;
-                    piece.name = role + "_" + ix + "_" + iz;
-                }
-            }
+            // No collider. The player cannot reach it and every one that exists is one the
+            // physics engine tests against for nothing.
         }
 
         // --------------------------------------------------------------------- walls
 
-        private static bool BuildWall(Transform parent, LayoutRoom room,
-            ModularInteriorCatalog catalog, SocketDirection direction, Vector3 size,
-            out string error)
+        private static void BuildWall(Transform parent, LayoutRoom room,
+            SocketDirection direction, Vector3 size)
         {
-            error = null;
-
-            // The layout decides what this wall is, not the art. A door connection means a
-            // doorway module, so the opening is real geometry with nothing standing in it.
-            ModuleRole role = room.HasDoor(direction)
-                ? ModuleRole.WallWithDoorway
-                : ModuleRole.WallSolid;
-
-            var variants = catalog.FindVariants(role, room.Category);
-
-            // A window is enrichment, and only where the layout says nothing connects.
-            if (role == ModuleRole.WallSolid && !room.IsOpen(direction))
-            {
-                var windows = catalog.FindVariants(ModuleRole.WallWithWindow, room.Category);
-                if (windows.Length > 0 && WantsWindow(room, direction))
-                {
-                    role = ModuleRole.WallWithWindow;
-                    variants = windows;
-                }
-            }
-
-            if (variants.Length == 0)
-            {
-                error = "the catalog supplies no " + role + " for a " + room.Category +
-                        " (room " + room.RoomId + ", " + direction + " wall)";
-                return false;
-            }
+            // The layout decides what this wall is. A door connection means a real hole, not a
+            // solid wall with a door drawn on it.
+            bool hasDoor = room.HasDoor(direction);
+            ModuleRole role = hasDoor ? ModuleRole.WallWithDoorway : ModuleRole.WallSolid;
 
             bool alongX = direction == SocketDirection.North || direction == SocketDirection.South;
             float span = alongX ? size.x : size.z;
 
-            Vector3 tile = catalog.FindModuleSize(role, room.Category);
-            float tileSpan = alongX ? tile.x : tile.z;
-            if (tileSpan <= 0.01f)
-                tileSpan = Mathf.Max(tile.x, tile.z);
+            Mesh mesh = hasDoor
+                ? StructuralMeshFactory.WallWithOpening(span, size.y, WallThickness,
+                    DoorWidth, DoorHeight, 0f)
+                : StructuralMeshFactory.SolidWall(span, size.y, WallThickness);
 
-            int count = TileCount(span, tileSpan);
-            float step = span / count;
+            var go = Piece(parent, role + "_" + direction, mesh, WallMaterial());
 
-            // The doorway goes in the middle piece so it lines up with the door socket, which
-            // RoomSocketLayout puts at the wall centre. An even count has no middle, so the
-            // piece just past centre carries it - the same piece on every machine.
-            int doorIndex = count / 2;
-
-            for (int i = 0; i < count; i++)
+            // The wall's own space is centred on X across its span and centred on Z across its
+            // thickness, rising from y = 0. So it goes on the wall line with no correction, and
+            // the yaw turns its length along the right axis.
+            switch (direction)
             {
-                ModuleRole pieceRole = role;
-                GameObject[] pieceVariants = variants;
-
-                if (role == ModuleRole.WallWithDoorway && i != doorIndex)
-                {
-                    pieceRole = ModuleRole.WallSolid;
-                    pieceVariants = catalog.FindVariants(ModuleRole.WallSolid, room.Category);
-                    if (pieceVariants.Length == 0)
-                    {
-                        error = "the catalog supplies no WallSolid for a " + room.Category;
-                        return false;
-                    }
-                }
-
-                var prefab = Pick(pieceVariants, room.RoomId, (int)pieceRole, (int)direction * 97 + i);
-                if (prefab == null)
-                    continue;
-
-                float offset = -span * 0.5f + step * (i + 0.5f);
-                Vector3 local;
-                float yaw;
-
-                switch (direction)
-                {
-                    case SocketDirection.North:
-                        local = new Vector3(offset, 0f, size.z * 0.5f - WallInset);
-                        yaw = 180f;
-                        break;
-                    case SocketDirection.South:
-                        local = new Vector3(offset, 0f, -size.z * 0.5f + WallInset);
-                        yaw = 0f;
-                        break;
-                    case SocketDirection.East:
-                        local = new Vector3(size.x * 0.5f - WallInset, 0f, offset);
-                        yaw = 270f;
-                        break;
-                    default:
-                        local = new Vector3(-size.x * 0.5f + WallInset, 0f, offset);
-                        yaw = 90f;
-                        break;
-                }
-
-                var piece = Object.Instantiate(prefab, parent);
-                piece.transform.localPosition = local;
-                piece.transform.localRotation = Quaternion.Euler(0f, yaw, 0f);
-                piece.name = pieceRole + "_" + direction + "_" + i;
+                case SocketDirection.North:
+                    go.transform.localPosition = new Vector3(0f, 0f, size.z * 0.5f - WallThickness * 0.5f);
+                    go.transform.localRotation = Quaternion.identity;
+                    break;
+                case SocketDirection.South:
+                    go.transform.localPosition = new Vector3(0f, 0f, -size.z * 0.5f + WallThickness * 0.5f);
+                    go.transform.localRotation = Quaternion.identity;
+                    break;
+                case SocketDirection.East:
+                    go.transform.localPosition = new Vector3(size.x * 0.5f - WallThickness * 0.5f, 0f, 0f);
+                    go.transform.localRotation = Quaternion.Euler(0f, 90f, 0f);
+                    break;
+                default:
+                    go.transform.localPosition = new Vector3(-size.x * 0.5f + WallThickness * 0.5f, 0f, 0f);
+                    go.transform.localRotation = Quaternion.Euler(0f, 90f, 0f);
+                    break;
             }
 
-            return true;
+            AddWallColliders(go, hasDoor, span, size.y);
         }
-
-        private static void BuildBaseboard(Transform parent, LayoutRoom room,
-            ModularInteriorCatalog catalog, Vector3 size)
-        {
-            var variants = catalog.FindVariants(ModuleRole.Baseboard, room.Category);
-            if (variants.Length == 0)
-                return;
-
-            for (int d = 0; d < Directions.Cardinal.Length; d++)
-            {
-                var direction = Directions.Cardinal[d];
-                if (room.HasDoor(direction))
-                    continue;
-
-                var prefab = Pick(variants, room.RoomId, (int)ModuleRole.Baseboard, (int)direction);
-                if (prefab == null)
-                    continue;
-
-                bool alongX = direction == SocketDirection.North || direction == SocketDirection.South;
-                Vector3 local;
-                float yaw;
-
-                switch (direction)
-                {
-                    case SocketDirection.North: local = new Vector3(0f, 0f, size.z * 0.5f); yaw = 180f; break;
-                    case SocketDirection.South: local = new Vector3(0f, 0f, -size.z * 0.5f); yaw = 0f; break;
-                    case SocketDirection.East: local = new Vector3(size.x * 0.5f, 0f, 0f); yaw = 270f; break;
-                    default: local = new Vector3(-size.x * 0.5f, 0f, 0f); yaw = 90f; break;
-                }
-
-                var piece = Object.Instantiate(prefab, parent);
-                piece.transform.localPosition = local;
-                piece.transform.localRotation = Quaternion.Euler(0f, yaw, 0f);
-                piece.name = "Baseboard_" + direction;
-
-                // Stretched along the wall it sits on; the other axes stay as authored.
-                var scale = piece.transform.localScale;
-                if (alongX) scale.x *= size.x; else scale.z *= size.z;
-                piece.transform.localScale = scale;
-            }
-        }
-
-        // ---------------------------------------------------------------- derivation
 
         /// <summary>
-        /// Which interchangeable mesh this piece gets. Derived from the room's own identity,
-        /// so it is the same on the host and on every client without any of them agreeing on
-        /// anything first, and no generation stream is touched.
+        /// Collision that matches the geometry, taken from the same sections the mesh was built
+        /// from rather than computed a second time. A doorway that is open to the eye and shut
+        /// to the body is the failure this exists to prevent, and computing the rectangles
+        /// twice is how it happens.
         /// </summary>
+        private static void AddWallColliders(GameObject go, bool hasDoor, float span, float height)
+        {
+            if (!hasDoor)
+            {
+                var solid = go.AddComponent<BoxCollider>();
+                solid.center = new Vector3(0f, height * 0.5f, 0f);
+                solid.size = new Vector3(span, height, WallThickness);
+                return;
+            }
+
+            var sections = StructuralMeshFactory.Sections(span, height, WallThickness,
+                DoorWidth, DoorHeight, 0f);
+
+            if (!sections.HasOpening)
+            {
+                var fallback = go.AddComponent<BoxCollider>();
+                fallback.center = new Vector3(0f, height * 0.5f, 0f);
+                fallback.size = new Vector3(span, height, WallThickness);
+                return;
+            }
+
+            AddSectionCollider(go, sections.Left);
+            AddSectionCollider(go, sections.Right);
+            AddSectionCollider(go, sections.Header);
+        }
+
+        private static void AddSectionCollider(GameObject go, Bounds section)
+        {
+            if (section.size.x < 0.001f || section.size.y < 0.001f)
+                return;
+
+            var box = go.AddComponent<BoxCollider>();
+            box.center = section.center;
+            box.size = section.size;
+        }
+
+        // ----------------------------------------------------------------- materials
+
+        // Three materials for the whole house, created once. One per wall would be forty
+        // materials in a ten-room house and forty separate draw calls to go with them.
+        private static Material _wall;
+        private static Material _floor;
+        private static Material _ceiling;
+
+        private static Material WallMaterial() => Neutral(ref _wall, new Color(0.72f, 0.70f, 0.67f), "CIYC_RawWall");
+        private static Material FloorMaterial() => Neutral(ref _floor, new Color(0.42f, 0.39f, 0.36f), "CIYC_RawFloor");
+        private static Material CeilingMaterial() => Neutral(ref _ceiling, new Color(0.86f, 0.86f, 0.84f), "CIYC_RawCeiling");
+
+        private static Material Neutral(ref Material slot, Color colour, string name)
+        {
+            if (slot != null)
+                return slot;
+
+            // Never Shader.Find("Standard"): it resolves everywhere and draws solid magenta
+            // under URP. Ask for the project's lit shader and accept null - a missing object is
+            // better than a magenta one.
+            var shader = Art.CiycShaders.FindLit();
+            if (shader == null)
+            {
+                Core.CIYCLog.Error("[CIYC][House] Kein URP-Lit-Shader gefunden. Die Rohstruktur " +
+                                   "bleibt ohne Material, statt magenta zu werden.");
+                return null;
+            }
+
+            slot = new Material(shader) { name = name };
+            slot.color = colour;
+            return slot;
+        }
+
+        private static GameObject Piece(Transform parent, string name, Mesh mesh, Material material)
+        {
+            var go = new GameObject(name);
+            go.transform.SetParent(parent, false);
+
+            var filter = go.AddComponent<MeshFilter>();
+            filter.sharedMesh = mesh;
+
+            var renderer = go.AddComponent<MeshRenderer>();
+            if (material != null)
+                renderer.sharedMaterial = material;
+
+            return go;
+        }
+
         private static GameObject Pick(GameObject[] variants, int roomId, int role, int index)
         {
             if (variants == null || variants.Length == 0)
@@ -293,10 +263,6 @@ namespace CatchIfYouCan.Procedural
             return variants[pick];
         }
 
-        /// <summary>
-        /// Whether an outside wall of this room takes a window. Derived like the variant, so
-        /// two players see the same windows. Roughly half of eligible walls get one.
-        /// </summary>
         private static bool WantsWindow(LayoutRoom room, SocketDirection direction)
         {
             if (room.Category == RoomCategory.Basement || room.Category == RoomCategory.Storage)
@@ -309,12 +275,5 @@ namespace CatchIfYouCan.Procedural
             return (hash.Value & 1UL) == 1UL;
         }
 
-        private static int TileCount(float span, float tile)
-        {
-            if (tile <= 0.01f)
-                return 1;
-
-            return Mathf.Max(1, Mathf.RoundToInt(span / tile));
-        }
-    }
+   }
 }

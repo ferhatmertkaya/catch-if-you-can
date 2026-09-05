@@ -74,7 +74,12 @@ namespace CatchIfYouCan.Procedural
                  "Nichts an der Generierung ist geloescht: der Schalter fuehrt sie nur nicht " +
                  "aus. Wieder anschalten stellt genau denselben Ablauf wieder her, und der " +
                  "Seed bestimmt weiterhin dasselbe Haus wie vorher.")]
-        [SerializeField] private bool generateWorld;
+        // Auf AN. Ausgeschaltet war er, weil der Kenney-Bestand entfernt wurde und die
+        // Generierung nur noch graue Primitivkisten baute. Sie baut jetzt erzeugte Geometrie
+        // in exakt der Groesse, die das Layout nennt, also gibt es wieder etwas zu sehen.
+        // InvestigationSceneInstaller haengt diese Komponente per AddComponent an, es gibt sie
+        // in keiner Szene - dieser Anfangswert IST der wirksame Wert.
+        [SerializeField] private bool generateWorld = true;
 
         [Tooltip("Groesse der leeren Ebene in Metern, wenn oben nichts generiert wird. Sie wird " +
                  "erst beim Betreten gebaut, nicht schon beim Vorbereiten - sonst haengt sie als " +
