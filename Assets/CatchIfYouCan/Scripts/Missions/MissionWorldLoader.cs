@@ -339,6 +339,148 @@ namespace CatchIfYouCan.Missions
         /// mission is already live, so there is no frame with nothing to render.
         /// </para>
         /// </summary>
+        /// <summary>
+        /// Walks the player through the portal into the world that is already standing behind it.
+        ///
+        /// <para>
+        /// <b>This is not <see cref="EnterAsync"/> with the fade removed.</b> That path fades to
+        /// black, DESTROYS the lobby player and builds a new one at the van's spawn point - which
+        /// is a teleport with a curtain drawn over it, and it is why crossing produced a black
+        /// frame and then a fall. Here the player is the same object throughout: they are moved
+        /// through the portal pair by the same matrix the portal camera uses, so what they walked
+        /// into is where they come out.
+        /// </para>
+        ///
+        /// <para>
+        /// <b>The ground is checked before anything is committed.</b> If nothing is under the
+        /// mapped arrival the crossing is refused and the player keeps their controls in the
+        /// lobby, because arriving in a world with no floor is worse than not arriving.
+        /// </para>
+        /// </summary>
+        /// <param name="sourcePlane">The portal surface the player walked into.</param>
+        /// <param name="destinationAnchor">Its counterpart in the prepared world.</param>
+        /// <param name="onResult">True when the player was handed over; false when it refused.</param>
+        public static IEnumerator EnterSeamlessAsync(Transform sourcePlane,
+                                                     Transform destinationAnchor,
+                                                     Action<bool> onResult = null)
+        {
+            const string Diag = "[CIYC][Portal][SeamlessEntry] ";
+
+            InvestigationBootstrap world = InvestigationBootstrap.Prepared;
+            if (world == null || sourcePlane == null || destinationAnchor == null)
+            {
+                CIYCLog.Error(Diag + "refused: worldAlreadyPrepared=" + (world != null) +
+                              " sourcePlane=" + (sourcePlane != null) +
+                              " destinationAnchor=" + (destinationAnchor != null) +
+                              " success=false failureReason=MISSING_PAIR");
+                onResult?.Invoke(false);
+                yield break;
+            }
+
+            GameObject playerRoot = Player.PlayerSpawner.Current?.Root;
+            var motor = playerRoot != null ? playerRoot.GetComponent<Player.PlayerController>() : null;
+            if (playerRoot == null || motor == null)
+            {
+                CIYCLog.Error(Diag + "refused: no local player to carry through. " +
+                              "success=false failureReason=NO_PLAYER");
+                onResult?.Invoke(false);
+                yield break;
+            }
+
+            // ---- the mapping ---------------------------------------------------------------
+            // The SAME matrix the portal camera is posed with, so the player arrives where the
+            // view they walked into said they would. The half turn is what makes walking in one
+            // side come out forwards rather than backwards.
+            Matrix4x4 flip = Matrix4x4.TRS(Vector3.zero, Quaternion.Euler(0f, 180f, 0f), Vector3.one);
+            Matrix4x4 through = destinationAnchor.localToWorldMatrix *
+                                flip *
+                                sourcePlane.worldToLocalMatrix *
+                                playerRoot.transform.localToWorldMatrix;
+
+            Vector3 mapped = through.GetColumn(3);
+            Vector3 mappedForward = through.GetColumn(2);
+
+            // Yaw only. A CharacterController stands up, and carrying the pitch through would
+            // arrive with the body tilted while the camera sorted itself out.
+            Vector3 flat = new Vector3(mappedForward.x, 0f, mappedForward.z);
+            Quaternion mappedRotation = flat.sqrMagnitude > 1e-6f
+                ? Quaternion.LookRotation(flat.normalized, Vector3.up)
+                : playerRoot.transform.rotation;
+
+            // ---- the ground -----------------------------------------------------------------
+            // Checked BEFORE the scene is switched, so a refusal costs nothing. The prepared
+            // world is additively loaded and its colliders are live, but the physics scene is
+            // only synced at the fixed step - so ask for the sync rather than hope for it.
+            Physics.SyncTransforms();
+
+            Vector3 probeFrom = mapped + Vector3.up * 2f;
+            if (!Physics.Raycast(probeFrom, Vector3.down, out RaycastHit ground, 8f, ~0,
+                                 QueryTriggerInteraction.Ignore))
+            {
+                CIYCLog.Error(Diag + "refused: mappedDestination=" + mapped.ToString("F2") +
+                              " groundHit=<none> - nothing solid within 8 m below the arrival. " +
+                              "The player stays in the lobby with their controls. " +
+                              "success=false failureReason=NO_GROUND");
+                onResult?.Invoke(false);
+                yield break;
+            }
+
+            // The player's root IS their feet: PlayerRigBuilder sets the controller's centre to
+            // half its height, so the capsule's bottom sits exactly on the root. No offset, and
+            // none invented - the convention is read from the rig rather than guessed at.
+            Vector3 finalPosition = ground.point;
+
+            float verticalBefore = motor.CurrentSpeed;
+            Camera cameraBefore = Core.LocalPlayerService.ResolveViewCamera();
+
+            // ---- the handover ---------------------------------------------------------------
+            // No fade anywhere in here. The player's own camera renders every frame of this, so
+            // there is never a frame without a view.
+            Scene missionScene = world.gameObject.scene;
+            Scene lobbyScene = SceneManager.GetActiveScene();
+
+            if (missionScene.IsValid() && missionScene.isLoaded)
+                SceneManager.SetActiveScene(missionScene);
+
+            // Teleport is the rig's own move: it disables the controller, sets the pose, enables
+            // it again and zeroes the velocity - which is the fall accumulator, so there is
+            // nothing left over to drop with.
+            motor.Teleport(finalPosition, mappedRotation);
+            Physics.SyncTransforms();
+
+            // The world goes live around a player who is already standing in it. PlayerSpawner
+            // returns the existing one rather than building a second, so nothing is duplicated
+            // and nothing is moved again.
+            yield return world.ActivateForEntry();
+
+            if (lobbyScene.IsValid() && lobbyScene.isLoaded && lobbyScene != missionScene)
+            {
+                AsyncOperation unload = SceneManager.UnloadSceneAsync(lobbyScene);
+                while (unload != null && !unload.isDone)
+                    yield return null;
+            }
+
+            Camera cameraAfter = Core.LocalPlayerService.ResolveViewCamera();
+
+            CIYCLog.Info(Diag +
+                "sourcePos=" + playerRoot.transform.position.ToString("F2") +
+                " mappedDestination=" + mapped.ToString("F2") +
+                " groundHit=" + ground.point.ToString("F2") +
+                " groundNormal=" + ground.normal.ToString("F2") +
+                " ground='" + ground.collider.name + "'" +
+                " finalPlayerPos=" + finalPosition.ToString("F2") +
+                " speedBefore=" + verticalBefore.ToString("F2") +
+                " speedAfter=" + motor.CurrentSpeed.ToString("F2") +
+                " cameraBefore=" + (cameraBefore != null ? cameraBefore.name : "<none>") +
+                " cameraAfter=" + (cameraAfter != null ? cameraAfter.name : "<none>") +
+                " worldAlreadyPrepared=true sceneReloaded=false houseRegenerated=false" +
+                " blackFadeTriggered=false" +
+                " duplicatePlayer=" + (Player.PlayerSpawner.Current?.Root != playerRoot) +
+                " success=true");
+
+            onResult?.Invoke(true);
+        }
+
         public static IEnumerator EnterAsync(float fadeOut = 0.28f, float fadeIn = 0.4f)
         {
             InvestigationBootstrap world = InvestigationBootstrap.Prepared;

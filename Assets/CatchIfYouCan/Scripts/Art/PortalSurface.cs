@@ -125,6 +125,19 @@ namespace CatchIfYouCan.Art
         public bool IsBuilt => _built;
 
         /// <summary>
+        /// The plane the portal pair is built around: the surface's own transform, which is what
+        /// <c>PortalToWorldInverse</c> maps through.
+        ///
+        /// <para>
+        /// Exposed so the player can be carried through by the SAME transform the camera is
+        /// posed with. Mapping the player against the doorway's root while the camera maps
+        /// against the surface centre would put them out half an opening's height from where
+        /// the view they walked into said they would be.
+        /// </para>
+        /// </summary>
+        public Transform SurfacePlane => _surface;
+
+        /// <summary>
         /// Sizes the hole to the doorway that owns it, before it is built.
         ///
         /// <para>

@@ -1746,6 +1746,99 @@ else
       "centerBlocked must come from a physics test of the middle of the hole"
 fi
 
+# ---- V11: the crossing is a handover, not a load ---------------------------------------------
+#
+# Crossing used to run EnterAsync: fade to black, DESTROY the lobby player, build a new one at
+# the van's spawn point, fade back in. Every symptom followed from that - a black frame because
+# the fade is deliberate, and a fall because the van's spawn had nothing under it and the code
+# says so in a warning nobody had read. The world behind the opening is already standing; there
+# is nothing to hide and nobody to rebuild.
+MWL="$ROOT/Assets/CatchIfYouCan/Scripts/Missions/MissionWorldLoader.cs"
+LP="$ENV/LobbyPortal.cs"
+
+if code "$LP" | sed -n '/private void BeginInvestigation/,/^        }$/p' \
+     | grep -qE 'MissionWorldLoader\.EnterSeamlessAsync\('; then
+  ok "the crossing takes the seamless path"
+else
+  bad "the crossing takes the seamless path" \
+      "EnterAsync fades to black and rebuilds the player; the portal must not call it"
+fi
+
+if code "$LP" | sed -n '/private void BeginInvestigation/,/^        }$/p' \
+     | grep -qE 'MissionWorldLoader\.EnterAsync\('; then
+  bad "the crossing does not take the loading path" \
+      "the prepared-world route must never reach the fade-and-respawn path"
+else
+  ok "the crossing does not take the loading path"
+fi
+
+# No fade, no reload, no regeneration, no second player - checked inside the seamless routine
+# rather than hoped for.
+SEAM="$(code "$MWL" | sed -n '/public static IEnumerator EnterSeamlessAsync/,/^        }$/p')"
+FORBIDDEN=""
+printf '%s' "$SEAM" | grep -qE 'FadeTo\(' && FORBIDDEN="$FORBIDDEN fade"
+printf '%s' "$SEAM" | grep -qE 'LoadScene|LoadSceneAsync' && FORBIDDEN="$FORBIDDEN scene-load"
+printf '%s' "$SEAM" | grep -qE 'PrepareAsync|GenerateHouse|PrepareWorld' && FORBIDDEN="$FORBIDDEN regenerate"
+printf '%s' "$SEAM" | grep -qE 'PlayerSpawner\.Despawn|PlayerSpawner\.Spawn' && FORBIDDEN="$FORBIDDEN respawn"
+if [ -z "$FORBIDDEN" ]; then
+  ok "the seamless crossing neither fades, reloads, regenerates nor respawns"
+else
+  bad "the seamless crossing neither fades, reloads, regenerates nor respawns" \
+      "found:$FORBIDDEN"
+fi
+
+# The SAME player walks through, moved by the rig's own Teleport - which zeroes the velocity,
+# and that velocity is the fall accumulator.
+if printf '%s' "$SEAM" | grep -qE 'motor\.Teleport\(finalPosition, mappedRotation\)'; then
+  ok "the lobby player is carried through, not rebuilt"
+else
+  bad "the lobby player is carried through, not rebuilt" \
+      "destroying and recreating the player is a teleport with a curtain over it"
+fi
+
+# The ground is PROVEN before anything is committed, and a miss refuses rather than drops.
+if printf '%s' "$SEAM" | grep -qE 'Physics\.Raycast\(probeFrom, Vector3\.down' &&
+   printf '%s' "$SEAM" | grep -qE 'failureReason=NO_GROUND' &&
+   printf '%s' "$SEAM" | grep -qE 'onResult\?\.Invoke\(false\)'; then
+  ok "no ground under the arrival refuses the crossing"
+else
+  bad "no ground under the arrival refuses the crossing" \
+      "arriving in a world with no floor is worse than not arriving"
+fi
+
+# A refusal gives the controls back. The player is standing in the lobby with a doorway in
+# front of them and no input; leaving them there is the worse half of the bug.
+if code "$LP" | sed -n '/private void OnSeamlessEntryResult/,/^        }$/p' \
+     | grep -qE 'MenuInputGate\.Pop' &&
+   code "$LP" | sed -n '/private void OnSeamlessEntryResult/,/^        }$/p' \
+     | grep -qE 'SetState\(LobbyPortalState\.Open\)'; then
+  ok "a refused crossing returns the controls and reopens the doorway"
+else
+  bad "a refused crossing returns the controls and reopens the doorway" \
+      "a refusal must not leave the player frozen in front of a dead portal"
+fi
+
+# The pose is mapped through the SAME transform the camera is posed with, or the player arrives
+# half an opening's height from where the view they walked into said they would.
+if printf '%s' "$SEAM" | grep -qE 'destinationAnchor\.localToWorldMatrix \*' &&
+   printf '%s' "$SEAM" | grep -qE 'sourcePlane\.worldToLocalMatrix \*' &&
+   code "$LP" | grep -qE 'surface\.SurfacePlane'; then
+  ok "the player is mapped through the portal pair, not snapped to a spawn point"
+else
+  bad "the player is mapped through the portal pair, not snapped to a spawn point" \
+      "lateral position and facing have to survive the doorway"
+fi
+
+# The curtain must not be raised on this route at all. It is a full-screen opaque CanvasGroup
+# set during PREPARATION, so by the time the player crosses it has been at 1 for seconds.
+IB="$ROOT/Assets/CatchIfYouCan/Scripts/Procedural/InvestigationBootstrap.cs"
+if code "$IB" | grep -qE 'fadeOverlay\.alpha = _seamlessEntry \? 0f : 1f'; then
+  ok "the prepared world raises no curtain"
+else
+  bad "the prepared world raises no curtain" \
+      "an opaque overlay raised at preparation IS the black frame"
+fi
+
 echo
 echo "  $PASS passed, $FAIL failed"
 if [ "$FAIL" -ne 0 ]; then

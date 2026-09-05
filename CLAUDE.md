@@ -160,7 +160,12 @@ place that number lives; everything else derives it.
   query against an unsynced physics scene finds nothing at all, the wall is recognised by
   shape rather than by name, a failed resolve names what it rejected, the drawn quad is
   larger than the hole so the rim is not cut off square, and the portal reports a MEASURED
-  passability rather than a claimed one. 167 checks.
+  passability rather than a claimed one. And it holds the crossing to a HANDOVER rather
+  than a load: the seamless path neither fades, reloads, regenerates nor respawns, the
+  lobby player is carried through and mapped by the same matrix that posed the camera
+  they walked into, no ground under the arrival refuses the crossing instead of dropping
+  them, a refusal gives the controls back, and the prepared world raises no curtain — an
+  opaque overlay set at preparation time IS the black frame. 175 checks.
 
 - `Scripts/check_agent_architecture.sh` — the roster holds 40 unique roles with
   every field, the roster and `AGENT_OWNERSHIP.md` name the same roles, the

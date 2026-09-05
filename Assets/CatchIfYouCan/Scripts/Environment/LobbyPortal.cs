@@ -1042,11 +1042,41 @@ namespace CatchIfYouCan.Environment
             CIYCLog.Info(LogTag + "Entered. Handing over to '" +
                          (_missionName ?? "the mission") + "'.");
 
-            // Driven by the transition overlay, NOT by this component. The handover unloads the
-            // lobby, which destroys this object - and a coroutine dies with the MonoBehaviour
-            // running it, which would leave the screen black at whatever point the unload
-            // happened. The overlay is DontDestroyOnLoad, so it survives to fade itself back out.
-            UI.TransitionFade.Ensure().StartCoroutine(MissionWorldLoader.EnterAsync());
+            // SEAMLESS, and that word is load-bearing. EnterAsync fades to black, destroys the
+            // lobby player and builds a new one at the van - a teleport with a curtain over it.
+            // The world behind this opening is already standing, so there is nothing to hide:
+            // the player walks through as the same object, mapped by the same matrix that posed
+            // the camera they were looking through.
+            //
+            // Still driven by the transition overlay rather than by this component, for the
+            // reason it always was: the handover unloads the lobby, which destroys this object,
+            // and a coroutine dies with the MonoBehaviour running it. The overlay is
+            // DontDestroyOnLoad and survives to finish the sequence. It is not asked to fade.
+            UI.TransitionFade.Ensure().StartCoroutine(
+                MissionWorldLoader.EnterSeamlessAsync(surface.SurfacePlane, _viewAnchor,
+                                                      OnSeamlessEntryResult));
+        }
+
+        /// <summary>
+        /// What to do when the crossing refuses.
+        ///
+        /// <para>
+        /// A refusal is not a failure to report and forget: the player is standing in the lobby
+        /// with their controls taken away and a doorway in front of them. Everything taken is
+        /// given back and the portal goes back to Open, so they can try again or walk away -
+        /// which is the same contract the "world is not prepared" refusal above already keeps.
+        /// </para>
+        /// </summary>
+        private void OnSeamlessEntryResult(bool entered)
+        {
+            if (entered)
+                return;
+
+            CIYCLog.Error(LogTag + "The crossing was refused. Returning the player's controls " +
+                          "and leaving the doorway open.");
+            UI.MenuInputGate.Pop(nameof(LobbyPortal));
+            _handedOver = false;
+            SetState(LobbyPortalState.Open);
         }
 
         /// <summary>

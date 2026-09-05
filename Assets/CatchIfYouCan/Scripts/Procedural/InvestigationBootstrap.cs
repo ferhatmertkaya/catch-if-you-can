@@ -95,6 +95,12 @@ namespace CatchIfYouCan.Procedural
 
         [Header("Intro")]
         [SerializeField] private CanvasGroup fadeOverlay;
+
+        /// <summary>
+        /// True when this world was prepared for a portal to walk somebody into, rather than
+        /// loaded directly. The difference is one thing only: no curtain, ever.
+        /// </summary>
+        private bool _seamlessEntry;
         [SerializeField] private float introHoldSeconds = 3f;
         [SerializeField] private float fadeDuration = 1.2f;
 
@@ -172,6 +178,10 @@ namespace CatchIfYouCan.Procedural
 
             if (mode == InvestigationStartMode.Deferred)
             {
+                // Deferred means a portal is going to walk somebody in through a doorway that is
+                // already showing them this world. Recorded here rather than inferred later,
+                // because the one thing that must NOT happen on that route is a curtain.
+                _seamlessEntry = true;
                 StartCoroutine(PrepareOnly());
                 return;
             }
@@ -249,8 +259,13 @@ namespace CatchIfYouCan.Procedural
                 return false;
             }
 
+            // The overlay is a FULL-SCREEN OPAQUE CanvasGroup, raised here so the direct load
+            // has something to fade in from. On the portal route it is the black frame: the
+            // world is prepared while the player is still in the lobby, so by the time they
+            // walk through, this has been sitting at 1 for seconds and the mission scene turns
+            // active behind it. A doorway you can see through does not need a curtain.
             if (fadeOverlay != null)
-                fadeOverlay.alpha = 1f;
+                fadeOverlay.alpha = _seamlessEntry ? 0f : 1f;
 
             if (!generateWorld)
             {
@@ -403,10 +418,20 @@ namespace CatchIfYouCan.Procedural
             InstallAudio();
             PlayIntro(_mission);
 
-            if (_introPresenter == null && fadeOverlay != null)
-                yield return FadeIn();
-            else
+            if (_seamlessEntry)
+            {
+                // Nothing was covered, so there is nothing to uncover. A FadeIn here would be a
+                // fade UP from transparent - a black flash on the frame it starts.
                 yield return null;
+            }
+            else if (_introPresenter == null && fadeOverlay != null)
+            {
+                yield return FadeIn();
+            }
+            else
+            {
+                yield return null;
+            }
 
             // The last word on the overlay, whoever was meant to clear it.
             //
