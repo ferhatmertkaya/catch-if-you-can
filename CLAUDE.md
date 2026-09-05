@@ -180,7 +180,12 @@ place that number lives; everything else derives it.
   the picture and died with the scene — the same object changes scene now, never
   rebuilt, with its velocity and spin rotated through the pair rather than zeroed, on a
   sign change inside the opening rather than an overlap, once rather than every physics
-  step, and only when something declared it transferable. 193 checks.
+  step, and only when something declared it transferable. And it points the doorway at a
+  ROOM: the portal's far side is a mission entry anchor measured against real floor
+  collision inside the entrance room, not the van's spawn — that stands outdoors on
+  ground this project does not have, which is a fall past a skybox. One transform feeds
+  the preview camera and the crossing, so what is shown and what is walked into cannot
+  diverge, and no floor under the entrance leaves it null, which refuses. 197 checks.
 
 - `Scripts/check_agent_architecture.sh` — the roster holds 40 unique roles with
   every field, the roster and `AGENT_OWNERSHIP.md` name the same roles, the

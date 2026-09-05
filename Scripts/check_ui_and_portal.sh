@@ -1129,8 +1129,9 @@ fi
 # room's floor being too high. The anchor is a CHILD of the arrival point, which is what keeps
 # it the prepared world's and not some other one's - so both halves are checked.
 if code "$ENV/LobbyPortal.cs" \
-     | grep -qE 'SetDestination\(ResolveViewAnchor\(_pendingWorld\.ArrivalPoint\)\)|anchor = ResolveViewAnchor\(_pendingWorld\.ArrivalPoint\)' &&
-   code "$ENV/LobbyPortal.cs" | grep -qE '_viewAnchor\.SetParent\(arrival, *false\)'; then
+     | grep -qE 'ResolveViewAnchor\(_pendingWorld\.MissionEntryAnchor\)' &&
+   code "$ENV/LobbyPortal.cs" | grep -qE '_viewAnchor\.SetParent\(arrival, *false\)' &&
+   ! code "$ENV/LobbyPortal.cs" | grep -qE '_pendingWorld\.ArrivalPoint'; then
   ok "the portal is aimed at the prepared world the player will enter"
 else
   bad "the portal is aimed at the prepared world the player will enter" \
@@ -2048,6 +2049,53 @@ if code "$OT" | grep -qE 'Scene sourceScene = _sourcePlane\.gameObject\.scene' &
 else
   bad "a portal only carries objects from its own scene" \
       "an object already through would be measured against the plane it left"
+fi
+
+# ---- V13: the portal opens onto a ROOM, not onto the van --------------------------------------
+#
+# ArrivalPoint is the van's player spawn: it stands OUTSIDE, next to the vehicle, because on the
+# direct load you arrive at the van and walk to the house. There is no terrain in this project,
+# so there is no floor under it - and the portal was aimed at it. A player carried there dropped
+# forever past a skybox, which is the mountain view and then the fall.
+IB="$ROOT/Assets/CatchIfYouCan/Scripts/Procedural/InvestigationBootstrap.cs"
+
+if code "$IB" | grep -qE 'public Transform MissionEntryAnchor => _missionEntry;' &&
+   code "$ENV/LobbyPortal.cs" | grep -qE '_pendingWorld\.MissionEntryAnchor'; then
+  ok "the portal opens onto the mission entry anchor"
+else
+  bad "the portal opens onto the mission entry anchor" \
+      "the van's spawn is outdoors on ground that does not exist"
+fi
+
+# ONE transform feeds the preview camera and the crossing. Two would let what is shown and what
+# is walked into diverge, which is the failure this whole flow exists to prevent.
+BINDS="$(code "$ENV/LobbyPortal.cs" | grep -c 'ResolveViewAnchor(_pendingWorld.MissionEntryAnchor)')"
+if [ "$BINDS" -ge 1 ] && ! code "$ENV/LobbyPortal.cs" | grep -qE 'SetDestination\([^)]*ArrivalPoint'; then
+  ok "preview and entry cannot diverge"
+else
+  bad "preview and entry cannot diverge" \
+      "one anchor feeds both, or the image is a promise the crossing does not keep"
+fi
+
+# The anchor is PROVEN against collision, not taken from a transform's name. A room's Root is
+# the room's origin, which is not necessarily its floor.
+EMA="$(code "$IB" | sed -n '/private void EnsureMissionEntryAnchor/,/^        }$/p')"
+if printf '%s' "$EMA" | grep -qE 'Physics\.Raycast\(root \+ Vector3\.up \* 3f, Vector3\.down' &&
+   printf '%s' "$EMA" | grep -qE 'Physics\.SyncTransforms\(\)'; then
+  ok "the entry anchor is measured against real floor collision"
+else
+  bad "the entry anchor is measured against real floor collision" \
+      "a transform named PlayerSpawn is a name, not a floor"
+fi
+
+# A miss leaves the anchor NULL, and null refuses the crossing. Placing it anyway would be the
+# fall with extra steps.
+if printf '%s' "$EMA" | grep -qE 'no mission entry anchor was built' &&
+   ! printf '%s' "$EMA" | grep -qE 'go\.transform\.position = root;'; then
+  ok "no floor under the entrance leaves the anchor null rather than guessed"
+else
+  bad "no floor under the entrance leaves the anchor null rather than guessed" \
+      "an anchor placed without a floor under it is the fall with extra steps"
 fi
 
 echo

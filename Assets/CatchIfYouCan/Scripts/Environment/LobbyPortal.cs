@@ -325,8 +325,8 @@ namespace CatchIfYouCan.Environment
             ReportAperture();
 
             // The far anchor is derived from the opening height, so a taller opening moves it.
-            if (_pendingWorld != null && _pendingWorld.ArrivalPoint != null)
-                surface.SetDestination(ResolveViewAnchor(_pendingWorld.ArrivalPoint));
+            if (_pendingWorld != null && _pendingWorld.MissionEntryAnchor != null)
+                surface.SetDestination(ResolveViewAnchor(_pendingWorld.MissionEntryAnchor));
         }
 #endif
 
@@ -768,12 +768,16 @@ namespace CatchIfYouCan.Environment
                 if (_effects != null)
                     _effects.SetIntensity(eased);
 
-                if (!bound && _pendingWorld != null && _pendingWorld.ArrivalPoint != null)
+                // The MISSION ENTRY anchor, not the van's spawn. They are different places: the
+                // van stands outside on ground that does not exist, and a portal opens onto a
+                // room. One transform feeds both the preview camera and the crossing, so what
+                // is shown and what is walked into cannot diverge.
+                if (!bound && _pendingWorld != null && _pendingWorld.MissionEntryAnchor != null)
                 {
-                    Transform anchor = ResolveViewAnchor(_pendingWorld.ArrivalPoint);
+                    Transform anchor = ResolveViewAnchor(_pendingWorld.MissionEntryAnchor);
                     CIYCLog.Info(LogTag + "preview camera bound to " +
-                                 _pendingWorld.ArrivalPoint.name + " at " +
-                                 _pendingWorld.ArrivalPoint.position.ToString("F1") +
+                                 _pendingWorld.MissionEntryAnchor.name + " at " +
+                                 _pendingWorld.MissionEntryAnchor.position.ToString("F1") +
                                  ", view anchor raised to " + anchor.position.ToString("F1"));
                     surface.SetDestination(anchor);
                     ArmObjectTransfer(anchor);

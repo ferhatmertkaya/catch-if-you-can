@@ -142,6 +142,29 @@ namespace CatchIfYouCan.Procedural
             _van != null && _van.PlayerSpawnPoint != null ? _van.PlayerSpawnPoint : _fallbackArrival;
 
         /// <summary>
+        /// Where a portal opens ONTO, which is not where a van drops somebody off.
+        ///
+        /// <para>
+        /// <b>These were the same transform, and that was the fall.</b> <see cref="ArrivalPoint"/>
+        /// is the van's player spawn: it stands OUTSIDE, next to the vehicle, because on the
+        /// direct load you arrive at the van and walk to the house. There is no terrain in this
+        /// project, so there is no floor under it - a player put there drops forever past a
+        /// skybox, which is the mountain view and then the fall.
+        /// </para>
+        ///
+        /// <para>
+        /// A portal is a hole in a wall showing a ROOM. Its far side has to be in that room, so
+        /// this is the entrance room's floor, measured against real collision rather than taken
+        /// from a transform's name. Null until the house exists, and null is a refusal: the
+        /// crossing does not commit, the player keeps their controls, and the doorway stays
+        /// open.
+        /// </para>
+        /// </summary>
+        public Transform MissionEntryAnchor => _missionEntry;
+
+        private Transform _missionEntry;
+
+        /// <summary>
         /// Hands this bootstrap the anchors its scene already carries.
         ///
         /// <para>
@@ -294,7 +317,8 @@ namespace CatchIfYouCan.Procedural
                              "entsteht erst beim Betreten. Wieder anschalten am " +
                              "InvestigationBootstrap in 03_Investigation.");
 
-                _worldPrepared = true;
+                EnsureMissionEntryAnchor();
+            _worldPrepared = true;
                 return true;
             }
 
@@ -312,6 +336,7 @@ namespace CatchIfYouCan.Procedural
             // Portal sonst genauso zusammen, nur seltener und schwerer zu finden.
             EnsureFallbackArrival();
 
+            EnsureMissionEntryAnchor();
             _worldPrepared = true;
             return true;
         }
@@ -342,6 +367,62 @@ namespace CatchIfYouCan.Procedural
             if (removed > 0)
                 CIYCLog.Info("[CIYC][Investigation] " + removed + " Objekte unter '" + root.name +
                              "' geloescht, weil keine Welt gebaut wird.");
+        }
+
+        /// <summary>
+        /// Builds the portal's far side: a point on the entrance room's floor, proven by a ray.
+        ///
+        /// <para>
+        /// Proven, not assumed. The room's Root sits at the room's own origin, which is not
+        /// necessarily its floor - a room built from a modular kit puts its floor slab wherever
+        /// the kit says. Casting down from above the root and taking the hit is the only way to
+        /// know the player will land on something, and a miss leaves the anchor null so the
+        /// crossing refuses rather than dropping somebody into the dark.
+        /// </para>
+        /// </summary>
+        private void EnsureMissionEntryAnchor()
+        {
+            if (_missionEntry != null)
+                return;
+
+            GeneratedRoomInstance entrance = _generatedHouse?.Entrance;
+            if (entrance?.Root == null)
+            {
+                CIYCLog.Error("[CIYC][Portal][Handoff] The generated house has no entrance room, " +
+                              "so there is nowhere for a portal to open onto. The crossing will " +
+                              "refuse rather than drop the player next to the van, where there " +
+                              "is no floor at all.");
+                return;
+            }
+
+            Vector3 root = entrance.Root.transform.position;
+
+            // Physics is only synced at the fixed step, and this runs right after the house was
+            // built - so ask, or the ray is cast against a world the physics scene has not seen.
+            Physics.SyncTransforms();
+
+            if (!Physics.Raycast(root + Vector3.up * 3f, Vector3.down, out RaycastHit floor, 8f,
+                                 ~0, QueryTriggerInteraction.Ignore))
+            {
+                CIYCLog.Error("[CIYC][Portal][Handoff] Nothing solid under the entrance room at " +
+                              root.ToString("F2") + ", so no mission entry anchor was built. The " +
+                              "house generated but its floor has no collision - a player put " +
+                              "there would fall through it.");
+                return;
+            }
+
+            var go = new GameObject("MissionEntryAnchor");
+            go.transform.SetParent(_generatedHouse.Root != null ? _generatedHouse.Root : transform,
+                                   false);
+            go.transform.position = floor.point;
+
+            // Facing into the room, so the player walks in forwards rather than into a wall.
+            go.transform.rotation = entrance.Root.transform.rotation;
+            _missionEntry = go.transform;
+
+            CIYCLog.Info("[CIYC][Portal][Handoff] mission entry anchor at " +
+                         floor.point.ToString("F2") + " on '" + floor.collider.name +
+                         "' in room '" + entrance.Root.name + "'.");
         }
 
         /// <summary>
