@@ -1033,7 +1033,7 @@ namespace CatchIfYouCan.EditorTools
                 var op = st.Opening;
                 if (op.Found)
                 {
-                    if (op.Kind == "TUER") doors++; else windows++;
+                    if (op.Kind == "FENSTER") windows++; else doors++;
                     sb.AppendLine(string.Format("  {0,-14} {1,-16} {2,-9} {3,-9} {4}",
                         op.Kind, Round(op.Width) + " x " + Round(op.Height),
                         Round(op.BottomV), Round(op.Lintel),
@@ -1635,7 +1635,7 @@ namespace CatchIfYouCan.EditorTools
             if (IsWallCandidate(size, out _, out _, out _))
             {
                 if (opening != null && opening.Found)
-                    return opening.Kind == "TUER" ? Role.WALL_WITH_DOOR : Role.WALL_WITH_WINDOW;
+                    return opening.Kind == "FENSTER" ? Role.WALL_WITH_WINDOW : Role.WALL_WITH_DOOR;
                 return Role.WALL;
             }
 
@@ -1707,23 +1707,44 @@ namespace CatchIfYouCan.EditorTools
                 if (mesh == null)
                     continue;
 
+                // What FILLS an opening is not what CLOSES it. A glazed window has no empty
+                // rectangle at all - the glass occupies it - and a wall whose door leaf is
+                // modelled in place has none either. Both were reported as "no opening", which
+                // is the opposite of the truth: those are precisely the walls that have one.
+                // So glass and leaves are left out of the occupancy grid and the hole appears.
+                var renderer = filters[f].GetComponent<Renderer>();
+                var mats = renderer != null ? renderer.sharedMaterials : null;
+                string childName = filters[f].name.ToLowerInvariant();
+                bool isLeaf = childName.Contains("door") || childName.Contains("okno") ||
+                              childName.Contains("window");
+
                 var m = filters[f].transform.localToWorldMatrix;
                 var verts = mesh.vertices;
-                var tris = mesh.triangles;
-                if (verts == null || tris == null)
+                if (verts == null)
                     continue;
 
-                for (int t = 0; t + 2 < tris.Length; t += 3)
+                for (int sub = 0; sub < mesh.subMeshCount; sub++)
                 {
-                    var a = m.MultiplyPoint3x4(verts[tris[t]]);
-                    var b = m.MultiplyPoint3x4(verts[tris[t + 1]]);
-                    var c = m.MultiplyPoint3x4(verts[tris[t + 2]]);
+                    var mat = mats != null && sub < mats.Length ? mats[sub] : null;
+                    if (isLeaf || IsFillMaterial(mat))
+                        continue;
 
-                    var p0 = new Vector2((a[uAxis] - min[uAxis]) / uSize, (a[vAxis] - min[vAxis]) / vSize);
-                    var p1 = new Vector2((b[uAxis] - min[uAxis]) / uSize, (b[vAxis] - min[vAxis]) / vSize);
-                    var p2 = new Vector2((c[uAxis] - min[uAxis]) / uSize, (c[vAxis] - min[vAxis]) / vSize);
+                    var tris = mesh.GetTriangles(sub);
+                    if (tris == null)
+                        continue;
 
-                    RasteriseTriangle(solid, cols, rows, p0, p1, p2);
+                    for (int t = 0; t + 2 < tris.Length; t += 3)
+                    {
+                        var a = m.MultiplyPoint3x4(verts[tris[t]]);
+                        var b = m.MultiplyPoint3x4(verts[tris[t + 1]]);
+                        var c = m.MultiplyPoint3x4(verts[tris[t + 2]]);
+
+                        var p0 = new Vector2((a[uAxis] - min[uAxis]) / uSize, (a[vAxis] - min[vAxis]) / vSize);
+                        var p1 = new Vector2((b[uAxis] - min[uAxis]) / uSize, (b[vAxis] - min[vAxis]) / vSize);
+                        var p2 = new Vector2((c[uAxis] - min[uAxis]) / uSize, (c[vAxis] - min[vAxis]) / vSize);
+
+                        RasteriseTriangle(solid, cols, rows, p0, p1, p2);
+                    }
                 }
             }
 
@@ -1764,9 +1785,13 @@ namespace CatchIfYouCan.EditorTools
             bool door = bottom < 0.20f;
             if (door)
             {
-                if (w < 0.6f || w > 2.5f || h < 1.6f || h > 3.2f)
+                // A doorway and an archway are the same thing at different sizes, and this pack
+                // has both: prefab 2 measures 2.95 x 3.05 and its material is called "arch big",
+                // prefab 3 measures 1.55 x 3.25 and its is "arch small". Rejecting those as
+                // implausible doors threw away the only opening walls in the kit.
+                if (w < 0.6f || w > 3.6f || h < 1.6f || h > 3.8f)
                 {
-                    result.Reject = "Tuermass unplausibel " + Round(w) + " x " + Round(h);
+                    result.Reject = "Durchgangsmass unplausibel " + Round(w) + " x " + Round(h);
                     return result;
                 }
             }
@@ -1793,8 +1818,28 @@ namespace CatchIfYouCan.EditorTools
             result.BottomV = bottom;
             result.CentreU = left + w * 0.5f;
             result.Lintel = lintel;
-            result.Kind = door ? "TUER" : "FENSTER";
+            result.Kind = door ? (w > 2.0f || h > 2.8f ? "BOGEN" : "TUER") : "FENSTER";
             return result;
+        }
+
+        /// <summary>
+        /// Whether this material FILLS an opening rather than closing it: glass, and anything
+        /// else the pack renders transparent. Judged from the material, not from its name -
+        /// "Steklo" is only glass if you happen to read Russian.
+        /// </summary>
+        private static bool IsFillMaterial(Material mat)
+        {
+            if (mat == null)
+                return false;
+
+            if (mat.renderQueue >= 2450)
+                return true;
+            if (mat.HasProperty("_Surface") && mat.GetFloat("_Surface") > 0.5f)
+                return true;
+            if (mat.HasProperty("_AlphaClip") && mat.GetFloat("_AlphaClip") > 0.5f)
+                return true;
+
+            return false;
         }
 
         private static void RasteriseTriangle(bool[] grid, int cols, int rows,
