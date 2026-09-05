@@ -1117,7 +1117,15 @@ fi
 
 # The view is bound to the PREPARED world's arrival point - the same InvestigationBootstrap
 # that EnterAsync activates - so what the player looks at is what they walk into.
-if code "$ENV/LobbyPortal.cs" | grep -qE 'SetDestination\(_pendingWorld\.ArrivalPoint\)'; then
+#
+# Bound THROUGH ResolveViewAnchor, which raises the anchor to the portal's own height: the
+# arrival point is where a pair of feet goes and the portal's reference is the surface centre,
+# and pairing those two directly put the portal camera 1.2 m too low, which reads as the far
+# room's floor being too high. The anchor is a CHILD of the arrival point, which is what keeps
+# it the prepared world's and not some other one's - so both halves are checked.
+if code "$ENV/LobbyPortal.cs" \
+     | grep -qE 'SetDestination\(ResolveViewAnchor\(_pendingWorld\.ArrivalPoint\)\)|anchor = ResolveViewAnchor\(_pendingWorld\.ArrivalPoint\)' &&
+   code "$ENV/LobbyPortal.cs" | grep -qE '_viewAnchor\.SetParent\(arrival, *false\)'; then
   ok "the portal is aimed at the prepared world the player will enter"
 else
   bad "the portal is aimed at the prepared world the player will enter" \
@@ -1432,6 +1440,111 @@ if [ -f "$ADAPTER" ] && code "$ADAPTER" | grep -qE 'if \(spark != null\)'; then
 else
   bad "a pack with no spark image leaves the generated dot alone" \
       "clearing sparkTexture swaps a soft dot for an opaque square"
+fi
+
+# ---- V10: the numbers have to be reachable ---------------------------------------------------
+#
+# Every tunable was unreachable in both directions. Before play there is no portal at all - the
+# surface is built at runtime - and during play, editing the style did nothing, because the
+# values are pushed exactly once when the surface is built. The only field that appeared to
+# work was the material's on PortalSurface, and editing a material is editing the copy: the
+# next PushStyle overwrites it. An artistic control you cannot turn while looking at the thing
+# is not a control.
+if code "$ENV/LobbyPortal.cs" | grep -qE 'private void OnValidate\(\)' &&
+   code "$ENV/LobbyPortal.cs" | sed -n '/private void OnValidate/,/^        }$/p' \
+     | grep -qE 'surface\.ApplyStyle\(style\)'; then
+  ok "the portal style can be edited while the game runs"
+else
+  bad "the portal style can be edited while the game runs" \
+      "without OnValidate the style is pushed once at build and never again"
+fi
+
+# ...and the size specifically, which needs geometry re-derived rather than a property written.
+if code "$SURF" | grep -qE 'public void Rebuild\(\)' &&
+   code "$SURF" | sed -n '/public void SetOpening/,/^        }$/p' | grep -qE 'Rebuild\(\);'; then
+  ok "the opening can be resized after it is built"
+else
+  bad "the opening can be resized after it is built" \
+      "SetOpening used to refuse and log, which made the width un-tunable"
+fi
+
+# The mesh, the captured plane and the culling bounds are one set. A mesh resized without its
+# bounds culls itself at the old size; a plane left behind puts the crossing test somewhere the
+# player cannot see.
+REBUILD="$(code "$SURF" | sed -n '/public void Rebuild()/,/^        }$/p')"
+MISSING=""
+printf '%s' "$REBUILD" | grep -qE 'mesh\.RecalculateBounds\(\)' || MISSING="$MISSING mesh-bounds"
+printf '%s' "$REBUILD" | grep -qE '_planePoint = _surface\.position' || MISSING="$MISSING plane"
+printf '%s' "$REBUILD" | grep -qE '_openingBounds = _surfaceRenderer\.bounds' || MISSING="$MISSING cull-bounds"
+if [ -z "$MISSING" ]; then
+  ok "a resize re-derives the mesh, the plane and the bounds together"
+else
+  bad "a resize re-derives the mesh, the plane and the bounds together" "missing:$MISSING"
+fi
+
+# ---- V10: the drawn quad is bigger than the hole ---------------------------------------------
+#
+# The glow was cut off in a straight line across the top, because the quad WAS the opening and
+# the outer spill reaches about 1.65x the oval's radius. The margin is what gives it somewhere
+# to go, and the same margin has to divide _Fit or the hole comes out the wrong size.
+if code "$STYLE" | grep -qE 'public Vector2 QuadSize\(\)' &&
+   code "$STYLE" | grep -qE 'public Vector2 ResolveFit\(\)' &&
+   code "$SURF" | grep -qE '_style\.QuadSize\(\)' &&
+   code "$SURF" | grep -qE '_style\.ResolveFit\(\)'; then
+  ok "the drawn quad is larger than the opening, and _Fit divides by the same margin"
+else
+  bad "the drawn quad is larger than the opening, and _Fit divides by the same margin" \
+      "a quad sized by one formula and a _Fit by another is a breach that misses its geometry"
+fi
+
+# The margin must actually be enough. Computed rather than asserted: rim 1.6x plus half the
+# tear plus the noise wobble, times _Fit, has to stay inside the quad.
+FITS="$(python3 - "$ROOT" <<'PYEOF'
+import re, sys, pathlib
+style = pathlib.Path(sys.argv[1], "Assets/CatchIfYouCan/Scripts/Art/PortalStyle.cs").read_text()
+def num(pattern, default):
+    m = re.search(pattern, style)
+    return float(m.group(1)) if m else default
+margin = num(r'public float glowMargin = ([\d.]+)f', 0.0)
+tear   = num(r'public float tearAmount = ([\d.]+)f', 0.0)
+rim    = num(r'public float rimWidth = ([\d.]+)f', 0.26)
+noise  = num(r'public float noiseStrength = ([\d.]+)f', 0.16)
+half   = re.search(r'breachHalfSize = new Vector2\(([\d.]+)f, *([\d.]+)f\)', style)
+trim   = max(float(half.group(1)), float(half.group(2))) if half else 1.0
+fit    = min(trim, 1.0) / (1.0 + margin)
+worst  = (1.0 + rim * 1.6) + tear * 0.5 + noise * 0.8
+print("%.3f" % (worst * fit))
+PYEOF
+)"
+if [ -n "$FITS" ] && awk "BEGIN{exit !($FITS < 1.0)}"; then
+  ok "the glow fits inside the quad it is drawn on (reaches $FITS of the edge)"
+else
+  bad "the glow fits inside the quad it is drawn on" \
+      "reaches $FITS of the quad edge; over 1.0 is the flat-topped portal"
+fi
+
+# ---- V10: one value must not mean two things -------------------------------------------------
+#
+# ArrivalPoint is the van's player spawn and sits on the FLOOR, because that is where feet go.
+# The portal's own reference is the surface CENTRE, half the opening's height up the wall.
+# Pairing them directly stood the portal camera 1.2 m too low in the far world, and a camera
+# that low makes the far floor ride up into the opening - reported, reasonably, as "the room
+# behind the portal is too high". CLAUDE.md mistake 13, in geometry.
+VA="$(code "$ENV/LobbyPortal.cs" | sed -n '/private Transform ResolveViewAnchor/,/^        }$/p')"
+if printf '%s' "$VA" | grep -qE 'style\.openingSize\.y \* 0\.5f' &&
+   printf '%s' "$VA" | grep -qE '_viewAnchor\.SetParent\(arrival, *false\)'; then
+  ok "the view anchor is raised to the portal's own height"
+else
+  bad "the view anchor is raised to the portal's own height" \
+      "the arrival point is where feet land, not where the far camera stands"
+fi
+
+# The arrival point itself must NOT be moved: the player's feet still belong on the floor.
+if printf '%s' "$VA" | grep -qE '^\s*arrival\.(position|localPosition|Translate)'; then
+  bad "the arrival point itself is left alone" \
+      "moving it up would spawn the player inside the ceiling of the far room"
+else
+  ok "the arrival point itself is left alone"
 fi
 
 echo

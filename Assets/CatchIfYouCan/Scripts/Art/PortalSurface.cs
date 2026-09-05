@@ -136,16 +136,66 @@ namespace CatchIfYouCan.Art
         /// </summary>
         public void SetOpening(Vector2 size, Vector3 localPosition)
         {
-            if (_built)
-            {
-                Debug.LogWarning("[CIYC][Portal] SetOpening after the surface was built is " +
-                                 "ignored - the mesh and its bounds are already derived from " +
-                                 "the old size. Size the opening before the object is enabled.");
-                return;
-            }
-
             openingSize = new Vector2(Mathf.Max(0.01f, size.x), Mathf.Max(0.01f, size.y));
             surfaceLocalPosition = localPosition;
+
+            // Already built means the mesh, the captured plane and the culling bounds were all
+            // derived from the OLD size, so they have to be derived again. This used to refuse
+            // and log instead, which made the opening size un-tunable: the only way to see a
+            // different width was to edit the default and restart, and an artistic control you
+            // cannot turn while looking at the thing is not a control.
+            if (_built)
+                Rebuild();
+        }
+
+        /// <summary>
+        /// Re-derives the mesh, the plane and the bounds from the current size and style.
+        ///
+        /// <para>
+        /// Everything the portal does geometrically comes from these three, and they must be
+        /// recomputed TOGETHER - a mesh resized without its bounds is a portal that culls itself
+        /// at the old size, and a plane left behind is an opening whose crossing test is
+        /// somewhere the player cannot see.
+        /// </para>
+        ///
+        /// <para>
+        /// An authoring action, not a per-frame one. Nothing in LateUpdate reaches this: the
+        /// captured plane still cannot follow the player, it can only be re-authored.
+        /// </para>
+        /// </summary>
+        public void Rebuild()
+        {
+            if (!_built || _surface == null)
+                return;
+
+            _surface.localPosition = surfaceLocalPosition;
+
+            Vector2 quad = _style.QuadSize();
+            float hx = quad.x * 0.5f;
+            float hy = quad.y * 0.5f;
+
+            var filter = _surface.GetComponent<MeshFilter>();
+            if (filter != null && filter.sharedMesh != null)
+            {
+                Mesh mesh = filter.sharedMesh;
+                mesh.vertices = new[]
+                {
+                    new Vector3(-hx, -hy, 0f), new Vector3(hx, -hy, 0f),
+                    new Vector3(-hx,  hy, 0f), new Vector3(hx,  hy, 0f)
+                };
+                mesh.RecalculateBounds();
+            }
+
+            _planePoint = _surface.position;
+            _planeNormal = _surface.forward;
+
+            if (_surfaceRenderer != null)
+            {
+                _openingBounds = _surfaceRenderer.bounds;
+                _openingBounds.Expand(0.05f);
+            }
+
+            PushStyle();
         }
 
         /// <summary>
@@ -280,8 +330,7 @@ namespace CatchIfYouCan.Art
 
             // The breach and the noise both need to know the shape of the quad they are drawn
             // on. Derived here rather than authored twice: the surface already knows its size.
-            Vector2 fit = new Vector2(Mathf.Clamp(_style.breachHalfSize.x, 0.05f, 1f),
-                                      Mathf.Clamp(_style.breachHalfSize.y, 0.05f, 1f));
+            Vector2 fit = _style.ResolveFit();
             _material.SetVector("_Fit", new Vector4(fit.x, fit.y, 0f, 0f));
             SetFloat("_Aspect", openingSize.y > 0.001f ? openingSize.x / openingSize.y : 1f);
 
@@ -427,8 +476,13 @@ namespace CatchIfYouCan.Art
             _surface.localPosition = surfaceLocalPosition;
             _surface.localRotation = Quaternion.identity;
 
-            float hx = openingSize.x * 0.5f;
-            float hy = openingSize.y * 0.5f;
+            // The QUAD, not the opening: the drawn surface is deliberately larger so the
+            // ragged edge and the outer glow have somewhere to go. Cut this to the opening and
+            // the glow ends in a straight line at the mesh boundary, which is a portal with a
+            // flat top.
+            Vector2 quad = _style.QuadSize();
+            float hx = quad.x * 0.5f;
+            float hy = quad.y * 0.5f;
 
             // Four vertices written out rather than a Quad primitive: a Quad faces its own way
             // and carries its own UVs, and both matter here.

@@ -104,6 +104,9 @@ namespace CatchIfYouCan.Environment
                  "and the render budget can all be tuned without opening a script.")]
         [SerializeField] private PortalStyle style = new PortalStyle();
 
+        /// <summary>The raised counterpart of the arrival point. See ResolveViewAnchor.</summary>
+        private Transform _viewAnchor;
+
         [Header("Threshold")]
         [Tooltip("The volume that counts as walking through. Sits in the opening, not past it.")]
         [SerializeField] private Vector3 entryTriggerSize = new Vector3(1.2f, 2.4f, 0.8f);
@@ -239,6 +242,87 @@ namespace CatchIfYouCan.Environment
             surface.ApplyStyle(style);
 
             surface.gameObject.SetActive(false);
+        }
+
+#if UNITY_EDITOR
+        /// <summary>
+        /// Makes the style editable while the game is running.
+        ///
+        /// <para>
+        /// Without this the numbers were unreachable in both directions. Before play there is no
+        /// portal - the surface is built at runtime - and during play editing the style did
+        /// nothing, because the values are pushed exactly once when the surface is built. The
+        /// only field that appeared to work was the material's, on PortalSurface, and editing a
+        /// material is editing the copy: PushStyle overwrites it on the next build.
+        /// </para>
+        ///
+        /// <para>
+        /// Editor-only, and it runs on an inspector edit rather than every frame - resizing
+        /// re-derives the mesh, the plane and the culling bounds, which is not a thing to do
+        /// sixty times a second.
+        /// </para>
+        /// </summary>
+        private void OnValidate()
+        {
+            if (!Application.isPlaying || surface == null || !surface.IsBuilt)
+                return;
+
+            // Order matters: the surface needs the new style before it re-derives geometry from
+            // it, and SetOpening rebuilds only when the size actually moved.
+            surface.ApplyStyle(style);
+            surface.SetOpening(style.openingSize,
+                               new Vector3(0f, style.openingSize.y * 0.5f, 0f));
+
+            if (_effects != null)
+                _effects.ApplyStyle(style);
+
+            // The far anchor is derived from the opening height, so a taller opening moves it.
+            if (_pendingWorld != null && _pendingWorld.ArrivalPoint != null)
+                surface.SetDestination(ResolveViewAnchor(_pendingWorld.ArrivalPoint));
+        }
+#endif
+
+        /// <summary>
+        /// The transform the portal's view is anchored to, which is NOT where the player lands.
+        ///
+        /// <para>
+        /// <b>One value was being asked to mean two things</b>, which is CLAUDE.md mistake 13.
+        /// <c>ArrivalPoint</c> is the van's player spawn - it sits on the FLOOR, because that is
+        /// where a pair of feet goes. The portal's own reference is the surface CENTRE, half the
+        /// opening's height up the wall. Feeding the floor-level point straight into
+        /// <see cref="PortalSurface.SetDestination"/> pairs a transform 1.2 m up with one at
+        /// zero, so the portal camera stood 1.2 m too low in the far world and the far floor
+        /// rode up into the opening - which reads as "the room behind the portal is too high",
+        /// and is really the camera being too low.
+        /// </para>
+        ///
+        /// <para>
+        /// Raised along the arrival point's OWN up axis, and parented to it, so the anchor
+        /// follows if the world is ever moved. The arrival point itself is untouched: the
+        /// player's feet still land on the floor.
+        /// </para>
+        /// </summary>
+        private Transform ResolveViewAnchor(Transform arrival)
+        {
+            if (arrival == null)
+                return null;
+
+            if (_viewAnchor == null || _viewAnchor.parent != arrival)
+            {
+                if (_viewAnchor != null)
+                    Destroy(_viewAnchor.gameObject);
+
+                var go = new GameObject("Portal_ViewAnchor");
+                _viewAnchor = go.transform;
+                _viewAnchor.SetParent(arrival, false);
+                _viewAnchor.localRotation = Quaternion.identity;
+            }
+
+            // The same offset the surface uses on this side, so the two transforms of the pair
+            // sit at the same height above their own floors. Read from the style rather than
+            // stored, so re-tuning the opening height cannot leave the anchor behind.
+            _viewAnchor.localPosition = new Vector3(0f, style.openingSize.y * 0.5f, 0f);
+            return _viewAnchor;
         }
 
         /// <summary>
@@ -411,10 +495,12 @@ namespace CatchIfYouCan.Environment
 
                 if (!bound && _pendingWorld != null && _pendingWorld.ArrivalPoint != null)
                 {
+                    Transform anchor = ResolveViewAnchor(_pendingWorld.ArrivalPoint);
                     CIYCLog.Info(LogTag + "preview camera bound to " +
                                  _pendingWorld.ArrivalPoint.name + " at " +
-                                 _pendingWorld.ArrivalPoint.position.ToString("F1"));
-                    surface.SetDestination(_pendingWorld.ArrivalPoint);
+                                 _pendingWorld.ArrivalPoint.position.ToString("F1") +
+                                 ", view anchor raised to " + anchor.position.ToString("F1"));
+                    surface.SetDestination(anchor);
                     bound = true;
 
                     // The probe was standing in; the real world takes the opening from here and

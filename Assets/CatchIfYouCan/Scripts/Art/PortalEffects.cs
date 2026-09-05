@@ -74,6 +74,40 @@ namespace CatchIfYouCan.Art
         }
 
         /// <summary>
+        /// Re-reads the style after it has been edited.
+        ///
+        /// <para>
+        /// Rates, sizes and the light are all derived from the style rather than stored, so
+        /// re-driving the intensity is enough to pick up most of a change. The light's colour
+        /// and the particle gradients are not, so they are rewritten here.
+        /// </para>
+        ///
+        /// <para>
+        /// Deliberately does NOT rebuild the systems. A tuning change must not destroy and
+        /// recreate three ParticleSystems while the portal is open - the sparks already in the
+        /// air would vanish, which is a visible pop for a colour edit.
+        /// </para>
+        /// </summary>
+        public void ApplyStyle(PortalStyle value)
+        {
+            if (value == null)
+                return;
+
+            _style = value;
+            _particleScale = value.ResolveParticleScale();
+
+            if (_light != null)
+            {
+                _light.color = value.ResolveLightColor();
+                _lightBase = value.lightIntensity;
+                _light.range = value.lightRange;
+            }
+
+            ColourSystems();
+            SetIntensity(_intensity);
+        }
+
+        /// <summary>
         /// How far open the portal is, 0 to 1. Drives emission and the light together, so the
         /// effects arrive with the opening rather than being switched on beside it.
         /// </summary>
@@ -474,6 +508,36 @@ namespace CatchIfYouCan.Art
             _sparkSprite.SetPixels(pixels);
             _sparkSprite.Apply();
             return _sparkSprite;
+        }
+
+        /// <summary>
+        /// Re-applies the three systems' colours from the style.
+        ///
+        /// <para>
+        /// The pairs are the ones the builders use, and they have to stay the same pairs: the
+        /// sparks and the streaks are born spark-coloured and die energy-coloured, the wisps the
+        /// other way round. Two lists that are supposed to agree is a thing that drifts, so if
+        /// a builder's colours change these must change with them.
+        /// </para>
+        /// </summary>
+        private void ColourSystems()
+        {
+            Recolour(_sparks, Scaled(_style.sparkColor, _style.sparkIntensity),
+                     _style.sparkColor, _style.energyColor);
+            Recolour(_streaks, Scaled(_style.sparkColor, _style.streakIntensity),
+                     _style.sparkColor, _style.energyColor);
+            Recolour(_wisps, Scaled(_style.energyColor, 0.85f),
+                     _style.energyColor, _style.outerColor);
+        }
+
+        private void Recolour(ParticleSystem ps, Color start, Color birth, Color death)
+        {
+            if (ps == null)
+                return;
+
+            ParticleSystem.MainModule main = ps.main;
+            main.startColor = start;
+            FadeOverLifetime(ps, birth, death);
         }
 
         /// <summary>

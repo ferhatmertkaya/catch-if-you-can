@@ -32,11 +32,49 @@ namespace CatchIfYouCan.Art
                  "correct: the aperture should be the hole you can see.")]
         public Vector2 openingSize = new Vector2(1.7f, 2.4f);
 
-        [Tooltip("Semi-axes of the torn oval, as a fraction of the quad. Below 1 on purpose: " +
-                 "the space left over is where the ragged edge and the outer energy spill, and " +
-                 "an oval needs more of it than the rectangle did because its widest point sits " +
-                 "further from the corners.")]
-        public Vector2 breachHalfSize = new Vector2(0.72f, 0.82f);
+        [Tooltip("Trim on the oval, as a fraction of the opening. 1 means the tear fills the " +
+                 "opening exactly, which is what you usually want - the room for the glow comes " +
+                 "from Glow Margin below, not from shrinking the hole.")]
+        public Vector2 breachHalfSize = new Vector2(1f, 1f);
+
+        [Tooltip("How much BIGGER than the opening the drawn quad is, as a fraction. This is " +
+                 "pure canvas: the hole stays the size Opening Size says, and the extra area is " +
+                 "where the ragged edge and the outer glow live. Too little and the glow is cut " +
+                 "off square at the quad's edge - which is what a flat-topped portal is.")]
+        [Range(0f, 1.5f)] public float glowMargin = 0.7f;
+
+        /// <summary>
+        /// The quad to draw, in metres: the opening plus the margin the glow needs.
+        ///
+        /// <para>
+        /// Derived in one place because three things have to agree about it - the mesh, the
+        /// culling bounds, and the shader's <c>_Fit</c> - and a quad sized by one formula while
+        /// _Fit is computed by another is a breach that does not sit where the geometry thinks
+        /// it does.
+        /// </para>
+        /// </summary>
+        public Vector2 QuadSize()
+        {
+            float scale = 1f + Mathf.Max(0f, glowMargin);
+            return new Vector2(Mathf.Max(0.01f, openingSize.x) * scale,
+                               Mathf.Max(0.01f, openingSize.y) * scale);
+        }
+
+        /// <summary>
+        /// The shader's <c>_Fit</c>: the oval's semi-axes in the QUAD's normalised space.
+        ///
+        /// <para>
+        /// The oval is authored against the opening and drawn on the larger quad, so the trim
+        /// has to be divided by the margin. Get this wrong and the hole is the right shape at
+        /// the wrong size, which looks like a tuning problem and is an arithmetic one.
+        /// </para>
+        /// </summary>
+        public Vector2 ResolveFit()
+        {
+            float scale = 1f + Mathf.Max(0f, glowMargin);
+            return new Vector2(Mathf.Clamp(breachHalfSize.x, 0.05f, 1f) / scale,
+                               Mathf.Clamp(breachHalfSize.y, 0.05f, 1f) / scale);
+        }
 
         [Tooltip("How far the oval's edge is chewed away from a clean curve. Zero is a neat " +
                  "porthole; higher is a hole something came through.")]
