@@ -33,8 +33,11 @@ So the pack lends the portal its **look**. It cannot lend it its **shape**.
 
 ## 2. What "the shape" means, and why it is not negotiable
 
-`Shaders/Portal.shader` derives the opening from a signed box distance field whose edge is
-chewed away by two layers of noise, gated so that a closed portal draws no lit pixel at all.
+`Shaders/Portal.shader` derives the opening from a normalised radial field - exactly 1.0 on the
+boundary - whose edge is chewed away by two layers of noise, gated so that a closed portal draws
+no lit pixel at all. The shape is the owner's call and has changed once already (a torn rectangle
+became a torn oval); what does not change is that it comes from one signed field, so the rim, the
+view and the outer spill all stay derivable from a single number.
 Those terms are what make the effect a hole in a wall rather than a picture of one, and
 `check_ui_and_portal.sh` enforces each of them.
 
@@ -47,8 +50,8 @@ energy = lerp(energy, energy * art * 2.0, _TexInfluence);
 hot    = saturate(lerp(hot, hot * mask, _TexInfluence));
 ```
 
-A guard fails the build if that block ever assigns `box`, `fit`, `gate`, `alpha`, `open`,
-`ragged`, `rd` or `r`. At `_TexInfluence = 0` the portal is the procedural one, pixel for pixel.
+A guard fails the build if that block ever assigns `box`, `oval`, `fit`, `gate`, `alpha`,
+`open`, `ragged`, `rd` or `r`. At `_TexInfluence = 0` the portal is the procedural one, pixel for pixel.
 
 ## 3. Cost when it is not used
 

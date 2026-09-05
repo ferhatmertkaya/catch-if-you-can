@@ -454,14 +454,21 @@ for f in "$SHADER" "$MAT" "$FX" "$STYLE"; do
   [ -f "$f" ] || bad "$(basename "$f") exists" "the portal cannot be built without it"
 done
 
-# The silhouette is a TORN RECTANGLE: a signed box distance field with its edge chewed away by
-# noise. The old naked min(uv, 1-uv) is still forbidden - that was a clean rectangle with no
-# signed field and no tear, which is a glowing picture frame rather than a hole in a wall.
-if grep -qE 'length\(max\(q, *0\.0\)\) *\+ *min\(max\(q\.x, *q\.y\), *0\.0\)' "$SHADER"; then
-  ok "the breach is a signed box distance field"
+# The silhouette is a TORN OVAL: a normalised radial field, exactly 1.0 on the boundary, with
+# its edge chewed away by noise.
+#
+# This check used to demand a signed BOX field and reject an ellipse by name. That was the right
+# rule against the bug of its day - a glowing rectangular frame - but it had hardened one
+# particular answer into the contract, and the shape is the owner's call, not the guard's. What
+# is actually invariant is that the breach comes from a signed field whose edge noise can move,
+# so the three masks below it stay derivable from one number; the naked rectangle stays forbidden
+# on its own line below.
+if grep -qE 'float2 e = c / fit;' "$SHADER" && grep -qE 'float oval = length\(e\);' "$SHADER"; then
+  ok "the breach is a normalised radial field"
 else
-  bad "the breach is a signed box distance field" \
-      "a torn wall needs a signed rectangle, not an axis minimum and not an ellipse"
+  bad "the breach is a normalised radial field" \
+      "the rim, the view and the spill all compare against 1.0 and need a field that is 1.0 " \
+      "on the boundary"
 fi
 
 if grep -qE 'min\(IN\.uv, *1\.0 *- *IN\.uv\)' "$SHADER"; then
@@ -1314,7 +1321,7 @@ SHADER="$ROOT/Assets/CatchIfYouCan/Shaders/Portal.shader"
 ART_BLOCK="$(sed -n '/#ifdef _PORTAL_TEXTURED/,/#endif/p' "$SHADER")"
 
 if [ -n "$ART_BLOCK" ]; then
-  if printf '%s' "$ART_BLOCK" | grep -qE '^\s*(float2? +)?(box|fit|gate|alpha|open|ragged|rd|r) *='; then
+  if printf '%s' "$ART_BLOCK" | grep -qE '^\s*(float2? +)?(box|oval|fit|gate|alpha|open|ragged|rd|r) *='; then
     bad "purchased artwork cannot move the breach" \
         "the artwork block assigns a silhouette term; a pack must change the look, not the hole"
   else

@@ -103,7 +103,7 @@ place that number lives; everything else derives it.
   outside the three investigation slots, a mission cannot be generated twice, finishing one
   returns to the lobby without replaying the cinematic, and the portal camera can never
   become the player's. It also holds the production portal to its architecture: the energy mask is a
-  torn rectangular breach built from a signed box field whose edge is chewed away by noise, a
+  torn oval breach built from a normalised radial field whose edge is chewed away by noise, a
   closed portal draws no lit pixel at all so the wall reads as whole, two independent noise
   layers drive it, every
   artistic control is a shader property that the material and the C# agree on, the portal camera

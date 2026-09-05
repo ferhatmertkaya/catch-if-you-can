@@ -29,13 +29,15 @@ namespace CatchIfYouCan.Art
                  "faces and 2.4 to the lintel.")]
         public Vector2 openingSize = new Vector2(1.06f, 2.4f);
 
-        [Tooltip("Half size of the torn breach, as a fraction of the quad. Below 1 on purpose: " +
-                 "the space left over is where the ragged edge and the outer energy spill.")]
-        public Vector2 breachHalfSize = new Vector2(0.78f, 0.90f);
+        [Tooltip("Semi-axes of the torn oval, as a fraction of the quad. Below 1 on purpose: " +
+                 "the space left over is where the ragged edge and the outer energy spill, and " +
+                 "an oval needs more of it than the rectangle did because its widest point sits " +
+                 "further from the corners.")]
+        public Vector2 breachHalfSize = new Vector2(0.72f, 0.82f);
 
-        [Tooltip("How far the wall's edge is chewed away from a clean rectangle. Zero is a neat " +
-                 "cut; higher is a hole something came through.")]
-        [Range(0f, 0.5f)] public float tearAmount = 0.16f;
+        [Tooltip("How far the oval's edge is chewed away from a clean curve. Zero is a neat " +
+                 "porthole; higher is a hole something came through.")]
+        [Range(0f, 0.5f)] public float tearAmount = 0.22f;
 
         [Tooltip("Size of the chunks the edge breaks into. Low is a few big pieces of plaster, " +
                  "high is fine crumbling.")]

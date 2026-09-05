@@ -14,12 +14,16 @@ Shader "CatchIfYouCan/Portal"
     // pose could not. A portal is a rigid motion: the basis stays right-handed, nothing is
     // flipped, and flipping here would put the far room's left on the player's right.
     //
-    // THE SILHOUETTE IS AN ELLIPSE, CUT HERE. The mesh is still a quad, because a quad is what
+    // THE SILHOUETTE IS A TORN OVAL. The mesh is still a quad, because a quad is what
     // screen-space sampling and a rectangular render texture want, but everything outside the
-    // oval ends at alpha zero. The previous version derived its rim from min(uv, 1-uv), which
-    // is a RECTANGLE - so the "portal" was a glowing box, and at full opacity the whole quad
-    // including its corners showed the far room. That is the single biggest reason this never
-    // looked like a portal.
+    // oval ends at alpha zero, which is what makes the quad's corners disappear. The rim is a
+    // normalised radial field with its edge chewed away by noise: an oval alone is a porthole,
+    // and the tear is what makes it a hole something came through.
+    //
+    // Two earlier versions are still forbidden by the guard. min(uv, 1-uv) is a RECTANGLE, so
+    // the "portal" was a glowing box whose corners showed the far room; the signed box field
+    // that replaced it tore correctly but was still rectangular, and a torn rectangle in a
+    // rectangular door frame reads as a lit panel rather than as a breach.
     Properties
     {
         _PortalTex      ("Portal View", 2D) = "black" {}
@@ -58,13 +62,13 @@ Shader "CatchIfYouCan/Portal"
         // width/height. Written by PortalSurface from the doorway it was sized to; leaving the
         // oval a little inside the quad is what gives the outer energy somewhere to live
         // without the glow being clipped by the door frame.
-        _Fit             ("Breach Half Size", Vector) = (0.78, 0.90, 0, 0)
+        _Fit             ("Breach Half Size", Vector) = (0.72, 0.82, 0, 0)
         _Aspect          ("Surface Aspect", Float) = 0.44
 
         // How far open the tear is, 0 to 1. At ZERO the breach has no size at all and this
         // shader draws nothing anywhere - the wall is whole. Everything else is unchanged by it.
         _Open            ("Tear Open", Range(0, 1)) = 1
-        _TearAmount      ("Tear Ragged", Range(0, 0.5)) = 0.16
+        _TearAmount      ("Tear Ragged", Range(0, 0.5)) = 0.22
         _TearScale       ("Tear Scale", Range(0.5, 24)) = 4.5
 
         // ---- purchased artwork ----------------------------------------------------------
@@ -206,22 +210,30 @@ Shader "CatchIfYouCan/Portal"
             {
                 float t = _Time.y;
 
-                // -1..1 across the quad. The breach is a RECTANGLE with a torn edge, not an
-                // oval and not a doorway: the fiction is that something came through the wall,
-                // so the opening is a hole punched in plaster with ragged sides.
+                // -1..1 across the quad. The breach is an OVAL with a torn edge, not a
+                // rectangle and not a doorway: the fiction is that something came through the
+                // wall, so the opening is a hole burned through it with ragged sides.
                 float2 c = (IN.uv - 0.5) * 2.0;
 
                 // The tear grows. Height opens first and width follows, which reads as a crack
                 // splitting and then being pulled apart rather than a shape fading up. At
-                // _Open = 0 the half size is zero, the box distance is positive everywhere, and
-                // every mask below is zero - the wall has no hole in it at all.
+                // _Open = 0 the half size is clamped to 1e-4, so the radial field is enormous
+                // everywhere and every mask below is zero - the wall has no hole in it at all.
+                // The gate below does not rely on that; it is belt and braces on purpose.
                 float open = saturate(_Open);
                 float2 grow = float2(smoothstep(0.18, 1.0, open), smoothstep(0.0, 0.62, open));
                 float2 fit = max(_Fit.xy * grow, 1e-4);
 
-                // Signed distance to that rectangle: negative inside, positive outside.
-                float2 q = abs(c) - fit;
-                float box = length(max(q, 0.0)) + min(max(q.x, q.y), 0.0);
+                // AN OVAL, torn. Normalised radial field: exactly 1.0 on the boundary, below
+                // it inside, above it outside - so every mask downstream still compares against
+                // 1.0 and none of them had to change.
+                //
+                // One divide and one length. A signed box field needed a length, a min and a
+                // max; a superellipse knob would need three pow() on every portal pixel of
+                // every frame, which is not a thing to spend on a phone for a shape that is
+                // already the shape that was asked for.
+                float2 e = c / fit;
+                float oval = length(e);
 
                 // Isotropic in metres, so the tear's chunks are the same size on a narrow wall
                 // as on a wide one rather than being stretched with the quad.
@@ -233,7 +245,9 @@ Shader "CatchIfYouCan/Portal"
                 float tearA = fbm2(iso * _TearScale + 13.7);
                 float tearB = fbm2(iso * _TearScale * 3.1 - 5.2);
                 float ragged = (tearA - 0.5) * 0.75 + (tearB - 0.5) * 0.25;
-                float r = 1.0 + box + ragged * _TearAmount * open;
+                // No 1.0 + here: the field is already normalised, so the tear is the
+                // only thing displacing the edge.
+                float r = oval + ragged * _TearAmount * open;
 
                 // Two layers that share nothing: different scale, different speed, opposite
                 // rotation. Identical frequencies are what make procedural energy read as a
