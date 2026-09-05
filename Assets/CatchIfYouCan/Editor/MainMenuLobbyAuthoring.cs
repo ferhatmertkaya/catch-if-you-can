@@ -229,11 +229,73 @@ namespace CatchIfYouCan.EditorTools
                                   : "  (eigene Wurzel - bleibt immer sichtbar)"));
             }
 
+            ReportRuntimeBuilt(sb, lobby);
+
             sb.AppendLine();
-            sb.AppendLine("Nichts an dieser Lobby wird zur Laufzeit gebaut. Sie steht komplett");
-            sb.AppendLine("in der Szenendatei; MainMenuModeController schaltet sie nur ein.");
+            sb.AppendLine("Die HUELLE dieser Lobby steht komplett in der Szenendatei;");
+            sb.AppendLine("MainMenuModeController schaltet sie nur ein. Die oben genannten");
+            sb.AppendLine("Halter sind die Ausnahme - deren Inhalt entsteht erst in Start().");
 
             Debug.Log(sb.ToString());
+        }
+
+        /// <summary>
+        /// The lobby children that have no geometry of their own.
+        ///
+        /// <para>
+        /// This is the half of "the lobby is not fully visible" that switching the room on
+        /// cannot fix. Four of its objects are empty holders with a script:
+        /// <c>Lobby_MirrorCorner</c>, <c>Lobby_Armchair</c>, <c>Lobby_AntiqueTable</c> and
+        /// <c>Lobby_InvestigationBoard</c> carry no MeshRenderer at all - <c>MirrorCorner</c>,
+        /// <c>RoomProp</c> and <c>LobbyInvestigationBoard</c> build their frames, glass, lamps
+        /// and surfaces in <c>Start()</c>. In Edit Mode there is nothing to show, because the
+        /// geometry does not exist yet; and running those builders here is exactly what must not
+        /// happen, since they also create a reflection camera and its RenderTexture.
+        /// </para>
+        /// <para>
+        /// So they are NAMED instead. A holder that is reported is one you can still place
+        /// things around: its transform is where the prop will appear.
+        /// </para>
+        /// </summary>
+        private static void ReportRuntimeBuilt(StringBuilder sb, GameObject lobby)
+        {
+            var holders = new List<Transform>();
+
+            foreach (Transform child in lobby.transform)
+            {
+                if (child.GetComponentInChildren<Renderer>(true) != null)
+                    continue;
+
+                if (child.GetComponent<Light>() != null || child.GetComponent<AudioSource>() != null)
+                    continue;
+
+                if (child.GetComponents<Component>().Length <= 1)
+                    continue;   // a plain marker, like the spawn point
+
+                holders.Add(child);
+            }
+
+            sb.AppendLine();
+            if (holders.Count == 0)
+            {
+                sb.AppendLine("Laufzeit-Halter: keine - jedes Kind hat eigene Geometrie.");
+                return;
+            }
+
+            sb.AppendLine("LAUFZEIT-HALTER (leer im Edit Mode, Inhalt entsteht in Start):");
+            for (int i = 0; i < holders.Count; i++)
+            {
+                sb.AppendLine("   " + holders[i].name + "  bei " +
+                              holders[i].position.ToString("F2") +
+                              "  - sichtbar erst in Play");
+            }
+
+            sb.AppendLine();
+            sb.AppendLine("Das ist KEIN Sichtbarkeitsproblem, das ein Schalter loesen koennte:");
+            sb.AppendLine("die Geometrie existiert im Edit Mode nicht. Sie hier zu bauen hiesse,");
+            sb.AppendLine("Laufzeitcode im Editor auszufuehren - beim Spiegel samt Kamera und");
+            sb.AppendLine("RenderTexture. Die Position der Halter steht oben, man kann also");
+            sb.AppendLine("darum herum bauen.");
         }
 
         private static void Report(StringBuilder sb, GameObject lobby, string name, string label)

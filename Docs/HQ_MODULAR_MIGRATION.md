@@ -526,3 +526,53 @@ pieces visible at all times and survive Play/Stop untouched.
 **Runtime-created, and correctly so:** the Player (`PlayerSpawner.Spawn`), the persistent
 services (`CiycServices`), the runtime UI canvas, the portal's RenderTexture and camera, and the
 horror events' transient state. None of those belong in a scene file.
+
+
+## Why "Lobby bearbeiten" showed only the shell
+
+Two different causes, and only one of them is about visibility.
+
+**The props were never hidden.** All ten prefab instances — grandfather clock, table, rotary
+phone, candle holder, four Victorian doors, the ghost, the corridor — are scene ROOTS with no
+`m_IsActive` override, so they use their prefab's default and are active. They are visible in
+Edit Mode before any switch is touched, and toggling `MainMenu_Lobby` never affected them either
+way.
+
+**Four lobby children have no geometry at all.** `Lobby_MirrorCorner`, `Lobby_Armchair`,
+`Lobby_AntiqueTable` and `Lobby_InvestigationBoard` carry a script and no MeshRenderer:
+`MirrorCorner.Start()` builds the frame, glass, lamp, bulb and fill light from primitives *and a
+reflection camera*; `RoomProp.Start()` instantiates its prefab; `LobbyInvestigationBoard.Start()`
+builds frame, surface and rails. None has `ExecuteAlways`.
+
+So in Edit Mode those four are empty transforms. No switch can reveal geometry that does not
+exist yet, and building it here would mean running gameplay `Start()` code in the editor —
+including allocating the mirror's camera and RenderTexture, which this task explicitly rules out.
+
+`Authored Lobby pruefen` therefore **names** them, with their world positions, so they can be
+built around. Turning them into authored scene objects is a real architecture change with a
+different owner, and is not something a visibility switch should do quietly.
+
+## May MainMenu_Lobby leave the scene root?
+
+Checked rather than assumed:
+
+- `MainMenuLobbyAuthoring.FindLobby` walks roots **and recurses** — it does not require root
+  placement. The `sceneSaving`, `sceneSaved` and `ExitingEditMode` paths all go through it.
+- `MainMenuModeController.interactiveRoomRoots` is a fileID reference and survives a reparent.
+- `SetRoomActive` calls `SetActive` on the GameObject, which a parent does not change.
+
+So it *works*. What changes is that the room's visibility would then also depend on `03_LOBBY`
+staying active — a new condition where there is currently none, bought for tidiness alone. The
+plan therefore offers the move as **CONDITIONAL and unticked**, with the recommendation to leave
+it at the root.
+
+## The four ambiguous roots
+
+| object | components | children | referenced by | verdict |
+|---|---|---|---|---|
+| `MAIN_MENU_ROOT` | Transform only | 0 | **nothing** | UNCLEAR — a leftover; delete rather than file |
+| `HallwayPlaceholders` | Transform only | 0 | **nothing** | UNCLEAR — same |
+| `MainMenu_Atmosphere` | `MainMenuAtmosphereController` | 0 | two horror-event scripts, **by component** | PROVEN — a system; `GameObject.Find` by name also survives, and folders are created active |
+| `CIYC_MainMenu_Corridor` | prefab instance (+ an added `Area Light`) | — | **nothing** | UNCLEAR — the cinematic set, not the walkable lobby, and no group is clearly right |
+
+`EventSystem` is a third empty leftover: a Transform and no EventSystem component.

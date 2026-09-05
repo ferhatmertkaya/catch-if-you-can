@@ -1030,11 +1030,35 @@ else:
         "a folder with a transform moves everything parented into it")
 
 # A plan first, and anything the audit could not clear stays unticked.
-if "m.Do = false;" in hier and "ROLLE UNKLAR" in (read("Assets/CatchIfYouCan/Editor/MainMenuHierarchyTool.cs") or ""):
-    ok("what the audit could not classify is offered unticked rather than moved")
+# A tick is a claim that the audit PROVED the move harmless, not a guess that it probably is.
+# The default is derived from the verdict rather than set per branch, so a new classification
+# cannot arrive pre-ticked by having forgotten to unset it.
+if "Do = safety == Safety.Proven," in hier:
+    ok("a ticked move is one the audit proved safe, and the default follows the verdict")
 else:
-    bad("what the audit could not classify is offered unticked rather than moved",
-        "safety beats a tidy hierarchy - an unclear object stays where it is")
+    bad("a ticked move is one the audit proved safe, and the default follows the verdict",
+        "safety beats a tidy hierarchy - conditional and unclear objects stay where they are")
+
+# Three verdicts, not two: "works, but only while something else holds" is a different answer
+# from "proven", and collapsing them loses the condition.
+# Scoped to the method that DECIDES. The enum declaration and the label switch also contain
+# these names, so a file-wide grep stays green with every verdict collapsed to Proven - which is
+# exactly the regression this checks for.
+classify = re.search(r"private static Move Classify\(Transform t\).*?\n        \}", hier, re.S)
+cbody2 = classify.group(0) if classify else ""
+
+if cbody2 and "Safety.Conditional" in cbody2 and "Safety.Unclear" in cbody2:
+    ok("the plan distinguishes proven from conditional from unclear")
+else:
+    bad("the plan distinguishes proven from conditional from unclear",
+        "a conditional move presented as safe hides the condition")
+
+# The lobby is the conditional one, and the reason names what it would newly depend on.
+if cbody2 and re.search(r'n == "MainMenu_Lobby"[\s\S]{0,200}Safety\.Conditional', cbody2):
+    ok("moving the lobby is offered as conditional, with its condition stated")
+else:
+    bad("moving the lobby is offered as conditional, with its condition stated",
+        "under a folder the room's visibility also depends on that folder staying active")
 
 # The scene is left dirty, not saved. Saving is the user's decision after looking.
 if "MarkSceneDirty" in hier and "SaveScene" not in hier:

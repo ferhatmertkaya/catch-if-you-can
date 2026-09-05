@@ -67,12 +67,29 @@ namespace CatchIfYouCan.EditorTools
 
         public const string HouseRoot = "05_HQ_MANUAL_HOUSE";
 
+        /// <summary>
+        /// How far the audit got with this object. A tick is a claim that reparenting it was
+        /// PROVEN harmless, not a guess that it probably is.
+        /// </summary>
+        private enum Safety
+        {
+            /// <summary>Every reference to it is by fileID, which a reparent does not touch.</summary>
+            Proven,
+
+            /// <summary>Safe only while something else holds - the condition is in the reason.</summary>
+            Conditional,
+
+            /// <summary>The audit could not settle its role. It stays where it is.</summary>
+            Unclear,
+        }
+
         private class Move
         {
             public Transform Target;
             public string Folder;
             public string Reason;
-            public bool Do = true;
+            public Safety Safety;
+            public bool Do;
             public bool Blocked;
         }
 
@@ -126,8 +143,9 @@ namespace CatchIfYouCan.EditorTools
                         move.Do = EditorGUILayout.Toggle(move.Do, GUILayout.Width(20f));
 
                     EditorGUILayout.LabelField(
-                        move.Target != null ? move.Target.name : "<weg>", GUILayout.Width(230f));
-                    EditorGUILayout.LabelField("-> " + move.Folder, GUILayout.Width(170f));
+                        move.Target != null ? move.Target.name : "<weg>", GUILayout.Width(210f));
+                    EditorGUILayout.LabelField("-> " + move.Folder, GUILayout.Width(160f));
+                    EditorGUILayout.LabelField(Word(move.Safety), GUILayout.Width(90f));
                     EditorGUILayout.LabelField(move.Reason, EditorStyles.miniLabel);
                 }
             }
@@ -157,6 +175,16 @@ namespace CatchIfYouCan.EditorTools
             return plan;
         }
 
+        private static string Word(Safety safety)
+        {
+            switch (safety)
+            {
+                case Safety.Proven: return "SICHER";
+                case Safety.Conditional: return "BEDINGT";
+                default: return "UNKLAR";
+            }
+        }
+
         private static bool IsFolder(string name)
         {
             for (int i = 0; i < Folders.Length; i++)
@@ -169,8 +197,17 @@ namespace CatchIfYouCan.EditorTools
         }
 
         /// <summary>
-        /// Where this root belongs, decided from what it CARRIES rather than from what it is
-        /// called. A name is a hint; a Camera component is a fact.
+        /// Where this root belongs, and whether the audit could PROVE that moving it is
+        /// harmless.
+        ///
+        /// <para>
+        /// The verdicts come from reading the scene rather than from the names. Every serialized
+        /// reference in 01_MainMenu is by fileID, which a reparent does not touch, so what
+        /// decides safety is the small set of things that are NOT fileID references: two
+        /// name-based <c>GameObject.Find</c> calls that reach into this scene, both of which
+        /// find only ACTIVE objects, and an object's own active state, which a parent can
+        /// override.
+        /// </para>
         /// </summary>
         private static Move Classify(Transform t)
         {
@@ -182,57 +219,78 @@ namespace CatchIfYouCan.EditorTools
             bool isPrefab = PrefabUtility.IsAnyPrefabInstanceRoot(go);
 
             if (go.GetComponent<Camera>() != null)
-                return New(t, "01_CAMERAS", "traegt eine Camera");
+                return New(t, "01_CAMERAS", Safety.Proven,
+                           "Camera; nur ueber fileID referenziert (ModeController, GhostCloser)");
 
+            // Door_Green_Fog is reached by GameObject.Find in MainMenuAtmosphereBuilder. That
+            // lookup does not care about the parent, but it does skip inactive objects - and the
+            // folders this tool creates are created active, so the lookup keeps working.
             if (n.StartsWith("Door_", System.StringComparison.Ordinal) ||
                 n.StartsWith("DoorFog", System.StringComparison.Ordinal))
-                return New(t, "04_PORTAL", "gehoert sichtbar zum gruenen Portal");
+                return New(t, "04_PORTAL", Safety.Proven,
+                           "Portal-Optik; nur Namenssuche, elternunabhaengig");
 
+            // Conditional, and left unticked. It works - MainMenuLobbyAuthoring walks the scene
+            // recursively rather than only the roots, and interactiveRoomRoots is a fileID
+            // reference - but the room's visibility would then also depend on 03_LOBBY staying
+            // active. It costs nothing to leave it at the root, and that removes the condition.
             if (n == "MainMenu_Lobby")
-                return New(t, "03_LOBBY", go.activeSelf
-                    ? "die begehbare Lobby, als ganzer Teilbaum"
-                    : "die begehbare Lobby - ACHTUNG: steht auf INAKTIV, das bleibt so");
+                return New(t, "03_LOBBY", Safety.Conditional,
+                           "funktioniert, ABER die Lobby haengt dann zusaetzlich an der " +
+                           "Aktivitaet von 03_LOBBY. Empfehlung: an der Wurzel lassen");
 
             if (n == "MainMenuBrandingCanvas" || go.GetComponent<Canvas>() != null)
-                return New(t, "08_UI", "Canvas");
+                return New(t, "08_UI", Safety.Proven,
+                           "Canvas; per fileID in cinematicUiRoots referenziert");
 
             if (n.Contains("Ghost"))
-                return New(t, "07_CHARACTERS", isPrefab ? "Figur (Prefab-Instanz)" : "Figur");
+                return New(t, "07_CHARACTERS", Safety.Proven,
+                           isPrefab ? "Figur (Prefab-Instanz), unreferenziert"
+                                    : "Figur; nur ueber fileID referenziert");
 
-            if (isPrefab && n.StartsWith("CIYC_Haunted", System.StringComparison.Ordinal))
-                return New(t, "06_LOBBY_PROPS", "Requisite (Prefab-Instanz)");
+            if (isPrefab && (n.StartsWith("CIYC_Haunted", System.StringComparison.Ordinal) ||
+                             n.StartsWith("CIYC_Victorian", System.StringComparison.Ordinal)))
+                return New(t, "06_LOBBY_PROPS", Safety.Proven,
+                           "Requisite (Prefab-Instanz), von keinem Skript referenziert");
 
-            if (isPrefab && n.StartsWith("CIYC_Victorian", System.StringComparison.Ordinal))
-                return New(t, "06_LOBBY_PROPS", "Requisite (Prefab-Instanz)");
+            // The corridor is the set the cinematic camera looks down, not part of the walkable
+            // lobby - so 03_LOBBY would be the wrong home and this tool has no group that is
+            // clearly the right one. Unticked until somebody decides.
+            if (isPrefab)
+                return New(t, "03_LOBBY", Safety.Unclear,
+                           "Prefab-Instanz ohne Skript-Referenz - Rolle nicht eindeutig " +
+                           "(Kulisse des Menues oder Teil der Lobby?). Bitte selbst entscheiden");
 
             if (go.GetComponent<Light>() != null)
-                return New(t, "02_LIGHTING", "traegt ein Light");
+                return New(t, "02_LIGHTING", Safety.Proven, "traegt ein Light");
 
             if (n.Contains("PostProcessing"))
-                return New(t, "02_LIGHTING", "Post-Processing-Volume");
+                return New(t, "02_LIGHTING", Safety.Proven, "Post-Processing-Volume");
 
-            // Everything left that is a prefab instance is architecture or set dressing whose
-            // role this tool cannot read off a component. Offered, but NOT ticked: the audit
-            // could not clear it, and safety beats a tidy hierarchy.
-            if (isPrefab)
-            {
-                Move m = New(t, "03_LOBBY", "Prefab-Instanz - ROLLE UNKLAR, bitte selbst pruefen");
-                m.Do = false;
-                return m;
-            }
-
+            // Empty and unreferenced. Filing it away tidies nothing; it is a leftover, and the
+            // useful answer is to delete it, which is not this tool's decision to make.
             if (t.childCount == 0 && go.GetComponents<Component>().Length <= 1)
-            {
-                Move m = New(t, "00_SYSTEMS", "LEER: nur ein Transform, keine Kinder");
-                return m;
-            }
+                return New(t, "00_SYSTEMS", Safety.Unclear,
+                           "LEER: nur ein Transform, keine Kinder, keine Referenz. " +
+                           "Eher loeschen als einsortieren");
 
-            return New(t, "00_SYSTEMS", "Steuerobjekt");
+            return New(t, "00_SYSTEMS", Safety.Proven,
+                       "Steuerobjekt; nur ueber fileID referenziert");
         }
 
-        private static Move New(Transform t, string folder, string reason)
+        private static Move New(Transform t, string folder, Safety safety, string reason)
         {
-            return new Move { Target = t, Folder = folder, Reason = reason };
+            return new Move
+            {
+                Target = t,
+                Folder = folder,
+                Safety = safety,
+                Reason = reason,
+
+                // A tick means PROVEN. Anything the audit left conditional or unclear stays
+                // where it is until a person says otherwise.
+                Do = safety == Safety.Proven,
+            };
         }
 
         // ---------------------------------------------------------------------------- apply

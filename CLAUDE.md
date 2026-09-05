@@ -350,7 +350,13 @@ place that number lives; everything else derives it.
   holds rather than what the file says; it touches only the active flag, finds the room by walking
   the scene rather than with `GameObject.Find` (which skips inactive objects, the only kind this
   looks for), and warns when the hand-placed house has been parented under the room, where it
-  would vanish with it. 100 checks.
+  would vanish with it, and it NAMES the four lobby children that carry a script and no renderer —
+  the mirror, armchair, table and board are built in `Start()`, so no switch can reveal geometry
+  that does not exist yet and building it here would run gameplay code in the editor. And a plan
+  to sort the hierarchy ticks only what was PROVEN: the default follows the verdict rather than
+  being set per branch, proven is kept apart from conditional and from unclear, and moving the
+  lobby under a folder is offered conditional because its visibility would then also depend on
+  that folder staying active. 102 checks.
 
 All ten run in CI (`.github/workflows/determinism.yml`). Run them locally before
 pushing; they need nothing but a shell (and `python3` for the roster checks).
