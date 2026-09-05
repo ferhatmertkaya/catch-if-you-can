@@ -61,7 +61,8 @@ namespace CatchIfYouCan.EditorTools
                 "1. Paket pruefen  - zaehlt und klassifiziert, schreibt nichts.\n" +
                 "2. Katalog bauen  - schreibt GENAU EIN Asset: den Modular-Katalog.\n" +
                 "3. Kit vermessen  - Masse, Pivots, Ausrichtung, Collider, Raster. Schreibt nichts.\n" +
-                "4. Umgebung pruefen - sagt, ob damit ein Haus gebaut werden kann.",
+                "4. Architektur-Forensik - nur interior/, Kinder statt Wurzeln, Raster je Modul.\n" +
+                "5. Umgebung pruefen - sagt, ob damit ein Haus gebaut werden kann.",
                 MessageType.Info);
 
             _packFolder = EditorGUILayout.TextField("Paket-Ordner", _packFolder);
@@ -78,7 +79,10 @@ namespace CatchIfYouCan.EditorTools
             if (GUILayout.Button("3. Kit vermessen (schreibt nichts)"))
                 _report = MeasureKit(_packFolder);
 
-            if (GUILayout.Button("4. Umgebung pruefen"))
+            if (GUILayout.Button("4. Architektur-Forensik (nur interior/, schreibt nichts)"))
+                _report = MeasureArchitecture(_packFolder);
+
+            if (GUILayout.Button("5. Umgebung pruefen"))
                 _report = ValidateEnvironment();
 
             EditorGUILayout.Space();
@@ -735,6 +739,16 @@ namespace CatchIfYouCan.EditorTools
         /// renderer's world matrix and back into the prefab root. Renderer.bounds is a world
         /// AABB and would carry the ancestors' scale - the mistake that produced a 2 mm
         /// flashlight and hundredfold walls.
+        ///
+        /// <para>
+        /// CAREFUL, and this is what made a floor lamp measure 36 x 57.55 x 36 metres: a prefab
+        /// asset root has no parent, so its world matrix IS its local matrix, and multiplying by
+        /// worldToLocalMatrix cancels the ROOT'S OWN localScale. What comes back is the size
+        /// BEFORE that scale is applied. A vendor who imports a centimetre-authored FBX at scale
+        /// factor 1 and compensates with a root scale of 0.01 therefore measures exactly 100x too
+        /// large here. Callers must multiply by the root's localScale to get the size the object
+        /// really has in a scene - see the effective size in the forensic report.
+        /// </para>
         /// </summary>
         private static void MeasureLocal(GameObject prefab, out Vector3 min, out Vector3 max)
         {
@@ -765,6 +779,392 @@ namespace CatchIfYouCan.EditorTools
                 }
             }
         }
+
+        // ------------------------------------------------------- Architektur-Forensik
+
+        private class Child
+        {
+            public string HierarchyPath;
+            public string Name;
+            public string Model;
+            public Vector3 LocalPosition;
+            public Vector3 LocalEuler;
+            public Vector3 LocalScale;
+            public Vector3 MeshSize;        // the mesh's own bounds, untouched
+            public Vector3 RootSize;        // the same mesh expressed in the prefab root's space
+            public string Pivot;
+            public string Materials;
+            public string Collider;
+            public bool HasRenderer;
+        }
+
+        private class Structure
+        {
+            public string Path;
+            public Vector3 RootScale;
+            public Vector3 OwnSize;         // before the root's own scale
+            public Vector3 EffectiveSize;   // what it really is in a scene
+            public int Depth;
+            public readonly List<Child> Children = new List<Child>();
+        }
+
+        /// <summary>
+        /// Architecture only, and measured to the child rather than to the root.
+        ///
+        /// A root-level bounding box says nothing useful about a prefab that contains a whole
+        /// room: it reports the room, not the wall. So every mesh-carrying child is measured on
+        /// its own, with its place in the hierarchy, and the report groups what repeats. A piece
+        /// that appears many times at the same size, in several prefabs, is a module; a piece
+        /// that appears once is set dressing wearing a module's dimensions.
+        /// </summary>
+        private static string MeasureArchitecture(string packRoot)
+        {
+            var sb = new StringBuilder();
+            sb.AppendLine("=========================================================");
+            sb.AppendLine("ARCHITEKTUR-FORENSIK  -  ES WIRD NICHTS GESCHRIEBEN");
+            sb.AppendLine("=========================================================");
+
+            string scope = packRoot.TrimEnd('/') + "/interior";
+            if (!AssetDatabase.IsValidFolder(scope))
+            {
+                sb.AppendLine("Kein Unterordner 'interior' - es wird das ganze Paket betrachtet.");
+                scope = packRoot;
+            }
+
+            if (!AssetDatabase.IsValidFolder(scope))
+            {
+                sb.AppendLine("Ordner nicht gefunden: " + scope);
+                return sb.ToString();
+            }
+
+            sb.AppendLine("Bereich: " + scope);
+            sb.AppendLine();
+
+            var structures = new List<Structure>();
+            var guids = AssetDatabase.FindAssets("t:Prefab", new[] { scope });
+
+            for (int i = 0; i < guids.Length; i++)
+            {
+                string path = AssetDatabase.GUIDToAssetPath(guids[i]);
+                var go = AssetDatabase.LoadAssetAtPath<GameObject>(path);
+                if (go == null)
+                    continue;
+
+                var st = new Structure { Path = path, RootScale = go.transform.localScale };
+                MeasureLocal(go, out Vector3 min, out Vector3 max);
+                st.OwnSize = max - min;
+                st.EffectiveSize = Vector3.Scale(st.OwnSize, st.RootScale);
+
+                var filters = go.GetComponentsInChildren<MeshFilter>(true);
+                var toRoot = go.transform.worldToLocalMatrix;
+
+                for (int f = 0; f < filters.Length; f++)
+                {
+                    var mesh = filters[f].sharedMesh;
+                    if (mesh == null)
+                        continue;
+
+                    var t = filters[f].transform;
+                    var child = new Child
+                    {
+                        HierarchyPath = HierarchyPath(go.transform, t),
+                        Name = t.name,
+                        Model = Path.GetFileName(AssetDatabase.GetAssetPath(mesh)),
+                        LocalPosition = t.localPosition,
+                        LocalEuler = t.localEulerAngles,
+                        LocalScale = t.localScale,
+                        MeshSize = mesh.bounds.size,
+                        HasRenderer = filters[f].GetComponent<Renderer>() != null,
+                    };
+
+                    var m = toRoot * t.localToWorldMatrix;
+                    CornerBounds(m, mesh.bounds, out Vector3 cMin, out Vector3 cMax);
+                    child.RootSize = cMax - cMin;
+                    child.Pivot = DescribePivot(mesh.bounds.min, mesh.bounds.max);
+
+                    var renderer = filters[f].GetComponent<Renderer>();
+                    if (renderer != null)
+                    {
+                        var names = new List<string>();
+                        var mats = renderer.sharedMaterials;
+                        for (int k = 0; k < mats.Length; k++)
+                            names.Add(mats[k] == null ? "(null)" : mats[k].name);
+                        child.Materials = string.Join(",", names.ToArray());
+                    }
+                    else
+                    {
+                        child.Materials = "-";
+                    }
+
+                    var col = filters[f].GetComponent<Collider>();
+                    child.Collider = col == null ? "-" : col.GetType().Name;
+
+                    st.Children.Add(child);
+                    st.Depth = Mathf.Max(st.Depth, child.HierarchyPath.Split('/').Length);
+                }
+
+                structures.Add(st);
+            }
+
+            structures.Sort((a, b) => b.Children.Count.CompareTo(a.Children.Count));
+
+            sb.AppendLine("Prefabs im Bereich: " + structures.Count);
+            sb.AppendLine();
+
+            // ---- Was ist ueberhaupt was
+            sb.AppendLine("--- WAS DIESE PREFABS SIND ---");
+            sb.AppendLine("  Ein Prefab mit vielen Mesh-Kindern ist eine Baugruppe, kein Modul.");
+            sb.AppendLine();
+            sb.AppendLine(string.Format("  {0,-7} {1,-7} {2,-26} {3,-26} {4}",
+                "KINDER", "TIEFE", "ROOT-SCALE", "EFFEKTIVE GROESSE (m)", "PREFAB"));
+            for (int i = 0; i < structures.Count; i++)
+            {
+                var st = structures[i];
+                sb.AppendLine(string.Format("  {0,-7} {1,-7} {2,-26} {3,-26} {4}",
+                    st.Children.Count, st.Depth, V(st.RootScale), V(st.EffectiveSize),
+                    Path.GetFileNameWithoutExtension(st.Path)));
+            }
+            sb.AppendLine();
+
+            // ---- Die Skalenfrage, aufgeloest
+            int scaled = 0;
+            for (int i = 0; i < structures.Count; i++)
+            {
+                var s0 = structures[i].RootScale;
+                if (Mathf.Abs(s0.x - 1f) > 0.001f || Mathf.Abs(s0.y - 1f) > 0.001f ||
+                    Mathf.Abs(s0.z - 1f) > 0.001f)
+                    scaled++;
+            }
+
+            sb.AppendLine("--- DIE SKALENFRAGE ---");
+            sb.AppendLine("  Prefabs mit einer Root-Skalierung ungleich 1: " + scaled + " von " + structures.Count);
+            sb.AppendLine();
+            sb.AppendLine("  Die frueher gemeldeten Masse (Stehlampe 36 x 57,55 x 36 m) waren die");
+            sb.AppendLine("  Groesse VOR der Root-Skalierung: bei einem Prefab-Asset ist Welt gleich");
+            sb.AppendLine("  Lokal, und worldToLocalMatrix kuerzt die eigene Skalierung der Wurzel");
+            sb.AppendLine("  wieder heraus. Die Spalte EFFEKTIVE GROESSE oben ist das Mass, das das");
+            sb.AppendLine("  Objekt in einer Szene wirklich hat. Steht dort 0,36 x 0,58 x 0,36 fuer");
+            sb.AppendLine("  die Lampe, war es eine in Zentimetern gebaute FBX mit Scale Factor 1,");
+            sb.AppendLine("  die der Autor mit Root-Skalierung 0,01 ausgleicht - kein Fehler im Kit.");
+            sb.AppendLine();
+
+            // ---- Kindteile, nach Groesse gruppiert: das ist die Modulfrage
+            var families = new Dictionary<string, List<Child>>();
+            for (int i = 0; i < structures.Count; i++)
+            {
+                var st = structures[i];
+                for (int c = 0; c < st.Children.Count; c++)
+                {
+                    var child = st.Children[c];
+                    var real = Vector3.Scale(child.RootSize, st.RootScale);
+                    string key = V(real) + "   " + child.Model;
+                    if (!families.TryGetValue(key, out var list))
+                    {
+                        list = new List<Child>();
+                        families[key] = list;
+                    }
+                    list.Add(child);
+                }
+            }
+
+            var famOrdered = new List<KeyValuePair<string, List<Child>>>(families);
+            famOrdered.Sort((a, b) => b.Value.Count.CompareTo(a.Value.Count));
+
+            sb.AppendLine("--- BAUTEIL-FAMILIEN (gleiche effektive Groesse UND dasselbe Modell) ---");
+            sb.AppendLine("  Das ist die eigentliche Modulfrage. Ein Teil, das oft und in mehreren");
+            sb.AppendLine("  Prefabs in derselben Groesse auftaucht, ist ein Modul. Eines, das genau");
+            sb.AppendLine("  einmal vorkommt, ist Ausstattung mit modulhaften Massen.");
+            sb.AppendLine();
+            sb.AppendLine(string.Format("  {0,-6} {1,-26} {2,-24} {3}", "ANZAHL", "EFFEKTIVE GROESSE (m)", "MODELL", "BEISPIELNAME"));
+            for (int i = 0; i < Mathf.Min(60, famOrdered.Count); i++)
+            {
+                var f = famOrdered[i];
+                int split = f.Key.IndexOf("   ", StringComparison.Ordinal);
+                sb.AppendLine(string.Format("  {0,-6} {1,-26} {2,-24} {3}",
+                    f.Value.Count,
+                    split > 0 ? f.Key.Substring(0, split) : f.Key,
+                    split > 0 ? f.Key.Substring(split + 3) : "-",
+                    f.Value[0].Name));
+            }
+            sb.AppendLine();
+            sb.AppendLine("  Familien insgesamt: " + famOrdered.Count);
+            sb.AppendLine();
+
+            // ---- Volle Kindaufstellung fuer die groessten Baugruppen
+            sb.AppendLine("--- HIERARCHIE DER GROESSTEN BAUGRUPPEN ---");
+            for (int i = 0; i < Mathf.Min(4, structures.Count); i++)
+            {
+                var st = structures[i];
+                sb.AppendLine();
+                sb.AppendLine("  === " + st.Path);
+                sb.AppendLine("      Root-Skalierung " + V(st.RootScale) +
+                              "   effektiv " + V(st.EffectiveSize) + " m");
+                sb.AppendLine(string.Format("      {0,-24} {1,-22} {2,-18} {3,-14} {4,-10} {5}",
+                    "EFFEKTIVE GROESSE", "LOKALE POSITION", "ROTATION", "SKALIERUNG", "COLLIDER", "PFAD"));
+
+                for (int c = 0; c < Mathf.Min(40, st.Children.Count); c++)
+                {
+                    var ch = st.Children[c];
+                    sb.AppendLine(string.Format("      {0,-24} {1,-22} {2,-18} {3,-14} {4,-10} {5}",
+                        V(Vector3.Scale(ch.RootSize, st.RootScale)),
+                        V(ch.LocalPosition), V(ch.LocalEuler), V(ch.LocalScale),
+                        ch.Collider, ch.HierarchyPath));
+                }
+
+                if (st.Children.Count > 40)
+                    sb.AppendLine("      ... und " + (st.Children.Count - 40) + " weitere");
+            }
+
+            sb.AppendLine();
+            sb.Append(StructuralSpacing(packRoot));
+            return sb.ToString();
+        }
+
+        /// <summary>
+        /// Spacing between repeated instances OF THE SAME prefab in the demo scene.
+        ///
+        /// A histogram over every transform in a scene measures furniture, trim and hand-placed
+        /// decoration, and its most common gap is whatever the author nudged things by. Grouping
+        /// by source prefab first removes all of that: the distance between two instances of the
+        /// same wall is evidence about walls, and nothing else.
+        /// </summary>
+        private static string StructuralSpacing(string packRoot)
+        {
+            var sb = new StringBuilder();
+            sb.AppendLine("--- DEMO-SZENE: ABSTAENDE JE MODUL, NICHT UEBER ALLES ---");
+
+            var sceneGuids = AssetDatabase.FindAssets("t:Scene", new[] { packRoot });
+            if (sceneGuids.Length == 0)
+            {
+                sb.AppendLine("  Keine Szene im Paket.");
+                return sb.ToString();
+            }
+
+            for (int s = 0; s < sceneGuids.Length; s++)
+            {
+                string scenePath = AssetDatabase.GUIDToAssetPath(sceneGuids[s]);
+                sb.AppendLine();
+                sb.AppendLine("  " + scenePath);
+
+                string text;
+                try { text = File.ReadAllText(scenePath); }
+                catch (Exception e) { sb.AppendLine("    nicht lesbar: " + e.Message); continue; }
+
+                // Each PrefabInstance document carries its own position modifications and the
+                // guid of the prefab it instantiates. Splitting on the document marker keeps
+                // one instance's numbers from being read as another's.
+                var byPrefab = new Dictionary<string, List<Vector2>>();
+                string[] docs = text.Split(new[] { "--- !u!1001 " }, StringSplitOptions.None);
+
+                for (int d = 1; d < docs.Length; d++)
+                {
+                    var srcMatch = Regex.Match(docs[d], @"m_SourcePrefab: \{fileID: \d+, guid: ([0-9a-f]{32})");
+                    if (!srcMatch.Success)
+                        continue;
+
+                    float x = 0f, z = 0f;
+                    bool hasX = false, hasZ = false;
+
+                    foreach (Match m in Regex.Matches(docs[d],
+                                 @"propertyPath: m_LocalPosition\.([xz])\s*\n\s*value: (-?[\d.eE+-]+)"))
+                    {
+                        if (!float.TryParse(m.Groups[2].Value, NumberStyles.Float,
+                                            CultureInfo.InvariantCulture, out float v))
+                            continue;
+
+                        if (m.Groups[1].Value == "x") { x = v; hasX = true; }
+                        else { z = v; hasZ = true; }
+                    }
+
+                    if (!hasX && !hasZ)
+                        continue;
+
+                    string guid = srcMatch.Groups[1].Value;
+                    if (!byPrefab.TryGetValue(guid, out var list))
+                    {
+                        list = new List<Vector2>();
+                        byPrefab[guid] = list;
+                    }
+                    list.Add(new Vector2(x, z));
+                }
+
+                sb.AppendLine("    Prefab-Instanzen mit Position: " +
+                              CountAll(byPrefab) + " aus " + byPrefab.Count + " verschiedenen Prefabs");
+                sb.AppendLine();
+
+                var ordered = new List<KeyValuePair<string, List<Vector2>>>(byPrefab);
+                ordered.Sort((a, b) => b.Value.Count.CompareTo(a.Value.Count));
+
+                sb.AppendLine(string.Format("    {0,-6} {1,-34} {2}", "ANZAHL", "PREFAB", "ABSTAENDE ZWISCHEN GLEICHEN INSTANZEN"));
+                for (int i = 0; i < Mathf.Min(25, ordered.Count); i++)
+                {
+                    var entry = ordered[i];
+                    if (entry.Value.Count < 2)
+                        continue;
+
+                    string name = Path.GetFileNameWithoutExtension(
+                        AssetDatabase.GUIDToAssetPath(entry.Key));
+                    if (string.IsNullOrEmpty(name))
+                        name = entry.Key.Substring(0, 8);
+
+                    var xs = new List<float>();
+                    var zs = new List<float>();
+                    for (int v = 0; v < entry.Value.Count; v++)
+                    {
+                        xs.Add(entry.Value[v].x);
+                        zs.Add(entry.Value[v].y);
+                    }
+
+                    sb.AppendLine(string.Format("    {0,-6} {1,-34} {2}",
+                        entry.Value.Count, name, Spacing("X", xs)));
+                    sb.AppendLine(string.Format("    {0,-6} {1,-34} {2}", "", "", Spacing("Z", zs)));
+                }
+            }
+
+            sb.AppendLine();
+            sb.AppendLine("  Nur die Abstaende innerhalb EINER Zeile sind Beweise. Taucht dieselbe");
+            sb.AppendLine("  Wand bei 0, 3, 6, 9 auf, ist das Modul 3 m - unabhaengig davon, wie oft");
+            sb.AppendLine("  irgendwo im Raum 0,05 m vorkommt.");
+            return sb.ToString();
+        }
+
+        private static int CountAll(Dictionary<string, List<Vector2>> map)
+        {
+            int n = 0;
+            foreach (var pair in map)
+                n += pair.Value.Count;
+            return n;
+        }
+
+        private static string HierarchyPath(Transform root, Transform t)
+        {
+            var parts = new List<string>();
+            var cursor = t;
+            while (cursor != null && cursor != root)
+            {
+                parts.Insert(0, cursor.name);
+                cursor = cursor.parent;
+            }
+
+            return parts.Count == 0 ? "(root)" : string.Join("/", parts.ToArray());
+        }
+
+        private static void CornerBounds(Matrix4x4 m, Bounds b, out Vector3 min, out Vector3 max)
+        {
+            min = max = m.MultiplyPoint3x4(b.min);
+            for (int corner = 1; corner < 8; corner++)
+            {
+                var p = m.MultiplyPoint3x4(new Vector3(
+                    (corner & 1) == 0 ? b.min.x : b.max.x,
+                    (corner & 2) == 0 ? b.min.y : b.max.y,
+                    (corner & 4) == 0 ? b.min.z : b.max.z));
+                min = Vector3.Min(min, p);
+                max = Vector3.Max(max, p);
+            }
+        }
+
+        private static string V(Vector3 v) =>
+            Round(v.x) + " x " + Round(v.y) + " x " + Round(v.z);
 
         // ------------------------------------------------------------ Umgebung pruefen
 
