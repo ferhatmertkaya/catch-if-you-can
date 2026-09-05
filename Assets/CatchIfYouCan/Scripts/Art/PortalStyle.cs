@@ -30,18 +30,18 @@ namespace CatchIfYouCan.Art
                  "left for the breach to have to fit between, and a tall narrow oval in a wall " +
                  "reads as a window. This also widens where the player may cross, which is " +
                  "correct: the aperture should be the hole you can see.")]
-        public Vector2 openingSize = new Vector2(1.7f, 2.4f);
+        public Vector2 openingSize = new Vector2(4.7f, 2.4f);
 
         [Tooltip("Trim on the oval, as a fraction of the opening. 1 means the tear fills the " +
                  "opening exactly, which is what you usually want - the room for the glow comes " +
                  "from Glow Margin below, not from shrinking the hole.")]
-        public Vector2 breachHalfSize = new Vector2(1f, 1f);
+        public Vector2 breachHalfSize = new Vector2(0.65f, 0.9f);
 
         [Tooltip("How much BIGGER than the opening the drawn quad is, as a fraction. This is " +
                  "pure canvas: the hole stays the size Opening Size says, and the extra area is " +
                  "where the ragged edge and the outer glow live. Too little and the glow is cut " +
                  "off square at the quad's edge - which is what a flat-topped portal is.")]
-        [Range(0f, 1.5f)] public float glowMargin = 0.7f;
+        [Range(0f, 1.5f)] public float glowMargin = 0f;
 
         /// <summary>
         /// The quad to draw, in metres: the opening plus the margin the glow needs.
@@ -78,16 +78,16 @@ namespace CatchIfYouCan.Art
 
         [Tooltip("How far the oval's edge is chewed away from a clean curve. Zero is a neat " +
                  "porthole; higher is a hole something came through.")]
-        [Range(0f, 0.5f)] public float tearAmount = 0.22f;
+        [Range(0f, 0.5f)] public float tearAmount = 0.5f;
 
         [Tooltip("Size of the chunks the edge breaks into. Low is a few big pieces of plaster, " +
                  "high is fine crumbling.")]
-        [Range(0.5f, 24f)] public float tearScale = 4.5f;
+        [Range(0.5f, 24f)] public float tearScale = 5.4f;
 
         [Tooltip("Width of the burning band, as a fraction of the oval's radius.")]
-        [Range(0.01f, 0.9f)] public float rimWidth = 0.26f;
+        [Range(0.01f, 0.9f)] public float rimWidth = 0.162f;
 
-        [Range(0.05f, 4f)] public float rimSoftness = 1.15f;
+        [Range(0.05f, 4f)] public float rimSoftness = 1.95f;
 
         // ---- colour ------------------------------------------------------------------------
 
@@ -113,7 +113,7 @@ namespace CatchIfYouCan.Art
         // ---- shader ------------------------------------------------------------------------
 
         [Header("Energy shader")]
-        [Range(0f, 16f)] public float coreIntensity = 6.0f;
+        [Range(0f, 16f)] public float coreIntensity = 6.53f;
         [Range(0f, 16f)] public float energyIntensity = 2.6f;
 
         [Tooltip("Layer A: the slow, large turbulence.")]

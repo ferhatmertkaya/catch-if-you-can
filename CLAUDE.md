@@ -150,7 +150,9 @@ place that number lives; everything else derives it.
   runs, the opening can be resized after it is built (mesh, plane and culling bounds
   together), the drawn quad is larger than the hole so the glow is not cut off square,
   and the portal's far anchor is raised to the portal's own height instead of being the
-  floor-level spawn point. 151 checks.
+  floor-level spawn point, and the tear cuts the wall's COLLISION so the player can walk
+  through it — physics only, so the wall stays one mesh with no z-fighting patch, and it
+  is solid again the moment the portal is not open. 155 checks.
 
 - `Scripts/check_agent_architecture.sh` — the roster holds 40 unique roles with
   every field, the roster and `AGENT_OWNERSHIP.md` name the same roles, the

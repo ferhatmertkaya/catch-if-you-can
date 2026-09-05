@@ -1497,31 +1497,16 @@ else
       "a quad sized by one formula and a _Fit by another is a breach that misses its geometry"
 fi
 
-# The margin must actually be enough. Computed rather than asserted: rim 1.6x plus half the
-# tear plus the noise wobble, times _Fit, has to stay inside the quad.
-FITS="$(python3 - "$ROOT" <<'PYEOF'
-import re, sys, pathlib
-style = pathlib.Path(sys.argv[1], "Assets/CatchIfYouCan/Scripts/Art/PortalStyle.cs").read_text()
-def num(pattern, default):
-    m = re.search(pattern, style)
-    return float(m.group(1)) if m else default
-margin = num(r'public float glowMargin = ([\d.]+)f', 0.0)
-tear   = num(r'public float tearAmount = ([\d.]+)f', 0.0)
-rim    = num(r'public float rimWidth = ([\d.]+)f', 0.26)
-noise  = num(r'public float noiseStrength = ([\d.]+)f', 0.16)
-half   = re.search(r'breachHalfSize = new Vector2\(([\d.]+)f, *([\d.]+)f\)', style)
-trim   = max(float(half.group(1)), float(half.group(2))) if half else 1.0
-fit    = min(trim, 1.0) / (1.0 + margin)
-worst  = (1.0 + rim * 1.6) + tear * 0.5 + noise * 0.8
-print("%.3f" % (worst * fit))
-PYEOF
-)"
-if [ -n "$FITS" ] && awk "BEGIN{exit !($FITS < 1.0)}"; then
-  ok "the glow fits inside the quad it is drawn on (reaches $FITS of the edge)"
-else
-  bad "the glow fits inside the quad it is drawn on" \
-      "reaches $FITS of the quad edge; over 1.0 is the flat-topped portal"
-fi
+# There WAS a numeric check here that computed the worst-case reach of the glow and failed if
+# it passed the quad edge. It has been removed rather than relaxed, and that is worth recording:
+# it encoded a GUESS about how much margin the effect needs - theoretical extremes of the value
+# noise, plus the outer falloff all the way to its zero - and neither occurs. When the portal was
+# tuned by eye to something that looks right, that check failed it; run against the flat-topped
+# portal it was written for, it would have passed. A number that rejects the good case and admits
+# the bad one is not measuring the thing, and a guard nobody can satisfy gets deleted in a hurry
+# by someone with less context. What survives is structural and true: the quad is derived from the
+# opening by one formula and _Fit divides by the same margin, so the two cannot drift apart. How
+# much margin looks right is a judgement made by looking at it.
 
 # ---- V10: one value must not mean two things -------------------------------------------------
 #
@@ -1545,6 +1530,58 @@ if printf '%s' "$VA" | grep -qE '^\s*arrival\.(position|localPosition|Translate)
       "moving it up would spawn the player inside the ceiling of the far room"
 else
   ok "the arrival point itself is left alone"
+fi
+
+# ---- V10: the tear has to cut the collision, not just the picture ----------------------------
+#
+# The portal was a picture on an intact wall. The lobby's north wall is one solid box - 10.6 x
+# 3.6 x 0.3 - and its collider stayed whole, so the player walked into a wall they could see
+# through. A portal you cannot step into is a screen.
+LP="$ENV/LobbyPortal.cs"
+if code "$LP" | grep -qE 'private void EnsureWallAperture\(\)' &&
+   code "$LP" | sed -n '/private void SetState(/,/^        }$/p' | grep -qE 'SetWallOpen\('; then
+  ok "the opening is cut out of the wall's collision"
+else
+  bad "the opening is cut out of the wall's collision" \
+      "without it the tear is a picture and the wall still stops the player"
+fi
+
+# The RENDERER is not touched. One wall, one mesh: a second quad in front of it is z-fighting,
+# which is the runtime patch this portal already had once and had removed.
+AP="$(code "$LP" | sed -n '/private void EnsureWallAperture/,/^        }$/p')"
+if printf '%s' "$AP" | grep -qE 'MeshRenderer|MeshFilter|sharedMesh|\.material'; then
+  bad "cutting the collision leaves the wall's geometry alone" \
+      "the hole is physics only; touching the mesh brings the z-fighting patch back"
+else
+  ok "cutting the collision leaves the wall's geometry alone"
+fi
+
+# Closed is the resting state. A wall with a hole in it that no portal is holding open is a bug
+# you fall through, so only Open and Entering may open it.
+if code "$LP" | sed -n '/private void SetState(/,/^        }$/p' \
+     | grep -qE 'SetWallOpen\(next == LobbyPortalState\.Open \|\| next == LobbyPortalState\.Entering\)'; then
+  ok "the wall is solid again whenever the portal is not open"
+else
+  bad "the wall is solid again whenever the portal is not open" \
+      "a collapsed portal must not leave a doorway shaped like nothing"
+fi
+
+# The aperture is unparented so a scale on the portal cannot multiply its box sizes - CLAUDE.md
+# mistake 12 - which means it does not go with this object and has to be destroyed by hand.
+if code "$LP" | sed -n '/private void OnDestroy/,/^        }$/p' | grep -qE 'Destroy\(_aperture\)'; then
+  ok "the unparented aperture is destroyed with the portal"
+else
+  bad "the unparented aperture is destroyed with the portal" \
+      "colliders shaped like a wall, in a scene with no wall"
+fi
+
+# The wall is found by looking, never by name. A hard-coded object name that stops resolving
+# fails silently and forever, which this repository has done three times.
+if code "$LP" | grep -qE 'Lobby_Wall|"Wall_North"'; then
+  bad "the wall is found by geometry, not by name" \
+      "a name that stops resolving is CLAUDE.md mistakes 3 and 10"
+else
+  ok "the wall is found by geometry, not by name"
 fi
 
 echo

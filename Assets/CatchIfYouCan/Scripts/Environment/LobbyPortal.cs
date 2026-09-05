@@ -125,12 +125,20 @@ namespace CatchIfYouCan.Environment
                  "Slightly under 1 so brushing the jamb is not an entry.")]
         [SerializeField, Range(0.2f, 1.2f)] private float apertureTolerance = 0.95f;
 
-        [Tooltip("How far behind the portal surface the wall fill sits, in metres. Far enough " +
-                 "not to z-fight with it, near enough not to show a gap at a grazing angle.")]
+        [Tooltip("The wall the tear is cut into. Left empty it is found by looking for the " +
+                 "collider the opening is standing inside, which is what the lobby needs - the " +
+                 "scene sets nothing.")]
+        [SerializeField] private Collider wallCollider;
 
         private bool _sealedByHunt;
         private Coroutine _sealing;
         private BoxCollider _threshold;
+
+        /// <summary>The wall's own collider, switched off while the tear is open.</summary>
+        private Collider _wallSolid;
+
+        /// <summary>The replacement collision: the same wall with a hole in it.</summary>
+        private GameObject _aperture;
         private float _previousSide;
         private bool _hasPreviousSide;
         private PortalEffects _effects;
@@ -197,6 +205,7 @@ namespace CatchIfYouCan.Environment
             // before a mission is chosen.
             EnsureSurface();
             EnsureThreshold();
+            EnsureWallAperture();
             SetState(LobbyPortalState.Inactive);
         }
 
@@ -204,6 +213,11 @@ namespace CatchIfYouCan.Environment
         {
             if (Instance == this)
                 Instance = null;
+
+            // The aperture is unparented, so it does not go with this object. Left behind it
+            // would be a wall-shaped set of colliders in a scene with no wall.
+            if (_aperture != null)
+                Destroy(_aperture);
 
             // Released here because the hold taken in BeginInvestigation has no other end: the
             // handover that follows it unloads the lobby and destroys this object without ever
@@ -276,6 +290,10 @@ namespace CatchIfYouCan.Environment
             if (_effects != null)
                 _effects.ApplyStyle(style);
 
+            // The hole in the collision is cut from the opening size, so a resize re-cuts it.
+            EnsureWallAperture();
+            SetWallOpen(State == LobbyPortalState.Open || State == LobbyPortalState.Entering);
+
             // The far anchor is derived from the opening height, so a taller opening moves it.
             if (_pendingWorld != null && _pendingWorld.ArrivalPoint != null)
                 surface.SetDestination(ResolveViewAnchor(_pendingWorld.ArrivalPoint));
@@ -343,11 +361,173 @@ namespace CatchIfYouCan.Environment
 
 
 
-        private static readonly string[] WallSiblingNames =
+        /// <summary>
+        /// Cuts the opening out of the wall's COLLISION, leaving its geometry alone.
+        ///
+        /// <para>
+        /// The tear was only ever a picture. The wall behind it is one solid box - 10.6 x 3.6 x
+        /// 0.3 in the lobby - and its collider stayed whole, so the player walked into a wall
+        /// they could see through. A portal you cannot step into is a screen.
+        /// </para>
+        ///
+        /// <para>
+        /// <b>The renderer is not touched.</b> The wall stays one object with one mesh, so
+        /// nothing z-fights and there is no runtime patch in it. Only the collision gains a
+        /// hole, and it gains it the way a doorway does: the solid box is switched off and four
+        /// boxes take its place - left of the opening, right of it, above it, and below it if
+        /// the wall reaches under the floor. Walk into any of those and you stop; walk into the
+        /// opening and you keep going.
+        /// </para>
+        ///
+        /// <para>
+        /// Built in the portal's own frame rather than in world axes, so a wall at any angle
+        /// still gets a rectangular hole in the right place.
+        /// </para>
+        /// </summary>
+        private void EnsureWallAperture()
         {
-            "Lobby_Wall_North_Left", "Lobby_Wall_North_Right", "Lobby_Wall_North_Header",
-            "Lobby_Wall_West", "Lobby_Wall_South"
-        };
+            if (_aperture != null)
+                Destroy(_aperture);
+
+            _wallSolid = ResolveWall();
+            if (_wallSolid == null)
+            {
+                CIYCLog.Error(LogTag + "No wall collider found around the opening, so the tear " +
+                              "is a picture: the player will walk into a wall they can see " +
+                              "through. Assign 'wallCollider' on this component.");
+                return;
+            }
+
+            Bounds b = _wallSolid.bounds;
+            Vector3 right = transform.right, up = transform.up, forward = transform.forward;
+
+            // Extent of the wall's box along each of the portal's axes. The support function of
+            // an axis-aligned box, so this is right for a wall of any orientation rather than
+            // only for one lined up with the world.
+            float halfWide = Support(b.extents, right);
+            float halfTall = Support(b.extents, up);
+            float thickness = Support(b.extents, forward) * 2f;
+
+            Vector3 offset = b.center - transform.position;
+            float cx = Vector3.Dot(offset, right);
+            float cy = Vector3.Dot(offset, up);
+            float cz = Vector3.Dot(offset, forward);
+
+            float left = cx - halfWide, rightEdge = cx + halfWide;
+            float bottom = cy - halfTall, top = cy + halfTall;
+
+            // The hole. The portal's origin sits on the floor and the opening rises from it.
+            float ow = style.openingSize.x * 0.5f;
+            float oh = style.openingSize.y;
+
+            // Unparented, at the portal's world pose. A child would inherit any scale on this
+            // transform and a BoxCollider's size is multiplied by it - which is CLAUDE.md
+            // mistake 12, a local size computed through somebody else's scale.
+            _aperture = new GameObject("Portal_WallAperture");
+            _aperture.transform.SetPositionAndRotation(transform.position, transform.rotation);
+
+            AddPiece(left, -ow, bottom, top, cz, thickness, "Left");
+            AddPiece(ow, rightEdge, bottom, top, cz, thickness, "Right");
+            AddPiece(-ow, ow, oh, top, cz, thickness, "Header");
+            AddPiece(-ow, ow, bottom, 0f, cz, thickness, "Sill");
+
+            SetWallOpen(false);
+        }
+
+        /// <summary>One slab of the wall that is left standing. Skipped when it has no width.</summary>
+        private void AddPiece(float x0, float x1, float y0, float y1, float z, float thickness,
+                              string label)
+        {
+            float width = x1 - x0;
+            float height = y1 - y0;
+            if (width <= 0.001f || height <= 0.001f)
+                return;
+
+            var go = new GameObject("Wall_" + label);
+            go.transform.SetParent(_aperture.transform, false);
+            go.transform.localPosition = new Vector3((x0 + x1) * 0.5f, (y0 + y1) * 0.5f, z);
+
+            var box = go.AddComponent<BoxCollider>();
+            box.size = new Vector3(width, height, Mathf.Max(0.01f, thickness));
+        }
+
+        /// <summary>Extent of an axis-aligned box along an arbitrary direction.</summary>
+        private static float Support(Vector3 extents, Vector3 direction)
+        {
+            return Mathf.Abs(extents.x * direction.x) +
+                   Mathf.Abs(extents.y * direction.y) +
+                   Mathf.Abs(extents.z * direction.z);
+        }
+
+        /// <summary>
+        /// Open means the wall's own collider is off and the four pieces are on. Closed is the
+        /// other way round, and closed is the resting state: a wall with a hole in it that no
+        /// portal is holding open is a bug you fall through.
+        /// </summary>
+        private void SetWallOpen(bool open)
+        {
+            if (_wallSolid != null)
+                _wallSolid.enabled = !open;
+
+            if (_aperture != null)
+                _aperture.SetActive(open);
+        }
+
+        /// <summary>
+        /// The wall the opening is standing in.
+        ///
+        /// <para>
+        /// The serialized reference wins. Without one, the collider whose bounds CONTAIN the
+        /// middle of the opening is the wall it is cut into - found by looking rather than by
+        /// name, because a hard-coded object name that stops resolving fails silently and
+        /// forever, which this repository has now done three times.
+        /// </para>
+        /// </summary>
+        private Collider ResolveWall()
+        {
+            if (wallCollider != null)
+                return wallCollider;
+
+            Vector3 middle = transform.position + transform.up * (style.openingSize.y * 0.5f);
+
+            Collider best = null;
+            float bestVolume = float.MaxValue;
+
+            // A physics query at the opening, not a sweep of the scene. FindObjectsByType would
+            // walk every collider in the lobby, and this file is forbidden from searching the
+            // scene at all - the guard does not distinguish a one-off from a per-frame one, and
+            // it is right not to: the cheap version is available and this is it.
+            Collider[] candidates = Physics.OverlapBox(
+                middle, new Vector3(0.05f, 0.05f, 0.05f), transform.rotation,
+                ~0, QueryTriggerInteraction.Ignore);
+
+            foreach (Collider candidate in candidates)
+            {
+                if (candidate == null)
+                    continue;
+
+                // Never the portal's own furniture, and never something the player is carrying.
+                if (candidate.transform.IsChildOf(transform))
+                    continue;
+
+                Bounds b = candidate.bounds;
+                if (!b.Contains(middle))
+                    continue;
+
+                float volume = b.size.x * b.size.y * b.size.z;
+                if (volume < bestVolume)
+                {
+                    bestVolume = volume;
+                    best = candidate;
+                }
+            }
+
+            if (best != null)
+                CIYCLog.Info(LogTag + "wall resolved to '" + best.name + "' (" +
+                             best.bounds.size.ToString("F2") + ").");
+
+            return best;
+        }
 
         /// <summary>
         /// The volume that counts as stepping through, sitting in the plane of the opening.
@@ -913,6 +1093,12 @@ namespace CatchIfYouCan.Environment
         private void SetState(LobbyPortalState next)
         {
             State = next;
+
+            // The collision follows the picture. Only a portal that is actually open is a hole
+            // you can walk into: while it is forming, sealed by a hunt, failed or inactive, the
+            // wall is solid again - otherwise a portal that collapsed would leave a doorway
+            // shaped like nothing at all, and the player would walk into the far room's back.
+            SetWallOpen(next == LobbyPortalState.Open || next == LobbyPortalState.Entering);
         }
 
         /// <summary>A fresh process holds no portal from the last one.</summary>
