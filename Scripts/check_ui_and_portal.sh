@@ -2164,6 +2164,83 @@ else
       "without it the only symptom is a doorway that shuts itself"
 fi
 
+# ---- V14: the house the portal opens onto belongs to the MISSION scene -------------------------
+#
+# `new GameObject` puts the object in the ACTIVE scene, which is not the scene the component
+# creating it lives in. While the lobby portal prepares the mission world, the investigation
+# scene is loaded ADDITIVELY and the lobby stays active - so the generator's own house root was
+# created in the LOBBY, and every room in the house hung off it.
+#
+# One cause, two faces, and neither of them looks like a scene-ownership bug:
+#   - the entry anchor proves its floor by asking whether the collider belongs to its own scene
+#     (it must: a physics query is global across every loaded scene, and the lobby's 40 x 40 m
+#     safety floor sits under nearly anywhere). Every room failed that test, the anchor stayed
+#     null, and the doorway read a null destination as a failed preparation and shut itself.
+#   - had it opened, unloading the lobby would have taken the house with it, so the player
+#     would have arrived in a room and then fallen through the world.
+GEN="$ROOT/Assets/CatchIfYouCan/Scripts/Procedural/ProceduralHouseGenerator.cs"
+
+if code "$GEN" | tr '\n' ' ' | tr -s ' ' | grep -qE 'MoveGameObjectToScene\( ?houseRoot\.gameObject, gameObject\.scene\)'; then
+  ok "the generated house root is moved into the generator's own scene"
+else
+  bad "the generated house root is moved into the generator's own scene" \
+      "a root created with new GameObject lands in the ACTIVE scene, which during a portal preparation is the lobby"
+fi
+
+# Only a scene ROOT can be moved, and only one this class owns - a houseRoot wired in the
+# inspector is already inside a hierarchy and must be left alone.
+if code "$GEN" | tr '\n' ' ' | grep -qE 'houseRoot\.parent == null'; then
+  ok "only an unparented root this class created is relocated"
+else
+  bad "only an unparented root this class created is relocated" \
+      "moving a wired houseRoot would tear it out of the hierarchy it was authored in"
+fi
+
+# Awake alone is not enough: it runs INSIDE AddComponent, before the caller has re-parented the
+# generator into the mission scene, so the scene it compared against then was the wrong one.
+if code "$GEN" | sed -n '/public GeneratedHouse Instantiate(HouseLayout layout)/,/ClearExisting();/p' \
+   | grep -qE 'EnsureRoots\(\);'; then
+  ok "the scene of the house root is re-checked when a layout is built, not only in Awake"
+else
+  bad "the scene of the house root is re-checked when a layout is built, not only in Awake" \
+      "Awake runs inside AddComponent, one line above the SetParent that decides the scene"
+fi
+
+# The same ordering trap, at the call site. SetParent must come BEFORE AddComponent, because
+# Awake runs synchronously inside AddComponent and anything it creates lands in the active scene.
+EM="$(code "$IB" | sed -n '/private void EnsureManagers/,/PlayerFactory\.EnsureMobileInput/p')"
+GEN_PARENT="$(printf '%s\n' "$EM" | grep -n 'SetParent(runtimeParent, false)' | head -1 | cut -d: -f1)"
+GEN_ADD="$(printf '%s\n' "$EM" | grep -n 'AddComponent<ProceduralHouseGenerator>' | head -1 | cut -d: -f1)"
+if [ -n "$GEN_PARENT" ] && [ -n "$GEN_ADD" ] && [ "$GEN_PARENT" -lt "$GEN_ADD" ]; then
+  ok "the generator is parented into the world root before its component is added"
+else
+  bad "the generator is parented into the world root before its component is added" \
+      "AddComponent runs Awake synchronously; a root it creates lands in the ACTIVE scene, which is the lobby"
+fi
+
+# The ghost spawn manager was the second one: created unparented, so it belonged to the lobby and
+# was destroyed by the unload the moment the player arrived.
+GSM_PARENT="$(printf '%s\n' "$EM" | grep -n 'SetParent(runtimeParent, false)' | sed -n '2p' | cut -d: -f1)"
+GSM_ADD="$(printf '%s\n' "$EM" | grep -n 'AddComponent<GhostSpawnManager>' | head -1 | cut -d: -f1)"
+if [ -n "$GSM_PARENT" ] && [ -n "$GSM_ADD" ] && [ "$GSM_PARENT" -lt "$GSM_ADD" ]; then
+  ok "the ghost spawn manager is parented into the world root before its component is added"
+else
+  bad "the ghost spawn manager is parented into the world root before its component is added" \
+      "an unparented runtime manager is owned by the lobby and dies with it"
+fi
+
+# A rejected collider is NAMED with the scene it belongs to. "No floor at (0,0,0)" was reported
+# for rooms that plainly had one, and the message could not distinguish "the ray hit nothing" from
+# "the ray hit the house, and the house is in the wrong scene". That ambiguity is what cost the
+# time, not the bug.
+if printf '%s' "$EMA" | grep -qE 'rejected as foreign' &&
+   printf '%s' "$EMA" | grep -qE 'gameObject\.scene\.name'; then
+  ok "a rejected floor is named together with the scene that owns it"
+else
+  bad "a rejected floor is named together with the scene that owns it" \
+      "'no floor' covers both an empty ray and a house in the wrong scene, and they need different fixes"
+fi
+
 echo
 echo "  $PASS passed, $FAIL failed"
 if [ "$FAIL" -ne 0 ]; then

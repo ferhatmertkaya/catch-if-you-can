@@ -371,6 +371,107 @@ else:
     bad("a primitive with no material is hidden, not left magenta - skipping the "
         "assignment leaves Unity's built-in default, which is magenta under URP")
 
+# ---- the room shell a fallback builds is TEXTURED, and its materials survive a build ---------
+#
+# Every room in the house was falling back to PrimitiveRoomFactory, and that factory painted flat
+# colours: an untextured grey box. On screen that is indistinguishable from a migration that never
+# happened, so the stand-in is now textured with the project's own room materials.
+#
+# Reached through the content catalog, not by path. The catalog lives under Resources, so a
+# material it references is pulled into the build with it; an AssetDatabase or Resources path
+# pointing into Assets/.../Materials works in the editor and finds nothing on a device - which is
+# CLAUDE.md mistake 3 wearing the art department's clothes.
+prf = read("Assets/CatchIfYouCan/Scripts/Procedural/PrimitiveRoomFactory.cs") or ""
+
+if "public static void ConfigureSurfaces" in prf:
+    ok("the room shell is TOLD its materials rather than looking them up")
+else:
+    bad("the room shell is TOLD its materials rather than looking them up",
+        "a Resources path into an Assets folder resolves in the editor and nowhere else")
+
+if not re.search(r"Resources\.Load|AssetDatabase\.", prf):
+    ok("the room shell loads nothing by path")
+else:
+    bad("the room shell loads nothing by path",
+        "content reaches this class through the catalog it is handed")
+
+gen2 = read("Assets/CatchIfYouCan/Scripts/Procedural/ProceduralHouseGenerator.cs") or ""
+if re.search(r"PrimitiveRoomFactory\.ConfigureSurfaces\(", gen2):
+    ok("the generator hands the room shell its materials before building")
+else:
+    bad("the generator hands the room shell its materials before building",
+        "without the call the fallback rooms stay flat colours")
+
+# The catalog declared WallMaterial and FloorMaterial and NOBODY READ THEM: two fields that look
+# like settings and change nothing. Reading them is the point of having them.
+apply = re.search(r"public void ApplyContentCatalog.*?\n        \}", gen2, re.S)
+apply = apply.group(0) if apply else ""
+missing = [f for f in ("WallMaterial", "FloorMaterial", "CeilingMaterial", "TrimMaterial")
+           if "catalog." + f not in apply]
+if not missing:
+    ok("all four room surface materials are read from the catalog")
+else:
+    bad("all four room surface materials are read from the catalog",
+        "unread: " + ", ".join(missing) + " - a field nothing reads is a setting that lies")
+
+# A cube's UVs run 0..1 per face whatever its size, so one shared material stretches a single
+# tile across a whole wall. The authored room materials tile once per metre (MAT_Room_Wall carries
+# a scale of 5.3 over the 5.3 m wall it was made for) and the generated shell has to match, or the
+# wallpaper is one enormous smear that reads as "no texture" just as loudly as no texture.
+if (re.search(r"private const float TilesPerMetre\s*=", prf) and
+        re.search(r"\*\s*TilesPerMetre", prf) and "SetTextureScale" in prf):
+    ok("generated surfaces are tiled per metre rather than left at a cube's 0..1 UVs")
+else:
+    bad("generated surfaces are tiled per metre rather than left at a cube's 0..1 UVs",
+        "one tile stretched over a 6 m wall looks exactly like an untextured wall")
+
+# Same lesson as the generator's own primitives: skipping the assignment does not leave a plain
+# surface, it leaves Unity's built-in default, which is magenta under URP.
+mm = re.search(r"private static GameObject CreatePrimitive\(PrimitiveType type.*?\n        \}", prf, re.S)
+mbody = mm.group(0) if mm else ""
+if "renderer.enabled = false" in mbody and "[CIYC][WorldMaterial]" in mbody:
+    ok("a room primitive with no material is hidden, not left magenta")
+else:
+    bad("a room primitive with no material is hidden, not left magenta",
+        "GameObject.CreatePrimitive arrives carrying the Built-in default shader")
+
+# One call site, so there is exactly one place that can forget.
+prf_calls = len(re.findall(r"= GameObject\.CreatePrimitive\(", prf))
+if prf_calls <= 1:
+    ok("every room primitive gets its material from one place (%d call site)" % prf_calls)
+else:
+    bad("every room primitive gets its material from one place",
+        "%d GameObject.CreatePrimitive calls - each one is a chance to ship magenta" % prf_calls)
+
+# And the catalog's references RESOLVE. A guid naming a file that is not there looks exactly like
+# a working reference until the asset is opened - CLAUDE.md mistake 3, which cost this project the
+# ghost prefab for its whole life.
+cat_path = "Assets/CatchIfYouCan/Resources/CatchIfYouCan/InvestigationContentCatalog.asset"
+cat = read(cat_path) or ""
+guids = dict(re.findall(r"(WallMaterial|FloorMaterial|CeilingMaterial|TrimMaterial): \{fileID: \d+, guid: ([0-9a-f]{32})", cat))
+
+known = {}
+for dirpath, _dirs, files in os.walk(os.path.join(root, "Assets/CatchIfYouCan")):
+    for f in files:
+        if not f.endswith(".mat.meta"):
+            continue
+        meta = os.path.join(dirpath, f)
+        try:
+            text = io.open(meta, encoding="utf-8", errors="replace").read()
+        except OSError:
+            continue
+        g = re.search(r"^guid: ([0-9a-f]{32})", text, re.M)
+        if g and os.path.exists(meta[:-5]):
+            known[g.group(1)] = meta[:-5]
+
+unresolved = [f for f in ("WallMaterial", "FloorMaterial", "CeilingMaterial", "TrimMaterial")
+              if f not in guids or guids[f] not in known]
+if not unresolved:
+    ok("all four room materials named by the catalog resolve to files that exist")
+else:
+    bad("all four room materials named by the catalog resolve to files that exist",
+        "unresolved: " + ", ".join(unresolved) + " - a guid pointing nowhere reads as wired")
+
 print()
 print("  %d passed, %d failed" % (passed, failed))
 sys.exit(1 if failed else 0)

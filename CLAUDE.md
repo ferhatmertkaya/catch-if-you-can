@@ -190,7 +190,17 @@ place that number lives; everything else derives it.
   scene, and while a portal is open the lobby is loaded too — complete with a 40x40 m
   safety floor that sits under very nearly anywhere, so a scene-blind probe validates
   an arrival against a surface that is unloaded seconds later and the player lands and
-  then falls. 202 checks.
+  then falls. And it keeps the world the doorway opens ONTO in the mission's own scene:
+  `new GameObject` lands in the ACTIVE scene, which during a preparation is the lobby, so the
+  generated house hung off a lobby object — every room failed the mission's own "is this floor
+  mine" test, the entry anchor stayed null, and a null destination reads as a failed preparation
+  and collapses the doorway; had it opened, the lobby unload would have taken the house with it
+  and the player would have arrived and then fallen. The root is moved into the generator's own
+  scene, re-checked when a layout is built rather than only in `Awake` — which runs INSIDE
+  `AddComponent`, one line above the `SetParent` that decides the scene — every runtime manager
+  is parented before its component is added, and a rejected floor is named together with the
+  scene that owns it, because "no floor" covered both an empty ray and a house in the wrong
+  scene and those need different fixes. 208 checks.
 
 - `Scripts/check_agent_architecture.sh` — the roster holds 40 unique roles with
   every field, the roster and `AGENT_OWNERSHIP.md` name the same roles, the
@@ -220,7 +230,7 @@ place that number lives; everything else derives it.
   instead of standing in a T-pose. It also stops a visual being built before the thing it is a
   visual OF: an item told what it is after `AddComponent` rebuilds, the doorway starts opening
   before its far world is ready, and Nathan's bound textures import at a size the material can
-  actually use, and every model a visual profile names really exists under `Resources` with a non-zero forward axis. 48 checks.
+  actually use, and every model a visual profile names really exists under `Resources` with a non-zero forward axis. 54 checks.
 
 - `Scripts/check_project_tags.sh` — every tag and layer the code names really exists.
   Assigning an undefined tag throws and takes the rest of that build down with it; an
@@ -261,7 +271,16 @@ place that number lives; everything else derives it.
   primitive that could not be given a material has its RENDERER switched off rather than
   left carrying Unity's built-in default, which is a Built-in-pipeline shader and draws
   magenta under URP — the collider stays, so an invisible floor still holds the player
-  up. 23 checks.
+  up. And it keeps the fallback room from looking like the migration that never happened: the
+  stand-in shell is textured from the project's own room materials, reached through the content
+  catalog rather than by a path — the catalog is under `Resources`, so what it references ships,
+  while a path into `Assets/.../Materials` resolves in the editor and nowhere else — the four
+  material fields on that catalog are actually READ, two of them having been declared and used
+  by nobody, every generated surface is tiled one texture tile per metre because a cube's UVs run
+  0..1 whatever its size and one tile smeared over a 6 m wall reads exactly like no texture at
+  all, a room primitive with no material is hidden and reported rather than left carrying Unity's
+  magenta built-in default, and every material guid the catalog names resolves to a file that
+  exists. 31 checks.
 
 All ten run in CI (`.github/workflows/determinism.yml`). Run them locally before
 pushing; they need nothing but a shell (and `python3` for the roster checks).
@@ -372,6 +391,23 @@ Repeating one of these is the most likely way to break something.
    declaration and for the use as separate patterns, and both were present — just in the
    wrong order. Order is checked now, across every shader in the project, because no compiler
    runs in CI and nothing else would ever say so.
+
+17. **An object created in the wrong scene, which nothing in the object could see.**
+   `new GameObject` puts the object in the ACTIVE scene, not in the scene of the component
+   that created it. The house generator made its own root that way, and while the lobby
+   portal prepares the mission world the investigation scene is loaded ADDITIVELY with the
+   lobby still active - so the entire generated house hung off an object the LOBBY owned.
+   One cause, and neither of its two faces looks like a scene-ownership bug. The mission's
+   entry anchor proves its floor by asking whether the collider belongs to its own scene -
+   it has to, because a physics query is global across every loaded scene and the lobby's
+   40 x 40 m safety floor sits under nearly anywhere - so every room reported "no floor",
+   the anchor stayed null, and the doorway read a null destination as a failed preparation
+   and shut itself a second after opening. And had it opened, unloading the lobby would
+   have destroyed the house, so the player arrived in a room and then fell through the
+   world. The log said "no floor at (0.0, 0.0, 0.0)" about rooms that plainly had one,
+   because the rejection was silent about WHY. `Awake` cannot fix this on its own either:
+   it runs inside `AddComponent`, one line above the `SetParent` that decides which scene
+   the component is in.
 
 ## Unity Editor availability
 

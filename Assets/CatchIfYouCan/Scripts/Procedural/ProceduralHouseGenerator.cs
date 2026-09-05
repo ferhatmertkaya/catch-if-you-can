@@ -62,6 +62,17 @@ namespace CatchIfYouCan.Procedural
         [Header("Door Prefab")]
         [SerializeField] private GameObject doorPrefab;
 
+        [Header("Room Surfaces")]
+        [Tooltip("Die Materialien der vom Code gebauten Raumhuelle. Sie kommen aus dem " +
+                 "InvestigationContentCatalog, damit sie in einem Build wirklich mitkommen: " +
+                 "der Katalog liegt unter Resources, also zieht er sie mit hinein. Ein " +
+                 "direkter Pfad auf Assets/.../Materials wuerde im Editor funktionieren und " +
+                 "im Build nichts finden.")]
+        [SerializeField] private Material wallMaterial;
+        [SerializeField] private Material floorMaterial;
+        [SerializeField] private Material ceilingMaterial;
+        [SerializeField] private Material trimMaterial;
+
         private Transform _activeHouseRoot;
 
         public GeneratedHouse LastGenerated { get; private set; }
@@ -85,11 +96,50 @@ namespace CatchIfYouCan.Procedural
         private void Awake()
         {
             InvestigationContentLoader.ApplyToGenerator(this);
+            EnsureRoots();
 
+            if (navMeshBuilder == null)
+                navMeshBuilder = GetComponent<NavMeshRuntimeBuilder>();
+        }
+
+        /// <summary>
+        /// Gives the house a root, and makes sure that root belongs to THIS generator's scene.
+        ///
+        /// <para>
+        /// <c>new GameObject</c> puts the object in the ACTIVE scene, which is not the same
+        /// thing as the scene this component lives in. While the lobby portal prepares the
+        /// mission world the investigation scene is loaded ADDITIVELY and the lobby stays
+        /// active, so a root created here landed in the lobby - and the entire generated house
+        /// hung off an object the lobby owned.
+        /// </para>
+        /// <para>
+        /// That is one cause with two faces. The mission's entry anchor proves its floor by
+        /// asking whether the collider it hit belongs to its own scene, because a physics query
+        /// is global across every loaded scene and the lobby's 40 x 40 m safety floor sits under
+        /// very nearly anywhere; every room failed that test, the anchor stayed null, and the
+        /// doorway read a null destination as a failed preparation and collapsed a second after
+        /// opening. And had it opened, unloading the lobby would have taken the house with it,
+        /// so the player would have arrived in a room and then fallen through the world.
+        /// </para>
+        /// <para>
+        /// Only a scene ROOT can be moved between scenes, which is exactly what this owns:
+        /// a root this class created and nothing has re-parented. A <c>houseRoot</c> wired in
+        /// the inspector already sits inside a scene's hierarchy and is left alone.
+        /// </para>
+        /// </summary>
+        private void EnsureRoots()
+        {
             if (houseRoot == null)
             {
                 var rootGo = new GameObject("GeneratedHouseRoot");
                 houseRoot = rootGo.transform;
+            }
+
+            if (houseRoot.parent == null && gameObject.scene.IsValid() &&
+                houseRoot.gameObject.scene != gameObject.scene)
+            {
+                UnityEngine.SceneManagement.SceneManager.MoveGameObjectToScene(
+                    houseRoot.gameObject, gameObject.scene);
             }
 
             if (propRoot == null)
@@ -98,9 +148,6 @@ namespace CatchIfYouCan.Procedural
                 propRoot = propGo.transform;
                 propRoot.SetParent(houseRoot, false);
             }
-
-            if (navMeshBuilder == null)
-                navMeshBuilder = GetComponent<NavMeshRuntimeBuilder>();
         }
 
         // ================================================================ STAGE A
@@ -166,6 +213,17 @@ namespace CatchIfYouCan.Procedural
         /// </summary>
         public GeneratedHouse Instantiate(HouseLayout layout)
         {
+            // Asked again here, not only in Awake. Awake runs INSIDE AddComponent, before the
+            // caller has re-parented this generator into the mission scene's world root - so
+            // the scene it compared against then was not yet the scene the house has to end up
+            // in. By the time a layout is being built the generator is where it belongs.
+            EnsureRoots();
+
+            // Told before the first room is built, so a room shell that falls back to boxes at
+            // least falls back to TEXTURED boxes.
+            PrimitiveRoomFactory.ConfigureSurfaces(wallMaterial, floorMaterial, ceilingMaterial,
+                                                   trimMaterial);
+
             ClearExisting();
 
             // Build into a fresh root and swap, rather than reusing one that still holds
@@ -707,6 +765,20 @@ namespace CatchIfYouCan.Procedural
 
             if (modularInteriorCatalog == null)
                 modularInteriorCatalog = catalog.ModularInterior;
+
+            // These four were declared on the catalog and read by nobody: a field that looks
+            // like a setting and changes nothing. They drive the room shell now.
+            if (wallMaterial == null)
+                wallMaterial = catalog.WallMaterial;
+
+            if (floorMaterial == null)
+                floorMaterial = catalog.FloorMaterial;
+
+            if (ceilingMaterial == null)
+                ceilingMaterial = catalog.CeilingMaterial;
+
+            if (trimMaterial == null)
+                trimMaterial = catalog.TrimMaterial;
         }
     }
 }

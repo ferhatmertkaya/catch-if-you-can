@@ -17,8 +17,15 @@ namespace CatchIfYouCan.Content
                  "nicht durch Ersatz verdeckt.")]
         public ModularInteriorCatalog ModularInterior;
 
-        [Header("Optional Materials")]
+        [Header("Room Surfaces")]
+        [Tooltip("Die Materialien fuer die vom Code gebaute Raumhuelle. Sie werden pro " +
+                 "Flaeche gekachelt: eine Kachel je Meter, wie in MAT_Room_Wall authored " +
+                 "(5.3 Kacheln ueber eine 5.3 m breite Wand). Fehlen sie, bleiben die " +
+                 "Raeume einfarbig - das ist kein Fehler, aber es sieht aus wie eine " +
+                 "gescheiterte Migration und wird deshalb gemeldet.")]
         public Material WallMaterial;
         public Material FloorMaterial;
+        public Material CeilingMaterial;
+        public Material TrimMaterial;
     }
 }

@@ -422,7 +422,8 @@ namespace CatchIfYouCan.Procedural
 
             CIYCLog.Error("[CIYC][Portal][Handoff] No room in the generated house has a floor " +
                           "this scene owns, so no mission entry anchor was built and the portal " +
-                          "will refuse rather than open onto nothing. Tried:" +
+                          "will refuse rather than open onto nothing. This scene is '" +
+                          gameObject.scene.name + "'. Tried:" +
                           (tried.Length > 0 ? tried.ToString() : " <no rooms at all>"));
         }
 
@@ -447,10 +448,25 @@ namespace CatchIfYouCan.Procedural
 
             bool found = false;
             RaycastHit floor = default;
+
+            // Rejections are named, not swallowed. "No floor here" was reported for rooms that
+            // plainly had one: the floor belonged to a different scene, and the message said
+            // nothing about that, so the same log line covered "the ray hit nothing at all" and
+            // "the ray hit the house, and the house is in the wrong scene".
+            var rejected = new System.Text.StringBuilder();
+
             for (int i = 0; i < hits.Length; i++)
             {
-                if (hits[i].collider == null || hits[i].collider.gameObject.scene != here)
+                if (hits[i].collider == null)
                     continue;
+
+                if (hits[i].collider.gameObject.scene != here)
+                {
+                    if (rejected.Length < 240)
+                        rejected.Append(" ").Append(hits[i].collider.name).Append("@scene'")
+                                .Append(hits[i].collider.gameObject.scene.name).Append("'");
+                    continue;
+                }
 
                 if (!found || hits[i].distance < floor.distance)
                 {
@@ -461,8 +477,12 @@ namespace CatchIfYouCan.Procedural
 
             if (!found)
             {
-                tried.Append(" ").Append(room.Root.name).Append("(no floor at ")
-                     .Append(root.ToString("F1")).Append(")");
+                tried.Append(" ").Append(room.Root.name).Append("(no floor this scene owns at ")
+                     .Append(root.ToString("F1")).Append("; hits=").Append(hits.Length)
+                     .Append(rejected.Length > 0
+                         ? ", rejected as foreign:" + rejected
+                         : ", none of them below the room")
+                     .Append(")");
                 return false;
             }
 
@@ -653,11 +673,19 @@ namespace CatchIfYouCan.Procedural
             // Below this line is what genuinely belongs to the investigation scene: the
             // generator is parented into the world root, so it is scene content rather
             // than a service, and the spawn manager is created per mission.
+            // Parented BEFORE the component is added, both times. AddComponent runs Awake
+            // synchronously, so anything a component decides about "which scene am I in" is
+            // decided on the line above SetParent, not the line below it - and while the lobby
+            // portal prepares this world, the active scene is the lobby. An object created
+            // there and left there is destroyed when the lobby unloads, taking the house or the
+            // ghost with it.
+            Transform runtimeParent = worldRoot != null ? worldRoot : transform;
+
             if (houseGenerator == null)
             {
                 var go = new GameObject("ProceduralHouseGenerator");
+                go.transform.SetParent(runtimeParent, false);
                 houseGenerator = go.AddComponent<ProceduralHouseGenerator>();
-                go.transform.SetParent(worldRoot != null ? worldRoot : transform, false);
             }
 
             InvestigationContentLoader.ApplyToGenerator(houseGenerator);
@@ -665,6 +693,7 @@ namespace CatchIfYouCan.Procedural
             if (ghostSpawnManager == null)
             {
                 var go = new GameObject("GhostSpawnManager");
+                go.transform.SetParent(runtimeParent, false);
                 ghostSpawnManager = go.AddComponent<GhostSpawnManager>();
             }
 

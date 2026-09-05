@@ -291,6 +291,47 @@ namespace CatchIfYouCan.EditorTools
 
         // -------------------------------------------------------------- Katalog bauen
 
+        /// <summary>
+        /// Hangs the freshly built kit off the catalog the RUNTIME actually reads.
+        ///
+        /// <para>
+        /// This used to be a sentence in the report asking the user to drag the asset into a
+        /// field, and it is the step that was missed: with 'Modular Interior' empty, the
+        /// generator can build no room from the pack and every room in the house falls back to
+        /// an untextured primitive box. A tool that produces an asset nothing points at has
+        /// done half a job - the same shape as content removed without removing what pointed
+        /// at it, only pointing the other way.
+        /// </para>
+        /// <para>
+        /// An existing reference is left alone and reported, because overwriting a hand-made
+        /// wiring is not this button's business.
+        /// </para>
+        /// </summary>
+        private static string WireIntoContentCatalog(ModularInteriorCatalog kit)
+        {
+            const string ContentCatalogPath =
+                "Assets/CatchIfYouCan/Resources/CatchIfYouCan/InvestigationContentCatalog.asset";
+
+            var content = AssetDatabase.LoadAssetAtPath<InvestigationContentCatalog>(ContentCatalogPath);
+            if (content == null)
+                return "WARNUNG: " + ContentCatalogPath + " gibt es nicht, der Katalog haengt " +
+                       "also an nichts. Ohne ihn baut der Generator KEINEN Raum aus dem Paket.\n";
+
+            if (content.ModularInterior == kit)
+                return "Verdrahtet: " + ContentCatalogPath + " zeigt bereits auf diesen Katalog.\n";
+
+            if (content.ModularInterior != null)
+                return "HINWEIS: " + ContentCatalogPath + " zeigt auf '" +
+                       content.ModularInterior.name + "' und wird nicht ueberschrieben. Wenn " +
+                       "das falsch ist, das Feld 'Modular Interior' von Hand aendern.\n";
+
+            content.ModularInterior = kit;
+            EditorUtility.SetDirty(content);
+            AssetDatabase.SaveAssets();
+            return "Verdrahtet: " + ContentCatalogPath + " -> Modular Interior = " +
+                   kit.name + ". Der Generator liest jetzt dieses Kit.\n";
+        }
+
         private static string BuildCatalog(Classification c)
         {
             if (c == null || c.Total == 0)
@@ -355,8 +396,7 @@ namespace CatchIfYouCan.EditorTools
             sb.AppendLine();
             sb.AppendLine((created ? "Angelegt: " : "Aktualisiert: ") + CatalogPath);
             sb.AppendLine();
-            sb.AppendLine("NAECHSTER SCHRITT: den Katalog in InvestigationContentCatalog.asset");
-            sb.AppendLine("in das Feld 'Modular Interior' ziehen. Danach Schritt 3.");
+            sb.Append(WireIntoContentCatalog(catalog));
             sb.AppendLine();
             sb.AppendLine("Die Zuordnung ist geraten. Wo sie falsch ist, im Katalog-Asset");
             sb.AppendLine("korrigieren - er ist eine ganz normale Liste.");
