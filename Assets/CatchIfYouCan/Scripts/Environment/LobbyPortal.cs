@@ -146,6 +146,12 @@ namespace CatchIfYouCan.Environment
 
         /// <summary>The replacement collision: the same wall with a hole in it.</summary>
         private GameObject _aperture;
+
+        /// <summary>Carries thrown objects through. Built on the first binding.</summary>
+        private PortalObjectTransfer _objectTransfer;
+
+        /// <summary>What this portal has already sent through, for the lobby unload check.</summary>
+        public PortalObjectTransfer ObjectTransfer => _objectTransfer;
         private float _previousSide;
         private bool _hasPreviousSide;
         private PortalEffects _effects;
@@ -323,6 +329,23 @@ namespace CatchIfYouCan.Environment
                 surface.SetDestination(ResolveViewAnchor(_pendingWorld.ArrivalPoint));
         }
 #endif
+
+        /// <summary>
+        /// Lets thrown objects through, using the same pair the view and the player use.
+        ///
+        /// <para>
+        /// Armed only once a destination exists. Before that the opening shows a probe room or
+        /// nothing, and carrying an object into a world that is not there would destroy it.
+        /// </para>
+        /// </summary>
+        private void ArmObjectTransfer(Transform anchor)
+        {
+            if (_objectTransfer == null)
+                _objectTransfer = gameObject.AddComponent<PortalObjectTransfer>();
+
+            _objectTransfer.Arm(surface != null ? surface.SurfacePlane : null, anchor,
+                                style.openingSize);
+        }
 
         /// <summary>
         /// The transform the portal's view is anchored to, which is NOT where the player lands.
@@ -753,6 +776,7 @@ namespace CatchIfYouCan.Environment
                                  _pendingWorld.ArrivalPoint.position.ToString("F1") +
                                  ", view anchor raised to " + anchor.position.ToString("F1"));
                     surface.SetDestination(anchor);
+                    ArmObjectTransfer(anchor);
                     bound = true;
 
                     // The probe was standing in; the real world takes the opening from here and

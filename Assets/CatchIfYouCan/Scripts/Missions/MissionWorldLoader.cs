@@ -495,6 +495,13 @@ namespace CatchIfYouCan.Missions
             // world unable to move.
             UI.MenuInputGate.Pop("LobbyPortal");
 
+            // Anything thrown through before the player must already belong to the mission
+            // scene. One that does not is about to be destroyed by this unload, and the whole
+            // point of throwing it ahead was that it would be waiting.
+            Environment.LobbyPortal portal = Environment.LobbyPortal.Instance;
+            if (portal != null && portal.ObjectTransfer != null)
+                portal.ObjectTransfer.CountStillOwnedBy(lobbyScene);
+
             if (lobbyScene.IsValid() && lobbyScene.isLoaded && lobbyScene != missionScene)
             {
                 AsyncOperation unload = SceneManager.UnloadSceneAsync(lobbyScene);

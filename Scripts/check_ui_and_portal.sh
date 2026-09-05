@@ -1952,6 +1952,92 @@ else
       "an empty bag and a lost bag look identical without it"
 fi
 
+# ---- V12: thrown objects go through the doorway too -------------------------------------------
+#
+# A dropped item already flies - HeldEquipmentBase gives it a Rigidbody and throws it. What it
+# could not do was arrive: the portal is a hole in one scene showing a second scene loaded beside
+# it, so a thrown EMF reader landed on the lobby floor behind the picture, and was then destroyed
+# with the lobby because Unequip unparents to world space and a dropped item is a scene ROOT.
+OT="$ROOT/Assets/CatchIfYouCan/Scripts/Environment/PortalObjectTransfer.cs"
+PT="$ROOT/Assets/CatchIfYouCan/Scripts/Environment/PortalTransferable.cs"
+
+for f in "$OT" "$PT"; do
+  [ -f "$f" ] || bad "$(basename "$f") exists" "thrown objects cannot cross without it"
+done
+
+# The SAME object changes scene. Destroying and rebuilding it would reset battery, tier, on/off
+# state and ownership - every runtime value survives here by never being touched.
+if code "$OT" | grep -qE 'SceneManager\.MoveGameObjectToScene\(go, to\)' &&
+   ! code "$OT" | grep -qE 'Instantiate\(|Destroy\(go'; then
+  ok "a crossing object is moved, never rebuilt"
+else
+  bad "a crossing object is moved, never rebuilt" \
+      "rebuilding it resets every runtime value it was carrying"
+fi
+
+# Momentum survives. A thrown object has to keep going on the far side rather than stopping at
+# the plane, and its direction is expressed in the source portal's frame.
+if code "$OT" | grep -qE 'body\.linearVelocity = through\.MultiplyVector\(velocity\)' &&
+   code "$OT" | grep -qE 'body\.angularVelocity = through\.MultiplyVector\(spin\)'; then
+  ok "velocity and spin are rotated through the pair, not zeroed"
+else
+  bad "velocity and spin are rotated through the pair, not zeroed" \
+      "an object that stops at the plane did not go through it"
+fi
+
+# A CROSSING, not an overlap, and not a plane that extends past the hole.
+if code "$OT" | grep -qE 'if \(previous <= 0f \|\| side > 0f\)' &&
+   code "$OT" | grep -qE 'private bool InsideAperture'; then
+  ok "objects cross on a sign change inside the opening"
+else
+  bad "objects cross on a sign change inside the opening" \
+      "an infinite plane carries objects through solid wall two metres away"
+fi
+
+# Ping-pong suppression: an object straddling the plane must not bounce between scenes.
+if code "$OT" | grep -qE 'Time\.time - item\.LastTransferTime < CooldownSeconds' &&
+   code "$OT" | grep -qE 'duplicate-cross suppressed'; then
+  ok "a straddling object is not carried twice"
+else
+  bad "a straddling object is not carried twice" \
+      "without a cooldown an object resting in the hole flips scenes every step"
+fi
+
+# Eligibility is DECLARED, never inferred from having a Rigidbody. Sweeping for bodies near the
+# opening eventually picks up lobby furniture, a particle, or the portal's own wall colliders.
+if code "$OT" | grep -qE 'PortalTransferable\.All' &&
+   ! code "$OT" | grep -qE 'FindObjectsByType<Rigidbody>|GetComponentsInChildren<Rigidbody>'; then
+  ok "only declared objects are carried"
+else
+  bad "only declared objects are carried" \
+      "an object teleported into a house because it happened to have a body"
+fi
+
+# The mark goes on when the item is thrown and comes off when it is caught - an item in a hand
+# travels with the player and must not be carried a second time.
+HE="$ROOT/Assets/CatchIfYouCan/Scripts/Equipment/HeldEquipmentBase.cs"
+if code "$HE" | sed -n '/private void StartPhysics/,/^        }$/p' \
+     | grep -qE 'PortalTransferable\.Mark\(gameObject\)' &&
+   code "$HE" | sed -n '/protected void ReleasePhysics/,/^        }$/p' \
+     | grep -qE 'PortalTransferable\.Unmark\(gameObject\)'; then
+  ok "an item is transferable only while it is in flight"
+else
+  bad "an item is transferable only while it is in flight" \
+      "a held item would be carried through twice, once in a hand and once by itself"
+fi
+
+# The lobby must not be unloaded on top of something that crossed into it.
+MWL="$ROOT/Assets/CatchIfYouCan/Scripts/Missions/MissionWorldLoader.cs"
+SEAM="$(code "$MWL" | sed -n '/public static IEnumerator EnterSeamlessAsync/,/^        }$/p')"
+CHECK_LINE="$(printf '%s' "$SEAM" | grep -n 'CountStillOwnedBy' | head -1 | cut -d: -f1)"
+UNLOAD_LINE="$(printf '%s' "$SEAM" | grep -n 'UnloadSceneAsync' | head -1 | cut -d: -f1)"
+if [ -n "$CHECK_LINE" ] && [ -n "$UNLOAD_LINE" ] && [ "$CHECK_LINE" -lt "$UNLOAD_LINE" ]; then
+  ok "stranded objects are counted before the lobby is unloaded"
+else
+  bad "stranded objects are counted before the lobby is unloaded" \
+      "check=$CHECK_LINE unload=$UNLOAD_LINE - after the unload there is nothing left to count"
+fi
+
 echo
 echo "  $PASS passed, $FAIL failed"
 if [ "$FAIL" -ne 0 ]; then

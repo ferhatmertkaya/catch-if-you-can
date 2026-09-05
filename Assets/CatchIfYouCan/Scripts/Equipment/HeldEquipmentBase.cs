@@ -858,6 +858,11 @@ namespace CatchIfYouCan.Equipment
             // About its own long axis and across it, so it tumbles rather than spinning flat.
             Vector3 spin = transform.right * dropSpin + transform.forward * (dropSpin * 0.4f);
             _dropBody.AddTorque(spin, ForceMode.Impulse);
+
+            // Eligible to go through the portal from here, and only from here: an item in a hand
+            // travels with the player, an item on a shelf is scenery, and an item in flight is
+            // the only one that can arrive somewhere by itself.
+            Environment.PortalTransferable.Mark(gameObject);
         }
 
         /// <summary>Takes the body back off, so the hand can carry it again.</summary>
@@ -872,6 +877,10 @@ namespace CatchIfYouCan.Equipment
                 Destroy(_dropBody);
                 _dropBody = null;
             }
+
+            // Back in a hand, so no longer a loose object. Left marked, it would be carried a
+            // second time by the portal while the player who is holding it walks through.
+            Environment.PortalTransferable.Unmark(gameObject);
 
             if (_dropCollider != null)
                 _dropCollider.enabled = false;

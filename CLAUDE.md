@@ -175,7 +175,12 @@ place that number lives; everything else derives it.
   picked up walks through with them — the mission installs a starter loadout only where
   there was no lobby to take one from, the hand anchor that holstered items hang from is
   wired on every route, and what they walked in with is reported, because an empty bag
-  and a lost bag look identical in a dark house. 185 checks.
+  and a lost bag look identical in a dark house. And it lets THROWN things through the
+  same doorway: a dropped item already flies, but it landed on the lobby floor behind
+  the picture and died with the scene — the same object changes scene now, never
+  rebuilt, with its velocity and spin rotated through the pair rather than zeroed, on a
+  sign change inside the opening rather than an overlap, once rather than every physics
+  step, and only when something declared it transferable. 192 checks.
 
 - `Scripts/check_agent_architecture.sh` — the roster holds 40 unique roles with
   every field, the roster and `AGENT_OWNERSHIP.md` name the same roles, the
