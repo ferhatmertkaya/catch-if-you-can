@@ -333,7 +333,14 @@ place that number lives; everything else derives it.
   centimetre), the audit runs on a button rather than per repaint, the wrapper corrects the origin
   while the vendor prefab goes in as an untouched instance, and a material with no base map is
   named as such rather than left looking like a lost one — this pack ships textureless FBX
-  duplicates beside its textured materials. 82 checks.
+  duplicates beside its textured materials. And it holds a hierarchy tidy-up to being a MOVE:
+  reparenting goes through `Undo.SetTransformParent`, world position, rotation and lossyScale are
+  re-measured after every move and a drift is REPORTED rather than compensated for by hand — a
+  manual correction hides the bad reparent that caused it — an organisational folder sits at the
+  origin unrotated and unscaled so it cannot shift what is put into it later, nothing is added,
+  removed, switched on or off, or unpacked, anything the audit could not classify is offered
+  unticked rather than moved, and the scene is left dirty for the user to save after looking.
+  92 checks.
 
 All ten run in CI (`.github/workflows/determinism.yml`). Run them locally before
 pushing; they need nothing but a shell (and `python3` for the roster checks).

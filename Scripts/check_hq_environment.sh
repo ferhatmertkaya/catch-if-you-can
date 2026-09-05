@@ -978,6 +978,71 @@ else:
     bad("a material with no base map is named as such, not left to look like a lost material",
         "this pack ships textureless FBX duplicates beside its textured materials")
 
+# ---- sorting the hierarchy is a MOVE, and nothing else ----------------------------------------
+#
+# Reparenting is safe in this scene because Unity serialises references by fileID rather than by
+# path, nothing here calls DontDestroyOnLoad on itself (the one thing that forces an object to
+# stay a scene root), and the only name-based lookup - GameObject.Find("Door_Green_Fog") - is
+# parent-independent. What would NOT be safe is a tidy-up that quietly changed something else.
+hier = code("Assets/CatchIfYouCan/Editor/MainMenuHierarchyTool.cs") or ""
+
+if hier and "Undo.SetTransformParent" in hier:
+    ok("the hierarchy tool reparents through Undo.SetTransformParent")
+else:
+    bad("the hierarchy tool reparents through Undo.SetTransformParent",
+        "a hand-set m_Father cannot be undone and does not preserve the world transform")
+
+# Verified, not assumed. And lossyScale rather than localScale: what must not change is the size
+# on screen.
+if "target.lossyScale" in hier and "Quaternion.Angle(rotBefore" in hier:
+    ok("world position, rotation and lossyScale are re-measured after every move")
+else:
+    bad("world position, rotation and lossyScale are re-measured after every move",
+        "'SetParent preserves the transform' is a claim until it is checked")
+
+# A drift is REPORTED, never corrected. Correcting a child by hand hides the one thing worth
+# knowing.
+if "ABWEICHUNG" in (read("Assets/CatchIfYouCan/Editor/MainMenuHierarchyTool.cs") or "") and \
+        "localPosition =" not in hier:
+    ok("a transform drift is reported rather than compensated for")
+else:
+    bad("a transform drift is reported rather than compensated for",
+        "manually fixing a child after a bad reparent hides the bad reparent")
+
+# Hierarchy only. No component added or removed, nothing switched on or off, no prefab unpacked.
+for forbidden, why in [
+        ("AddComponent", "adding a component is not a hierarchy change"),
+        ("DestroyImmediate", "a tidy-up must not delete anything"),
+        ("SetActive", "switching an object on or off is a behaviour change"),
+        ("UnpackPrefabInstance", "unpacking breaks the link to the purchased asset")]:
+    if hier and forbidden not in hier:
+        ok("the hierarchy tool never calls %s" % forbidden)
+    else:
+        bad("the hierarchy tool never calls %s" % forbidden, why)
+
+# Folders are created at the origin with identity rotation and unit scale. A folder with a
+# transform of its own silently moves everything put into it later, and "everything shifted a
+# bit after the tidy-up" is hard to trace back.
+if "SetPositionAndRotation(Vector3.zero, Quaternion.identity)" in hier:
+    ok("an organisational folder sits at the origin, unrotated and unscaled")
+else:
+    bad("an organisational folder sits at the origin, unrotated and unscaled",
+        "a folder with a transform moves everything parented into it")
+
+# A plan first, and anything the audit could not clear stays unticked.
+if "m.Do = false;" in hier and "ROLLE UNKLAR" in (read("Assets/CatchIfYouCan/Editor/MainMenuHierarchyTool.cs") or ""):
+    ok("what the audit could not classify is offered unticked rather than moved")
+else:
+    bad("what the audit could not classify is offered unticked rather than moved",
+        "safety beats a tidy hierarchy - an unclear object stays where it is")
+
+# The scene is left dirty, not saved. Saving is the user's decision after looking.
+if "MarkSceneDirty" in hier and "SaveScene" not in hier:
+    ok("the scene is marked dirty and left for the user to save")
+else:
+    bad("the scene is marked dirty and left for the user to save",
+        "saving on the user's behalf removes their chance to look first")
+
 print()
 print("  %d passed, %d failed" % (passed, failed))
 sys.exit(1 if failed else 0)

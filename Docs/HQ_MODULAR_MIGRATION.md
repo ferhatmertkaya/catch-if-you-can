@@ -453,3 +453,36 @@ preference: the pack contains zero of each, so requiring them made every catalog
 report itself invalid forever — and a validator that cries wolf is one nobody reads. CIYC
 generates both surfaces at exact size with its own UVs. What the pack is asked for is the
 surface material and the pieces that genuinely fit: the door leaf and the window insert.
+
+
+## The 01_MainMenu hierarchy
+
+`Catch If You Can → Szene → Hierarchie sortieren` sorts the open scene's ROOT objects into
+`00_SYSTEMS` … `08_UI`, and creates `05_HQ_MANUAL_HOUSE` with its eight empty categories so
+hand-placed pieces have somewhere to go. It shows a plan first and moves nothing until Apply.
+
+**Why reparenting is safe here, established rather than assumed.** Unity serialises object
+references by fileID, not by hierarchy path, so every reference in this scene survives a move —
+and there are many: `MainMenuModeController` points at `Lobby_PlayerSpawn`, `Lobby_Exterior`,
+`Lobby_Ambience`, the `Main Camera` and its `AudioListener`; `MainMenuHorrorEventDirector` points
+at three red lights, `CandleLight`, `PhoneAudio` and `MainMenu_GhostFloat`. None of that is
+path-based. The two things that *would* have made a move unsafe were checked: no object in this
+scene calls `DontDestroyOnLoad` on itself (only a scene root survives a scene change, and
+`LobbyPortal`'s mention of it is a comment about the transition overlay), and the one name-based
+lookup that touches this scene — `GameObject.Find("Door_Green_Fog")` in
+`MainMenuAtmosphereBuilder` — is parent-independent but finds only **active** objects, which is
+why every folder the tool creates is created active.
+
+**What does not move.** Four objects are parented *inside* prefab instances — `Spot Light` under
+`CIYC_HauntedGrandfatherClock`, `CandleFX` under `CIYC_HauntedCandleHolder`, `PhoneAudio` under
+`CIYC_HauntedRotaryPhone`, `Area Light` under `CIYC_MainMenu_Corridor`. Pulling one out would
+change that instance's override set, so they are not offered. `MainMenu_Lobby` moves as one
+subtree: splitting it into `02_FLOOR` / `03_WALLS` / … is a separate decision, not a side effect
+of tidying. A prefab instance whose role cannot be read off a component is offered **unticked**.
+
+**Two findings the audit turned up that are not hierarchy problems:**
+
+- `MainMenu_Lobby` is saved with `m_IsActive: 0` — the whole walkable lobby is switched off, and
+  nothing in the project references it by name to switch it back on. The tool moves it and leaves
+  it off; enabling it is a behaviour change and belongs to whoever turned it off.
+- `Lobby_Portal`'s `surface` field is `None` in the saved scene.

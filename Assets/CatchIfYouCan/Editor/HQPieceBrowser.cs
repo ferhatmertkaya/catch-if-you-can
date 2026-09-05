@@ -201,6 +201,13 @@ namespace CatchIfYouCan.EditorTools
             var wrapper = new GameObject("HQ_" + piece.Name);
             Undo.RegisterCreatedObjectUndo(wrapper, "HQ-Teil setzen");
 
+            // Into 05_HQ_MANUAL_HOUSE/<Kategorie>, if that structure is already there. It is not
+            // created on the fly: a placement is not the moment to reorganise somebody's scene,
+            // and a wrapper left at the root is easy to move afterwards.
+            Transform category = FindCategory(piece);
+            if (category != null)
+                wrapper.transform.SetParent(category, true);
+
             var instance = (GameObject)PrefabUtility.InstantiatePrefab(prefab, wrapper.transform);
             instance.transform.localPosition = Vector3.zero;
             instance.transform.localRotation = Quaternion.identity;
@@ -222,6 +229,62 @@ namespace CatchIfYouCan.EditorTools
             }
 
             Selection.activeGameObject = wrapper;
+            SceneView.lastActiveSceneView?.FrameSelected();
+        }
+
+        /// <summary>
+        /// The folder this piece belongs in, if the scene already has that structure.
+        ///
+        /// <para>
+        /// Classified by what the audit measured, not by the filename - this pack numbers its
+        /// prefabs. A window is a piece that carries the glass material, a door is one that
+        /// carries a door material, an arch carries an arch material. Anything unrecognised goes
+        /// to the walls, which is where a wall-shaped piece with wallpaper on it belongs, and is
+        /// one drag away from anywhere else.
+        /// </para>
+        /// </summary>
+        private static Transform FindCategory(Piece piece)
+        {
+            Transform house = null;
+            foreach (GameObject root in UnityEngine.SceneManagement.SceneManager
+                         .GetActiveScene().GetRootGameObjects())
+            {
+                if (root.name == MainMenuHierarchyTool.HouseRoot)
+                {
+                    house = root.transform;
+                    break;
+                }
+            }
+
+            if (house == null)
+                return null;
+
+            string wanted = CategoryFor(piece);
+            return wanted != null ? house.Find(wanted) : null;
+        }
+
+        private static string CategoryFor(Piece piece)
+        {
+            bool glass = false, door = false, arch = false;
+            for (int i = 0; i < piece.Materials.Count; i++)
+            {
+                string line = piece.Materials[i].Line;
+                if (line.IndexOf("Steklo", StringComparison.OrdinalIgnoreCase) >= 0) glass = true;
+                if (line.IndexOf("door", StringComparison.OrdinalIgnoreCase) >= 0) door = true;
+                if (line.IndexOf("arch", StringComparison.OrdinalIgnoreCase) >= 0) arch = true;
+            }
+
+            if (arch) return "05_ARCHES";
+            if (glass) return "04_WINDOWS";
+            if (door) return "03_DOORS";
+
+            // A piece far narrower than it is tall is a column or a trim, not a wall.
+            float across = Mathf.Max(piece.Size.x, piece.Size.z);
+            float up = Mathf.Max(piece.Size.y, Mathf.Min(piece.Size.x, piece.Size.z));
+            if (across > 0.01f && up > across * 1.6f)
+                return "06_COLUMNS_TRIM";
+
+            return "02_WALLS";
         }
 
         // ---------------------------------------------------------------------------- audit
