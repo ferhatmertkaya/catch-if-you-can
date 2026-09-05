@@ -959,181 +959,287 @@ namespace CatchIfYouCan.EditorTools
                 sb.AppendLine(string.Format("  {0,-22} {1,4}", pair.Key, pair.Value));
             sb.AppendLine();
 
-            sb.AppendLine("--- STRUKTURELLE TEILE IM EINZELNEN ---");
-            sb.AppendLine(string.Format("  {0,-20} {1,-24} {2,-7} {3}",
-                "ROLLE", "EFFEKTIV BxHxT (m)", "KINDER", "PREFAB"));
+            // ================================================== 1. KANONISCHE WANDFAMILIE
+            sb.AppendLine("--- 1. KANONISCHE WANDFAMILIE (nur interior/moduls/) ---");
+            sb.AppendLine("  Der PIVOT-VERSATZ ist die entscheidende Zahl. Liegt der Nullpunkt am");
+            sb.AppendLine("  linken Rand des Meshes, ist das Snap-Mass gleich der sichtbaren");
+            sb.AppendLine("  Breite. Liegt er davor oder dahinter, ist das Snap-Mass groesser -");
+            sb.AppendLine("  und DAS ist das Raster, nicht die Rendererbreite.");
+            sb.AppendLine();
+            sb.AppendLine(string.Format("  {0,-22} {1,-9} {2,-9} {3,-11} {4,-11} {5,-9} {6}",
+                "EFFEKTIV BxHxT", "BREITE", "DICKE", "PIVOT->LINKS", "PIVOT->RECHTS",
+                "SNAP?", "PREFAB"));
+
+            var wallFamily = new List<Structure>();
             for (int i = 0; i < structures.Count; i++)
             {
                 var st = structures[i];
-                if (st.Role == Role.NON_STRUCTURAL || st.Role == Role.EMPTY)
+                if (!IsModuleSource(st.Path))
+                    continue;
+                if (st.Role != Role.WALL && st.Role != Role.WALL_WITH_DOOR && st.Role != Role.WALL_WITH_WINDOW)
                     continue;
 
-                sb.AppendLine(string.Format("  {0,-20} {1,-24} {2,-7} {3}",
-                    st.Role, V(st.EffectiveSize), st.Children.Count,
-                    st.Path.Substring(scope.Length).TrimStart('/')));
-            }
-            sb.AppendLine();
+                wallFamily.Add(st);
 
-            int nonStructural = 0;
-            for (int i = 0; i < structures.Count; i++)
-                if (structures[i].Role == Role.NON_STRUCTURAL || structures[i].Role == Role.EMPTY)
-                    nonStructural++;
-            sb.AppendLine("  Als NICHT strukturell eingestuft und aus dem Raster ausgeschlossen: " +
-                          nonStructural);
-            sb.AppendLine();
+                var go = AssetDatabase.LoadAssetAtPath<GameObject>(st.Path);
+                if (go == null)
+                    continue;
 
-            // ---- Was ist ueberhaupt was
-            sb.AppendLine("--- WAS DIESE PREFABS SIND ---");
-            sb.AppendLine("  Ein Prefab mit vielen Mesh-Kindern ist eine Baugruppe, kein Modul.");
-            sb.AppendLine();
-            sb.AppendLine(string.Format("  {0,-7} {1,-7} {2,-26} {3,-26} {4}",
-                "KINDER", "TIEFE", "ROOT-SCALE", "EFFEKTIVE GROESSE (m)", "PREFAB"));
-            for (int i = 0; i < structures.Count; i++)
-            {
-                var st = structures[i];
-                sb.AppendLine(string.Format("  {0,-7} {1,-7} {2,-26} {3,-26} {4}",
-                    st.Children.Count, st.Depth, V(st.RootScale), V(st.EffectiveSize),
-                    Path.GetFileNameWithoutExtension(st.Path)));
-            }
-            sb.AppendLine();
+                MeasureWorld(go, out Vector3 wMin, out Vector3 wMax);
+                Vector3 size = wMax - wMin;
+                int uAxis = size.x >= size.z ? 0 : 2;
+                float width = size[uAxis];
+                float thickness = Mathf.Min(size.x, size.z);
 
-            // ---- Die Skalenfrage, aufgeloest
-            int scaled = 0;
-            for (int i = 0; i < structures.Count; i++)
-            {
-                var s0 = structures[i].RootScale;
-                if (Mathf.Abs(s0.x - 1f) > 0.001f || Mathf.Abs(s0.y - 1f) > 0.001f ||
-                    Mathf.Abs(s0.z - 1f) > 0.001f)
-                    scaled++;
+                // Where the pivot (origin) sits relative to the mesh along the width axis.
+                float toLeft = -wMin[uAxis];
+                float toRight = wMax[uAxis];
+
+                // If the pivot is at one edge the snap is the visible width; if it sits outside
+                // the mesh the snap is larger, and the difference is the joint overlap.
+                float snap = Mathf.Max(Mathf.Abs(toLeft), Mathf.Abs(toRight)) * 2f;
+                string snapNote = Mathf.Abs(toLeft) < 0.1f || Mathf.Abs(toRight) < 0.1f
+                    ? "Rand"
+                    : (Mathf.Abs(toLeft + toRight) < 0.1f ? "mittig " + Round(snap) : "?");
+
+                sb.AppendLine(string.Format("  {0,-22} {1,-9} {2,-9} {3,-11} {4,-11} {5,-9} {6}",
+                    V(size), Round(width), Round(thickness), Round(toLeft), Round(toRight),
+                    snapNote, Path.GetFileNameWithoutExtension(st.Path)));
             }
 
-            sb.AppendLine("--- DIE SKALENFRAGE ---");
-            sb.AppendLine("  Prefabs mit einer Root-Skalierung ungleich 1: " + scaled + " von " + structures.Count);
-            sb.AppendLine();
-            sb.AppendLine("  Die frueher gemeldeten Masse (Stehlampe 36 x 57,55 x 36 m) waren die");
-            sb.AppendLine("  Groesse VOR der Root-Skalierung: bei einem Prefab-Asset ist Welt gleich");
-            sb.AppendLine("  Lokal, und worldToLocalMatrix kuerzt die eigene Skalierung der Wurzel");
-            sb.AppendLine("  wieder heraus. Die Spalte EFFEKTIVE GROESSE oben ist das Mass, das das");
-            sb.AppendLine("  Objekt in einer Szene wirklich hat. Steht dort 0,36 x 0,58 x 0,36 fuer");
-            sb.AppendLine("  die Lampe, war es eine in Zentimetern gebaute FBX mit Scale Factor 1,");
-            sb.AppendLine("  die der Autor mit Root-Skalierung 0,01 ausgleicht - kein Fehler im Kit.");
+            if (wallFamily.Count == 0)
+                sb.AppendLine("  KEINE. Unter interior/moduls/ wurde keine Wand erkannt.");
             sb.AppendLine();
 
-            // ---- Kindteile, nach Groesse gruppiert: das ist die Modulfrage
-            var families = new Dictionary<string, List<Child>>();
+            // ================================================ 2. TUER- UND FENSTERWAENDE
+            sb.AppendLine("--- 2. TUER- UND FENSTERWAENDE, MIT ABLEHNUNGSGRUND ---");
+            sb.AppendLine("  \"0 Tueren\" heisst nicht \"das Kit hat keine\". Hier steht bei JEDEM");
+            sb.AppendLine("  Wandkandidaten, was das groesste leere Rechteck war und warum es");
+            sb.AppendLine("  verworfen wurde. Ein Kind namens door ist das TUERBLATT und wird");
+            sb.AppendLine("  getrennt gelistet - es sagt nichts ueber das Loch in der Wand.");
+            sb.AppendLine();
+            sb.AppendLine(string.Format("  {0,-14} {1,-16} {2,-9} {3,-9} {4}",
+                "ERGEBNIS", "GROESSTE LUECKE", "UNTEN", "STURZ", "PREFAB / GRUND"));
+
+            int doors = 0, windows = 0;
             for (int i = 0; i < structures.Count; i++)
             {
                 var st = structures[i];
-                for (int c = 0; c < st.Children.Count; c++)
-                {
-                    var child = st.Children[c];
-                    var real = child.RootSize;
-                    string key = V(real) + "   " + child.Model;
-                    if (!families.TryGetValue(key, out var list))
-                    {
-                        list = new List<Child>();
-                        families[key] = list;
-                    }
-                    list.Add(child);
-                }
-            }
-
-            var famOrdered = new List<KeyValuePair<string, List<Child>>>(families);
-            famOrdered.Sort((a, b) => b.Value.Count.CompareTo(a.Value.Count));
-
-            sb.AppendLine("--- BAUTEIL-FAMILIEN (gleiche effektive Groesse UND dasselbe Modell) ---");
-            sb.AppendLine("  Das ist die eigentliche Modulfrage. Ein Teil, das oft und in mehreren");
-            sb.AppendLine("  Prefabs in derselben Groesse auftaucht, ist ein Modul. Eines, das genau");
-            sb.AppendLine("  einmal vorkommt, ist Ausstattung mit modulhaften Massen.");
-            sb.AppendLine();
-            sb.AppendLine(string.Format("  {0,-6} {1,-26} {2,-24} {3}", "ANZAHL", "EFFEKTIVE GROESSE (m)", "MODELL", "BEISPIELNAME"));
-            for (int i = 0; i < Mathf.Min(60, famOrdered.Count); i++)
-            {
-                var f = famOrdered[i];
-                int split = f.Key.IndexOf("   ", StringComparison.Ordinal);
-                sb.AppendLine(string.Format("  {0,-6} {1,-26} {2,-24} {3}",
-                    f.Value.Count,
-                    split > 0 ? f.Key.Substring(0, split) : f.Key,
-                    split > 0 ? f.Key.Substring(split + 3) : "-",
-                    f.Value[0].Name));
-            }
-            sb.AppendLine();
-            sb.AppendLine("  Familien insgesamt: " + famOrdered.Count);
-            sb.AppendLine();
-
-            // ---- Volle Kindaufstellung fuer die groessten Baugruppen
-            // ---- Oeffnungen, aus der Geometrie
-            sb.AppendLine("--- OEFFNUNGEN, AUS DER GEOMETRIE GEMESSEN ---");
-            sb.AppendLine("  Nicht aus einem Kind namens \"door\": das ist das Tuerblatt, nicht das Loch.");
-            sb.AppendLine("  Jedes Dreieck wird auf die Wandebene projiziert, gerastert, und das");
-            sb.AppendLine("  groesste leere Rechteck darin ist die Oeffnung. Unten buendig = Tuer,");
-            sb.AppendLine("  mit Sockel darunter = Fenster.");
-            sb.AppendLine();
-            sb.AppendLine(string.Format("  {0,-8} {1,-13} {2,-13} {3,-9} {4,-9} {5,-9} {6,-9} {7}",
-                "ART", "OEFFNUNG BxH", "WAND BxHxD", "LINKS", "RECHTS", "UNTEN", "STURZ", "PREFAB"));
-
-            int doors = 0, windows = 0, solidWalls = 0;
-            for (int i = 0; i < structures.Count; i++)
-            {
-                var st = structures[i];
-                if (st.Children.Count == 0)
+                if (TierOf(st.Path) != SourceTier.Architecture)
+                    continue;
+                if (!IsWallCandidate(st.EffectiveSize, out _, out _, out _))
                     continue;
 
                 var op = st.Opening;
-                var size = st.EffectiveSize;
-
-                if (!op.Found)
+                if (op.Found)
                 {
-                    solidWalls++;
-                    continue;
+                    if (op.Kind == "TUER") doors++; else windows++;
+                    sb.AppendLine(string.Format("  {0,-14} {1,-16} {2,-9} {3,-9} {4}",
+                        op.Kind, Round(op.Width) + " x " + Round(op.Height),
+                        Round(op.BottomV), Round(op.Lintel),
+                        Path.GetFileNameWithoutExtension(st.Path)));
                 }
-
-                if (op.Kind == "TUER") doors++; else windows++;
-
-                sb.AppendLine(string.Format("  {0,-8} {1,-13} {2,-13} {3,-9} {4,-9} {5,-9} {6,-9} {7}",
-                    op.Kind,
-                    Round(op.Width) + " x " + Round(op.Height),
-                    Round(size.x) + "x" + Round(size.y) + "x" + Round(size.z),
-                    Round(op.LeftSolid), Round(op.RightSolid),
-                    Round(op.BottomV), Round(op.Lintel),
-                    Path.GetFileNameWithoutExtension(st.Path)));
+                else
+                {
+                    sb.AppendLine(string.Format("  {0,-14} {1,-16} {2,-9} {3,-9} {4}",
+                        "verworfen",
+                        op.RawWidth > 0f ? Round(op.RawWidth) + " x " + Round(op.RawHeight) : "-",
+                        op.RawWidth > 0f ? Round(op.RawBottom) : "-",
+                        op.RawWidth > 0f ? Round(op.RawLintel) : "-",
+                        Path.GetFileNameWithoutExtension(st.Path) + "   " + op.Reject));
+                }
             }
 
             sb.AppendLine();
-            sb.AppendLine("  Tueren: " + doors + "   Fenster: " + windows +
-                          "   ohne Oeffnung: " + solidWalls);
+            sb.AppendLine("  Tueroeffnungen: " + doors + "   Fensteroeffnungen: " + windows);
             sb.AppendLine();
-            sb.AppendLine("  CIYC braucht 1,20 x 2,20 m. Das ist eine PRIVATE Konstante in");
-            sb.AppendLine("  PrimitiveRoomFactory - Stage B, nicht im Layout-Hash. Verhandelbar.");
-            sb.AppendLine("  Nicht verhandelbar sind die Zelle 6 x 3 x 6 m und der Tuer-Socket auf");
-            sb.AppendLine("  1,10 m: beide stehen in der maschinenfreien Menge und im Hash.");
-            sb.AppendLine();
-
-            sb.AppendLine("--- HIERARCHIE DER GROESSTEN BAUGRUPPEN ---");
-            for (int i = 0; i < Mathf.Min(4, structures.Count); i++)
+            sb.AppendLine("  TUERBLAETTER als eigene Kinder (nicht die Oeffnung!):");
+            for (int i = 0; i < structures.Count; i++)
             {
                 var st = structures[i];
-                sb.AppendLine();
-                sb.AppendLine("  === " + st.Path);
-                sb.AppendLine("      Root-Skalierung " + V(st.RootScale) +
-                              "   effektiv " + V(st.EffectiveSize) + " m");
-                sb.AppendLine(string.Format("      {0,-24} {1,-22} {2,-18} {3,-14} {4,-10} {5}",
-                    "EFFEKTIVE GROESSE", "LOKALE POSITION", "ROTATION", "SKALIERUNG", "COLLIDER", "PFAD"));
+                if (TierOf(st.Path) != SourceTier.Architecture)
+                    continue;
 
-                for (int c = 0; c < Mathf.Min(40, st.Children.Count); c++)
+                for (int c = 0; c < st.Children.Count; c++)
                 {
-                    var ch = st.Children[c];
-                    sb.AppendLine(string.Format("      {0,-24} {1,-22} {2,-18} {3,-14} {4,-10} {5}",
-                        V(ch.RootSize),
-                        V(ch.LocalPosition), V(ch.LocalEuler), V(ch.LocalScale),
-                        ch.Collider, ch.HierarchyPath));
+                    string n = st.Children[c].Name.ToLowerInvariant();
+                    if (!n.Contains("door") && !n.Contains("window") && !n.Contains("frame"))
+                        continue;
+
+                    sb.AppendLine("    " + V(st.Children[c].RootSize) + "   " +
+                                  st.Children[c].Name + "   in " +
+                                  Path.GetFileNameWithoutExtension(st.Path));
+                }
+            }
+            sb.AppendLine();
+
+            // =============================================== 3. BOEDEN UND DECKEN
+            sb.AppendLine("--- 3. BODEN- UND DECKENQUELLEN ---");
+            sb.AppendLine("  Getrennt nach Herkunft. Ein Teppich unter props/ ist kein Boden, und");
+            sb.AppendLine("  eine Unity-Standardflaeche aus der Demo ist kein Modul.");
+            sb.AppendLine();
+
+            int planes = 0, realFloors = 0;
+            for (int i = 0; i < structures.Count; i++)
+            {
+                var st = structures[i];
+                var tier = TierOf(st.Path);
+                if (tier == SourceTier.Prop)
+                    continue;
+
+                var go = AssetDatabase.LoadAssetAtPath<GameObject>(st.Path);
+                if (go == null)
+                    continue;
+
+                var filters = go.GetComponentsInChildren<MeshFilter>(true);
+                for (int f = 0; f < filters.Length; f++)
+                {
+                    var mesh = filters[f].sharedMesh;
+                    if (mesh == null)
+                        continue;
+
+                    // Unity's built-in Plane: 10x10 units, 11x11 vertices, 200 triangles. That
+                    // signature is exact and is the only safe way to tell the primitive apart
+                    // from an authored floor slab that happens to be flat.
+                    bool builtInPlane = mesh.name == "Plane" && mesh.vertexCount == 121;
+                    if (builtInPlane)
+                    {
+                        planes++;
+                        if (planes <= 6)
+                        {
+                            var scale = filters[f].transform.lossyScale;
+                            sb.AppendLine("    UNITY-STANDARDFLAECHE  Skalierung " + V(scale) +
+                                          "  -> " + Round(10f * scale.x) + " x " + Round(10f * scale.z) +
+                                          " m   in " + Path.GetFileNameWithoutExtension(st.Path));
+                        }
+                    }
                 }
 
-                if (st.Children.Count > 40)
-                    sb.AppendLine("      ... und " + (st.Children.Count - 40) + " weitere");
+                if (tier == SourceTier.Architecture && st.Role == Role.FLOOR_OR_CEILING)
+                {
+                    realFloors++;
+                    sb.AppendLine("    ECHTES BAUTEIL         " + V(st.EffectiveSize) + " m   " +
+                                  st.Path.Substring(scope.Length).TrimStart('/'));
+                }
             }
 
             sb.AppendLine();
+            sb.AppendLine("  Unity-Standardflaechen gefunden: " + planes +
+                          (planes > 6 ? "   (nur die ersten 6 gelistet)" : ""));
+            sb.AppendLine("  Echte Boden-/Deckenbauteile unter interior/: " + realFloors);
+            if (realFloors == 0)
+                sb.AppendLine("  -> KEIN Bodenmodul im Kit. CIYC muss Boden und Decke selbst erzeugen.");
+            sb.AppendLine();
+
+            // ================================================ 4. MATERIAL UND UV
+            sb.AppendLine("--- 4. MATERIAL UND UV DER WANDFAMILIE ---");
+            sb.AppendLine("  Entscheidet, ob eine CIYC-Fuellwand mit demselben Material ueberzeugt.");
+            sb.AppendLine("  UV/METER nahe eins heisst: die Textur laeuft im Weltmass, ein");
+            sb.AppendLine("  erzeugtes Stueck kachelt ohne Verzerrung mit. Stark abweichende");
+            sb.AppendLine("  Werte heissen, die UV haengt am Modell und muss nachgerechnet werden.");
+            sb.AppendLine();
+
+            for (int i = 0; i < wallFamily.Count; i++)
+            {
+                var go = AssetDatabase.LoadAssetAtPath<GameObject>(wallFamily[i].Path);
+                if (go == null)
+                    continue;
+
+                sb.AppendLine("    " + Path.GetFileNameWithoutExtension(wallFamily[i].Path));
+
+                var renderers = go.GetComponentsInChildren<Renderer>(true);
+                for (int r = 0; r < renderers.Length && r < 4; r++)
+                {
+                    var mats = renderers[r].sharedMaterials;
+                    for (int m = 0; m < mats.Length; m++)
+                    {
+                        var mat = mats[m];
+                        if (mat == null)
+                        {
+                            sb.AppendLine("      (null-Material)");
+                            continue;
+                        }
+
+                        sb.AppendLine("      Material " + mat.name +
+                                      "   Shader " + (mat.shader != null ? mat.shader.name : "-"));
+                        sb.AppendLine("        Tiling " + mat.mainTextureScale.ToString("0.00") +
+                                      "   Offset " + mat.mainTextureOffset.ToString("0.00"));
+
+                        var names = mat.GetTexturePropertyNames();
+                        for (int n = 0; n < names.Length; n++)
+                        {
+                            var tex = mat.GetTexture(names[n]);
+                            if (tex != null)
+                                sb.AppendLine("        " + names[n] + " = " + tex.name);
+                        }
+                    }
+
+                    var filter = renderers[r].GetComponent<MeshFilter>();
+                    if (filter != null && filter.sharedMesh != null)
+                    {
+                        var uv = filter.sharedMesh.uv;
+                        if (uv != null && uv.Length > 0)
+                        {
+                            float uMin = uv[0].x, uMax = uv[0].x, vMin = uv[0].y, vMax = uv[0].y;
+                            for (int k = 1; k < uv.Length; k++)
+                            {
+                                uMin = Mathf.Min(uMin, uv[k].x); uMax = Mathf.Max(uMax, uv[k].x);
+                                vMin = Mathf.Min(vMin, uv[k].y); vMax = Mathf.Max(vMax, uv[k].y);
+                            }
+
+                            var size = wallFamily[i].EffectiveSize;
+                            float width = Mathf.Max(size.x, size.z);
+                            sb.AppendLine("        UV-Spanne " + Round(uMax - uMin) + " x " + Round(vMax - vMin) +
+                                          "   -> " + Round(width > 0.01f ? (uMax - uMin) / width : 0f) +
+                                          " U/m,  " + Round(size.y > 0.01f ? (vMax - vMin) / size.y : 0f) + " V/m");
+                        }
+                    }
+                }
+
+                sb.AppendLine();
+            }
+
+            if (wallFamily.Count == 0)
+                sb.AppendLine("    keine Wandfamilie erkannt - nichts zu berichten.");
+            sb.AppendLine();
+
+            // ========================================== 5. DEMO-BAUGRUPPEN, NUR STRUKTUR
+            sb.AppendLine("--- 5. DEMO-BAUGRUPPEN: WIE WURDEN DIE MODULE BENUTZT ---");
+            sb.AppendLine("  room1/2/3 sind Referenz, keine Module. Gelistet werden nur ihre");
+            sb.AppendLine("  Kinder, deren Modell aus interior/ stammt - Moebel bleiben draussen.");
+            sb.AppendLine();
+
+            for (int i = 0; i < structures.Count; i++)
+            {
+                var st = structures[i];
+                if (TierOf(st.Path) != SourceTier.DemoAssembly)
+                    continue;
+
+                sb.AppendLine("    === " + Path.GetFileNameWithoutExtension(st.Path) +
+                              "   " + st.Children.Count + " Mesh-Kinder, effektiv " +
+                              V(st.EffectiveSize) + " m");
+
+                int shown = 0;
+                for (int c = 0; c < st.Children.Count && shown < 25; c++)
+                {
+                    var ch = st.Children[c];
+                    string model = ch.Model.ToLowerInvariant();
+                    bool structural = model.Length > 0 && model != "-" &&
+                                      !model.Contains("carpet") && !model.Contains("towel");
+
+                    if (!structural)
+                        continue;
+
+                    sb.AppendLine("      " + V(ch.RootSize) + "   Pos " + V(ch.LocalPosition) +
+                                  "   Rot " + V(ch.LocalEuler) + "   " + ch.Model + "   " + ch.Name);
+                    shown++;
+                }
+
+                if (st.Children.Count > shown)
+                    sb.AppendLine("      ... " + (st.Children.Count - shown) + " weitere nicht gelistet");
+                sb.AppendLine();
+            }
+
             sb.Append(StructuralSpacing(packRoot));
             return sb.ToString();
         }
@@ -1355,6 +1461,11 @@ namespace CatchIfYouCan.EditorTools
         private class Opening
         {
             public bool Found;
+            public string Reject = "-";
+            public float RawWidth;      // what the rectangle search found, before the tests
+            public float RawHeight;
+            public float RawBottom;
+            public float RawLintel;
             public float Width;
             public float Height;
             public float CentreU;      // relative to the wall's left edge
@@ -1364,6 +1475,50 @@ namespace CatchIfYouCan.EditorTools
             public float Lintel;       // solid above the opening
             public string Kind;        // TUER / FENSTER / (keine)
         }
+
+        /// <summary>
+        /// Where a piece comes from, which decides whether it may be architecture at all.
+        ///
+        /// <para>
+        /// Shape is evidence about a shape, not about a role. A mirror 1.20 x 2.00 x 0.10 has a
+        /// door's proportions; a carpet 7.85 x 0.05 x 7.70 has a floor's; a cupboard has a
+        /// wall's. Classifying those three from their dimensions produced exactly those three
+        /// wrong answers. So the folder decides first and the shape only refines within what the
+        /// folder allows: nothing under props/ can become structure, whatever it measures.
+        /// </para>
+        /// </summary>
+        private enum SourceTier
+        {
+            Architecture,   // interior/ - the authoritative structural source
+            DemoAssembly,   // demo scenes/, room1-3 - reference for HOW pieces were used
+            Prop,           // props/ - never structure
+            Unknown,        // anything else - treated as a prop until proven otherwise
+        }
+
+        private static SourceTier TierOf(string assetPath)
+        {
+            string lower = assetPath.ToLowerInvariant();
+
+            if (lower.Contains("/props/"))
+                return SourceTier.Prop;
+
+            if (lower.Contains("/demo scenes/") || lower.Contains("/demo/"))
+                return SourceTier.DemoAssembly;
+
+            // room1/2/3 are demo assemblies wherever they live.
+            string file = Path.GetFileNameWithoutExtension(lower);
+            if (file.StartsWith("room", StringComparison.Ordinal) && file.Length <= 6)
+                return SourceTier.DemoAssembly;
+
+            if (lower.Contains("/interior/"))
+                return SourceTier.Architecture;
+
+            return SourceTier.Unknown;
+        }
+
+        /// <summary>The authoritative structural folder, where the wall family lives.</summary>
+        private static bool IsModuleSource(string assetPath) =>
+            assetPath.ToLowerInvariant().Contains("/interior/moduls/");
 
         /// <summary>What a piece is, decided from its shape, its folder and its contents.</summary>
         private enum Role
@@ -1438,6 +1593,18 @@ namespace CatchIfYouCan.EditorTools
             if (meshChildren == 0)
                 return Role.EMPTY;
 
+            var tier = TierOf(path);
+
+            // The rule that fixes the mirror, the carpet and the cupboard. A prop is a prop
+            // whatever it measures, and nothing but an explicit structural reference could
+            // change that - which no prop in this pack has.
+            if (tier == SourceTier.Prop || tier == SourceTier.Unknown)
+                return Role.NON_STRUCTURAL;
+
+            // A demo assembly is a reference for HOW pieces were used, never a module itself.
+            if (tier == SourceTier.DemoAssembly)
+                return meshChildren >= 25 ? Role.HOUSE_SECTION : Role.ROOM_ASSEMBLY;
+
             string lower = path.ToLowerInvariant();
             float minAxis = Mathf.Min(size.x, Mathf.Min(size.y, size.z));
 
@@ -1504,13 +1671,23 @@ namespace CatchIfYouCan.EditorTools
         {
             var result = new Opening { Kind = "(keine)" };
 
+            // A prop is never a wall, so its geometry is never searched for a doorway.
+            if (TierOf(AssetDatabase.GetAssetPath(prefab)) != SourceTier.Architecture)
+            {
+                result.Reject = "keine Architekturquelle";
+                return result;
+            }
+
             MeasureWorld(prefab, out Vector3 min, out Vector3 max);
             Vector3 size = max - min;
 
             // The gate. Without it this finds the gap between two wallpaper patches, the recess
             // in a fireplace and the space beside a column, and calls all three a doorway.
             if (!IsWallCandidate(size, out _, out _, out _))
+            {
+                result.Reject = "kein Wandkandidat (Dicke/Hoehe/Breite/Verhaeltnis)";
                 return result;
+            }
 
             int thin = size.x <= size.z ? 0 : 2;
             int uAxis = thin == 0 ? 2 : 0;
@@ -1561,28 +1738,51 @@ namespace CatchIfYouCan.EditorTools
             float rightSolid = uSize - left - w;
             float lintel = vSize - bottom - h;
 
+            // Kept whatever happens: "0 doors" must be distinguishable from "no gap anywhere".
+            result.RawWidth = w;
+            result.RawHeight = h;
+            result.RawBottom = bottom;
+            result.RawLintel = lintel;
+
             // An opening is ENCLOSED. Wall to its left, wall to its right, and - the test that
             // rejects the wallpaper patches - wall above it. A gap running the full height of a
             // piece is the space between two pieces, not a hole in one.
             if (left < 0.15f || rightSolid < 0.15f || lintel < 0.15f)
+            {
+                result.Reject = "nicht eingefasst (links " + Round(left) + " rechts " + Round(rightSolid) + " Sturz " + Round(lintel) + ")";
                 return result;
+            }
 
             // And it is a hole in a wall, not most of the wall. Past this the piece is two
             // fragments that happen to share a prefab.
             if (w * h > uSize * vSize * 0.6f)
+            {
+                result.Reject = "Loch waere ueber 60% der Wandflaeche";
                 return result;
+            }
 
             bool door = bottom < 0.20f;
             if (door)
             {
                 if (w < 0.6f || w > 2.5f || h < 1.6f || h > 3.2f)
+                {
+                    result.Reject = "Tuermass unplausibel " + Round(w) + " x " + Round(h);
                     return result;
+                }
             }
             else
             {
-                if (bottom < 0.30f) return result;            // neither on the floor nor a sill
-                if (w < 0.4f || w > 3.0f || h < 0.4f || h > 2.5f)
+                if (bottom < 0.30f)
+                {
+                    result.Reject = "weder am Boden noch mit Bruestung (" + Round(bottom) + ")";
                     return result;
+                }
+
+                if (w < 0.4f || w > 3.0f || h < 0.4f || h > 2.5f)
+                {
+                    result.Reject = "Fenstermass unplausibel " + Round(w) + " x " + Round(h);
+                    return result;
+                }
             }
 
             result.Found = true;
