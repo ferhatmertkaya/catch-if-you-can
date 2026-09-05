@@ -165,7 +165,13 @@ place that number lives; everything else derives it.
   lobby player is carried through and mapped by the same matrix that posed the camera
   they walked into, no ground under the arrival refuses the crossing instead of dropping
   them, a refusal gives the controls back, and the prepared world raises no curtain — an
-  opaque overlay set at preparation time IS the black frame. 175 checks.
+  opaque overlay set at preparation time IS the black frame. And it keeps the carried
+  player ALIVE: the rig is a scene root, so unloading the lobby destroys it — the move
+  to the mission scene happens before the unload, a parented player refuses rather than
+  being destroyed silently, the handover counts the cameras that can actually reach
+  Display 1, the input gate is released by the handover rather than by a destruction
+  order, and no case card is dropped over a room the player already walked into.
+  181 checks.
 
 - `Scripts/check_agent_architecture.sh` — the roster holds 40 unique roles with
   every field, the roster and `AGENT_OWNERSHIP.md` name the same roles, the

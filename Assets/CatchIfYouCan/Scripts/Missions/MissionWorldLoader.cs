@@ -430,17 +430,50 @@ namespace CatchIfYouCan.Missions
             // none invented - the convention is read from the rig rather than guessed at.
             Vector3 finalPosition = ground.point;
 
+            LogHandoff("DESTINATION_VALID", playerRoot, motor);
+
             float verticalBefore = motor.CurrentSpeed;
             Camera cameraBefore = Core.LocalPlayerService.ResolveViewCamera();
 
             // ---- the handover ---------------------------------------------------------------
             // No fade anywhere in here. The player's own camera renders every frame of this, so
             // there is never a frame without a view.
+            LogHandoff("PLAYER_TRANSFER_BEGIN", playerRoot, motor);
+
             Scene missionScene = world.gameObject.scene;
             Scene lobbyScene = SceneManager.GetActiveScene();
 
             if (missionScene.IsValid() && missionScene.isLoaded)
                 SceneManager.SetActiveScene(missionScene);
+
+            // ---- the player has to CHANGE SCENE, not just position -------------------------
+            //
+            // PlayerRigBuilder creates the rig as `new GameObject("Player")` with no parent, so
+            // the player is a ROOT OBJECT of whatever scene was active when they were built -
+            // the lobby. Unloading a scene destroys every root object in it, so carrying the
+            // lobby player through and then unloading the lobby destroys the player, their
+            // CharacterController and their camera a few lines later. That is precisely
+            // "Display 1 - No cameras rendering" with the last rendered frame still on screen,
+            // and controls that stopped responding because there is nothing left to control.
+            //
+            // The old EnterAsync never met this because it despawned the lobby player and built
+            // a new one after the mission scene was active. Reusing the player is the better
+            // architecture - one camera, one input owner, no gap - but it makes the move
+            // explicit rather than incidental.
+            if (missionScene.IsValid() && missionScene.isLoaded)
+            {
+                if (playerRoot.transform.parent != null)
+                {
+                    CIYCLog.Error(Diag + "the player is parented to '" +
+                                  playerRoot.transform.parent.name + "', so it cannot be moved " +
+                                  "between scenes and will be destroyed with the lobby. " +
+                                  "success=false failureReason=PLAYER_NOT_A_SCENE_ROOT");
+                    onResult?.Invoke(false);
+                    yield break;
+                }
+
+                SceneManager.MoveGameObjectToScene(playerRoot, missionScene);
+            }
 
             // Teleport is the rig's own move: it disables the controller, sets the pose, enables
             // it again and zeroes the velocity - which is the fall accumulator, so there is
@@ -448,10 +481,19 @@ namespace CatchIfYouCan.Missions
             motor.Teleport(finalPosition, mappedRotation);
             Physics.SyncTransforms();
 
+            LogHandoff("PLAYER_MOVED", playerRoot, motor);
+
             // The world goes live around a player who is already standing in it. PlayerSpawner
             // returns the existing one rather than building a second, so nothing is duplicated
             // and nothing is moved again.
             yield return world.ActivateForEntry();
+            LogHandoff("INVESTIGATION_LIVE", playerRoot, motor);
+
+            // Given back HERE rather than left to the lobby portal's OnDestroy. The portal is
+            // about to be destroyed with its scene, and relying on a destruction order to
+            // restore the player's controls is how a player ends up standing in a finished
+            // world unable to move.
+            UI.MenuInputGate.Pop("LobbyPortal");
 
             if (lobbyScene.IsValid() && lobbyScene.isLoaded && lobbyScene != missionScene)
             {
@@ -459,6 +501,8 @@ namespace CatchIfYouCan.Missions
                 while (unload != null && !unload.isDone)
                     yield return null;
             }
+
+            LogHandoff("LOBBY_CLEANUP", playerRoot, motor);
 
             Camera cameraAfter = Core.LocalPlayerService.ResolveViewCamera();
 
@@ -478,7 +522,65 @@ namespace CatchIfYouCan.Missions
                 " duplicatePlayer=" + (Player.PlayerSpawner.Current?.Root != playerRoot) +
                 " success=true");
 
+            LogHandoff("COMPLETE", playerRoot, motor);
             onResult?.Invoke(true);
+        }
+
+        /// <summary>
+        /// One line per stage of the handover, and the one invariant that matters checked rather
+        /// than described: how many cameras are actually able to render Display 1.
+        ///
+        /// <para>
+        /// Zero of them is "Display 1 - No cameras rendering", and it is logged at ERROR with
+        /// every camera in the run listed, because by the time a human sees that overlay the
+        /// frame that caused it is long gone.
+        /// </para>
+        /// </summary>
+        private static void LogHandoff(string stage, GameObject playerRoot,
+                                       Player.PlayerController motor)
+        {
+            int display1 = 0;
+            var names = new System.Text.StringBuilder();
+
+            foreach (Camera camera in
+                     UnityEngine.Object.FindObjectsByType<Camera>(FindObjectsSortMode.None))
+            {
+                if (camera == null)
+                    continue;
+
+                // A camera drawing into a texture - the portal's own - is not a view of the game
+                // and cannot satisfy Display 1.
+                bool live = camera.enabled && camera.gameObject.activeInHierarchy &&
+                            camera.targetTexture == null && camera.targetDisplay == 0;
+                if (live)
+                    display1++;
+
+                names.Append(" ").Append(camera.name)
+                     .Append("[scene=").Append(camera.gameObject.scene.name)
+                     .Append(" enabled=").Append(camera.enabled)
+                     .Append(" active=").Append(camera.gameObject.activeInHierarchy)
+                     .Append(" display=").Append(camera.targetDisplay)
+                     .Append(camera.targetTexture != null ? " toTexture" : "")
+                     .Append("]");
+            }
+
+            string line = "[CIYC][Portal][Handoff] " + stage +
+                " frame=" + Time.frameCount +
+                " player=" + (playerRoot != null ? playerRoot.GetEntityId().ToString() : "<none>") +
+                " playerScene=" + (playerRoot != null ? playerRoot.scene.name : "<none>") +
+                " playerPos=" + (playerRoot != null
+                    ? playerRoot.transform.position.ToString("F2") : "<none>") +
+                " playerActive=" + (playerRoot != null && playerRoot.activeInHierarchy) +
+                " movementEnabled=" + (motor != null && motor.MovementEnabled) +
+                " inputEnabled=" + Player.PlayerSpawner.IsInputEnabled +
+                " timeScale=" + Time.timeScale.ToString("F2") +
+                " cameraCountDisplay1=" + display1 +
+                " cameras=" + names;
+
+            if (display1 == 0)
+                CIYCLog.Error(line + "  <-- NO CAMERA CAN RENDER DISPLAY 1 AT THIS STAGE");
+            else
+                CIYCLog.Info(line);
         }
 
         public static IEnumerator EnterAsync(float fadeOut = 0.28f, float fadeIn = 0.4f)

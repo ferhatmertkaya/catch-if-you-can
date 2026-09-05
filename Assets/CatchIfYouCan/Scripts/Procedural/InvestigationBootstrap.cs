@@ -813,7 +813,15 @@ namespace CatchIfYouCan.Procedural
 
         private void PlayIntro(MissionRuntime mission)
         {
-            _introPresenter = CaseIntroPresenter.Ensure(fadeOverlay);
+            // The case card is a FULL-SCREEN presenter driven by the same fadeOverlay: it holds
+            // for introHoldSeconds and fades. On the direct load that is the intended opening
+            // of a mission. On the portal route it is the "short loading animation" that
+            // survives every other fade being removed - the player walked through a doorway and
+            // a title card came down over the room they are standing in.
+            //
+            // The case text still arrives, as the tip line below. Nothing is lost but the
+            // curtain.
+            _introPresenter = _seamlessEntry ? null : CaseIntroPresenter.Ensure(fadeOverlay);
             if (_introPresenter != null)
             {
                 _introPresenter.Present(mission, introHoldSeconds, fadeDuration);

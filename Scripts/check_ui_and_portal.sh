@@ -1839,6 +1839,74 @@ else
       "an opaque overlay raised at preparation IS the black frame"
 fi
 
+# ---- V11: the player must change SCENE, not just position ------------------------------------
+#
+# PlayerRigBuilder creates the rig as `new GameObject("Player")` with no parent, so the player is
+# a ROOT OBJECT of the scene that was active when they were built - the lobby. Unloading a scene
+# destroys every root object in it, so carrying the lobby player through the portal and then
+# unloading the lobby destroys the player, their controller and their camera. On screen that is
+# "Display 1 - No cameras rendering" over the last frame that did render, with controls that stop
+# responding because there is nothing left to control.
+MWL="$ROOT/Assets/CatchIfYouCan/Scripts/Missions/MissionWorldLoader.cs"
+SEAM="$(code "$MWL" | sed -n '/public static IEnumerator EnterSeamlessAsync/,/^        }$/p')"
+
+if printf '%s' "$SEAM" | grep -qE 'SceneManager\.MoveGameObjectToScene\(playerRoot, missionScene\)'; then
+  ok "the carried player is moved out of the lobby before it is unloaded"
+else
+  bad "the carried player is moved out of the lobby before it is unloaded" \
+      "unloading a scene destroys its root objects, and the player is one of them"
+fi
+
+# ...and the move has to happen BEFORE the unload, not merely somewhere in the method.
+MOVE_LINE="$(printf '%s' "$SEAM" | grep -n 'MoveGameObjectToScene' | head -1 | cut -d: -f1)"
+UNLOAD_LINE="$(printf '%s' "$SEAM" | grep -n 'UnloadSceneAsync' | head -1 | cut -d: -f1)"
+if [ -n "$MOVE_LINE" ] && [ -n "$UNLOAD_LINE" ] && [ "$MOVE_LINE" -lt "$UNLOAD_LINE" ]; then
+  ok "the scene move happens before the unload"
+else
+  bad "the scene move happens before the unload" \
+      "move=$MOVE_LINE unload=$UNLOAD_LINE - the order is the whole fix"
+fi
+
+# A parented player cannot be moved between scenes at all, so that is a refusal rather than a
+# silent destruction two lines later.
+if printf '%s' "$SEAM" | grep -qE 'failureReason=PLAYER_NOT_A_SCENE_ROOT'; then
+  ok "a parented player refuses the crossing instead of being destroyed by it"
+else
+  bad "a parented player refuses the crossing instead of being destroyed by it" \
+      "MoveGameObjectToScene requires a scene root; anything else is a silent loss"
+fi
+
+# The handover counts the cameras that can actually reach Display 1 and shouts when that is
+# zero. A camera rendering into a texture - the portal's own - is not one of them.
+if code "$MWL" | grep -qE 'private static void LogHandoff' &&
+   code "$MWL" | grep -qE 'camera\.targetTexture == null && camera\.targetDisplay == 0' &&
+   code "$MWL" | grep -qE 'NO CAMERA CAN RENDER DISPLAY 1'; then
+  ok "the handover counts the cameras that can render Display 1"
+else
+  bad "the handover counts the cameras that can render Display 1" \
+      "by the time a human sees the overlay the frame that caused it is gone"
+fi
+
+# The controls are given back explicitly, not by relying on the portal's OnDestroy firing in a
+# useful order while its scene is being torn down.
+if printf '%s' "$SEAM" | grep -qE 'MenuInputGate\.Pop\("LobbyPortal"\)'; then
+  ok "the input gate is released by the handover itself"
+else
+  bad "the input gate is released by the handover itself" \
+      "a player standing in a finished world unable to move"
+fi
+
+# The case card is a full-screen presenter on the same overlay. On the direct load it is the
+# opening of a mission; on the portal route it is a title card dropped over a room the player is
+# already standing in - which is the "short loading animation" that outlives every other fade.
+IB="$ROOT/Assets/CatchIfYouCan/Scripts/Procedural/InvestigationBootstrap.cs"
+if code "$IB" | grep -qE '_introPresenter = _seamlessEntry \? null : CaseIntroPresenter\.Ensure'; then
+  ok "no case card is presented over a seamless arrival"
+else
+  bad "no case card is presented over a seamless arrival" \
+      "a full-screen intro on the portal route is a loading screen by another name"
+fi
+
 echo
 echo "  $PASS passed, $FAIL failed"
 if [ "$FAIL" -ne 0 ]; then
