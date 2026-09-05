@@ -92,8 +92,13 @@ not compile is drawn magenta. This is section 1 as an error log rather than as a
 
 ### The order that works
 
-1. **Delete `Assets/Knife/Portal HDRP/Scripts/`.** The two C# errors go and the project builds
-   again. The shader errors remain as console noise and stop nothing.
+1. **Delete every script in the pack.** Not one folder - the pack ships two, and the second
+   one uses types from the first, so removing only `Portal HDRP/Scripts/` turns two `CS0619`
+   errors into four `CS0246` "type could not be found" errors out of
+   `Portal HDRP/Demo with VFX/Scripts/` and the project still does not build. Select the pack
+   folder, search `t:Script`, delete everything it finds. No script in the pack is used: the
+   adapter reads materials and textures, and this project's portal has its own controller.
+   The shader errors remain as console noise and stop nothing.
 2. **Adopt the pack** (section 4) — *before* deleting anything else.
 3. **Then delete the rest of `Assets/Knife/`.** The artwork is copied into the project by then.
 
