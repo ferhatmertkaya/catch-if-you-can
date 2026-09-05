@@ -45,6 +45,7 @@ domains stop rather than guess. Every other domain continues.
 | `Docs/NETWORKING.md` | Anything multiplayer. No netcode package is installed yet. |
 | `Docs/MULTIPLAYER_RUNTIME_ARCHITECTURE.md` | **Normative for the boundaries.** Who owns what, and why the pose is never replicated. |
 | `Docs/GHOST_EVIDENCE_AUTHORITY.md` | **Normative.** Any change to what counts as evidence, or to who decides it. |
+| `Docs/HQ_MODULAR_MIGRATION.md` | **Normative for the environment migration.** The measured contract of the imported house pack: what it actually is, its openings, its materials, the UV formula for generated geometry, and why the logical cell does not move. |
 | `Docs/CROSSPLAY_PLATFORM_MATRIX.md` | Adding a platform, or anything tempted to branch on one. |
 | `Docs/AGENT_OWNERSHIP.md` + `Docs/AGENT_ROSTER.json` | **Always.** Who owns what, the 40 specialist roles, and the 19 protected hotspots. |
 | `Docs/AGENT_TASK_ROUTER.md` | **Normative for how work is assigned.** Routing, the handoff contract, the review matrix, the blocked-domain rule. |
