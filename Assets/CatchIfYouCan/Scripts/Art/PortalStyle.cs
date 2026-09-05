@@ -137,6 +137,41 @@ namespace CatchIfYouCan.Art
                  "faulty strip light.")]
         [Range(0f, 0.5f)] public float lightVariation = 0.08f;
 
+        // ---- purchased artwork ---------------------------------------------------------------
+
+        [Header("Purchased artwork")]
+        [Tooltip("Drive the energy with a bought pack's textures instead of colour alone. The " +
+                 "silhouette stays procedural either way - a pack changes what the energy " +
+                 "looks like, never where the hole is.")]
+        public bool usePurchasedArtwork = false;
+
+        [Tooltip("The pack's energy/flow image. Sampled in the same rotating space as the " +
+                 "procedural layers, so it turns with them.")]
+        public Texture energyTexture;
+
+        [Tooltip("The pack's mask, red channel. Modulates how hot the rim gets. Optional.")]
+        public Texture maskTexture;
+
+        [Range(0.05f, 8f)] public float artworkScale = 1f;
+        [Range(-4f, 4f)] public float artworkDrift = 0.35f;
+
+        [Tooltip("How far the artwork is allowed to take over. At zero the portal is exactly " +
+                 "the procedural one, pixel for pixel.")]
+        [Range(0f, 1f)] public float artworkInfluence = 0.75f;
+
+        /// <summary>
+        /// Whether the textured path should actually be switched on.
+        ///
+        /// <para>
+        /// The tick alone is not enough, and that is deliberate. With the keyword on and no
+        /// energy texture bound the shader samples the default black, multiplies the energy by
+        /// it and the portal goes DARK - a portal that stops glowing because a slot is empty
+        /// looks like a broken portal, not like an unconfigured one. Ticking the box with
+        /// nothing assigned therefore keeps the procedural portal.
+        /// </para>
+        /// </summary>
+        public bool ArtworkActive => usePurchasedArtwork && energyTexture != null;
+
         // ---- animation ---------------------------------------------------------------------
 
         [Header("Animation")]

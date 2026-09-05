@@ -66,6 +66,22 @@ Shader "CatchIfYouCan/Portal"
         _Open            ("Tear Open", Range(0, 1)) = 1
         _TearAmount      ("Tear Ragged", Range(0, 0.5)) = 0.16
         _TearScale       ("Tear Scale", Range(0.5, 24)) = 4.5
+
+        // ---- purchased artwork ----------------------------------------------------------
+        // A bought portal pack is shaders, materials, textures and particles. Under URP its
+        // SHADERS are unusable - they are authored against HDRP's shader library and resolve
+        // to the magenta error shader - but its TEXTURES are just images, and they are where
+        // the look actually lives. These two slots let that artwork drive this shader.
+        //
+        // OFF by default, and the keyword is what makes that free: with _PORTAL_TEXTURED
+        // undefined the compiler removes both samplers, so a project that never adopts a pack
+        // pays nothing at all for these existing.
+        [Toggle(_PORTAL_TEXTURED)] _Textured ("Use purchased artwork", Float) = 0
+        [NoScaleOffset] _EnergyTex ("Purchased Energy (RGB)", 2D) = "black" {}
+        [NoScaleOffset] _MaskTex   ("Purchased Edge Mask (R)", 2D) = "white" {}
+        _TexScale        ("Artwork Scale", Range(0.05, 8)) = 1
+        _TexSpeed        ("Artwork Drift", Range(-4, 4)) = 0.35
+        _TexInfluence    ("Artwork Influence", Range(0, 1)) = 0.75
     }
 
     SubShader
@@ -88,6 +104,10 @@ Shader "CatchIfYouCan/Portal"
             #pragma vertex vert
             #pragma fragment frag
             #pragma target 3.0
+
+            // Fragment-only and local: the vertex stage does not sample, and a global keyword
+            // would spend one of the project's limited global slots on one material.
+            #pragma shader_feature_local_fragment _PORTAL_TEXTURED
 
             #include "Packages/com.unity.render-pipelines.universal/ShaderLibrary/Core.hlsl"
 
@@ -118,10 +138,22 @@ Shader "CatchIfYouCan/Portal"
                 float  _Open;
                 float  _TearAmount;
                 float  _TearScale;
+                float  _Textured;
+                float  _TexScale;
+                float  _TexSpeed;
+                float  _TexInfluence;
             CBUFFER_END
 
             TEXTURE2D(_PortalTex);
             SAMPLER(sampler_PortalTex);
+
+            // Declared unconditionally. The SRP Batcher compares the CBUFFER, not the sampler
+            // set, and a texture declaration outside it costs nothing when the keyword strips
+            // every read of it.
+            TEXTURE2D(_EnergyTex);
+            SAMPLER(sampler_EnergyTex);
+            TEXTURE2D(_MaskTex);
+            SAMPLER(sampler_MaskTex);
 
             struct Attributes { float4 positionOS : POSITION; float2 uv : TEXCOORD0; };
             struct Varyings
@@ -251,8 +283,38 @@ Shader "CatchIfYouCan/Portal"
                 half3 energy = lerp(_OuterColor.rgb, _EnergyColor.rgb, saturate(hot * 1.5));
                 energy = lerp(energy, _CoreColor.rgb, saturate(pow(hot, 2.6)));
 
+#ifdef _PORTAL_TEXTURED
+                // The purchased pack's own artwork, sampled in the SAME isotropic rotating
+                // space the procedural layers use, so it turns with the energy instead of
+                // sitting still underneath a moving rim.
+                float2 tuv = rot2(iso, t * _RotationSpeed * 0.5) * _TexScale * 0.5 + 0.5;
+                tuv += float2(0.0, -t * _TexSpeed * 0.1);
+
+                half3 art  = SAMPLE_TEXTURE2D(_EnergyTex, sampler_EnergyTex, tuv).rgb;
+                half  mask = SAMPLE_TEXTURE2D(_MaskTex, sampler_MaskTex, tuv).r;
+
+                // Influence is a LERP and it only ever reaches colour and heat. The silhouette
+                // - the signed box field, the tear, the gate - is computed above and is not
+                // touched here at any value, so adopting a pack changes what the energy looks
+                // like and can never change where the hole is or whether a closed portal draws.
+                // At influence 0 this is the procedural portal, pixel for pixel.
+                energy = lerp(energy, energy * art * 2.0, _TexInfluence);
+                hot    = saturate(lerp(hot, hot * mask, _TexInfluence));
+#endif
+
                 float emission = (_EnergyIntensity * rim + _CoreIntensity * pow(hot, 5.0)) * pulse;
                 half3 glow = energy * emission + _OuterColor.rgb * outer * _EnergyIntensity * 0.35;
+
+                // The gate is not decoration. A fully collapsed box still measures zero distance
+                // at its own centre, so without this one pixel would sit at r == 1 and burn on a
+                // wall that is supposed to be whole. Closed means NOTHING drawn.
+                //
+                // DECLARED HERE, above both of its uses, and that is load-bearing rather than
+                // tidy: HLSL has no hoisting, so a `gate` used one statement before this line
+                // is not a warning and not a wrong pixel - it is a compile error, and a shader
+                // that fails to compile is drawn by Unity's magenta error shader. The portal
+                // shipped exactly that way and read as "the purchased HDRP pack is magenta".
+                float gate = smoothstep(0.0, 0.02, open);
 
                 // The far room is multiplied by its OWN fade, not by the portal's. Before the
                 // destination camera exists the centre is black behind a burning rim, which is
@@ -262,11 +324,6 @@ Shader "CatchIfYouCan/Portal"
 
                 // Outside the breach plus its spill, this is zero, and that is what makes the
                 // quad's corners disappear.
-                //
-                // The gate is not decoration. A fully collapsed box still measures zero distance
-                // at its own centre, so without this one pixel would sit at r == 1 and burn on a
-                // wall that is supposed to be whole. Closed means NOTHING drawn.
-                float gate = smoothstep(0.0, 0.02, open);
                 float alpha = saturate((view + rim + outer * 0.45) * _Opacity) * gate;
 
                 return half4(col, alpha);

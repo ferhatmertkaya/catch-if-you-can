@@ -112,6 +112,9 @@ namespace CatchIfYouCan.Art
 
         private static readonly int PortalTexId = Shader.PropertyToID("_PortalTex");
 
+        /// <summary>The shader_feature that compiles the purchased-artwork layer in or out.</summary>
+        private const string TexturedKeyword = "_PORTAL_TEXTURED";
+
         /// <summary>Where a player who walks through ends up. Read by whatever moves them.</summary>
         public Transform Destination => destination;
 
@@ -273,6 +276,8 @@ namespace CatchIfYouCan.Art
             SetFloat("_TearAmount", _style.tearAmount);
             SetFloat("_TearScale", _style.tearScale);
 
+            PushArtwork();
+
             // The breach and the noise both need to know the shape of the quad they are drawn
             // on. Derived here rather than authored twice: the surface already knows its size.
             Vector2 fit = new Vector2(Mathf.Clamp(_style.breachHalfSize.x, 0.05f, 1f),
@@ -284,6 +289,40 @@ namespace CatchIfYouCan.Art
             SetFloat("_ViewOpacity", _viewOpacity);
             SetFloat("_Open", _open);
             SetEnergy(_energyScale);
+        }
+
+        /// <summary>
+        /// The purchased pack's artwork, or the procedural portal when there is none.
+        ///
+        /// <para>
+        /// <b>The keyword is the switch, not the influence value.</b> Leaving
+        /// <c>_PORTAL_TEXTURED</c> on with influence at zero still costs two texture samples on
+        /// every portal pixel of every frame, on a phone, to produce a result identical to not
+        /// sampling at all. The shader compiles the whole layer out instead.
+        /// </para>
+        ///
+        /// <para>
+        /// Called from <see cref="PushStyle"/> only. Keyword changes are a material variant
+        /// switch, which is not something to do per frame.
+        /// </para>
+        /// </summary>
+        private void PushArtwork()
+        {
+            bool active = _style.ArtworkActive;
+
+            if (active)
+                _material.EnableKeyword(TexturedKeyword);
+            else
+                _material.DisableKeyword(TexturedKeyword);
+
+            // Written whether or not the keyword is on, so the material inspector shows what
+            // WOULD be used and a stale texture from a previous adoption cannot linger bound.
+            SetFloat("_Textured", active ? 1f : 0f);
+            SetTexture("_EnergyTex", active ? _style.energyTexture : null);
+            SetTexture("_MaskTex", active ? _style.maskTexture : null);
+            SetFloat("_TexScale", _style.artworkScale);
+            SetFloat("_TexSpeed", _style.artworkDrift);
+            SetFloat("_TexInfluence", _style.artworkInfluence);
         }
 
         /// <summary>True when the finished portal shader is in use rather than the fallback.</summary>

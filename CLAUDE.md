@@ -46,6 +46,7 @@ domains stop rather than guess. Every other domain continues.
 | `Docs/MULTIPLAYER_RUNTIME_ARCHITECTURE.md` | **Normative for the boundaries.** Who owns what, and why the pose is never replicated. |
 | `Docs/GHOST_EVIDENCE_AUTHORITY.md` | **Normative.** Any change to what counts as evidence, or to who decides it. |
 | `Docs/HQ_MODULAR_MIGRATION.md` | **Normative for the environment migration.** The measured contract of the imported house pack: what it actually is, its openings, its materials, the UV formula for generated geometry, and why the logical cell does not move. |
+| `Docs/PURCHASED_PORTAL_PACK.md` | **Normative for the seam.** Adopting a bought portal asset. What crosses from HDRP to URP and what cannot, why the artwork may lend the portal its look and never its shape, and why the images are copied rather than referenced. |
 | `Docs/CROSSPLAY_PLATFORM_MATRIX.md` | Adding a platform, or anything tempted to branch on one. |
 | `Docs/AGENT_OWNERSHIP.md` + `Docs/AGENT_ROSTER.json` | **Always.** Who owns what, the 40 specialist roles, and the 19 protected hotspots. |
 | `Docs/AGENT_TASK_ROUTER.md` | **Normative for how work is assigned.** Routing, the handoff contract, the review matrix, the blocked-domain rule. |
@@ -135,7 +136,15 @@ place that number lives; everything else derives it.
   state of its own instead of reporting itself as a doorway nobody asked anything of. And it
   bounds the lobby's cost: the mirror and the portal share one arbiter, both ask it before
   rendering, its budget comes from the project's own quality level, and the view buffer's
-  ladder has named ends rather than a halved top. 128 checks.
+  ladder has named ends rather than a halved top. And it reads the one thing no other
+  check in this repository can: that every local in every shader is declared before it is
+  used. HLSL does not hoist, so a use one line early is a compile error, and a shader that
+  fails to compile is drawn magenta — indistinguishable on screen from mistake 2. It also
+  holds the purchased-pack seam: a bought pack may lend the portal its LOOK and never its
+  shape, its samplers compile out when unused, ticking the box with no texture assigned
+  keeps the procedural portal rather than blacking it out, and the adapter copies the
+  pack's artwork into the project instead of referencing a folder that exists on one
+  machine. 139 checks.
 
 - `Scripts/check_agent_architecture.sh` — the roster holds 40 unique roles with
   every field, the roster and `AGENT_OWNERSHIP.md` name the same roles, the
@@ -301,6 +310,18 @@ Repeating one of these is the most likely way to break something.
    1.03 GiB, which is over GitHub's free 1 GiB storage and bandwidth allowance, and running
    out mid-fetch leaves exactly this partial state. `check_asset_references.sh` reads the
    working copy now and distinguishes "no LFS content at all" from "some of it".
+
+16. **A shader that did not compile, read as four different bugs.** `Portal.shader` used
+   `gate` one statement above the line declaring it. HLSL has no hoisting, so that is not a
+   wrong pixel — it is a compile error, and Unity draws a shader that failed to compile with
+   its magenta error shader. The portal was therefore a solid magenta rectangle, and every
+   explanation offered for it was about something else: the built-in-shader fallback of
+   mistake 2, a diagnostic probe room behind the opening, a purchased HDRP pack imported into
+   a URP project. All three are real failure modes that look exactly like this one, which is
+   why nobody read the shader. The guard could not see it either: it grepped for the
+   declaration and for the use as separate patterns, and both were present — just in the
+   wrong order. Order is checked now, across every shader in the project, because no compiler
+   runs in CI and nothing else would ever say so.
 
 ## Unity Editor availability
 

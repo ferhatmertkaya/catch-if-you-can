@@ -1237,6 +1237,144 @@ else
       "ein Standardwert von 1 stellt die Flaeche ab dem ersten Frame sichtbar in die Wand"
 fi
 
+# ---- V10: a shader that does not compile is drawn magenta ------------------------------------
+#
+# The portal shipped with `gate` USED one statement above the line that declares it. HLSL has no
+# hoisting, so that is not a wrong pixel - it is a compile error, and Unity draws a shader that
+# failed to compile with its magenta error shader. On screen that is indistinguishable from a
+# built-in shader under URP (CLAUDE.md mistake 2) or from a pack imported for the wrong pipeline,
+# and it was read as both before anyone read the shader.
+#
+# The old checks could not see it: they grepped for the declaration and for the use separately,
+# and both were present - just in the wrong order. This reads the order. No compiler is available
+# here, so nothing else in CI would.
+ORDER="$(python3 - "$ROOT" <<'PYEOF'
+import re, sys, pathlib
+
+TYPES = r'(?:float|half|fixed|int|uint|bool|double)(?:[1-4](?:x[1-4])?)?'
+DECL = re.compile(r'^\s*(?:const\s+|static\s+)*' + TYPES + r'\s+([A-Za-z_]\w*)\s*(=|;|\[)')
+FUNC = re.compile(r'^\s*(?:\[[^\]]*\]\s*)*(?:inline\s+)?(?:' + TYPES + r'|void|struct)\s+'
+                  r'([A-Za-z_]\w*)\s*\([^;]*$')
+
+def strip_comments(text):
+    text = re.sub(r'/\*.*?\*/', '', text, flags=re.S)
+    return '\n'.join(re.sub(r'//.*$', '', ln) for ln in text.split('\n'))
+
+findings = []
+for path in sorted(pathlib.Path(sys.argv[1], 'Assets').rglob('*.shader')):
+    raw = path.read_text(errors='replace')
+    for m in re.finditer(r'(HLSLPROGRAM|CGPROGRAM)(.*?)(ENDHLSL|ENDCG)', raw, re.S):
+        base = raw[:m.start(2)].count('\n') + 1
+        lines = strip_comments(m.group(2)).split('\n')
+        i = 0
+        while i < len(lines):
+            if FUNC.match(lines[i]) and 'struct' not in lines[i]:
+                depth, j, started = 0, i, False
+                while j < len(lines):
+                    depth += lines[j].count('{') - lines[j].count('}')
+                    if '{' in lines[j]:
+                        started = True
+                    if started and depth <= 0:
+                        break
+                    j += 1
+                body = lines[i:j + 1]
+                declared = {}
+                for k, ln in enumerate(body):
+                    d = DECL.match(ln)
+                    if d:
+                        declared.setdefault(d.group(1), k)
+                for name, k in declared.items():
+                    for k2 in range(k):
+                        if re.search(r'(?<![.\w])' + re.escape(name) + r'(?![\w])', body[k2]):
+                            findings.append("%s:%d '%s' used before its declaration at line %d"
+                                            % (path.name, base + i + k2, name, base + i + k))
+                            break
+                i = j + 1
+            else:
+                i += 1
+print("; ".join(findings))
+PYEOF
+)"
+if [ -z "$ORDER" ]; then
+  ok "every shader local is declared before it is used"
+else
+  bad "every shader local is declared before it is used" \
+      "HLSL does not hoist; this does not compile and Unity draws it magenta: $ORDER"
+fi
+
+# ---- V10: a purchased pack may lend the portal its LOOK, never its SHAPE ----------------------
+#
+# An HDRP portal pack cannot be dropped into a URP project - its shaders resolve to the magenta
+# error shader and HDRP has no mobile support at all, which is this game's only real target. What
+# CAN cross is the artwork, so the shader takes two texture slots. The invariant is that they
+# reach colour and heat ONLY: the signed box field, the tear and the closed-means-nothing gate
+# are what make this a hole in a wall rather than a picture of one, and no adopted pack may move
+# them.
+SHADER="$ROOT/Assets/CatchIfYouCan/Shaders/Portal.shader"
+ART_BLOCK="$(sed -n '/#ifdef _PORTAL_TEXTURED/,/#endif/p' "$SHADER")"
+
+if [ -n "$ART_BLOCK" ]; then
+  if printf '%s' "$ART_BLOCK" | grep -qE '^\s*(float2? +)?(box|fit|gate|alpha|open|ragged|rd|r) *='; then
+    bad "purchased artwork cannot move the breach" \
+        "the artwork block assigns a silhouette term; a pack must change the look, not the hole"
+  else
+    ok "purchased artwork cannot move the breach"
+  fi
+else
+  bad "purchased artwork cannot move the breach" "the _PORTAL_TEXTURED block is gone"
+fi
+
+# The samples must be INSIDE the keyword. Sampling two textures on every portal pixel of every
+# frame to multiply by an influence of zero is a cost a phone pays for a result identical to not
+# sampling at all.
+OUTSIDE="$(grep -n 'SAMPLE_TEXTURE2D(_EnergyTex\|SAMPLE_TEXTURE2D(_MaskTex' "$SHADER" | wc -l | tr -d ' ')"
+INSIDE="$(printf '%s' "$ART_BLOCK" | grep -c 'SAMPLE_TEXTURE2D(_EnergyTex\|SAMPLE_TEXTURE2D(_MaskTex' | tr -d ' ')"
+if [ "$OUTSIDE" = "$INSIDE" ] && [ "$INSIDE" -gt 0 ] &&
+   grep -q 'shader_feature_local_fragment _PORTAL_TEXTURED' "$SHADER"; then
+  ok "the purchased-artwork samplers are compiled out when unused"
+else
+  bad "the purchased-artwork samplers are compiled out when unused" \
+      "every SAMPLE of the artwork must sit inside #ifdef _PORTAL_TEXTURED ($INSIDE of $OUTSIDE)"
+fi
+
+# Ticking the box with no texture assigned must NOT switch the keyword on. With it on and the
+# energy slot empty the shader samples the default black, multiplies the energy by it, and the
+# portal goes dark - which reads as a broken portal rather than an unconfigured one.
+if code "$ART/PortalStyle.cs" \
+     | grep -qE 'ArtworkActive *=> *usePurchasedArtwork *&& *energyTexture != null'; then
+  ok "adopting with no texture keeps the procedural portal"
+else
+  bad "adopting with no texture keeps the procedural portal" \
+      "the keyword must need a real texture, not just the tick, or an empty slot blacks it out"
+fi
+
+# The adapter reads the purchased folder and writes only inside the project. A pack is
+# deliberately outside version control, so anything written into it exists on one machine, and
+# anything REFERENCED inside it is a missing asset everywhere else - CLAUDE.md mistake 15.
+ADAPTER="$ROOT/Assets/CatchIfYouCan/Editor/PurchasedPortalAdapter.cs"
+if [ -f "$ADAPTER" ]; then
+  if code "$ADAPTER" | grep -qE 'DestinationFolder *= *"Assets/CatchIfYouCan/' &&
+     code "$ADAPTER" | grep -qE 'AssetDatabase\.CopyAsset\('; then
+    ok "the portal adapter copies the pack's artwork into the project"
+  else
+    bad "the portal adapter copies the pack's artwork into the project" \
+        "referencing a texture where the pack lies resolves on exactly one machine"
+  fi
+
+  # The pack path is data, never a literal the tool falls back to mid-scan. A tool that
+  # silently scans somewhere other than the path it was given reports on the wrong folder,
+  # which this project has already shipped once.
+  if code "$ADAPTER" | grep -qE 'ScannedPath *= *folder' &&
+     ! code "$ADAPTER" | grep -qE 'folder *\+ *"/(interior|Portal|Shaders|Textures)"'; then
+    ok "the portal adapter scans exactly the path it was given"
+  else
+    bad "the portal adapter scans exactly the path it was given" \
+        "no suffix may be appended, and the report must name the path actually read"
+  fi
+else
+  bad "the portal adapter exists" "PurchasedPortalAdapter.cs is how a bought pack gets adopted"
+fi
+
 echo
 echo "  $PASS passed, $FAIL failed"
 if [ "$FAIL" -ne 0 ]; then

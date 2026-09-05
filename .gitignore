@@ -62,3 +62,9 @@ mono_crash.mem.*.blob
 # Local Unity Asset Store pack
 /Assets/HQ Modular House/
 /Assets/HQ Modular House.meta
+
+# Gekaufter Portal-Pack (Knife Entertainment, HDRP). Wird NICHT eingecheckt: Asset-Store-Lizenz,
+# und eine Referenz dorthin loest nur auf genau einem Rechner auf. Der Portal-Adapter kopiert die
+# Bilder, die das Spiel wirklich braucht, nach Assets/CatchIfYouCan/Resources/Portal/.
+/Assets/Knife/
+/Assets/Knife.meta
