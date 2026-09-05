@@ -853,10 +853,10 @@ namespace CatchIfYouCan.EditorTools
                 var st = new Structure { Path = path, RootScale = go.transform.localScale };
                 MeasureLocal(go, out Vector3 min, out Vector3 max);
                 st.OwnSize = max - min;
-                st.EffectiveSize = Vector3.Scale(st.OwnSize, st.RootScale);
+                MeasureWorld(go, out Vector3 wMin, out Vector3 wMax);
+                st.EffectiveSize = wMax - wMin;
 
                 var filters = go.GetComponentsInChildren<MeshFilter>(true);
-                var toRoot = go.transform.worldToLocalMatrix;
 
                 for (int f = 0; f < filters.Length; f++)
                 {
@@ -877,8 +877,14 @@ namespace CatchIfYouCan.EditorTools
                         HasRenderer = filters[f].GetComponent<Renderer>() != null,
                     };
 
-                    var m = toRoot * t.localToWorldMatrix;
-                    CornerBounds(m, mesh.bounds, out Vector3 cMin, out Vector3 cMax);
+                    // localToWorldMatrix DIREKT, ohne worldToLocalMatrix der Wurzel davor.
+                    // Genau diese Multiplikation war der Fehler: fuer ein Mesh AUF der Wurzel
+                    // ergibt sie die Einheitsmatrix und kuerzt damit Rotation UND Skalierung der
+                    // Wurzel heraus. Die Wandmodule tragen eine 270-Grad-Drehung um X - die
+                    // Z-hoch-zu-Y-hoch-Konvertierung aus dem Autorenwerkzeug -, und ohne sie
+                    // erscheint jede Wand liegend: 0,40 m hoch und 4,10 m tief statt 4,10 m hoch
+                    // und 0,40 m dick.
+                    CornerBounds(t.localToWorldMatrix, mesh.bounds, out Vector3 cMin, out Vector3 cMax);
                     child.RootSize = cMax - cMin;
                     child.Pivot = DescribePivot(mesh.bounds.min, mesh.bounds.max);
 
@@ -956,7 +962,7 @@ namespace CatchIfYouCan.EditorTools
                 for (int c = 0; c < st.Children.Count; c++)
                 {
                     var child = st.Children[c];
-                    var real = Vector3.Scale(child.RootSize, st.RootScale);
+                    var real = child.RootSize;
                     string key = V(real) + "   " + child.Model;
                     if (!families.TryGetValue(key, out var list))
                     {
@@ -991,6 +997,57 @@ namespace CatchIfYouCan.EditorTools
             sb.AppendLine();
 
             // ---- Volle Kindaufstellung fuer die groessten Baugruppen
+            // ---- Oeffnungen, aus der Geometrie
+            sb.AppendLine("--- OEFFNUNGEN, AUS DER GEOMETRIE GEMESSEN ---");
+            sb.AppendLine("  Nicht aus einem Kind namens \"door\": das ist das Tuerblatt, nicht das Loch.");
+            sb.AppendLine("  Jedes Dreieck wird auf die Wandebene projiziert, gerastert, und das");
+            sb.AppendLine("  groesste leere Rechteck darin ist die Oeffnung. Unten buendig = Tuer,");
+            sb.AppendLine("  mit Sockel darunter = Fenster.");
+            sb.AppendLine();
+            sb.AppendLine(string.Format("  {0,-8} {1,-13} {2,-13} {3,-9} {4,-9} {5,-9} {6,-9} {7}",
+                "ART", "OEFFNUNG BxH", "WAND BxHxD", "LINKS", "RECHTS", "UNTEN", "STURZ", "PREFAB"));
+
+            int doors = 0, windows = 0, solidWalls = 0;
+            for (int i = 0; i < structures.Count; i++)
+            {
+                var st = structures[i];
+                if (st.Children.Count == 0)
+                    continue;
+
+                var go = AssetDatabase.LoadAssetAtPath<GameObject>(st.Path);
+                if (go == null)
+                    continue;
+
+                var op = FindOpening(go);
+                var size = st.EffectiveSize;
+
+                if (!op.Found)
+                {
+                    solidWalls++;
+                    continue;
+                }
+
+                if (op.Kind == "TUER") doors++; else windows++;
+
+                sb.AppendLine(string.Format("  {0,-8} {1,-13} {2,-13} {3,-9} {4,-9} {5,-9} {6,-9} {7}",
+                    op.Kind,
+                    Round(op.Width) + " x " + Round(op.Height),
+                    Round(size.x) + "x" + Round(size.y) + "x" + Round(size.z),
+                    Round(op.LeftSolid), Round(op.RightSolid),
+                    Round(op.BottomV), Round(op.Lintel),
+                    Path.GetFileNameWithoutExtension(st.Path)));
+            }
+
+            sb.AppendLine();
+            sb.AppendLine("  Tueren: " + doors + "   Fenster: " + windows +
+                          "   ohne Oeffnung: " + solidWalls);
+            sb.AppendLine();
+            sb.AppendLine("  CIYC braucht 1,20 x 2,20 m. Das ist eine PRIVATE Konstante in");
+            sb.AppendLine("  PrimitiveRoomFactory - Stage B, nicht im Layout-Hash. Verhandelbar.");
+            sb.AppendLine("  Nicht verhandelbar sind die Zelle 6 x 3 x 6 m und der Tuer-Socket auf");
+            sb.AppendLine("  1,10 m: beide stehen in der maschinenfreien Menge und im Hash.");
+            sb.AppendLine();
+
             sb.AppendLine("--- HIERARCHIE DER GROESSTEN BAUGRUPPEN ---");
             for (int i = 0; i < Mathf.Min(4, structures.Count); i++)
             {
@@ -1006,7 +1063,7 @@ namespace CatchIfYouCan.EditorTools
                 {
                     var ch = st.Children[c];
                     sb.AppendLine(string.Format("      {0,-24} {1,-22} {2,-18} {3,-14} {4,-10} {5}",
-                        V(Vector3.Scale(ch.RootSize, st.RootScale)),
+                        V(ch.RootSize),
                         V(ch.LocalPosition), V(ch.LocalEuler), V(ch.LocalScale),
                         ch.Collider, ch.HierarchyPath));
                 }
@@ -1161,6 +1218,239 @@ namespace CatchIfYouCan.EditorTools
                 min = Vector3.Min(min, p);
                 max = Vector3.Max(max, p);
             }
+        }
+
+        /// <summary>
+        /// The prefab's bounds in ITS OWN world space - root rotation and scale included.
+        ///
+        /// This is the opposite of MeasureLocal and the two must not be confused. MeasureLocal
+        /// answers "how big is this before I scale it", which is what the catalog builder needs
+        /// when it is about to set a scale. This answers "how big is this when I drop it in a
+        /// scene", which is the only thing a forensic audit is about.
+        /// </summary>
+        private static void MeasureWorld(GameObject prefab, out Vector3 min, out Vector3 max)
+        {
+            min = max = Vector3.zero;
+            var filters = prefab.GetComponentsInChildren<MeshFilter>(true);
+            bool any = false;
+
+            for (int i = 0; i < filters.Length; i++)
+            {
+                var mesh = filters[i].sharedMesh;
+                if (mesh == null)
+                    continue;
+
+                CornerBounds(filters[i].transform.localToWorldMatrix, mesh.bounds,
+                    out Vector3 cMin, out Vector3 cMax);
+
+                if (!any) { min = cMin; max = cMax; any = true; continue; }
+                min = Vector3.Min(min, cMin);
+                max = Vector3.Max(max, cMax);
+            }
+        }
+
+        // ------------------------------------------------------- Oeffnungen, geometrisch
+
+        private class Opening
+        {
+            public bool Found;
+            public float Width;
+            public float Height;
+            public float CentreU;      // relative to the wall's left edge
+            public float BottomV;      // relative to the wall's base
+            public float LeftSolid;
+            public float RightSolid;
+            public float Lintel;       // solid above the opening
+            public string Kind;        // TUER / FENSTER / (keine)
+        }
+
+        /// <summary>
+        /// Finds the empty rectangle in a wall by looking at the geometry, not at a child's name.
+        ///
+        /// <para>
+        /// A child called "door" is a door LEAF - the panel that swings. It says nothing about
+        /// the hole in the wall, and on this pack it measures 1.35 x 2.60 while the wall's actual
+        /// opening could be anything. So: every triangle of the wall is projected onto the wall
+        /// plane, rasterised into an occupancy grid, and the largest all-empty axis-aligned
+        /// rectangle in that grid is the opening. That is a real measurement of real geometry.
+        /// </para>
+        ///
+        /// <para>
+        /// A gap sitting on the floor is a door; one with solid geometry beneath it is a window,
+        /// and the solid beneath is the sill height. Below the thresholds it is a modelling gap,
+        /// not an opening, and is reported as none.
+        /// </para>
+        /// </summary>
+        private static Opening FindOpening(GameObject prefab, int resolution = 128)
+        {
+            var result = new Opening { Kind = "(keine)" };
+
+            MeasureWorld(prefab, out Vector3 min, out Vector3 max);
+            Vector3 size = max - min;
+            if (size.x < 0.05f || size.y < 0.05f)
+                return result;
+
+            // The wall plane is the two widest axes; the thinnest is the thickness.
+            int thin = size.x <= size.y && size.x <= size.z ? 0 : (size.z <= size.y ? 2 : 1);
+            int uAxis = thin == 0 ? 2 : 0;
+            int vAxis = 1;
+            if (thin == 1)
+            {
+                // A flat, floor-like piece has no vertical opening to find.
+                return result;
+            }
+
+            float uSize = size[uAxis];
+            float vSize = size[vAxis];
+            if (uSize < 0.5f || vSize < 0.5f)
+                return result;
+
+            int cols = resolution;
+            int rows = Mathf.Max(8, Mathf.RoundToInt(resolution * vSize / uSize));
+            var solid = new bool[cols * rows];
+
+            var filters = prefab.GetComponentsInChildren<MeshFilter>(true);
+            for (int f = 0; f < filters.Length; f++)
+            {
+                var mesh = filters[f].sharedMesh;
+                if (mesh == null)
+                    continue;
+
+                var m = filters[f].transform.localToWorldMatrix;
+                var verts = mesh.vertices;
+                var tris = mesh.triangles;
+                if (verts == null || tris == null)
+                    continue;
+
+                for (int t = 0; t + 2 < tris.Length; t += 3)
+                {
+                    var a = m.MultiplyPoint3x4(verts[tris[t]]);
+                    var b = m.MultiplyPoint3x4(verts[tris[t + 1]]);
+                    var c = m.MultiplyPoint3x4(verts[tris[t + 2]]);
+
+                    var p0 = new Vector2((a[uAxis] - min[uAxis]) / uSize, (a[vAxis] - min[vAxis]) / vSize);
+                    var p1 = new Vector2((b[uAxis] - min[uAxis]) / uSize, (b[vAxis] - min[vAxis]) / vSize);
+                    var p2 = new Vector2((c[uAxis] - min[uAxis]) / uSize, (c[vAxis] - min[vAxis]) / vSize);
+
+                    RasteriseTriangle(solid, cols, rows, p0, p1, p2);
+                }
+            }
+
+            if (!LargestEmptyRectangle(solid, cols, rows, out int rx, out int ry, out int rw, out int rh))
+                return result;
+
+            float w = rw * uSize / cols;
+            float h = rh * vSize / rows;
+            float left = rx * uSize / cols;
+            float bottom = ry * vSize / rows;
+
+            // Below this it is a modelling gap between two pieces, not a way through.
+            if (w < 0.5f || h < 1.0f)
+                return result;
+
+            result.Found = true;
+            result.Width = w;
+            result.Height = h;
+            result.LeftSolid = left;
+            result.RightSolid = uSize - left - w;
+            result.BottomV = bottom;
+            result.CentreU = left + w * 0.5f;
+            result.Lintel = vSize - bottom - h;
+            result.Kind = bottom < 0.15f ? "TUER" : "FENSTER";
+            return result;
+        }
+
+        private static void RasteriseTriangle(bool[] grid, int cols, int rows,
+            Vector2 a, Vector2 b, Vector2 c)
+        {
+            float minX = Mathf.Min(a.x, Mathf.Min(b.x, c.x)) * cols;
+            float maxX = Mathf.Max(a.x, Mathf.Max(b.x, c.x)) * cols;
+            float minY = Mathf.Min(a.y, Mathf.Min(b.y, c.y)) * rows;
+            float maxY = Mathf.Max(a.y, Mathf.Max(b.y, c.y)) * rows;
+
+            int x0 = Mathf.Clamp(Mathf.FloorToInt(minX), 0, cols - 1);
+            int x1 = Mathf.Clamp(Mathf.CeilToInt(maxX), 0, cols - 1);
+            int y0 = Mathf.Clamp(Mathf.FloorToInt(minY), 0, rows - 1);
+            int y1 = Mathf.Clamp(Mathf.CeilToInt(maxY), 0, rows - 1);
+
+            var pa = new Vector2(a.x * cols, a.y * rows);
+            var pb = new Vector2(b.x * cols, b.y * rows);
+            var pc = new Vector2(c.x * cols, c.y * rows);
+
+            for (int y = y0; y <= y1; y++)
+            {
+                for (int x = x0; x <= x1; x++)
+                {
+                    var p = new Vector2(x + 0.5f, y + 0.5f);
+                    if (InTriangle(p, pa, pb, pc))
+                        grid[y * cols + x] = true;
+                }
+            }
+        }
+
+        private static bool InTriangle(Vector2 p, Vector2 a, Vector2 b, Vector2 c)
+        {
+            float d1 = Sign(p, a, b);
+            float d2 = Sign(p, b, c);
+            float d3 = Sign(p, c, a);
+            bool neg = d1 < 0f || d2 < 0f || d3 < 0f;
+            bool pos = d1 > 0f || d2 > 0f || d3 > 0f;
+            return !(neg && pos);
+        }
+
+        private static float Sign(Vector2 p, Vector2 a, Vector2 b) =>
+            (p.x - b.x) * (a.y - b.y) - (a.x - b.x) * (p.y - b.y);
+
+        /// <summary>
+        /// The largest all-empty axis-aligned rectangle in a binary grid, by the standard
+        /// per-row histogram scan: O(cols x rows), which is what makes running this over a
+        /// whole pack practical.
+        /// </summary>
+        private static bool LargestEmptyRectangle(bool[] solid, int cols, int rows,
+            out int bestX, out int bestY, out int bestW, out int bestH)
+        {
+            bestX = bestY = bestW = bestH = 0;
+            int bestArea = 0;
+
+            var heights = new int[cols];
+            var stack = new int[cols + 1];
+
+            for (int y = 0; y < rows; y++)
+            {
+                for (int x = 0; x < cols; x++)
+                    heights[x] = solid[y * cols + x] ? 0 : heights[x] + 1;
+
+                int top = 0;
+                for (int x = 0; x <= cols; x++)
+                {
+                    int h = x == cols ? 0 : heights[x];
+                    int start = x;
+
+                    while (top > 0 && heights[stack[top - 1]] >= h)
+                    {
+                        int idx = stack[--top];
+                        int height = heights[idx];
+                        int width = x - idx;
+                        int area = height * width;
+
+                        if (area > bestArea)
+                        {
+                            bestArea = area;
+                            bestX = idx;
+                            bestY = y - height + 1;
+                            bestW = width;
+                            bestH = height;
+                        }
+
+                        start = idx;
+                    }
+
+                    if (x < cols)
+                        stack[top++] = start;
+                }
+            }
+
+            return bestArea > 0;
         }
 
         private static string V(Vector3 v) =>
