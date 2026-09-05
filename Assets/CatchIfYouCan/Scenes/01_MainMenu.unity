@@ -51624,7 +51624,7 @@ MonoBehaviour:
   surface: {fileID: 0}
   style:
     openingSize: {x: 4.7, y: 2.4}
-    glowMargin: 0
+    glowMargin: 0.45
     tearAmount: 0.5
     tearScale: 5.4
     rimWidth: 0.162

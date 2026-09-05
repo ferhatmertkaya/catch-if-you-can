@@ -44,11 +44,14 @@ namespace CatchIfYouCan.Art
                  "correct: the aperture should be the hole you can see.")]
         public Vector2 openingSize = new Vector2(4.7f, 2.4f);
 
-        [Tooltip("How much BIGGER than the opening the drawn quad is, as a fraction. This is " +
-                 "pure canvas: the hole stays the size Opening Size says, and the extra area is " +
-                 "where the ragged edge and the outer glow live. Too little and the glow is cut " +
-                 "off square at the quad's edge - which is what a flat-topped portal is.")]
-        [Range(0f, 1.5f)] public float glowMargin = 0f;
+        [Tooltip("How much BIGGER than the opening the drawn QUAD is, as a fraction. Pure " +
+                 "canvas: the hole, the collision and the view all stay exactly Opening Size, " +
+                 "and the extra area is only somewhere for the ragged edge and the outer glow " +
+                 "to finish. Too little and they end in a straight line at the mesh boundary - " +
+                 "the rectangular clipping at the top and the upper corners.\n\n" +
+                 "This does NOT stretch the far room: the view is sampled in SCREEN space, so " +
+                 "the render texture is shaped by the screen and not by this quad.")]
+        [Range(0f, 1.5f)] public float glowMargin = 0.45f;
 
         /// <summary>
         /// The quad to draw, in metres: the opening plus the margin the glow needs.

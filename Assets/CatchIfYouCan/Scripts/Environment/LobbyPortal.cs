@@ -132,6 +132,11 @@ namespace CatchIfYouCan.Environment
                  "scene sets nothing.")]
         [SerializeField] private Collider wallCollider;
 
+        [Tooltip("How thick a collider may be across the opening and still count as the wall " +
+                 "the tear is cut into. A floor is wide along that axis, not thin, so this is " +
+                 "what tells the two apart without naming either.")]
+        [SerializeField, Min(0.05f)] private float maxWallThickness = 1f;
+
         private bool _sealedByHunt;
         private Coroutine _sealing;
         private BoxCollider _threshold;
@@ -207,8 +212,24 @@ namespace CatchIfYouCan.Environment
             // before a mission is chosen.
             EnsureSurface();
             EnsureThreshold();
-            EnsureWallAperture();
             SetState(LobbyPortalState.Inactive);
+        }
+
+        /// <summary>
+        /// Cutting the wall waits for Start, and that is not tidiness.
+        ///
+        /// <para>
+        /// Finding the wall is a PHYSICS query, and a physics query reads the physics scene -
+        /// which is only brought into line with the transform hierarchy at the fixed step. In
+        /// Awake, before any sync has happened, <c>OverlapBox</c> returns nothing at all, so the
+        /// portal reported "no wall collider found around the opening" about a wall that was
+        /// plainly there and had never moved.
+        /// </para>
+        /// </summary>
+        private void Start()
+        {
+            EnsureWallAperture();
+            ReportAperture();
         }
 
         private void OnDestroy()
@@ -295,6 +316,7 @@ namespace CatchIfYouCan.Environment
             // The hole in the collision is cut from the opening size, so a resize re-cuts it.
             EnsureWallAperture();
             SetWallOpen(State == LobbyPortalState.Open || State == LobbyPortalState.Entering);
+            ReportAperture();
 
             // The far anchor is derived from the opening height, so a taller opening moves it.
             if (_pendingWorld != null && _pendingWorld.ArrivalPoint != null)
@@ -490,45 +512,92 @@ namespace CatchIfYouCan.Environment
             if (wallCollider != null)
                 return wallCollider;
 
-            Vector3 middle = transform.position + transform.up * (style.openingSize.y * 0.5f);
+            // The physics scene is only synced at the fixed step unless asked. Asked here, so
+            // this works from Start as well as from an inspector edit mid-frame.
+            Physics.SyncTransforms();
+
+            Vector3 centre = transform.position + transform.up * (style.openingSize.y * 0.5f);
+            Vector3 half = new Vector3(style.openingSize.x * 0.5f,
+                                       style.openingSize.y * 0.5f,
+                                       Mathf.Max(0.1f, maxWallThickness));
+
+            Collider[] hits = Physics.OverlapBox(centre, half, transform.rotation, ~0,
+                                                 QueryTriggerInteraction.Ignore);
 
             Collider best = null;
-            float bestVolume = float.MaxValue;
+            float widest = 0f;
+            var seen = new System.Text.StringBuilder();
 
-            // A physics query at the opening, not a sweep of the scene. FindObjectsByType would
-            // walk every collider in the lobby, and this file is forbidden from searching the
-            // scene at all - the guard does not distinguish a one-off from a per-frame one, and
-            // it is right not to: the cheap version is available and this is it.
-            Collider[] candidates = Physics.OverlapBox(
-                middle, new Vector3(0.05f, 0.05f, 0.05f), transform.rotation,
-                ~0, QueryTriggerInteraction.Ignore);
-
-            foreach (Collider candidate in candidates)
+            foreach (Collider candidate in hits)
             {
-                if (candidate == null)
-                    continue;
-
-                // Never the portal's own furniture, and never something the player is carrying.
-                if (candidate.transform.IsChildOf(transform))
+                if (candidate == null || candidate.transform.IsChildOf(transform))
                     continue;
 
                 Bounds b = candidate.bounds;
-                if (!b.Contains(middle))
+                float thickness = Support(b.extents, transform.forward) * 2f;
+                float width = Support(b.extents, transform.right) * 2f;
+                float height = Support(b.extents, transform.up) * 2f;
+
+                seen.Append(" ").Append(candidate.name).Append("(")
+                    .Append(width.ToString("F1")).Append("x").Append(height.ToString("F1"))
+                    .Append("x").Append(thickness.ToString("F2")).Append(")");
+
+                // A wall, tested by SHAPE rather than by name or by size alone: thin across the
+                // portal's normal, and at least as wide and tall as the hole it has to contain.
+                // A floor is wide along the portal's forward axis and fails the first test; a
+                // prop standing against the wall fails the second.
+                if (thickness > maxWallThickness)
+                    continue;
+                if (width < style.openingSize.x || height < style.openingSize.y)
                     continue;
 
-                float volume = b.size.x * b.size.y * b.size.z;
-                if (volume < bestVolume)
+                if (width > widest)
                 {
-                    bestVolume = volume;
+                    widest = width;
                     best = candidate;
                 }
             }
 
-            if (best != null)
-                CIYCLog.Info(LogTag + "wall resolved to '" + best.name + "' (" +
-                             best.bounds.size.ToString("F2") + ").");
+            if (best == null)
+            {
+                CIYCLog.Error(LogTag + "no wall around the opening. Colliders overlapping it:" +
+                              (seen.Length > 0 ? seen.ToString() : " <none>") +
+                              ". A wall must be at most " + maxWallThickness.ToString("F2") +
+                              " m thick across the opening and at least " +
+                              style.openingSize.x.ToString("F2") + " x " +
+                              style.openingSize.y.ToString("F2") +
+                              " m across it. Assign 'wallCollider' to override this.");
+            }
 
             return best;
+        }
+
+        /// <summary>
+        /// Says what the opening actually is, and TESTS the one claim that matters rather than
+        /// asserting it: whether anything solid is still standing in the middle of the hole.
+        /// </summary>
+        private void ReportAperture()
+        {
+            Vector3 centre = transform.position + transform.up * (style.openingSize.y * 0.5f);
+
+            Physics.SyncTransforms();
+            bool blocked = Physics.CheckBox(centre,
+                                            new Vector3(style.openingSize.x * 0.35f,
+                                                        style.openingSize.y * 0.35f, 0.05f),
+                                            transform.rotation, ~0,
+                                            QueryTriggerInteraction.Ignore);
+
+            CIYCLog.Info(LogTag +
+                "opening=" + style.openingSize.x.ToString("F2") + "x" +
+                style.openingSize.y.ToString("F2") +
+                " wallCollision=" + (_aperture != null ? "APERTURE" : "NONE") +
+                " wall=" + (_wallSolid != null ? _wallSolid.name : "<unresolved>") +
+                " pieces=" + (_aperture != null ? _aperture.transform.childCount : 0) +
+                " centerBlocked=" + blocked +
+                " crossingAperture=" +
+                (style.openingSize.x * apertureTolerance).ToString("F2") + "x" +
+                (style.openingSize.y * apertureTolerance).ToString("F2") +
+                " passable=" + (!blocked && _wallSolid != null));
         }
 
         /// <summary>

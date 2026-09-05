@@ -1502,16 +1502,48 @@ else
       "a quad sized by one formula and a _Fit by another is a breach that misses its geometry"
 fi
 
-# There WAS a numeric check here that computed the worst-case reach of the glow and failed if
-# it passed the quad edge. It has been removed rather than relaxed, and that is worth recording:
-# it encoded a GUESS about how much margin the effect needs - theoretical extremes of the value
-# noise, plus the outer falloff all the way to its zero - and neither occurs. When the portal was
-# tuned by eye to something that looks right, that check failed it; run against the flat-topped
-# portal it was written for, it would have passed. A number that rejects the good case and admits
-# the bad one is not measuring the thing, and a guard nobody can satisfy gets deleted in a hurry
-# by someone with less context. What survives is structural and true: the quad is derived from the
-# opening by one formula and _Fit divides by the same margin, so the two cannot drift apart. How
-# much margin looks right is a judgement made by looking at it.
+# The margin has to be ENOUGH, computed from the authored numbers rather than trusted.
+#
+# This check was deleted once, on the reasoning that it rejected a configuration that looked
+# right. That reasoning was wrong, and the deletion is why the rectangular clipping at the top
+# and the upper corners then had to be reported by a human. Re-run against the config it was
+# deleted over, the vertical reach was 1.353 - clipped, exactly where the clipping was later
+# seen. It had not rejected a good case; it had found a bad one that nobody had looked at yet.
+#
+# The metric is the visible rim, not the theoretical extreme: the outer falloff at 1.6x the rim
+# width, plus a quarter of the tear and a fifth of the noise wobble, which is the excursion value
+# noise actually reaches.
+FITS="$(python3 - "$ROOT" <<'PYEOF'
+import re, sys, pathlib
+style = pathlib.Path(sys.argv[1], "Assets/CatchIfYouCan/Scripts/Art/PortalStyle.cs").read_text()
+scene = pathlib.Path(sys.argv[1], "Assets/CatchIfYouCan/Scenes/01_MainMenu.unity").read_text()
+
+def authored(name, default):
+    # The SCENE wins where it says anything: a serialized value beats a code default, which is
+    # the whole reason this portal spent a week being tuned in a file nothing read.
+    m = re.search(r'^\s*' + name + r': ([\d.]+)\s*$', scene, re.M)
+    if m:
+        return float(m.group(1))
+    m = re.search(r'public float ' + name + r' = ([\d.]+)f', style)
+    return float(m.group(1)) if m else default
+
+margin = authored('glowMargin', 0.0)
+tear   = authored('tearAmount', 0.22)
+rim    = authored('rimWidth', 0.26)
+noise  = authored('noiseStrength', 0.16)
+
+fit   = 1.0 / (1.0 + margin)
+reach = ((1.0 + rim * 1.6) + tear * 0.25 + noise * 0.2) * fit
+print("%.3f" % reach)
+PYEOF
+)"
+if [ -n "$FITS" ] && awk "BEGIN{exit !($FITS < 1.0)}"; then
+  ok "the rim finishes inside the quad it is drawn on (reaches $FITS of the edge)"
+else
+  bad "the rim finishes inside the quad it is drawn on" \
+      "reaches $FITS of the quad edge; at or over 1.0 the glow is cut off square"
+fi
+
 
 # ---- V10: one value must not mean two things -------------------------------------------------
 #
@@ -1657,6 +1689,61 @@ if grep -qE '^\s*entryTriggerSize:' "$SCENE"; then
       "entryTriggerSize was replaced by entryTriggerDepth"
 else
   ok "the lobby scene carries no orphaned trigger size"
+fi
+
+# ---- V10: the wall has to be found, and found reliably ---------------------------------------
+#
+# It was not. EnsureWallAperture ran in Awake and resolved the wall with a physics query, and a
+# physics query reads the PHYSICS scene - which is only brought into line with the transform
+# hierarchy at the fixed step. Before any sync, OverlapBox returns nothing, so the portal
+# reported "no wall collider found" about a wall that was plainly there and had never moved.
+LP="$ENV/LobbyPortal.cs"
+if code "$LP" | sed -n '/private void Awake/,/^        }$/p' | grep -qE 'EnsureWallAperture\(\)'; then
+  bad "the wall is cut after physics exists, not in Awake" \
+      "a physics query in Awake runs against an unsynced physics scene and finds nothing"
+else
+  ok "the wall is cut after physics exists, not in Awake"
+fi
+
+if code "$LP" | sed -n '/private void Start/,/^        }$/p' | grep -qE 'EnsureWallAperture\(\)' &&
+   code "$LP" | sed -n '/private Collider ResolveWall/,/^        }$/p' \
+     | grep -qE 'Physics\.SyncTransforms\(\)'; then
+  ok "the wall query syncs the physics scene first"
+else
+  bad "the wall query syncs the physics scene first" \
+      "without the sync the answer depends on which frame it is asked in"
+fi
+
+# A wall is recognised by SHAPE - thin across the opening, wide and tall across it - so a floor
+# and a prop are excluded without either being named.
+RW="$(code "$LP" | sed -n '/private Collider ResolveWall/,/^        }$/p')"
+if printf '%s' "$RW" | grep -qE 'thickness > maxWallThickness' &&
+   printf '%s' "$RW" | grep -qE 'width < style\.openingSize\.x \|\| height < style\.openingSize\.y'; then
+  ok "the wall is recognised by shape, not by size alone"
+else
+  bad "the wall is recognised by shape, not by size alone" \
+      "without the thickness test a floor overlapping the opening wins"
+fi
+
+# A failed resolve has to say what it DID see, or the next report is "it says there is no wall"
+# with nothing to act on - which is exactly how this one arrived.
+if printf '%s' "$RW" | grep -qE 'Colliders overlapping it' &&
+   printf '%s' "$RW" | grep -qE 'seen\.Append'; then
+  ok "a failed wall resolve names the colliders it rejected"
+else
+  bad "a failed wall resolve names the colliders it rejected" \
+      "an error with no candidates in it cannot be acted on"
+fi
+
+# The report TESTS the one claim that matters instead of asserting it.
+RA="$(code "$LP" | sed -n '/private void ReportAperture/,/^        }$/p')"
+if printf '%s' "$RA" | grep -qE 'Physics\.CheckBox' &&
+   printf '%s' "$RA" | grep -qE 'centerBlocked=' &&
+   printf '%s' "$RA" | grep -qE 'passable='; then
+  ok "the portal reports a measured passability, not a claimed one"
+else
+  bad "the portal reports a measured passability, not a claimed one" \
+      "centerBlocked must come from a physics test of the middle of the hole"
 fi
 
 echo

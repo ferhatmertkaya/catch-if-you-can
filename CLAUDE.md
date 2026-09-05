@@ -155,7 +155,12 @@ place that number lives; everything else derives it.
   is solid again the moment the portal is not open. And it holds the opening to ONE source:
   `openingSize` alone sizes the quad, the shader breach, the collision hole, the crossing
   test and the threshold — no second fraction, no third trigger size, and no orphaned
-  field left in the scene, where a serialized value silently beats every code default. 161 checks.
+  field left in the scene, where a serialized value silently beats every code default. It also
+  keeps the wall findable: the tear is cut after physics exists rather than in Awake, where a
+  query against an unsynced physics scene finds nothing at all, the wall is recognised by
+  shape rather than by name, a failed resolve names what it rejected, the drawn quad is
+  larger than the hole so the rim is not cut off square, and the portal reports a MEASURED
+  passability rather than a claimed one. 167 checks.
 
 - `Scripts/check_agent_architecture.sh` — the roster holds 40 unique roles with
   every field, the roster and `AGENT_OWNERSHIP.md` name the same roles, the
