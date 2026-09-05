@@ -240,6 +240,45 @@ axes, so the whole wall shares one coordinate system and no section has an origi
 from. The axes carry the same direction the corner-counted version had, so nothing mirrors or
 rotates relative to before.
 
+## Why none of the pack's art was on screen
+
+Not a scaling problem. A **finding** problem, and it hid behind three plausible-looking
+scaling problems.
+
+The classifier matches English filenames — `wall`, `floor`, `doorway`. This pack is
+Russian-authored: the forensics pass found mesh `5` used eighty times, prefabs named by
+number, and the glass material called `Steklo`. So `RoleOf` returned null for essentially
+every prefab. Three stragglers with an English word somewhere in their path were classified
+instead, and one of them measures **36 × 57 × 36 m** — a demo assembly, not a floor module.
+
+Everything downstream followed from that. The catalog got one wall variant and no door or
+window insert at all, so nothing from the pack could be placed. And the surface density was
+measured off those three objects: a wall material read from a fourteen-metre object reports
+one texture tile covering nine metres, which on a six-metre wall is two thirds of a tile —
+not a pattern, a smear that changes colour.
+
+Three changes, in the order they matter:
+
+**The pack is listed, not reasoned about.** `Audit Pack → 6. INVENTAR` prints the folders with
+their prefab counts, then each piece with its size, its pivot offset from its own mesh and the
+materials it carries, then every material with its tiling and base-map resolution. A kit piece
+has its pivot *on* the piece; a pivot 7–29 m away is a scene export and cannot be snapped to
+anything. That listing is how the real modules get named, instead of hoping their filenames
+are in English.
+
+**The pack folder is located rather than assumed.** The default was a hard-coded
+`Assets/HQ Modular House`; the Asset Store calls this one *HQ Modular House Interior Pack*.
+A folder that does not exist classifies zero prefabs and reports a perfectly calm zero, which
+reads as an empty pack rather than as a wrong path.
+
+**A measurement that cannot be right is refused.** The first run reported a wallpaper whose
+pattern was 9.4 m across and 1.7 m tall — a ratio of five and a half on a square texture. No
+wallpaper is shaped like that, so that number was not a surprising truth about the pack, it was
+a wrong reading being believed. It is now rejected on aspect, on absolute size and on sign, and
+the material is used exactly as its author tiled it. Since generated UVs are in metres, an
+untouched tiling of 1.5 is one tile every 0.67 m — a believable wallpaper, and the honest
+answer besides.
+
 ## If the pattern size still looks wrong
 
 It is two numbers, and the loop is short. Open `ModularInteriorCatalog.asset`, change

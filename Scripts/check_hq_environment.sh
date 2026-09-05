@@ -683,6 +683,71 @@ else:
     bad("an inconsistent pack is reported rather than silently averaged",
         "a number that was chosen must not be presented as a number that was found")
 
+# ---- a measurement that cannot be right is REFUSED, not shipped -------------------------------
+#
+# The first run of the surface pass reported a wallpaper whose pattern was 9.4 m across and
+# 1.7 m tall: a ratio of five and a half on a square texture. That is not a surprising truth
+# about the pack, it is a wrong reading being believed - and on a 6 m wall it is two thirds of
+# one tile, which is not a pattern, just a smear that changes colour. A measurement is not
+# automatically better than no measurement.
+if "private static string Implausible(" in tools:
+    ok("an impossible density is refused rather than written into the catalog")
+else:
+    bad("an impossible density is refused rather than written into the catalog",
+        "a wrong reading believed is worse than a material left as its author tiled it")
+
+impl = re.search(r"private static string Implausible.*?\n        \}", tools, re.S)
+ibody2 = impl.group(0) if impl else ""
+if ibody2 and "MaxPatternAspect" in ibody2 and "MaxPatternMetres" in ibody2:
+    ok("both an impossible aspect and an impossible size are caught")
+else:
+    bad("both an impossible aspect and an impossible size are caught",
+        "a square texture cannot repeat 9 m across and 2 m up, and no pattern is wall-sized")
+
+# The refusal leaves the material AS AUTHORED rather than falling back to grey. UVs are in
+# metres, so an untouched tiling of 1.5 is one tile every 0.67 m - a believable wallpaper.
+rep = re.search(r"private static SurfaceMaterial Report.*?\n        \}", tools, re.S)
+rpbody = rep.group(0) if rep else ""
+if rpbody and "return new SurfaceMaterial { Material = candidate.Material };" in rpbody:
+    ok("a refused density keeps the material, only dropping the number")
+else:
+    bad("a refused density keeps the material, only dropping the number",
+        "dropping the material too would put the room back to neutral grey")
+
+# ---- the density is sampled from the PACK, not from whatever the classifier caught -----------
+#
+# The classifier matches English filenames and this pack numbers its prefabs, so three
+# stragglers were classified - one of them 36 x 57 m, a demo assembly - and the density was
+# measured off those.
+cs = re.search(r"private static string ChooseSurfaces.*?\n        \}", tools, re.S)
+csbody = cs.group(0) if cs else ""
+if csbody and 'FindAssets("t:Prefab"' in csbody:
+    ok("surface materials are sampled across the pack, not across the classified handful")
+else:
+    bad("surface materials are sampled across the pack, not across the classified handful",
+        "a filename classifier finds nothing in a pack whose prefabs are numbered")
+
+# ---- the pack folder is FOUND, not assumed ---------------------------------------------------
+#
+# The default was a hard-coded path. A folder that does not exist classifies zero prefabs and
+# reports a calm zero, which reads as an empty pack rather than as a wrong path.
+if "private static string LocatePack()" in tools and "IsValidFolder(candidates[i])" in tools:
+    ok("the pack folder is located rather than assumed")
+else:
+    bad("the pack folder is located rather than assumed",
+        "a wrong path reports an empty pack, which looks like a pack with nothing in it")
+
+# ---- and there is a way to SEE what is in the pack --------------------------------------------
+#
+# Everything above went wrong because the pack was reasoned about from a document instead of
+# looked at. The inventory lists folders, pieces with their size and pivot offset, and the
+# materials - so the real modules can be named by reading them.
+if "private static string Inventory(" in tools and "Pivot" in tools:
+    ok("the pack can be listed - folders, pieces, pivots and materials")
+else:
+    bad("the pack can be listed - folders, pieces, pivots and materials",
+        "without it the kit is identified by guessing at filenames")
+
 print()
 print("  %d passed, %d failed" % (passed, failed))
 sys.exit(1 if failed else 0)

@@ -35,7 +35,34 @@ namespace CatchIfYouCan.EditorTools
         private const string CatalogFolder = "Assets/CatchIfYouCan/ScriptableObjects/Content";
         private const string CatalogPath = CatalogFolder + "/ModularInteriorCatalog.asset";
 
-        private string _packFolder = "Assets/HQ Modular House";
+        private string _packFolder = LocatePack();
+
+        /// <summary>
+        /// Where the pack actually is, rather than where it was assumed to be.
+        ///
+        /// The default was a hard-coded "Assets/HQ Modular House". The Asset Store calls this
+        /// one "HQ Modular House Interior Pack", and a folder that does not exist classifies
+        /// zero prefabs while reporting a perfectly calm zero - which reads as an empty pack
+        /// rather than as a wrong path.
+        /// </summary>
+        private static string LocatePack()
+        {
+            string[] candidates =
+            {
+                "Assets/HQ Modular House/interior",
+                "Assets/HQ Modular House",
+                "Assets/HQ Modular House Interior",
+                "Assets/HQ Modular House Interior Pack",
+            };
+
+            for (int i = 0; i < candidates.Length; i++)
+            {
+                if (AssetDatabase.IsValidFolder(candidates[i]))
+                    return candidates[i];
+            }
+
+            return "Assets/HQ Modular House";
+        }
         private string _report = "Paket-Ordner eintragen und 'Paket pruefen' druecken.";
         private Vector2 _scroll;
         private Classification _classified;
@@ -103,6 +130,9 @@ namespace CatchIfYouCan.EditorTools
             if (GUILayout.Button("5. Umgebung pruefen"))
                 _report = ValidateEnvironment();
 
+            if (GUILayout.Button("6. INVENTAR - was liegt wirklich drin (schreibt nichts)"))
+                _report = Inventory(_packFolder);
+
             EditorGUILayout.Space();
             _scroll = EditorGUILayout.BeginScrollView(_scroll);
             EditorGUILayout.TextArea(_report);
@@ -147,6 +177,169 @@ namespace CatchIfYouCan.EditorTools
             (ModuleRole.Floor,           new[] { "floor", "ground", "parquet", "tilefloor" }),
             (ModuleRole.WallSolid,       new[] { "wall", "partition" }),
         };
+
+        /// <summary>
+        /// What is actually in the pack, listed rather than guessed at.
+        ///
+        /// <para>
+        /// The classifier matches English filenames - "wall", "floor", "doorway". This pack is
+        /// Russian-authored and names its prefabs with NUMBERS: the forensics pass found mesh
+        /// "5" used eighty times, and the one glass material is called "Steklo". So RoleOf
+        /// returned null for essentially every prefab, three stragglers with an English word in
+        /// their path were classified instead - one of them 36 x 57 m, which is a demo
+        /// assembly, not a floor module - and the surface density was measured off those. That
+        /// is the whole reason the pack's art is not on screen: not a scaling problem, a
+        /// FINDING problem.
+        /// </para>
+        /// <para>
+        /// This lists the folders, the prefabs in each with their size, their pivot offset and
+        /// the materials they carry, so the real modules can be identified by looking at them
+        /// instead of by hoping their names are in English. It writes nothing and imports
+        /// nothing; it reads the asset database index and opens a bounded sample of prefabs.
+        /// </para>
+        /// </summary>
+        private static string Inventory(string folder)
+        {
+            var sb = new StringBuilder();
+            sb.AppendLine("=== INVENTAR ===");
+            sb.AppendLine("Ordner: " + folder);
+
+            if (!AssetDatabase.IsValidFolder(folder))
+            {
+                sb.AppendLine("FEHLER: diesen Ordner gibt es nicht.");
+                sb.AppendLine("Im Project-Fenster den echten Paket-Ordner suchen und oben eintragen.");
+                return sb.ToString();
+            }
+
+            var prefabGuids = AssetDatabase.FindAssets("t:Prefab", new[] { folder });
+            sb.AppendLine("Prefabs: " + prefabGuids.Length);
+            sb.AppendLine();
+
+            // Folder census first: it is cheap, it needs no prefab loaded, and it usually says
+            // on its own where the kit lives and where the demo assemblies live.
+            var perFolder = new Dictionary<string, int>();
+            var paths = new List<string>(prefabGuids.Length);
+            for (int i = 0; i < prefabGuids.Length; i++)
+            {
+                string path = AssetDatabase.GUIDToAssetPath(prefabGuids[i]);
+                paths.Add(path);
+                string dir = Path.GetDirectoryName(path)?.Replace('\\', '/') ?? "";
+                perFolder.TryGetValue(dir, out int n);
+                perFolder[dir] = n + 1;
+            }
+
+            sb.AppendLine("--- ORDNER ---");
+            var folders = new List<string>(perFolder.Keys);
+            folders.Sort(StringComparer.Ordinal);
+            for (int i = 0; i < folders.Count; i++)
+                sb.AppendLine(string.Format("{0,5}  {1}", perFolder[folders[i]], folders[i]));
+
+            paths.Sort(StringComparer.Ordinal);
+
+            sb.AppendLine();
+            sb.AppendLine("--- TEILE (Groesse in Metern, Pivot = Abstand Ursprung zum Mesh) ---");
+            sb.AppendLine("Ein Kit-Teil hat den Pivot AM Teil. Ein Pivot 7-29 m daneben ist ein");
+            sb.AppendLine("Export aus einer Szene und laesst sich nicht aneinandersetzen.");
+            sb.AppendLine();
+
+            int shown = 0;
+            for (int i = 0; i < paths.Count && shown < InventoryLimit; i++)
+            {
+                string line = DescribePiece(paths[i]);
+                if (line == null)
+                    continue;
+
+                sb.AppendLine(line);
+                shown++;
+            }
+
+            if (paths.Count > shown)
+                sb.AppendLine("... " + (paths.Count - shown) + " weitere nicht gezeigt.");
+
+            sb.AppendLine();
+            sb.AppendLine("--- MATERIALIEN ---");
+            var materialGuids = AssetDatabase.FindAssets("t:Material", new[] { folder });
+            sb.AppendLine(materialGuids.Length + " Materialien.");
+            for (int i = 0; i < materialGuids.Length && i < InventoryLimit; i++)
+            {
+                var mat = AssetDatabase.LoadAssetAtPath<Material>(
+                    AssetDatabase.GUIDToAssetPath(materialGuids[i]));
+                if (mat == null)
+                    continue;
+
+                Texture baseMap = mat.HasProperty("_BaseMap") ? mat.GetTexture("_BaseMap") : null;
+                sb.AppendLine(string.Format("  {0,-24} tiling {1}  {2}  Shader {3}",
+                    mat.name,
+                    mat.HasProperty("_BaseMap") ? mat.GetTextureScale("_BaseMap").ToString("F2") : "-",
+                    baseMap != null ? baseMap.name + " " + baseMap.width + "x" + baseMap.height : "<keine Textur>",
+                    mat.shader != null ? mat.shader.name : "<null>"));
+            }
+
+            sb.AppendLine();
+            sb.AppendLine("Diese Ausgabe hierher kopieren. Daran lassen sich die echten Wand-,");
+            sb.AppendLine("Tuer- und Fensterteile benennen - der Katalog ist danach eine Liste,");
+            sb.AppendLine("die von Hand stimmt statt von Namen geraten zu sein.");
+            return sb.ToString();
+        }
+
+        /// <summary>How many prefabs and materials the inventory opens. Bounded on purpose.</summary>
+        private const int InventoryLimit = 120;
+
+        private static string DescribePiece(string path)
+        {
+            var go = AssetDatabase.LoadAssetAtPath<GameObject>(path);
+            if (go == null)
+                return null;
+
+            var filters = go.GetComponentsInChildren<MeshFilter>(true);
+            if (filters.Length == 0)
+                return string.Format("  {0,-34} (kein Mesh)", Path.GetFileNameWithoutExtension(path));
+
+            // Combined, in the prefab root's own space, transforms included - the size a piece
+            // really occupies when it is placed.
+            var bounds = new Bounds();
+            bool started = false;
+            for (int i = 0; i < filters.Length; i++)
+            {
+                if (filters[i].sharedMesh == null)
+                    continue;
+
+                Bounds b = filters[i].sharedMesh.bounds;
+                Vector3 centre = filters[i].transform.TransformPoint(b.center);
+                Vector3 size = Vector3.Scale(b.size, filters[i].transform.lossyScale);
+
+                if (!started)
+                {
+                    bounds = new Bounds(centre, size);
+                    started = true;
+                }
+                else
+                {
+                    bounds.Encapsulate(new Bounds(centre, size));
+                }
+            }
+
+            if (!started)
+                return null;
+
+            var names = new List<string>(4);
+            var renderers = go.GetComponentsInChildren<MeshRenderer>(true);
+            for (int i = 0; i < renderers.Length; i++)
+            {
+                var mats = renderers[i].sharedMaterials;
+                for (int m = 0; m < mats.Length; m++)
+                {
+                    if (mats[m] != null && !names.Contains(mats[m].name) && names.Count < 4)
+                        names.Add(mats[m].name);
+                }
+            }
+
+            return string.Format("  {0,-34} {1}  Pivot {2:F1} m  [{3}]",
+                Path.GetFileNameWithoutExtension(path),
+                bounds.size.ToString("F2"),
+                bounds.center.magnitude,
+                string.Join(", ", names.ToArray()));
+        }
 
         private static Classification Classify(string folder)
         {
@@ -360,15 +553,22 @@ namespace CatchIfYouCan.EditorTools
 
             var found = new Dictionary<string, SurfaceCandidate>();
 
-            foreach (var pair in c.ByRole)
-            {
-                List<string> paths = pair.Value;
-                if (paths == null)
-                    continue;
+            // Sampled across the PACK, not across the classified prefabs.
+            //
+            // The classifier matches English filenames and this pack numbers its prefabs, so
+            // ByRole held three stragglers - one of them a 36 x 57 m demo assembly - and the
+            // density was being measured off those. A wall material read from a fourteen-metre
+            // object says one texture tile covers nine metres, which on a six-metre wall is two
+            // thirds of a tile: not a pattern at all, just a smear that changes colour.
+            var prefabGuids = AssetDatabase.FindAssets("t:Prefab", new[] { c.Folder });
+            var paths = new List<string>(prefabGuids.Length);
+            for (int i = 0; i < prefabGuids.Length; i++)
+                paths.Add(AssetDatabase.GUIDToAssetPath(prefabGuids[i]));
 
-                for (int i = 0; i < paths.Count && i < SurfaceSampleLimit; i++)
-                    CollectSurfaces(paths[i], found);
-            }
+            paths.Sort(StringComparer.Ordinal);
+
+            for (int i = 0; i < paths.Count && i < SurfaceSampleLimit; i++)
+                CollectSurfaces(paths[i], found);
 
             if (found.Count == 0)
             {
@@ -391,8 +591,8 @@ namespace CatchIfYouCan.EditorTools
             return sb.ToString();
         }
 
-        /// <summary>How many prefabs per role are opened to look for materials. Small on purpose.</summary>
-        private const int SurfaceSampleLimit = 6;
+        /// <summary>How many prefabs are opened to look for materials. Bounded on purpose.</summary>
+        private const int SurfaceSampleLimit = 80;
 
         private class SurfaceCandidate
         {
@@ -543,6 +743,17 @@ namespace CatchIfYouCan.EditorTools
                 candidate.Sizes.Count, lo, hi,
                 candidate.Material.shader != null ? candidate.Material.shader.name : "<null>"));
 
+            string rejection = Implausible(median);
+            if (rejection != null)
+            {
+                sb.AppendLine("         VERWORFEN: " + rejection);
+                sb.AppendLine("         Das Material wird benutzt, wie es authored ist. Das ist" +
+                              " ehrlicher als eine gemessene Zahl, die nicht stimmen kann - und" +
+                              " sieht in aller Regel auch richtig aus.");
+
+                return new SurfaceMaterial { Material = candidate.Material };
+            }
+
             // A pack that uses one material at two very different sizes has no single right
             // answer, and the median is a choice rather than a measurement. Say so, instead of
             // letting a number that was picked look like a number that was found.
@@ -557,6 +768,51 @@ namespace CatchIfYouCan.EditorTools
                 AuthoredAcrossMetres = median,
             };
         }
+
+        /// <summary>
+        /// Why this measurement cannot be right, or null if it can.
+        ///
+        /// <para>
+        /// A measurement is not automatically better than no measurement. The first run of this
+        /// tool reported a wallpaper whose pattern was 9.4 m across and 1.7 m tall - a ratio of
+        /// five and a half on a texture that is square. No wallpaper is shaped like that, so the
+        /// number was not a surprising truth about the pack, it was a wrong reading being
+        /// believed. Refusing it and leaving the material as its author tiled it is the honest
+        /// answer, and in practice the better-looking one.
+        /// </para>
+        /// </summary>
+        private static string Implausible(Vector2 authoredAcrossMetres)
+        {
+            float x = authoredAcrossMetres.x;
+            float y = authoredAcrossMetres.y;
+
+            if (x <= 0.001f || y <= 0.001f)
+                return "die Messung ist null oder negativ";
+
+            if (x > MaxPatternMetres || y > MaxPatternMetres)
+                return string.Format("ein Muster von {0:F1} x {1:F1} m ist groesser als jede " +
+                                     "Wand - vermutlich an einem Demo-Aufbau statt an einem " +
+                                     "Wandteil gemessen", x, y);
+
+            if (x < MinPatternMetres || y < MinPatternMetres)
+                return string.Format("ein Muster von {0:F2} x {1:F2} m ist kleiner als ein " +
+                                     "Daumennagel", x, y);
+
+            float ratio = Mathf.Max(x, y) / Mathf.Min(x, y);
+            if (ratio > MaxPatternAspect)
+                return string.Format("{0:F1}:1 verzerrt - eine quadratische Textur kann nicht " +
+                                     "{1:F1} m breit und {2:F1} m hoch wiederholen", ratio, x, y);
+
+            return null;
+        }
+
+        /// <summary>
+        /// What a surface pattern can plausibly measure. Wide bounds on purpose: these exist to
+        /// catch a reading taken off the wrong object, not to enforce a taste in wallpaper.
+        /// </summary>
+        private const float MinPatternMetres = 0.05f;
+        private const float MaxPatternMetres = 6.0f;
+        private const float MaxPatternAspect = 3.0f;
 
         private static string BuildCatalog(Classification c)
         {

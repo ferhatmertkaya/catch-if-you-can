@@ -301,7 +301,16 @@ place that number lives; everything else derives it.
   than as mis-sized; and the density is measured in WORLD metres with the transform included
   (this pack scales a Plane by 1.45) as the MEDIAN of every piece rather than whichever was
   enumerated first (the same material runs 0.10 to 0.55 U/m across the pack), with an
-  inconsistent pack reported instead of silently averaged. 50 checks.
+  inconsistent pack reported instead of silently averaged. And it holds the pack to being LOOKED
+  AT rather than reasoned about: the folder is located instead of assumed — a wrong path
+  classifies zero prefabs and reports a calm zero, which reads as an empty pack — the surface
+  density is sampled across the pack rather than across whatever a filename classifier caught (this
+  pack numbers its prefabs and names its glass `Steklo`, so three stragglers were classified, one
+  of them a 36 x 57 m demo assembly, and the density was measured off those), a measurement that
+  cannot be right is refused on aspect and on size rather than written into the catalog — a square
+  texture cannot repeat 9 m across and 2 m up — a refusal keeps the material and drops only the
+  number, and the pack can be listed: folders, pieces with their size and pivot offset, and every
+  material with its tiling. 56 checks.
 
 All ten run in CI (`.github/workflows/determinism.yml`). Run them locally before
 pushing; they need nothing but a shell (and `python3` for the roster checks).
