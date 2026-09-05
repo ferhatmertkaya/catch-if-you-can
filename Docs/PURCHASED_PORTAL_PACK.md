@@ -61,6 +61,48 @@ cost paid for a result identical to not sampling at all.
 The keyword is switched from `PortalSurface.PushArtwork()`, which runs from `PushStyle()` and
 never per frame: a keyword change is a material variant switch.
 
+## 3b. What the pack does on import, measured
+
+Importing *Portal Effect: HDRP* into this URP project on Unity 6000.5.10f1 produced exactly two
+kinds of failure. They are recorded here because they look alarming, only one of them blocks
+anything, and both were re-diagnosed from scratch once already.
+
+**Two C# errors — these block everything.**
+
+```
+Assets/Knife/Portal HDRP/Scripts/PortalTransition.cs(72,34):
+  error CS0619: 'Object.GetInstanceID()' is obsolete: 'Use GetEntityId instead.'
+```
+
+`CS0619` is an error, not a warning, so `Assembly-CSharp` does not build — and a project that
+does not compile cannot enter play mode at all, however healthy the rest of it is. Unity's
+script updater fixes `SimpleTransient.cs` when consent is given but cannot fix this one.
+
+**Thirty-odd shader errors — these block nothing, and they are the whole argument.**
+
+```
+Shader error in 'Knife/PortalView': Couldn't open include file
+  'Packages/com.unity.render-pipelines.high-definition/Runtime/ShaderLibrary/ShaderVariables.hlsl'
+```
+
+The same failure for `Knife/PortalView`, `Knife/Distortion`, `Knife/Portal Border`,
+`Knife/Particle` and `Knife/Portal Alpha HDRP`, across every pass each of them declares. HDRP's
+shader library is not in a URP project, so none of these shaders compile, and a shader that does
+not compile is drawn magenta. This is section 1 as an error log rather than as a claim.
+
+### The order that works
+
+1. **Delete `Assets/Knife/Portal HDRP/Scripts/`.** The two C# errors go and the project builds
+   again. The shader errors remain as console noise and stop nothing.
+2. **Adopt the pack** (section 4) — *before* deleting anything else.
+3. **Then delete the rest of `Assets/Knife/`.** The artwork is copied into the project by then.
+
+Step 2 must come before step 3. The adapter learns a texture's role from the slot the pack's own
+material binds it to, and a material resolves its property names **through its shader** — a
+shader that fails to compile still declares its `Properties` block, but a shader that has been
+deleted declares nothing. Delete the shaders first and the scan finds no bindings at all, which
+looks identical to a pack that binds no textures.
+
 ## 4. Adopting a pack
 
 **Catch If You Can → Portal → Adopt Purchased Portal Pack.**
