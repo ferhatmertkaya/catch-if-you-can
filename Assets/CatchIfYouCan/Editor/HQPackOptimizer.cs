@@ -106,13 +106,99 @@ namespace CatchIfYouCan.EditorTools
 
         // ==================================================================== Bestandsaufnahme
 
-        /// <summary>What a texture is for, which decides how large it is allowed to be.</summary>
-        private enum Tier
+        /// <summary>
+        /// How important the OBJECT is. One of the two axes; on its own it decides nothing.
+        /// </summary>
+        private enum Quality
         {
-            Architecture,   // walls, floors, ceilings, doors, stairs - the player stands next to these
-            LargeFurniture, // beds, sofas, wardrobes, kitchen units
-            Prop,           // ordinary objects
-            SmallDetail,    // handles, switches, cutlery
+            A_Architecture,   // walls, wallpaper, floor, ceiling, large doors, stairs, panels
+            B_HeroFurniture,  // beds, sofas, large cabinets, kitchen units, baths, pianos
+            C_Prop,           // ordinary objects
+            D_SmallDetail,    // handles, switches, cutlery
+            E_AlphaCritical,  // windows, glass, curtains, real cutouts
+        }
+
+        /// <summary>
+        /// What the MAP does. The other axis. A specular map does not need the resolution its
+        /// albedo does; a wall normal map does. Judging either axis alone produced the pair the
+        /// audit caught: a 2048 specular kept while another object's normal map went to 512.
+        /// </summary>
+        private enum MapKind
+        {
+            Albedo,
+            Normal,
+            SpecularSmoothness,   // specular, smoothness, gloss, roughness, metallic, AO, masks
+            Emission,
+            Unknown,
+        }
+
+        /// <summary>The cap for one (quality, kind) pair on the three platforms.</summary>
+        private struct Caps
+        {
+            public int Desktop;
+            public int Android;
+            public int IOS;
+
+            public Caps(int desktop, int android, int ios)
+            {
+                Desktop = desktop; Android = android; IOS = ios;
+            }
+        }
+
+        /// <summary>
+        /// The whole policy, in one table, on purpose. Every number here is a judgement and
+        /// belongs somewhere it can be read and argued with rather than scattered through
+        /// branches.
+        ///
+        /// <para>
+        /// Where the brief gave a range, desktop takes the top of it and mobile the bottom:
+        /// desktop is where the quality goes, mobile is where the memory matters. The one
+        /// exception is specular/smoothness, capped at 1024 on desktop even for architecture -
+        /// a gloss map carries a slowly varying quantity and 2048 of it is not visible, which
+        /// is why it was singled out.
+        /// </para>
+        /// </summary>
+        private static Caps CapFor(Quality quality, MapKind kind)
+        {
+            switch (quality)
+            {
+                case Quality.A_Architecture:
+                    switch (kind)
+                    {
+                        case MapKind.Albedo: return new Caps(2048, 1024, 1024);
+                        case MapKind.Normal: return new Caps(2048, 1024, 1024);
+                        case MapKind.Emission: return new Caps(1024, 512, 512);
+                        default: return new Caps(1024, 512, 512);
+                    }
+
+                case Quality.B_HeroFurniture:
+                    switch (kind)
+                    {
+                        case MapKind.Albedo: return new Caps(2048, 1024, 1024);
+                        case MapKind.Normal: return new Caps(2048, 1024, 1024);
+                        case MapKind.Emission: return new Caps(1024, 512, 512);
+                        default: return new Caps(1024, 512, 512);
+                    }
+
+                case Quality.D_SmallDetail:
+                    return new Caps(1024, 512, 512);
+
+                case Quality.E_AlphaCritical:
+                    switch (kind)
+                    {
+                        case MapKind.Albedo: return new Caps(2048, 1024, 1024);
+                        case MapKind.Normal: return new Caps(1024, 1024, 1024);
+                        default: return new Caps(1024, 512, 512);
+                    }
+
+                default: // C_Prop
+                    switch (kind)
+                    {
+                        case MapKind.Albedo: return new Caps(1024, 512, 512);
+                        case MapKind.Normal: return new Caps(1024, 512, 512);
+                        default: return new Caps(512, 512, 512);
+                    }
+            }
         }
 
         private class TexInfo
@@ -123,13 +209,16 @@ namespace CatchIfYouCan.EditorTools
             public long FileBytes;
             public bool Mipmaps;
             public bool Readable;
-            public bool IsNormalMap;
             public bool HasAlpha;
-            public bool AlphaCritical;
-            public string Kind;      // Albedo / Normal / Specular / Smoothness / Transparency / ?
-            public Tier Tier;
+            public bool TransparentMaterial;   // a material that references it really is transparent
+            public bool AlphaNameHint;         // the filename claims transparency
+            public MapKind Kind;
+            public Quality Quality;
             public int CurrentMax;
-            public int ProposedMax;
+            public int Desktop;
+            public int Android;
+            public int IOS;
+            public string Reason;
         }
 
         private class MeshInfo
@@ -150,33 +239,86 @@ namespace CatchIfYouCan.EditorTools
             public readonly List<string> LegacyShaderMaterials = new List<string>();
             public readonly List<string> DuplicateCandidates = new List<string>();
             public int Materials;
+            public int TransparentMaterials;
             public int Prefabs;
             public int Scenes;
         }
 
-        // Filename fragments, longest and most specific first. These are ordinary English words,
-        // not one pack's asset list, so the same tool works on the next pack.
-        private static readonly (Tier Tier, string[] Words)[] TierWords =
+        // Filename and folder fragments. Ordinary English words, not one pack's asset list, so
+        // the same tool works on the next pack.
+        private static readonly (Quality Quality, string[] Words)[] QualityWords =
         {
-            (Tier.Architecture, new[] { "wall", "floor", "ceiling", "roof", "stair", "door",
-                                        "wallpaper", "plaster", "brick", "concrete", "parquet",
-                                        "tile", "baseboard", "skirting", "column", "beam" }),
-            (Tier.LargeFurniture, new[] { "bed", "sofa", "couch", "wardrobe", "closet", "cabinet",
-                                          "kitchen", "fridge", "refrigerator", "bath", "shower",
-                                          "table", "desk", "bookshelf", "shelf", "piano",
-                                          "fireplace", "stove", "oven", "sink", "toilet" }),
-            (Tier.SmallDetail, new[] { "handle", "knob", "switch", "socket", "screw", "nail",
-                                       "cutlery", "spoon", "fork", "knife", "key", "button",
-                                       "hinge", "plug", "coin", "pen", "cup", "glass_small" }),
+            (Quality.A_Architecture, new[] { "wall", "wallpaper", "floor", "ceiling", "roof",
+                                             "stair", "door", "plaster", "brick", "concrete",
+                                             "parquet", "panel", "column", "beam", "arch",
+                                             "baseboard", "skirting", "molding", "moulding" }),
+            (Quality.B_HeroFurniture, new[] { "bed", "sofa", "couch", "wardrobe", "closet",
+                                              "cabinet", "kitchen", "fridge", "refrigerator",
+                                              "bath", "shower", "table", "desk", "bookshelf",
+                                              "shelf", "piano", "fireplace", "stove", "oven",
+                                              "sink", "toilet", "dresser", "armchair" }),
+            (Quality.D_SmallDetail, new[] { "handle", "knob", "switch", "socket", "screw",
+                                            "nail", "cutlery", "spoon", "fork", "key",
+                                            "button", "hinge", "plug", "coin", "pen" }),
         };
 
-        // Alpha actually carries meaning in these. Their alpha channel is never touched and they
-        // never drop below 1024 - a cutout leaf or a curtain at 512 turns into visible fringing.
-        private static readonly string[] AlphaCriticalWords =
+        // A filename claiming transparency is a HINT, never a verdict. The audit found albedo
+        // maps named "AlbedoTransparency" whose material is fully opaque - the name is a
+        // convention of the authoring tool, not a statement about this material. A texture is
+        // treated as alpha-critical only when a material that actually references it is really
+        // transparent or alpha-clipped.
+        private static readonly string[] AlphaNameHints =
         {
             "transparen", "alpha", "glass", "window", "curtain", "foliage", "leaf", "leaves",
-            "plant", "cutout", "opacity", "decal", "grid", "fence", "lace", "net",
+            "plant", "cutout", "opacity", "decal", "fence", "lace", "net",
         };
+
+        /// <summary>
+        /// Which textures are referenced by a material that genuinely renders transparent.
+        ///
+        /// Under URP Lit, _Surface = 1 is the Transparent surface type and _AlphaClip = 1 is
+        /// cutout; a render queue at or past 2450 covers shaders that express it neither way.
+        /// Any of the three is enough - all three being absent, with the material opaque, means
+        /// the alpha channel is decoration in the file and nothing reads it.
+        /// </summary>
+        private static HashSet<string> CollectTransparentlyUsedTextures(string root, out int transparentMaterials)
+        {
+            var used = new HashSet<string>();
+            transparentMaterials = 0;
+
+            var guids = AssetDatabase.FindAssets("t:Material", new[] { root });
+            for (int i = 0; i < guids.Length; i++)
+            {
+                var mat = AssetDatabase.LoadAssetAtPath<Material>(AssetDatabase.GUIDToAssetPath(guids[i]));
+                if (mat == null || mat.shader == null)
+                    continue;
+
+                bool transparent = mat.renderQueue >= 2450;
+                if (!transparent && mat.HasProperty("_Surface") && mat.GetFloat("_Surface") > 0.5f)
+                    transparent = true;
+                if (!transparent && mat.HasProperty("_AlphaClip") && mat.GetFloat("_AlphaClip") > 0.5f)
+                    transparent = true;
+
+                if (!transparent)
+                    continue;
+
+                transparentMaterials++;
+
+                var names = mat.GetTexturePropertyNames();
+                for (int n = 0; n < names.Length; n++)
+                {
+                    var tex = mat.GetTexture(names[n]);
+                    if (tex == null)
+                        continue;
+
+                    string path = AssetDatabase.GetAssetPath(tex);
+                    if (!string.IsNullOrEmpty(path))
+                        used.Add(path);
+                }
+            }
+
+            return used;
+        }
 
         private static Audit RunAudit(string root)
         {
@@ -189,6 +331,11 @@ namespace CatchIfYouCan.EditorTools
 
             var texGuids = AssetDatabase.FindAssets("t:Texture2D", search);
             var bySignature = new Dictionary<string, List<string>>();
+
+            // Which textures a really-transparent material actually references. Done once, for
+            // the whole pack, before any texture is classified.
+            var transparentlyUsed = CollectTransparentlyUsedTextures(root, out int transparentMats);
+            audit.TransparentMaterials = transparentMats;
 
             for (int i = 0; i < texGuids.Length; i++)
             {
@@ -212,23 +359,21 @@ namespace CatchIfYouCan.EditorTools
                     FileBytes = FileSize(path),
                     Mipmaps = importer.mipmapEnabled,
                     Readable = importer.isReadable,
-                    IsNormalMap = importer.textureType == TextureImporterType.NormalMap
-                                  || lower.Contains("normal") || lower.EndsWith("_nrm")
-                                  || lower.EndsWith("_n"),
                     HasAlpha = importer.DoesSourceTextureHaveAlpha(),
                     CurrentMax = importer.maxTextureSize,
                 };
 
-                info.AlphaCritical = info.HasAlpha && ContainsAny(lowerPath, AlphaCriticalWords);
-                info.Kind = KindOf(lower, info.IsNormalMap, info.HasAlpha);
-                info.Tier = TierOf(lowerPath);
-                info.ProposedMax = ProposeMax(info);
+                info.Kind = KindOf(lower, importer.textureType == TextureImporterType.NormalMap);
+                info.AlphaNameHint = ContainsAny(lowerPath, AlphaNameHints);
+                info.TransparentMaterial = transparentlyUsed.Contains(path);
+                info.Quality = QualityOf(lowerPath, info);
+                ApplyCaps(info);
 
                 audit.Textures.Add(info);
 
                 // Two files of the same pixel size AND the same byte length are worth a look.
-                // Nothing is deleted on this basis - it is reported, because deciding that two
-                // textures are the same is a judgement about art, not about bytes.
+                // Nothing is deleted on this basis - deciding that two textures are the same is
+                // a judgement about art, not about bytes.
                 string signature = info.Width + "x" + info.Height + "@" + info.FileBytes;
                 if (!bySignature.TryGetValue(signature, out var group))
                 {
@@ -322,60 +467,72 @@ namespace CatchIfYouCan.EditorTools
             return false;
         }
 
-        private static string KindOf(string lower, bool isNormal, bool hasAlpha)
+        private static MapKind KindOf(string lower, bool importedAsNormalMap)
         {
-            if (isNormal) return "Normal";
-            if (lower.Contains("specular") || lower.Contains("_spec")) return "Specular";
-            if (lower.Contains("smooth") || lower.Contains("gloss") || lower.Contains("rough")) return "Smoothness";
-            if (lower.Contains("metal")) return "Metallic";
-            if (lower.Contains("occlusion") || lower.Contains("_ao")) return "Occlusion";
-            if (lower.Contains("emis")) return "Emission";
-            if (lower.Contains("transparen") || lower.Contains("opacity")) return "Transparency";
-            if (lower.Contains("albedo") || lower.Contains("basecolor") || lower.Contains("diffuse")
-                || lower.Contains("_col") || lower.Contains("_d")) return hasAlpha ? "Albedo+Alpha" : "Albedo";
-            return "?";
-        }
+            if (importedAsNormalMap || lower.Contains("normal") || lower.EndsWith("_nrm")
+                || lower.EndsWith("_n") || lower.Contains("_bump"))
+                return MapKind.Normal;
 
-        private static Tier TierOf(string lowerPath)
-        {
-            for (int i = 0; i < TierWords.Length; i++)
-            {
-                if (ContainsAny(lowerPath, TierWords[i].Words))
-                    return TierWords[i].Tier;
-            }
+            if (lower.Contains("specular") || lower.Contains("_spec") || lower.Contains("smooth")
+                || lower.Contains("gloss") || lower.Contains("rough") || lower.Contains("metal")
+                || lower.Contains("occlusion") || lower.Contains("_ao") || lower.Contains("mask")
+                || lower.Contains("height") || lower.Contains("displac"))
+                return MapKind.SpecularSmoothness;
 
-            return Tier.Prop;
+            if (lower.Contains("emis") || lower.Contains("glow") || lower.Contains("light"))
+                return MapKind.Emission;
+
+            if (lower.Contains("albedo") || lower.Contains("basecolor") || lower.Contains("base_color")
+                || lower.Contains("diffuse") || lower.Contains("_col") || lower.Contains("_d"))
+                return MapKind.Albedo;
+
+            // Unknown is treated as albedo for capping: guessing "it is only a mask" and being
+            // wrong shows up as a blurred surface, which is the expensive direction to be wrong in.
+            return MapKind.Unknown;
         }
 
         /// <summary>
-        /// The cap this texture should get. Never blanket 512: an architectural surface fills the
-        /// screen when the player stands at a wall, and dropping it to 512 is the difference
-        /// between a house and a blur. The reduction comes from the 8K and 4K source art, which
-        /// no interior surface needs.
+        /// Which quality class the OBJECT falls in. Alpha-critical wins over everything, but
+        /// only when a material proves it - a filename saying "AlbedoTransparency" on a texture
+        /// no transparent material references is a naming convention, not a requirement.
         /// </summary>
-        private static int ProposeMax(TexInfo info)
+        private static Quality QualityOf(string lowerPath, TexInfo info)
         {
-            int cap;
-            switch (info.Tier)
+            if (info.HasAlpha && info.TransparentMaterial)
             {
-                case Tier.Architecture:   cap = 2048; break;
-                case Tier.LargeFurniture: cap = 2048; break;
-                case Tier.SmallDetail:    cap = 512;  break;
-                default:                  cap = 1024; break;
+                info.Reason = "E: ein Material, das sie benutzt, rendert wirklich transparent";
+                return Quality.E_AlphaCritical;
             }
 
-            // A normal map carries direction, not detail; one step below its albedo is invisible
-            // in motion and halves the memory. It never goes below 512.
-            if (info.IsNormalMap)
-                cap = Mathf.Max(512, cap / 2);
+            for (int i = 0; i < QualityWords.Length; i++)
+            {
+                if (ContainsAny(lowerPath, QualityWords[i].Words))
+                {
+                    info.Reason = QualityWords[i].Quality.ToString().Substring(0, 1) +
+                                  ": Pfad/Name passt auf diese Klasse";
+                    return QualityWords[i].Quality;
+                }
+            }
 
-            // Alpha that means something keeps resolution: fringing on a cutout is obvious.
-            if (info.AlphaCritical)
-                cap = Mathf.Max(cap, 1024);
+            info.Reason = info.AlphaNameHint && info.HasAlpha
+                ? "C: Name behauptet Transparenz, aber kein Material rendert transparent"
+                : "C: keine speziellere Klasse erkannt";
+            return Quality.C_Prop;
+        }
 
-            // Never propose an increase. The source may already be smaller than the cap.
-            int source = Mathf.Max(info.Width, info.Height);
-            return Mathf.Min(cap, Mathf.Max(source, 32));
+        /// <summary>
+        /// The three caps, never above what the source actually is. The source may already be
+        /// smaller than the policy allows, and raising maxTextureSize would import nothing new
+        /// while making the numbers lie.
+        /// </summary>
+        private static void ApplyCaps(TexInfo info)
+        {
+            var caps = CapFor(info.Quality, info.Kind);
+            int source = Mathf.Max(32, Mathf.Max(info.Width, info.Height));
+
+            info.Desktop = Mathf.Min(caps.Desktop, source);
+            info.Android = Mathf.Min(caps.Android, source);
+            info.IOS = Mathf.Min(caps.IOS, source);
         }
 
         /// <summary>
@@ -395,7 +552,25 @@ namespace CatchIfYouCan.EditorTools
             catch { return 0L; }
         }
 
-        private static string Mb(long bytes) => (bytes / 1048576.0).ToString("0.0") + " MB";
+        private static string Mb(long bytes) => (bytes / 1048576.0).ToString("N1") + " MB";
+
+        private static string Pct(long before, long after)
+        {
+            if (before <= 0) return "-";
+            return "-" + (100.0 * (before - after) / before).ToString("0.0") + " %";
+        }
+
+        private static void Bump<T>(SortedDictionary<T, int> map, T key)
+        {
+            map.TryGetValue(key, out int n);
+            map[key] = n + 1;
+        }
+
+        private static int Count(SortedDictionary<int, int> map, int key)
+        {
+            map.TryGetValue(key, out int n);
+            return n;
+        }
 
         // =========================================================================== Bericht
 
@@ -421,70 +596,104 @@ namespace CatchIfYouCan.EditorTools
             sb.AppendLine("Szenen   : " + a.Scenes);
             sb.AppendLine();
 
-            // ---- Aufloesungen
-            var buckets = new SortedDictionary<int, int>();
-            long current = 0, proposed = 0;
-            int readable = 0, noMips = 0;
+            // ---- Aufloesungen jetzt und je Zielplattform
+            var now = new SortedDictionary<int, int>();
+            var desk = new SortedDictionary<int, int>();
+            var andr = new SortedDictionary<int, int>();
+            var ios = new SortedDictionary<int, int>();
+            long mNow = 0, mDesk = 0, mAndr = 0, mIos = 0;
+            int readable = 0, noMips = 0, alphaReal = 0, alphaNameOnly = 0;
 
             for (int i = 0; i < a.Textures.Count; i++)
             {
                 var t = a.Textures[i];
-                int side = Mathf.Max(t.Width, t.Height);
-                buckets.TryGetValue(side, out int n);
-                buckets[side] = n + 1;
+                int source = Mathf.Max(t.Width, t.Height);
+                int effNow = Mathf.Min(source, t.CurrentMax);
 
-                int effectiveNow = Mathf.Min(side, t.CurrentMax);
-                current += EstimateBytes(effectiveNow, effectiveNow, t.Mipmaps);
-                proposed += EstimateBytes(t.ProposedMax, t.ProposedMax, true);
+                Bump(now, effNow); Bump(desk, t.Desktop); Bump(andr, t.Android); Bump(ios, t.IOS);
+
+                mNow  += EstimateBytes(effNow, effNow, t.Mipmaps);
+                mDesk += EstimateBytes(t.Desktop, t.Desktop, true);
+                mAndr += EstimateBytes(t.Android, t.Android, true);
+                mIos  += EstimateBytes(t.IOS, t.IOS, true);
 
                 if (t.Readable) readable++;
                 if (!t.Mipmaps) noMips++;
+                if (t.Quality == Quality.E_AlphaCritical) alphaReal++;
+                else if (t.AlphaNameHint && t.HasAlpha) alphaNameOnly++;
             }
 
             sb.AppendLine("--- AUFLOESUNGSVERTEILUNG (laengste Kante) ---");
-            foreach (var pair in buckets)
-                sb.AppendLine(string.Format("  {0,6} px : {1,4}", pair.Key, pair.Value));
+            sb.AppendLine(string.Format("  {0,8} {1,10} {2,10} {3,10} {4,10}",
+                "PIXEL", "JETZT", "DESKTOP", "ANDROID", "iOS"));
+            foreach (int side in new[] { 4096, 2048, 1024, 512, 256, 128, 64, 32 })
+            {
+                if (Count(now, side) + Count(desk, side) + Count(andr, side) + Count(ios, side) == 0)
+                    continue;
+
+                sb.AppendLine(string.Format("  {0,8} {1,10} {2,10} {3,10} {4,10}",
+                    side, Count(now, side), Count(desk, side), Count(andr, side), Count(ios, side)));
+            }
             sb.AppendLine();
 
-            sb.AppendLine("--- GESCHAETZTER TEXTURSPEICHER (RGBA32, inkl. Mips) ---");
-            sb.AppendLine("  jetzt      : " + Mb(current));
-            sb.AppendLine("  nach Plan  : " + Mb(proposed));
-            long saved = current - proposed;
-            sb.AppendLine("  Ersparnis  : " + Mb(saved) + "   (" +
-                          (current > 0 ? (100.0 * saved / current).ToString("0.0") : "0") + " %)");
+            sb.AppendLine("--- GESCHAETZTER TEXTURSPEICHER (RGBA32, inkl. Mipmaps) ---");
+            sb.AppendLine(string.Format("  {0,-10} {1,14} {2,12}", "ZIEL", "SPEICHER", "ERSPARNIS"));
+            sb.AppendLine(string.Format("  {0,-10} {1,14} {2,12}", "JETZT", Mb(mNow), "-"));
+            sb.AppendLine(string.Format("  {0,-10} {1,14} {2,12}", "DESKTOP", Mb(mDesk), Pct(mNow, mDesk)));
+            sb.AppendLine(string.Format("  {0,-10} {1,14} {2,12}", "ANDROID", Mb(mAndr), Pct(mNow, mAndr)));
+            sb.AppendLine(string.Format("  {0,-10} {1,14} {2,12}", "iOS", Mb(mIos), Pct(mNow, mIos)));
+            sb.AppendLine();
+            sb.AppendLine("  RGBA32 ist der ehrliche Worst Case und die Zahl, die den Editor");
+            sb.AppendLine("  lahmlegt. Im Build komprimiert (DXT/BC auf Desktop, ASTC auf Mobile)");
+            sb.AppendLine("  liegt der echte VRAM-Bedarf typischerweise bei einem Viertel bis");
+            sb.AppendLine("  einem Achtel davon. Die VERHAELTNISSE oben stimmen trotzdem.");
             sb.AppendLine();
             sb.AppendLine("  Read/Write AN : " + readable + " von " + a.Textures.Count);
             sb.AppendLine("  ohne Mipmaps  : " + noMips + " von " + a.Textures.Count);
             sb.AppendLine();
 
-            // ---- Typen
-            var kinds = new SortedDictionary<string, int>();
+            // ---- Klassen
+            var byQuality = new SortedDictionary<string, int>();
+            var byKind = new SortedDictionary<string, int>();
             for (int i = 0; i < a.Textures.Count; i++)
             {
-                kinds.TryGetValue(a.Textures[i].Kind, out int n);
-                kinds[a.Textures[i].Kind] = n + 1;
+                Bump(byQuality, a.Textures[i].Quality.ToString());
+                Bump(byKind, a.Textures[i].Kind.ToString());
             }
 
-            sb.AppendLine("--- TEXTURTYPEN ---");
-            foreach (var pair in kinds)
-                sb.AppendLine(string.Format("  {0,-14} {1,4}", pair.Key, pair.Value));
+            sb.AppendLine("--- QUALITAETSKLASSE (Objekt-Wichtigkeit) ---");
+            foreach (var pair in byQuality)
+                sb.AppendLine(string.Format("  {0,-18} {1,4}", pair.Key, pair.Value));
+            sb.AppendLine();
+
+            sb.AppendLine("--- MAP-TYP ---");
+            foreach (var pair in byKind)
+                sb.AppendLine(string.Format("  {0,-20} {1,4}", pair.Key, pair.Value));
+            sb.AppendLine();
+
+            sb.AppendLine("--- ALPHA, AUS DEN MATERIALIEN STATT AUS DEN NAMEN ---");
+            sb.AppendLine("  wirklich transparente Materialien : " + a.TransparentMaterials +
+                          " von " + a.Materials);
+            sb.AppendLine("  Texturen davon benutzt (Klasse E) : " + alphaReal);
+            sb.AppendLine("  Name behauptet Alpha, Material nicht: " + alphaNameOnly +
+                          "   <- diese werden NICHT als E behandelt");
             sb.AppendLine();
 
             // ---- Groesste
             sb.AppendLine("--- 25 GROESSTE TEXTUREN ---");
-            sb.AppendLine(string.Format("  {0,-9} {1,-9} {2,-9} {3,-14} {4}",
-                "PIXEL", "JETZT", "PLAN", "TYP", "DATEI"));
+            sb.AppendLine(string.Format("  {0,-10} {1,-8} {2,-8} {3,-6} {4,-6} {5,-6} {6,-20} {7}",
+                "PIXEL", "JETZT", "TYP", "DESK", "ANDR", "iOS", "KLASSE", "DATEI"));
             for (int i = 0; i < Mathf.Min(25, a.Textures.Count); i++)
             {
                 var t = a.Textures[i];
-                sb.AppendLine(string.Format("  {0,-9} {1,-9} {2,-9} {3,-14} {4}{5}",
+                int effNow = Mathf.Min(Mathf.Max(t.Width, t.Height), t.CurrentMax);
+                sb.AppendLine(string.Format("  {0,-10} {1,-8} {2,-8} {3,-6} {4,-6} {5,-6} {6,-20} {7}",
                     t.Width + "x" + t.Height,
-                    Mb(EstimateBytes(Mathf.Min(Mathf.Max(t.Width, t.Height), t.CurrentMax),
-                                     Mathf.Min(Mathf.Max(t.Width, t.Height), t.CurrentMax), t.Mipmaps)),
-                    t.ProposedMax.ToString(),
+                    Mb(EstimateBytes(effNow, effNow, t.Mipmaps)),
                     t.Kind,
-                    Path.GetFileName(t.Path),
-                    t.AlphaCritical ? "   [ALPHA WICHTIG - bleibt >= 1024]" : ""));
+                    t.Desktop, t.Android, t.IOS,
+                    t.Quality,
+                    Path.GetFileName(t.Path)));
             }
             sb.AppendLine();
 
@@ -504,6 +713,31 @@ namespace CatchIfYouCan.EditorTools
             sb.AppendLine("  ohne LODGroup  : " + noLod + " von " + a.Models.Count);
             sb.AppendLine("  Read/Write AN  : " + readableMesh + " von " + a.Models.Count);
             sb.AppendLine();
+            sb.AppendLine("  VORSCHLAG: Read/Write bleibt AN. Begruendung:");
+            sb.AppendLine();
+            sb.AppendLine("  NavMeshRuntimeBuilder baut die NavMesh zur LAUFZEIT aus RENDER-Meshes,");
+            sb.AppendLine("  nicht aus Collidern - auf beiden Wegen. Der NavMeshBuilder-Pfad setzt");
+            sb.AppendLine("  sourceObject = MeshFilter.sharedMesh, und der NavMeshSurface-Pfad setzt");
+            sb.AppendLine("  useGeometry auf RenderMeshes. Beides liest Vertexdaten auf der CPU, und");
+            sb.AppendLine("  dafuer muss Read/Write an sein.");
+            sb.AppendLine();
+            sb.AppendLine("  Welche HQ-Meshes den Sammler wirklich erreichen, entscheidet");
+            sb.AppendLine("  ShouldInclude: Tag 'Environment' ODER ein Name mit 'Floor'/'Wall' -");
+            sb.AppendLine("  geprueft am MeshFilter-Objekt SELBST, also an den Kind-Objekten der");
+            sb.AppendLine("  Vendor-Prefabs, deren Namen wir nicht vergeben. Das laesst sich statisch");
+            sb.AppendLine("  nicht entscheiden, und die sichere Antwort auf eine unentscheidbare");
+            sb.AppendLine("  Frage ist, nichts abzuschalten.");
+            sb.AppendLine();
+            sb.AppendLine("  Der Preis dafuer ist klein: " + totalTris.ToString("N0") + " Dreiecke im");
+            sb.AppendLine("  ganzen Paket. Die CPU-Kopie liegt in der Groessenordnung einiger");
+            sb.AppendLine("  zehn MB - gegen ein Texturproblem von mehreren GB. Read/Write");
+            sb.AppendLine("  abzuschalten spart fast nichts und riskiert, dass der Geist nicht");
+            sb.AppendLine("  mehr laufen kann.");
+            sb.AppendLine();
+            sb.AppendLine("  Wer das aendern will, aendert nicht die Importer, sondern den Sammler:");
+            sb.AppendLine("  NavMesh aus PhysicsColliders statt RenderMeshes. Das ist eine");
+            sb.AppendLine("  Aenderung an der Generierung, nicht an Import-Einstellungen.");
+            sb.AppendLine();
             sb.AppendLine("--- 15 GROESSTE MESHES ---");
             for (int i = 0; i < Mathf.Min(15, a.Models.Count); i++)
             {
@@ -512,6 +746,10 @@ namespace CatchIfYouCan.EditorTools
                     m.Triangles.ToString("N0"), m.Vertices.ToString("N0"), m.Compression,
                     m.HasLodGroup ? "LOD" : "   ", Path.GetFileName(m.Path)));
             }
+            sb.AppendLine();
+            sb.AppendLine("  Mesh-Kompression wird NICHT gesetzt: sie ist verlustbehaftet auf");
+            sb.AppendLine("  Vertexpositionen, und eine Wand, die sich um einen Millimeter");
+            sb.AppendLine("  verschiebt, reisst eine Fuge auf. LODs werden NICHT erzeugt.");
             sb.AppendLine();
 
             // ---- Shader
@@ -557,7 +795,7 @@ namespace CatchIfYouCan.EditorTools
             sb.AppendLine();
 
             string prefix = a.Root.TrimEnd('/') + "/";
-            int changedTex = 0, changedMesh = 0, skipped = 0;
+            int changedTex = 0, skipped = 0;
 
             try
             {
@@ -583,9 +821,11 @@ namespace CatchIfYouCan.EditorTools
 
                     bool dirty = false;
 
-                    if (importer.maxTextureSize != t.ProposedMax)
+                    // The default is the desktop cap; the platform overrides below take mobile
+                    // down from there.
+                    if (importer.maxTextureSize != t.Desktop)
                     {
-                        importer.maxTextureSize = t.ProposedMax;
+                        importer.maxTextureSize = t.Desktop;
                         dirty = true;
                     }
 
@@ -609,9 +849,9 @@ namespace CatchIfYouCan.EditorTools
                     // author set is what the material expects; changing it is how a window
                     // turns opaque and a curtain grows a black border.
 
-                    if (ApplyPlatform(importer, "iPhone", MobileCap(t)))    dirty = true;
-                    if (ApplyPlatform(importer, "Android", MobileCap(t)))   dirty = true;
-                    if (ApplyPlatform(importer, "Standalone", t.ProposedMax)) dirty = true;
+                    if (ApplyPlatform(importer, "iPhone", t.IOS))         dirty = true;
+                    if (ApplyPlatform(importer, "Android", t.Android))     dirty = true;
+                    if (ApplyPlatform(importer, "Standalone", t.Desktop))  dirty = true;
 
                     if (dirty)
                     {
@@ -620,27 +860,8 @@ namespace CatchIfYouCan.EditorTools
                     }
                 }
 
-                for (int i = 0; i < a.Models.Count; i++)
-                {
-                    var m = a.Models[i];
-                    if (!m.Path.StartsWith(prefix, StringComparison.Ordinal))
-                    {
-                        skipped++;
-                        continue;
-                    }
-
-                    var importer = AssetImporter.GetAtPath(m.Path) as ModelImporter;
-                    if (importer == null || !importer.isReadable)
-                        continue;
-
-                    // Only Read/Write. Mesh compression is NOT touched: it is lossy on vertex
-                    // positions and a wall that shifts by a millimetre opens a seam. LODs are
-                    // not generated either - a destructive decimation of vendor art is not
-                    // something a settings pass should do behind a single button.
-                    importer.isReadable = false;
-                    importer.SaveAndReimport();
-                    changedMesh++;
-                }
+                // Meshes werden NICHT angefasst. Read/Write bleibt an, weil die
+                // Laufzeit-NavMesh aus Render-Meshes gebaut wird - siehe Auditbericht.
             }
             finally
             {
@@ -649,21 +870,12 @@ namespace CatchIfYouCan.EditorTools
             }
 
             sb.AppendLine("Texturen geaendert: " + changedTex);
-            sb.AppendLine("Modelle geaendert : " + changedMesh + "  (nur Read/Write aus)");
+            sb.AppendLine("Modelle geaendert : 0  (Read/Write bleibt an - NavMesh liest sie)");
             sb.AppendLine("Uebersprungen     : " + skipped);
             sb.AppendLine();
-            sb.AppendLine("NICHT angefasst: Quelldateien, Alpha-Kanaele, Mesh-Kompression, LODs,");
+            sb.AppendLine("NICHT angefasst: Quelldateien, Alpha-Kanaele, Meshes jeder Art, LODs,");
             sb.AppendLine("Materialien, Shader und alles ausserhalb von " + a.Root);
             return sb.ToString();
-        }
-
-        /// <summary>Mobile takes one step down, but never below 512 and never below 1024 for alpha.</summary>
-        private static int MobileCap(TexInfo t)
-        {
-            int cap = Mathf.Max(512, t.ProposedMax / 2);
-            if (t.AlphaCritical)
-                cap = Mathf.Max(cap, 1024);
-            return Mathf.Min(cap, t.ProposedMax);
         }
 
         private static bool ApplyPlatform(TextureImporter importer, string platform, int maxSize)
