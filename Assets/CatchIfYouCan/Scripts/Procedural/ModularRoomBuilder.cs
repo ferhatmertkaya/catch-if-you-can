@@ -39,8 +39,15 @@ namespace CatchIfYouCan.Procedural
         /// 1.25 x 2.60 and would fit its door leaf untouched, but swapping to it is a later
         /// phase - this one changes how the structure is made, not what size it is.
         /// </summary>
-        public const float DoorWidth = 1.20f;
-        public const float DoorHeight = 2.20f;
+        /// <summary>
+        /// The pack's own measured door opening, 1.25 x 2.60. The project used to build 1.20 x
+        /// 2.20 here; matching the pack means its door leaf drops in at authored scale instead
+        /// of being squeezed, and 2.60 under a 3.00 m ceiling still leaves 0.40 m of lintel.
+        /// Docs/HQ_MODULAR_MIGRATION.md marks both numbers negotiable: they are private to
+        /// Stage B, outside the engine-free assembly, and absent from the layout hash.
+        /// </summary>
+        public const float DoorWidth = 1.25f;
+        public const float DoorHeight = 2.60f;
 
         /// <summary>
         /// The window opening, taken from the pack's own measured window 7 (2.05 x 0.90, sill
@@ -182,11 +189,11 @@ namespace CatchIfYouCan.Procedural
             // The pack's contribution to a wall: the leaf that swings in a doorway, the frame
             // and glass that sit in a window. Never a whole vendor wall - its pivot can be 29 m
             // from its own mesh and its UVs are normalised to its own width.
-            if (hasDoor)
-                AddInsert(go.transform, catalog, ModuleRole.WallWithDoorway, room, direction,
-                          new Vector3(0f, 0f, 0f));
-            else if (hasWindow)
-                AddInsert(go.transform, catalog, ModuleRole.WallWithWindow, room, direction,
+            if (hasDoor && catalog != null)
+                AddInsert(go.transform, catalog.DoorInsert, "Door",
+                          new Vector3(0f, DoorHeight * 0.5f, 0f));
+            else if (hasWindow && catalog != null)
+                AddInsert(go.transform, catalog.WindowInsert, "Window",
                           new Vector3(0f, WindowSill + WindowHeight * 0.5f, 0f));
         }
 
@@ -194,53 +201,205 @@ namespace CatchIfYouCan.Procedural
         /// Puts one vendor piece into the opening this wall already has.
         ///
         /// <para>
+        /// The pack ships no door leaf and no window as objects of their own: each is a child of
+        /// a whole 4 m wall prefab that carries its own wallpaper. Instantiating one of those
+        /// into a 3 m room would put a second wall through the ceiling, so the prefab is reduced
+        /// to the parts that are the insert - identified by the MATERIALS they carry, because
+        /// the child objects are numbered and the materials are named.
+        /// </para>
+        /// <para>
         /// Instantiated as a child of the generated wall, so it inherits the wall's placement
         /// and rotation and cannot drift from the hole it belongs to. Every collider it brings
-        /// is removed: gameplay collision is the generated boxes' job, and a MeshCollider across
-        /// vendor geometry is the expensive way to get the same answer wrong. Shadow casting on
-        /// a decorative insert is switched off for the same reason - it is a door leaf, not a
-        /// wall.
+        /// is switched off: gameplay collision is the generated boxes' job, and a MeshCollider
+        /// across vendor geometry is the expensive way to get the same answer wrong. Shadow
+        /// casting goes with it - a door leaf is not a wall.
         /// </para>
         /// </summary>
-        private static void AddInsert(Transform wall, ModularInteriorCatalog catalog,
-            ModuleRole role, LayoutRoom room, SocketDirection direction, Vector3 localPosition)
+        private static void AddInsert(Transform wall, Content.StructuralInsert insert,
+            string role, Vector3 localPosition)
         {
-            if (catalog == null)
+            if (!insert.IsSet)
                 return;
 
-            GameObject prefab = Pick(catalog.FindVariants(role, room.Category),
-                                     room.RoomId, (int)role, (int)direction);
-            if (prefab == null)
+            GameObject go = Object.Instantiate(insert.Prefab, wall);
+            go.name = role + "_Insert";
+            go.transform.localPosition = Vector3.zero;
+            go.transform.localRotation = Quaternion.Euler(insert.LocalEuler);
+
+            int kept = KeepOnlyInsertParts(go, insert.KeepMaterials);
+            if (kept == 0)
+            {
+                Core.CIYCLog.Error("[CIYC][House] " + role + ": am Prefab '" + insert.Prefab.name +
+                                   "' traegt kein Teil eines der Materialien " +
+                                   Join(insert.KeepMaterials) + ". Es waere die ganze " +
+                                   "Vendor-Wand eingesetzt worden - das Teil wird stattdessen " +
+                                   "weggelassen.");
+
+                // Switched off, not destroyed. Destroy is deferred and refuses outright in edit
+                // mode, which is exactly where the one-room test tool builds - so destroying
+                // here would throw in the editor and merely take a frame in a build. One
+                // behaviour, both modes.
+                go.SetActive(false);
+                return;
+            }
+
+            OrientUpright(go.transform, role);
+
+            // Placed after the orientation, because the orientation moves what "up" means.
+            go.transform.localPosition = localPosition + insert.LocalOffset;
+        }
+
+        /// <summary>
+        /// Switches off every renderer whose material is not one of the wanted ones, and reports
+        /// how many were kept. Zero kept means the naming is wrong, and inserting the whole
+        /// vendor wall would be far worse than inserting nothing.
+        /// </summary>
+        private static int KeepOnlyInsertParts(GameObject go, string[] keepMaterials)
+        {
+            go.GetComponentsInChildren(true, _insertRenderers);
+
+            if (keepMaterials == null || keepMaterials.Length == 0)
+            {
+                int all = _insertRenderers.Count;
+                for (int i = 0; i < all; i++)
+                    _insertRenderers[i].shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+
+                _insertRenderers.Clear();
+                DisableColliders(go);
+                return all;
+            }
+
+            int kept = 0;
+            for (int i = 0; i < _insertRenderers.Count; i++)
+            {
+                Renderer renderer = _insertRenderers[i];
+                if (Wanted(renderer, keepMaterials))
+                {
+                    renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+                    kept++;
+                }
+                else
+                {
+                    renderer.enabled = false;
+                }
+            }
+
+            _insertRenderers.Clear();
+            DisableColliders(go);
+            return kept;
+        }
+
+        private static bool Wanted(Renderer renderer, string[] keepMaterials)
+        {
+            Material[] materials = renderer.sharedMaterials;
+            for (int m = 0; m < materials.Length; m++)
+            {
+                if (materials[m] == null)
+                    continue;
+
+                for (int k = 0; k < keepMaterials.Length; k++)
+                {
+                    if (string.Equals(materials[m].name, keepMaterials[k],
+                                      System.StringComparison.OrdinalIgnoreCase))
+                        return true;
+                }
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// Turns a piece that was authored Z-up onto its feet, decided by MEASUREMENT.
+        ///
+        /// <para>
+        /// The pack's wall prefabs measure about 4 m wide, 4 m in Z and a tenth of a metre in Y:
+        /// their height is on Z, which is the 3ds Max convention and not Unity's. Whether the
+        /// prefab already corrects that is not something a document can say, so it is measured
+        /// on the instantiated object: a piece taller in Z than in Y, and thin in Y, is lying
+        /// down. Logged either way, because a silent rotation is impossible to argue with when
+        /// the window ends up on the floor.
+        /// </para>
+        /// </summary>
+        private static void OrientUpright(Transform insert, string role)
+        {
+            if (!TryMeasureLocalBounds(insert, out Bounds bounds))
                 return;
 
-            GameObject insert = Object.Instantiate(prefab, wall);
-            insert.name = role + "_Insert";
-            insert.transform.localPosition = localPosition;
-            insert.transform.localRotation = Quaternion.identity;
+            Vector3 size = bounds.size;
+            bool lyingDown = size.z > size.y * 2f && size.y < size.x * 0.5f;
 
-            // Switched OFF rather than destroyed. A disabled collider contributes no physics
+            if (!lyingDown)
+            {
+                Core.CIYCLog.Info("[CIYC][House] " + role + "-Einsatz steht aufrecht: " +
+                                  size.ToString("F2") + " - keine Drehung noetig.");
+                return;
+            }
+
+            insert.localRotation = Quaternion.Euler(-90f, 0f, 0f) * insert.localRotation;
+            Core.CIYCLog.Info("[CIYC][House] " + role + "-Einsatz lag flach (" +
+                              size.ToString("F2") + ", Hoehe auf Z) und wurde um -90 Grad um X " +
+                              "aufgerichtet.");
+        }
+
+        private static bool TryMeasureLocalBounds(Transform root, out Bounds bounds)
+        {
+            bounds = default;
+            root.GetComponentsInChildren(true, _insertFilters);
+
+            bool started = false;
+            for (int i = 0; i < _insertFilters.Count; i++)
+            {
+                Mesh mesh = _insertFilters[i].sharedMesh;
+                if (mesh == null)
+                    continue;
+
+                Bounds b = mesh.bounds;
+                Vector3 centre = _insertFilters[i].transform.localPosition + b.center;
+                Vector3 size = Vector3.Scale(b.size, _insertFilters[i].transform.localScale);
+
+                if (!started)
+                {
+                    bounds = new Bounds(centre, size);
+                    started = true;
+                }
+                else
+                {
+                    bounds.Encapsulate(new Bounds(centre, size));
+                }
+            }
+
+            _insertFilters.Clear();
+            return started;
+        }
+
+        private static void DisableColliders(GameObject go)
+        {
+            // Switched off rather than destroyed. A disabled collider contributes no physics
             // geometry, which is the whole point, and it does it identically in the editor and
             // in a build - Destroy is deferred and DestroyImmediate is edit-mode-only, and
             // picking between them by context is exactly how this project once got an editor
             // house and a device house that differed.
-            insert.GetComponentsInChildren(true, _insertColliders);
+            go.GetComponentsInChildren(true, _insertColliders);
             for (int i = 0; i < _insertColliders.Count; i++)
                 _insertColliders[i].enabled = false;
-            _insertColliders.Clear();
 
-            insert.GetComponentsInChildren(true, _insertRenderers);
-            for (int i = 0; i < _insertRenderers.Count; i++)
-            {
-                _insertRenderers[i].shadowCastingMode =
-                    UnityEngine.Rendering.ShadowCastingMode.Off;
-            }
-            _insertRenderers.Clear();
+            _insertColliders.Clear();
+        }
+
+        private static string Join(string[] values)
+        {
+            if (values == null || values.Length == 0)
+                return "<keine genannt>";
+
+            return "'" + string.Join("', '", values) + "'";
         }
 
         private static readonly System.Collections.Generic.List<Collider> _insertColliders =
             new System.Collections.Generic.List<Collider>(8);
         private static readonly System.Collections.Generic.List<Renderer> _insertRenderers =
             new System.Collections.Generic.List<Renderer>(8);
+        private static readonly System.Collections.Generic.List<MeshFilter> _insertFilters =
+            new System.Collections.Generic.List<MeshFilter>(8);
 
         /// <summary>
         /// Collision that matches the geometry, taken from the same sections the mesh was built

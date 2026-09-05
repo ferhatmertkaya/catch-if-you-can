@@ -63,6 +63,42 @@ namespace CatchIfYouCan.Content
         public bool HasDensity => AuthoredAcrossMetres.x > 0.001f && AuthoredAcrossMetres.y > 0.001f;
     }
 
+    /// <summary>
+    /// One piece of vendor art placed into an opening the room already has.
+    ///
+    /// <para>
+    /// The pack ships no door leaf and no window on its own: they are CHILDREN of whole wall
+    /// prefabs that are 4 m tall and carry their own wallpaper. Instantiating one of those into
+    /// a 3 m room puts a second wall through the ceiling. So the prefab is instantiated and then
+    /// reduced to the parts that are actually the insert - named by the materials they carry,
+    /// because the child objects are numbered and the materials are not.
+    /// </para>
+    /// <para>
+    /// Measured, from the pack: prefab 1 carries the door on materials "blue" and "door detail",
+    /// prefab 7 carries the window on "1" and "Steklo". The wall shell around them is
+    /// "wallpaper3" and "white", and that is exactly what must not come along.
+    /// </para>
+    /// </summary>
+    [Serializable]
+    public struct StructuralInsert
+    {
+        public GameObject Prefab;
+
+        [Tooltip("Die Materialnamen der Teile, die BEHALTEN werden. Alles andere am Prefab " +
+                 "wird abgeschaltet - vor allem die Wandschale, die sonst als zweite Wand " +
+                 "durch die Decke geht. Leer heisst: alles behalten.")]
+        public string[] KeepMaterials;
+
+        [Tooltip("Verschiebung im Raum der erzeugten Wand, nachdem das Teil eingesetzt wurde.")]
+        public Vector3 LocalOffset;
+
+        [Tooltip("Zusaetzliche Drehung. Die Z-nach-Y-Drehung wird gemessen und automatisch " +
+                 "angewandt; das hier ist die Korrektur fuer alles, was danach noch schief steht.")]
+        public Vector3 LocalEuler;
+
+        public bool IsSet => Prefab != null;
+    }
+
     /// <summary>One role, the room categories it serves, and the meshes that can play it.</summary>
     [Serializable]
     public struct ModuleSet
@@ -121,6 +157,12 @@ namespace CatchIfYouCan.Content
         public SurfaceMaterial WallSurface;
         public SurfaceMaterial FloorSurface;
         public SurfaceMaterial CeilingSurface;
+
+        [Header("Inserts")]
+        [Tooltip("Die Tuer und das Fenster, aus den Wand-Prefabs des Pakets herausgeloest. " +
+                 "Direkte Referenzen: zur Laufzeit wird NICHTS im Paket gesucht.")]
+        public StructuralInsert DoorInsert;
+        public StructuralInsert WindowInsert;
 
         /// <summary>
         /// The roles a house cannot be built without.

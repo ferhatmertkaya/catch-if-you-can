@@ -310,7 +310,17 @@ place that number lives; everything else derives it.
   cannot be right is refused on aspect and on size rather than written into the catalog — a square
   texture cannot repeat 9 m across and 2 m up — a refusal keeps the material and drops only the
   number, and the pack can be listed: folders, pieces with their size and pivot offset, and every
-  material with its tiling. 56 checks.
+  material with its tiling. And it holds the first HQ room to what the inventory actually showed:
+  the catalog is written from verified asset paths rather than classified filenames, a surface
+  material is resolved on the piece that wears it — the pack has three materials called `white`
+  and nineteen called `1`, so a project-wide search by name is a coin toss — an ambiguous name is
+  refused, the door and window are EXTRACTED from the 4 m wall prefabs that carry them rather than
+  instantiated whole (the pack ships neither as an object of its own, and the shell would stand
+  through a 3 m ceiling), a match of nothing is switched off and reported instead of leaving that
+  shell, which way is up is measured on the instantiated object because the meshes carry their
+  height on Z, one density is measured on prefab 5 and floor and ceiling are derived from it by
+  texel parity and SAID to be derived, and the doorway is the pack's own 1.25 x 2.60 so the leaf
+  drops in unsqueezed while still leaving a lintel. 66 checks.
 
 All ten run in CI (`.github/workflows/determinism.yml`). Run them locally before
 pushing; they need nothing but a shell (and `python3` for the roster checks).

@@ -279,6 +279,51 @@ the material is used exactly as its author tiled it. Since generated UVs are in 
 untouched tiling of 1.5 is one tile every 0.67 m — a believable wallpaper, and the honest
 answer besides.
 
+## The verified catalog
+
+`Modular Interior → Katalog aus GEPRUEFTEN Pfaden schreiben` writes the catalog from paths that
+were read off the inventory, not from filenames. No classification runs.
+
+| role | asset | why |
+|---|---|---|
+| wall reference | `interior/moduls/walls prefabs/5.prefab` | 3.96 × 4.02, plain, `wallpaper3` + `white` |
+| door | `1.prefab` (fallback `11.prefab`) | leaf on `blue` + `door detail` |
+| window | `7.prefab` | frame on `1`, glass on `Steklo` |
+| wall surface | `wallpaper3`, tiling 1.5, `3-diffuse3` 1024² | |
+| floor surface | `planks 1`, 1024² | |
+| ceiling surface | `white` as worn by prefab 5 | |
+| not used yet | `2 `, `3 ` (arches, 3.05–3.25 m tall), `9 ` (sill 2.00 + 1.25 = 3.25 m) | taller than the room |
+| not used yet | `22`, `23` (columns), `room1/2/3`, `moduls`, `furniture` | later, or demo assemblies |
+
+**Materials are resolved on the piece that wears them.** The pack holds three materials called
+`white`, three called `blue` and nineteen called `1`. A project-wide search by name is a coin
+toss; asking prefab 5 which `white` it uses cannot pick the wrong one. Where a material appears
+on no wall prefab — `planks 1` lives only in the demo rooms — the search is scoped to the pack
+and an ambiguous name is refused rather than guessed at.
+
+**The inserts are extracted, not instantiated whole.** The pack ships no door leaf and no window
+as objects of their own: each is a child of a complete 4 m wall prefab that carries its own
+wallpaper. Instantiating one of those into a 3 m room puts a second wall through the ceiling, so
+the prefab is reduced to the parts named by their materials — the child objects are numbered and
+the materials are not. If nothing matches, the insert is switched off and the miss is reported:
+inserting the whole vendor wall would be far worse than inserting nothing.
+
+**Which way is up is measured.** The pack's wall meshes are about 4 × 4 × 0.1 with the height on
+Z, the exporter's convention rather than Unity's. Whether a given prefab already corrects that is
+not something a document can answer, so it is measured on the instantiated object and the
+decision is logged.
+
+**One measured density, the rest derived.** Prefab 5 is the anchor: its two largest extents
+divided by `wallpaper3`'s tiling of 1.5 give a pattern of about 2.6 m, which at 1024² is roughly
+390 px/m. Floor and ceiling get the same texel density, because the pack has no floor or ceiling
+part to measure against and claiming a measurement there would be invention. The report says
+which number was measured and which was derived.
+
+**The doorway is now 1.25 × 2.60**, the pack's own measured opening, so its door leaf drops in at
+authored scale instead of being squeezed. Both numbers are private to Stage B, outside the
+engine-free assembly and absent from the layout hash — this document already marked them
+negotiable. 2.60 under a 3.00 m ceiling still leaves 0.40 m of lintel.
+
 ## If the pattern size still looks wrong
 
 It is two numbers, and the loop is short. Open `ModularInteriorCatalog.asset`, change

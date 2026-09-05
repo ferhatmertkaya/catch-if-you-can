@@ -566,15 +566,45 @@ else:
 
 # A vendor insert brings no collision and casts no shadow. Gameplay collision is the generated
 # boxes' job, and a MeshCollider across vendor geometry is the expensive way to get it wrong.
+# Scoped to the three methods that place an insert. The work moved out of AddInsert when the
+# insert stopped being "the whole vendor prefab" and became "the parts of it that are the door",
+# so a check pinned to one method name would report a broken invariant that is not broken.
 insert = re.search(r"private static void AddInsert.*?\n        \}", mrb_code, re.S)
-ibody = insert.group(0) if insert else ""
+keep = re.search(r"private static int KeepOnlyInsertParts.*?\n        \}", mrb_code, re.S)
+disable = re.search(r"private static void DisableColliders.*?\n        \}", mrb_code, re.S)
+ibody = "".join(m.group(0) for m in (insert, keep, disable) if m)
 
 icode = ibody
-if ibody and "enabled = false" in ibody and "ShadowCastingMode.Off" in ibody:
+if ibody and "_insertColliders[i].enabled = false" in ibody and "ShadowCastingMode.Off" in ibody:
     ok("a vendor insert brings no collider and casts no shadow")
 else:
     bad("a vendor insert brings no collider and casts no shadow",
         "vendor prefabs carry MeshColliders; gameplay collision is the generated boxes' job")
+
+# The vendor prefab is a whole 4 m WALL with the door or window as children. Only the named
+# parts come through: instantiating the shell puts a second wall through a 3 m ceiling.
+if keep and "Wanted(renderer, keepMaterials)" in ibody and "renderer.enabled = false" in ibody:
+    ok("only the named parts of a vendor wall are kept, not the wall itself")
+else:
+    bad("only the named parts of a vendor wall are kept, not the wall itself",
+        "the pack ships no door or window on its own - each is a child of a 4 m wall prefab")
+
+# Zero parts matched means the material names are wrong, and inserting the whole vendor wall is
+# far worse than inserting nothing. It must say so and stand down.
+if insert and "if (kept == 0)" in insert.group(0) and "go.SetActive(false)" in insert.group(0):
+    ok("an insert that matched nothing is switched off and reported, not left as a whole wall")
+else:
+    bad("an insert that matched nothing is switched off and reported, not left as a whole wall",
+        "a silent miss puts a 4 m vendor wall through the ceiling of a 3 m room")
+
+# Which way is up is MEASURED on the instantiated object. The pack's wall meshes are about
+# 4 x 4 x 0.1 with the height on Z - the exporter's convention, not Unity's - and whether the
+# prefab already corrects that is not something a document can answer.
+if "private static void OrientUpright" in mrb_code and "size.z > size.y * 2f" in mrb_code:
+    ok("an insert's orientation is measured rather than assumed")
+else:
+    bad("an insert's orientation is measured rather than assumed",
+        "a Z-up piece dropped in unrotated lies flat on the floor")
 
 # Disabled rather than destroyed: Destroy is deferred and DestroyImmediate is edit-mode only, and
 # choosing between them by context is how this project got an editor house and a device house
@@ -747,6 +777,74 @@ if "private static string Inventory(" in tools and "Pivot" in tools:
 else:
     bad("the pack can be listed - folders, pieces, pivots and materials",
         "without it the kit is identified by guessing at filenames")
+
+# ---- the catalog is written from VERIFIED paths, not from guessed names -----------------------
+#
+# The automatic classifier matched English words against a pack that numbers its prefabs: three
+# of a hundred and five were classified, one of them a 36 x 57 m demo assembly, and the surface
+# density was measured off those.
+vc = code("Assets/CatchIfYouCan/Editor/HQVerifiedCatalog.cs") or ""
+
+if vc and "walls prefabs/" in vc and "5.prefab" in vc:
+    ok("the catalog is written from explicit verified asset paths")
+else:
+    bad("the catalog is written from explicit verified asset paths",
+        "a filename classifier finds nothing in a pack whose prefabs are numbered")
+
+# Materials are resolved ON the reference prefab, because the pack holds three materials called
+# "white", three called "blue" and nineteen called "1". Asking the piece that wears it is the
+# only lookup that cannot pick the wrong one.
+if "private static Material MaterialOn(" in vc and "GetComponentsInChildren<MeshRenderer>" in vc:
+    ok("a surface material is resolved on the piece that wears it, not by a project search")
+else:
+    bad("a surface material is resolved on the piece that wears it, not by a project search",
+        "the pack has three materials called 'white' and nineteen called '1'")
+
+# A name that is not unique is refused rather than guessed at.
+if "MEHRDEUTIG" in (read("Assets/CatchIfYouCan/Editor/HQVerifiedCatalog.cs") or ""):
+    ok("an ambiguous material name is refused rather than picked from")
+else:
+    bad("an ambiguous material name is refused rather than picked from",
+        "picking the first of several identically named materials is a coin toss")
+
+# One measured anchor, everything else derived FROM it and said to be derived. The pack has no
+# floor or ceiling part to measure a density against, so claiming one would be invention.
+# Scoped to the method that writes the number. The file's explanatory paragraph also contains
+# the word "ABGELEITET", so a file-wide grep stays green while the line that labels the value
+# claims it was measured - which is the failure this check exists to prevent.
+vcraw = read("Assets/CatchIfYouCan/Editor/HQVerifiedCatalog.cs") or ""
+parity = re.search(r"private static SurfaceMaterial ByTexelParity.*?\n        \}", vcraw, re.S)
+pbody = parity.group(0) if parity else ""
+if pbody and "ABGELEITET" in pbody:
+    ok("floor and ceiling density is derived by texel parity and reported as derived")
+else:
+    bad("floor and ceiling density is derived by texel parity and reported as derived",
+        "the pack has no floor or ceiling part, so a measured density there would be invented")
+
+# The measurement uses the two LARGEST extents. The pack's wall meshes are about 4 x 4 x 0.1 and
+# which axis carries the height depends on whether the prefab corrects the exporter's Z-up.
+if "largest.x + largest.y + largest.z - a - c" in vc:
+    ok("the pattern is measured across the two largest extents, not across X and Y")
+else:
+    bad("the pattern is measured across the two largest extents, not across X and Y",
+        "the thin axis is never the one the texture spans, and it is not always Y")
+
+# The doorway matches the pack's own measured opening, so the door leaf drops in at authored
+# scale instead of being squeezed.
+m = re.search(r"DoorWidth\s*=\s*([0-9.]+)f", mrb_code)
+h = re.search(r"DoorHeight\s*=\s*([0-9.]+)f", mrb_code)
+if m and h and abs(float(m.group(1)) - 1.25) < 0.001 and abs(float(h.group(1)) - 2.60) < 0.001:
+    ok("the doorway is the pack's own measured 1.25 x 2.60")
+else:
+    bad("the doorway is the pack's own measured 1.25 x 2.60",
+        "a squeezed door leaf is the one thing the pack was chosen to avoid")
+
+# And it still fits under the ceiling with a lintel left over.
+if h and float(h.group(1)) < 3.0:
+    ok("the doorway leaves a lintel under a 3 m ceiling (%.2f m)" % float(h.group(1)))
+else:
+    bad("the doorway leaves a lintel under a 3 m ceiling",
+        "a door as tall as the room has no header and no wall above it")
 
 print()
 print("  %d passed, %d failed" % (passed, failed))
