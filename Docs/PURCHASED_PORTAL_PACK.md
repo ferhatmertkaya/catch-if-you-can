@@ -150,9 +150,12 @@ into the project makes them ordinary tracked assets, and the pack becomes option
 
 ## 6. What is NOT adopted, and would have to be built
 
-- **The pack's particle systems.** Their materials are HDRP. `PortalEffects` already builds
-  sparks, streaks and wisps procedurally under URP; a pack's particle *textures* could be
-  adopted the same way the energy texture is, but nothing does that today.
+- **The pack's particle systems.** Their materials are HDRP and cannot be used. `PortalEffects`
+  builds the sparks, streaks and wisps itself under URP, and their **sprite** is adopted the same
+  way the energy texture is: a texture bound in a material whose shader or filename says
+  *particle* is copied in as `Portal_Spark` and lands on `PortalStyle.sparkTexture`. With no such
+  texture in the pack the generated soft dot stays — the adapter never clears the slot, because
+  an empty one is an untextured billboard, which is an opaque square.
 - **The pack's meshes.** The portal surface is a quad on purpose: the destination is sampled in
   **screen space**, and a screen-space sample wants a quad and a rectangular render texture.
   A pack's disc mesh would change the silhouette, which section 2 forbids.

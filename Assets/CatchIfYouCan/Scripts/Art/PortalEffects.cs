@@ -36,6 +36,9 @@ namespace CatchIfYouCan.Art
         private float _particleScale = 1f;
 
         private ParticleSystem _sparks;
+
+        /// <summary>The generated dot. One per effects object, shared by all three systems.</summary>
+        private Texture2D _sparkSprite;
         private ParticleSystem _streaks;
         private ParticleSystem _wisps;
 
@@ -128,6 +131,11 @@ namespace CatchIfYouCan.Art
             DestroyMaterials(_sparks);
             DestroyMaterials(_streaks);
             DestroyMaterials(_wisps);
+
+            // Generated here, so destroyed here. A Texture2D built at runtime is not collected
+            // with the GameObject that referenced it.
+            if (_sparkSprite != null)
+                Destroy(_sparkSprite);
         }
 
         // ---- systems ---------------------------------------------------------------------
@@ -359,13 +367,113 @@ namespace CatchIfYouCan.Art
             renderer = go.GetComponent<ParticleSystemRenderer>();
             if (renderer != null)
             {
-                renderer.sharedMaterial = new Material(shader) { name = "Portal_" + label };
+                var material = new Material(shader) { name = "Portal_" + label };
+                ConfigureAdditive(material);
+                renderer.sharedMaterial = material;
                 renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
                 renderer.receiveShadows = false;
                 renderer.sortMode = ParticleSystemSortMode.None;
             }
 
             return ps;
+        }
+
+        /// <summary>
+        /// Makes a freshly constructed particle material transparent and additive, and gives it
+        /// something to draw.
+        ///
+        /// <para>
+        /// <b>This is why the sparks were opaque green squares.</b> A `new Material(shader)` on
+        /// URP's particle shader inherits the shader's defaults, and those are an OPAQUE surface
+        /// with no base map - which means the default white texture, and a billboard textured
+        /// with solid white is a solid square. Every spark, streak and wisp was drawing its own
+        /// quad over the wall. Neither half is optional: a texture on an opaque material is still
+        /// a hard-edged rectangle, and additive blending with no texture is still a rectangle,
+        /// just a brighter one.
+        /// </para>
+        ///
+        /// <para>
+        /// Additive rather than alpha-blended because these are sparks. Additive light adds to
+        /// what is behind it and can never darken it, so a spark drifting over the dark wall
+        /// glows instead of punching a lighter hole in it, and no sorting decision has to be
+        /// right for it to look correct - which is why <c>sortMode</c> can stay None.
+        /// </para>
+        /// </summary>
+        private void ConfigureAdditive(Material material)
+        {
+            // URP reads the surface type from these floats AND from the keywords; setting one
+            // without the other gives a material that says transparent in the inspector and
+            // renders opaque.
+            material.SetFloat("_Surface", 1f);                 // 0 opaque, 1 transparent
+            material.SetFloat("_Blend", 1f);                   // 0 alpha, 1 additive
+            material.SetFloat("_SrcBlend", (float)UnityEngine.Rendering.BlendMode.SrcAlpha);
+            material.SetFloat("_DstBlend", (float)UnityEngine.Rendering.BlendMode.One);
+            material.SetFloat("_ZWrite", 0f);
+            material.SetFloat("_Cull", (float)UnityEngine.Rendering.CullMode.Off);
+            material.EnableKeyword("_SURFACE_TYPE_TRANSPARENT");
+            material.DisableKeyword("_ALPHATEST_ON");
+            material.SetOverrideTag("RenderType", "Transparent");
+            material.renderQueue = (int)UnityEngine.Rendering.RenderQueue.Transparent;
+
+            material.SetTexture("_BaseMap", SparkSprite());
+
+            // Not every URP version names it _BaseMap on the particle shader, and a texture that
+            // did not land is exactly the square this method exists to remove.
+            material.SetTexture("_MainTex", SparkSprite());
+        }
+
+        /// <summary>
+        /// A soft round dot, built once and shared by all three systems.
+        ///
+        /// <para>
+        /// Generated rather than imported because it is four lines of falloff, and an imported
+        /// 64x64 sprite is one more Resources path that can be wrong - which is CLAUDE.md
+        /// mistake 3, and would fail as a white square indistinguishable from having no texture
+        /// at all. A purchased pack's spark image can still replace it: see
+        /// <see cref="PortalStyle.sparkTexture"/>.
+        /// </para>
+        /// </summary>
+        private Texture2D SparkSprite()
+        {
+            if (_style != null && _style.sparkTexture != null)
+                return _style.sparkTexture;
+
+            if (_sparkSprite != null)
+                return _sparkSprite;
+
+            const int size = 64;
+            _sparkSprite = new Texture2D(size, size, TextureFormat.RGBA32, false)
+            {
+                name = "Portal_SparkSprite",
+                filterMode = FilterMode.Bilinear,
+                wrapMode = TextureWrapMode.Clamp
+            };
+
+            var pixels = new Color[size * size];
+            const float half = size * 0.5f;
+            for (int y = 0; y < size; y++)
+            {
+                for (int x = 0; x < size; x++)
+                {
+                    // Distance from the centre, 0 in the middle and 1 at the inscribed circle.
+                    float dx = (x + 0.5f - half) / half;
+                    float dy = (y + 0.5f - half) / half;
+                    float d = Mathf.Sqrt(dx * dx + dy * dy);
+
+                    // Squared falloff: a linear one leaves a visible disc edge, which is a
+                    // smaller square problem wearing a rounder shape.
+                    float a = Mathf.Clamp01(1f - d);
+                    a *= a;
+
+                    // White, because the particle system tints it. A coloured sprite would fight
+                    // the gradient that gives the sparks their birth-to-death hue.
+                    pixels[y * size + x] = new Color(1f, 1f, 1f, a);
+                }
+            }
+
+            _sparkSprite.SetPixels(pixels);
+            _sparkSprite.Apply();
+            return _sparkSprite;
         }
 
         /// <summary>

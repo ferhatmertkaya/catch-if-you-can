@@ -1382,6 +1382,58 @@ else
   bad "the portal adapter exists" "PurchasedPortalAdapter.cs is how a bought pack gets adopted"
 fi
 
+# ---- V10: a particle with no texture is an opaque square -------------------------------------
+#
+# The sparks shipped as solid green rectangles drifting over the wall. `new Material(shader)` on
+# URP's particle shader inherits the shader's defaults, and those are an OPAQUE surface with no
+# base map - so every billboard drew the default white texture as a hard-edged quad, tinted
+# green by the particle gradient.
+#
+# Both halves are needed and neither is sufficient. A texture on an opaque material is still a
+# rectangle; additive blending with no texture is a brighter rectangle.
+if code "$FX" | grep -qE 'private void ConfigureAdditive\(Material' &&
+   code "$FX" | grep -qE 'ConfigureAdditive\(material\);'; then
+  ok "the particle material is configured, not left at the shader defaults"
+else
+  bad "the particle material is configured, not left at the shader defaults" \
+      "a freshly constructed URP particle material is opaque and untextured"
+fi
+
+if code "$FX" | grep -qE 'material\.SetFloat\("_Surface", *1f\)' &&
+   code "$FX" | grep -qE 'material\.SetFloat\("_DstBlend", *\(float\)UnityEngine\.Rendering\.BlendMode\.One\)'; then
+  ok "the sparks are transparent and additive"
+else
+  bad "the sparks are transparent and additive" \
+      "without _Surface AND the blend factors the material renders opaque whatever it says"
+fi
+
+if code "$FX" | grep -qE 'material\.SetTexture\("_BaseMap", *SparkSprite\(\)\)'; then
+  ok "the sparks are given something to draw"
+else
+  bad "the sparks are given something to draw" \
+      "the default white texture on a billboard is a solid square"
+fi
+
+# The sprite is generated, so it must also be released. A Texture2D built at runtime is not
+# collected with the GameObject that referenced it.
+if code "$FX" | grep -qE 'private Texture2D SparkSprite\(\)' &&
+   code "$FX" | sed -n '/private void OnDestroy/,/^        }$/p' | grep -qE 'Destroy\(_sparkSprite\)'; then
+  ok "the generated spark sprite is released"
+else
+  bad "the generated spark sprite is released" \
+      "a runtime Texture2D outlives the object that made it"
+fi
+
+# Ticking a purchased spark image in without one assigned must not clear the generated dot: an
+# empty slot is the untextured square this whole path exists to remove.
+ADAPTER="$ROOT/Assets/CatchIfYouCan/Editor/PurchasedPortalAdapter.cs"
+if [ -f "$ADAPTER" ] && code "$ADAPTER" | grep -qE 'if \(spark != null\)'; then
+  ok "a pack with no spark image leaves the generated dot alone"
+else
+  bad "a pack with no spark image leaves the generated dot alone" \
+      "clearing sparkTexture swaps a soft dot for an opaque square"
+fi
+
 echo
 echo "  $PASS passed, $FAIL failed"
 if [ "$FAIL" -ne 0 ]; then

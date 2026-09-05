@@ -109,7 +109,9 @@ place that number lives; everything else derives it.
   artistic control is a shader property that the material and the C# agree on, the portal camera
   stays culled and distance-gated, nothing allocates a buffer or a material per frame, quality comes
   from the project's own quality level rather than a parallel tier system, particles emit on the breach
-  edge, there is exactly one shadowless light, and a failed preparation visibly collapses the
+  edge and are given both a sprite and a transparent additive surface — a URP particle
+  material left at the shader's defaults is an OPAQUE billboard on the default white
+  texture, which is a solid square, there is exactly one shadowless light, and a failed preparation visibly collapses the
   portal instead of hiding it. It also keeps entry the player's: the portal never loads a scene
   itself, entry commits from exactly one call site behind a plane-side crossing whose sign must
   actually change and whose crossing point is inside the aperture, no trigger volume can commit
@@ -144,7 +146,7 @@ place that number lives; everything else derives it.
   shape, its samplers compile out when unused, ticking the box with no texture assigned
   keeps the procedural portal rather than blacking it out, and the adapter copies the
   pack's artwork into the project instead of referencing a folder that exists on one
-  machine. 139 checks.
+  machine. 144 checks.
 
 - `Scripts/check_agent_architecture.sh` — the roster holds 40 unique roles with
   every field, the roster and `AGENT_OWNERSHIP.md` name the same roles, the

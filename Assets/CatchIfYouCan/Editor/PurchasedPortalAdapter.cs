@@ -84,6 +84,9 @@ namespace CatchIfYouCan.EditorTools
             /// <summary>Bound to an opacity, mask or dissolve slot: the shape of the energy.</summary>
             Mask,
 
+            /// <summary>Bound in a material whose shader draws particles: a spark image.</summary>
+            Particle,
+
             /// <summary>Bound to something this portal has no use for (normal, smoothness).</summary>
             Unused
         }
@@ -108,6 +111,7 @@ namespace CatchIfYouCan.EditorTools
             public readonly List<string> Notes = new List<string>();
             public int EnergyChoice = -1;
             public int MaskChoice = -1;
+            public int ParticleChoice = -1;
         }
 
         // ---- role mapping -------------------------------------------------------------------
@@ -180,6 +184,13 @@ namespace CatchIfYouCan.EditorTools
                     result.HdrpMaterialCount++;
                 }
 
+                // The pack tells us this material draws particles. Detected on the shader
+                // rather than on the slot, because a particle material binds its sprite to
+                // _MainTex like everything else - the slot cannot distinguish them.
+                bool particleMaterial =
+                    shaderName.IndexOf("particle", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    Path.GetFileName(path).IndexOf("particle", StringComparison.OrdinalIgnoreCase) >= 0;
+
                 foreach (string slot in mat.GetTexturePropertyNames())
                 {
                     Texture tex = mat.GetTexture(slot);
@@ -191,6 +202,8 @@ namespace CatchIfYouCan.EditorTools
                         continue;
 
                     Role role = RoleOf(slot);
+                    if (particleMaterial && role == Role.Energy)
+                        role = Role.Particle;
 
                     // First binding wins, except that a real role beats a previously recorded
                     // Unused - one image is often bound in several materials.
@@ -220,6 +233,7 @@ namespace CatchIfYouCan.EditorTools
 
             result.EnergyChoice = result.Candidates.FindIndex(c => c.Role == Role.Energy);
             result.MaskChoice = result.Candidates.FindIndex(c => c.Role == Role.Mask);
+            result.ParticleChoice = result.Candidates.FindIndex(c => c.Role == Role.Particle);
 
             if (result.ShaderCount > 0)
             {
@@ -269,6 +283,9 @@ namespace CatchIfYouCan.EditorTools
             Texture mask = scan.MaskChoice >= 0
                 ? CopyIn(scan.Candidates[scan.MaskChoice], "Portal_Mask")
                 : null;
+            Texture spark = scan.ParticleChoice >= 0
+                ? CopyIn(scan.Candidates[scan.ParticleChoice], "Portal_Spark")
+                : null;
 
             if (energy == null)
                 return "The energy texture could not be copied. Nothing was changed.";
@@ -277,6 +294,8 @@ namespace CatchIfYouCan.EditorTools
             log.AppendLine("Copied into " + DestinationFolder + ":");
             log.AppendLine("  energy  " + AssetDatabase.GetAssetPath(energy));
             log.AppendLine("  mask    " + (mask != null ? AssetDatabase.GetAssetPath(mask) : "(none)"));
+            log.AppendLine("  spark   " + (spark != null ? AssetDatabase.GetAssetPath(spark)
+                                                        : "(none - the generated dot stays)"));
 
             // The material, so the look is visible on the asset in the editor without entering
             // play mode.
@@ -304,7 +323,7 @@ namespace CatchIfYouCan.EditorTools
                      UnityEngine.Object.FindObjectsByType<LobbyPortal>(FindObjectsSortMode.None))
             {
                 SerializedObject so = new SerializedObject(lobbyPortal);
-                if (!WriteStyle(so, energy, mask))
+                if (!WriteStyle(so, energy, mask, spark))
                     continue;
 
                 so.ApplyModifiedProperties();
@@ -339,23 +358,34 @@ namespace CatchIfYouCan.EditorTools
         /// repeatedly; here it is a visible refusal instead.
         /// </para>
         /// </summary>
-        private static bool WriteStyle(SerializedObject so, Texture energy, Texture mask)
+        private static bool WriteStyle(SerializedObject so, Texture energy, Texture mask,
+                                       Texture spark)
         {
             SerializedProperty use = so.FindProperty("style.usePurchasedArtwork");
             SerializedProperty energyProperty = so.FindProperty("style.energyTexture");
             SerializedProperty maskProperty = so.FindProperty("style.maskTexture");
+            SerializedProperty sparkProperty = so.FindProperty("style.sparkTexture");
 
-            if (use == null || energyProperty == null || maskProperty == null)
+            if (use == null || energyProperty == null || maskProperty == null ||
+                sparkProperty == null)
             {
                 Debug.LogError("[CIYC][Portal] PortalStyle has no 'usePurchasedArtwork' / " +
-                               "'energyTexture' / 'maskTexture' under 'style'. The adapter and " +
-                               "PortalStyle have drifted apart; nothing was written.");
+                               "'energyTexture' / 'maskTexture' / 'sparkTexture' under 'style'. " +
+                               "The adapter and PortalStyle have drifted apart; nothing was " +
+                               "written.");
                 return false;
             }
 
             use.boolValue = true;
             energyProperty.objectReferenceValue = energy;
             maskProperty.objectReferenceValue = mask;
+
+            // Only when the pack actually had one. Clearing it would swap the generated dot for
+            // nothing, and a particle with no texture is the opaque square this whole slot
+            // exists to get rid of.
+            if (spark != null)
+                sparkProperty.objectReferenceValue = spark;
+
             return true;
         }
 
@@ -480,6 +510,7 @@ namespace CatchIfYouCan.EditorTools
                 Candidate candidate = _scan.Candidates[i];
                 string chosen = i == _scan.EnergyChoice ? "  <- ENERGY"
                     : i == _scan.MaskChoice ? "  <- MASK"
+                    : i == _scan.ParticleChoice ? "  <- SPARK"
                     : string.Empty;
 
                 EditorGUILayout.LabelField(

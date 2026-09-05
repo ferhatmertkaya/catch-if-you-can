@@ -25,9 +25,12 @@ namespace CatchIfYouCan.Art
         // ---- shape -------------------------------------------------------------------------
 
         [Header("Portal")]
-        [Tooltip("The clear hole in metres. The lobby doorway measures 1.07 between the jamb " +
-                 "faces and 2.4 to the lintel.")]
-        public Vector2 openingSize = new Vector2(1.06f, 2.4f);
+        [Tooltip("The clear hole in metres. Widened past the old 1.06 doorway width because the " +
+                 "lobby's north wall is one solid object with no door frame - there are no jambs " +
+                 "left for the breach to have to fit between, and a tall narrow oval in a wall " +
+                 "reads as a window. This also widens where the player may cross, which is " +
+                 "correct: the aperture should be the hole you can see.")]
+        public Vector2 openingSize = new Vector2(1.7f, 2.4f);
 
         [Tooltip("Semi-axes of the torn oval, as a fraction of the quad. Below 1 on purpose: " +
                  "the space left over is where the ragged edge and the outer energy spill, and " +
@@ -101,6 +104,12 @@ namespace CatchIfYouCan.Art
         // ---- particles ---------------------------------------------------------------------
 
         [Header("Sparks")]
+        [Tooltip("The sparks' image. Leave empty for the generated soft dot, which is what the " +
+                 "portal uses by default; assign a bought pack's spark image to replace it. " +
+                 "Whatever is here is TINTED by the particle gradient, so a white or greyscale " +
+                 "image behaves best and a strongly coloured one will fight the colours above.")]
+        public Texture2D sparkTexture;
+
         [Tooltip("Particles per second around the whole perimeter, at full quality.")]
         [Min(0f)] public float sparkRate = 55f;
         [Min(0.01f)] public float sparkLifetime = 0.85f;
