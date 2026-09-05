@@ -388,9 +388,31 @@ namespace CatchIfYouCan.Procedural
 
         private InteractiveDoor CreateDoorAt(Vector3 position, Quaternion rotation)
         {
-            GameObject doorGo = doorPrefab != null
-                ? UnityEngine.Object.Instantiate(doorPrefab, position, rotation, _activeHouseRoot)
-                : BuildPrimitiveDoor(position, rotation);
+            // Ohne Tuer-Prefab wird KEINE Tuer erfunden. Die alte Notloesung baute zwei
+            // Wuerfel in die Oeffnung: einen Rahmen ohne Collider und ein Blatt MIT Collider,
+            // beide mit Unitys eingebautem Standardmaterial. Unter URP ist das die magenta
+            // Flaeche in der Tuer, und das Blatt ist der Grund, warum der Spieler nicht
+            // hindurchkam. Ein fehlgeschlagener Inhalt darf nie zu einem stillen Platzhalter
+            // werden - genau das ist Fehler 3 und 14 in CLAUDE.md.
+            //
+            // Die Oeffnung bleibt also frei. house.Doors merkt sich die Verbindung weiterhin,
+            // nur mit Door == null; beide Verbraucher (RoomAudioInstaller,
+            // InvestigationAudioBootstrap) pruefen bereits darauf.
+            if (doorPrefab == null)
+            {
+                if (!_missingDoorPrefabReported)
+                {
+                    _missingDoorPrefabReported = true;
+                    CIYCLog.Error("[CIYC][House] Kein Tuer-Prefab im Content-Katalog. Die " +
+                                  "Tueroeffnungen bleiben leer statt einen Platzhalter zu " +
+                                  "bekommen, der sie zumauert.");
+                }
+
+                return null;
+            }
+
+            GameObject doorGo = UnityEngine.Object.Instantiate(
+                doorPrefab, position, rotation, _activeHouseRoot);
 
             doorGo.tag = "Door";
             var door = doorGo.GetComponent<InteractiveDoor>();
@@ -398,28 +420,6 @@ namespace CatchIfYouCan.Procedural
                 door = doorGo.AddComponent<InteractiveDoor>();
 
             return door;
-        }
-
-        private GameObject BuildPrimitiveDoor(Vector3 position, Quaternion rotation)
-        {
-            var doorRoot = new GameObject("Door");
-            doorRoot.transform.SetParent(_activeHouseRoot, false);
-            doorRoot.transform.SetPositionAndRotation(position, rotation);
-
-            var frame = GameObject.CreatePrimitive(PrimitiveType.Cube);
-            frame.name = "DoorFrame";
-            frame.transform.SetParent(doorRoot.transform, false);
-            frame.transform.localScale = new Vector3(1.3f, 2.2f, 0.12f);
-            DestroyImmediateSafe(frame.GetComponent<Collider>());
-
-            var panel = GameObject.CreatePrimitive(PrimitiveType.Cube);
-            panel.name = "DoorPanel";
-            panel.transform.SetParent(doorRoot.transform, false);
-            panel.transform.localPosition = new Vector3(0.55f, 0f, 0f);
-            panel.transform.localScale = new Vector3(1.1f, 2.1f, 0.08f);
-            panel.tag = "Door";
-
-            return doorRoot;
         }
 
         private void SealUnusedOpenings(GeneratedHouse house, HouseLayout layout,
@@ -479,10 +479,42 @@ namespace CatchIfYouCan.Procedural
             InstallBreakerBox(house, lightControllers);
         }
 
+        private static bool _missingDoorPrefabReported;
+        private static Material _neutralPrimitiveMaterial;
+
+        /// <summary>
+        /// Ein Primitiv mit einem Material, das unter URP auch zeichnet.
+        ///
+        /// GameObject.CreatePrimitive haengt Unitys eingebautes Standardmaterial an, und das
+        /// ist ein Shader der Built-in-Pipeline: unter URP zeichnet er magenta. Jedes Primitiv
+        /// in der Hausgenerierung geht deshalb durch diese eine Stelle, und der Waechter
+        /// prueft, dass es keine zweite gibt.
+        /// </summary>
+        private static GameObject CreateNeutralPrimitive(PrimitiveType type, string name)
+        {
+            var go = GameObject.CreatePrimitive(type);
+            go.name = name;
+
+            if (_neutralPrimitiveMaterial == null)
+            {
+                var shader = Art.CiycShaders.FindLit();
+                if (shader != null)
+                {
+                    _neutralPrimitiveMaterial = new Material(shader) { name = "CIYC_NeutralFixture" };
+                    _neutralPrimitiveMaterial.color = new Color(0.55f, 0.54f, 0.52f);
+                }
+            }
+
+            var renderer = go.GetComponent<Renderer>();
+            if (renderer != null && _neutralPrimitiveMaterial != null)
+                renderer.sharedMaterial = _neutralPrimitiveMaterial;
+
+            return go;
+        }
+
         private static void CreateLightSwitch(GeneratedRoomInstance room, LightController lightController)
         {
-            var switchGo = GameObject.CreatePrimitive(PrimitiveType.Cube);
-            switchGo.name = "LightSwitch";
+            var switchGo = CreateNeutralPrimitive(PrimitiveType.Cube, "LightSwitch");
             switchGo.tag = "LightSwitch";
             switchGo.transform.SetParent(room.Root.transform, false);
             switchGo.transform.localPosition = new Vector3(-2.2f, 1.2f, 0f);
@@ -512,8 +544,7 @@ namespace CatchIfYouCan.Procedural
             if (target?.Root == null)
                 return;
 
-            var breakerGo = GameObject.CreatePrimitive(PrimitiveType.Cube);
-            breakerGo.name = "BreakerBox";
+            var breakerGo = CreateNeutralPrimitive(PrimitiveType.Cube, "BreakerBox");
             breakerGo.transform.SetParent(target.Root.transform, false);
             breakerGo.transform.localPosition = new Vector3(2f, 1.1f, -2f);
             breakerGo.transform.localScale = new Vector3(0.35f, 0.5f, 0.12f);

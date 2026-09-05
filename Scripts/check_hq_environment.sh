@@ -313,6 +313,40 @@ elif converted:
 else:
     ok("every CIYC material with a custom shader still has it (%d checked)" % len(CUSTOM))
 
+# ------------------------------------- 7. nothing fabricates a blocker in a doorway
+
+# The doorway was open to the eye and shut to the body. With the Kenney door prefab gone,
+# CreateDoorAt fell back to building two cubes in the opening: a frame with its collider
+# removed and a leaf with its collider kept. The leaf is what the player walked into, and
+# both carried Unity's built-in default material, which is a Built-in-pipeline shader and
+# draws magenta under URP - the magenta surface in the doorway was the frame.
+#
+# Two rules follow, and both are checked because both were violated at once.
+
+gen_raw = read(GEN) or ""
+
+if "BuildPrimitiveDoor" in gen_raw:
+    bad("no primitive door is fabricated when the door prefab is missing",
+        "BuildPrimitiveDoor is back; it puts a collider in every doorway in the house")
+else:
+    ok("no primitive door is fabricated when the door prefab is missing")
+
+if gen and re.search(r"if \(doorPrefab == null\)", gen):
+    ok("a missing door prefab leaves the opening clear and says so")
+else:
+    bad("a missing door prefab leaves the opening clear and says so",
+        "without the early return the fallback path returns")
+
+# Every primitive in the generator goes through the one helper that gives it a URP material.
+# GameObject.CreatePrimitive on its own is the magenta.
+primitive_calls = len(re.findall(r"GameObject\.CreatePrimitive\(", gen or ""))
+if primitive_calls <= 1:
+    ok("every generated primitive gets its material from one place (%d call site)" % primitive_calls)
+else:
+    bad("every generated primitive gets its material from one place",
+        "%d GameObject.CreatePrimitive calls - each one without a material draws magenta"
+        % primitive_calls)
+
 gv = read("Assets/CatchIfYouCan/Scripts/Procedural/Deterministic/GenerationVersion.cs")
 m = re.search(r"Current\s*=\s*(\d+)", gv or "")
 if m:

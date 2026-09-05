@@ -194,11 +194,15 @@ place that number lives; everything else derives it.
   of grey boxes looks exactly like one that was never migrated. The builder consumes the
   layout and never produces one, derives its variants from the room's identity instead of
   drawing them from a generation stream, and stays outside the engine-free assembly. The
-  catalog names every structural role and no vendor. It also protects the project's own art
+  catalog names every structural role and no vendor. Nothing fabricates a blocker in a
+  doorway: no primitive door returns when the door prefab is missing, a missing one leaves the
+  opening clear and says so, and every generated primitive takes its material from one place —
+  `GameObject.CreatePrimitive` on its own carries Unity's built-in default material, which is a
+  Built-in-pipeline shader and draws magenta under URP. It also protects the project's own art
   from a pack conversion: a "Built-in to URP" pass run over the whole project rewrites
   `m_Shader` on every material it can reach, and the nine CIYC materials driven by custom
   shaders must not be among them — a converted one silently becomes URP/Lit, the dissolve
-  stops dissolving, the portal stops being a portal, and nothing errors. 19 checks.
+  stops dissolving, the portal stops being a portal, and nothing errors. 22 checks.
 
 All ten run in CI (`.github/workflows/determinism.yml`). Run them locally before
 pushing; they need nothing but a shell (and `python3` for the roster checks).
