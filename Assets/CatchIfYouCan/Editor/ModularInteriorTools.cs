@@ -47,6 +47,24 @@ namespace CatchIfYouCan.EditorTools
             w.minSize = new Vector2(620f, 520f);
         }
 
+        [MenuItem("Catch If You Can/Modular Interior/Architecture Forensics - Interior")]
+        public static void OpenForensicsInterior()
+        {
+            var w = GetWindow<ModularInteriorTools>(true, "Modularer Innenausbau");
+            w.minSize = new Vector2(620f, 520f);
+            w._packFolder = "Assets/HQ Modular House/interior";
+            w._report = MeasureArchitecture(w._packFolder);
+        }
+
+        [MenuItem("Catch If You Can/Modular Interior/Architecture Forensics - Full HQ Package")]
+        public static void OpenForensicsFullPackage()
+        {
+            var w = GetWindow<ModularInteriorTools>(true, "Modularer Innenausbau");
+            w.minSize = new Vector2(620f, 520f);
+            w._packFolder = "Assets/HQ Modular House";
+            w._report = MeasureArchitecture(w._packFolder);
+        }
+
         [MenuItem("Catch If You Can/Modular Interior/Validate Environment")]
         public static void OpenValidate()
         {
@@ -61,7 +79,7 @@ namespace CatchIfYouCan.EditorTools
                 "1. Paket pruefen  - zaehlt und klassifiziert, schreibt nichts.\n" +
                 "2. Katalog bauen  - schreibt GENAU EIN Asset: den Modular-Katalog.\n" +
                 "3. Kit vermessen  - Masse, Pivots, Ausrichtung, Collider, Raster. Schreibt nichts.\n" +
-                "4. Architektur-Forensik - nur interior/, Kinder statt Wurzeln, Raster je Modul.\n" +
+                "4. Architektur-Forensik - liest GENAU den Ordner oben, rekursiv, ohne Umleitung.\n" +
                 "5. Umgebung pruefen - sagt, ob damit ein Haus gebaut werden kann.",
                 MessageType.Info);
 
@@ -79,7 +97,7 @@ namespace CatchIfYouCan.EditorTools
             if (GUILayout.Button("3. Kit vermessen (schreibt nichts)"))
                 _report = MeasureKit(_packFolder);
 
-            if (GUILayout.Button("4. Architektur-Forensik (nur interior/, schreibt nichts)"))
+            if (GUILayout.Button("4. Architektur-Forensik auf GENAU dem Ordner oben"))
                 _report = MeasureArchitecture(_packFolder);
 
             if (GUILayout.Button("5. Umgebung pruefen"))
@@ -801,6 +819,8 @@ namespace CatchIfYouCan.EditorTools
         private class Structure
         {
             public string Path;
+            public Role Role;
+            public Opening Opening;
             public Vector3 RootScale;
             public Vector3 OwnSize;         // before the root's own scale
             public Vector3 EffectiveSize;   // what it really is in a scene
@@ -824,20 +844,20 @@ namespace CatchIfYouCan.EditorTools
             sb.AppendLine("ARCHITEKTUR-FORENSIK  -  ES WIRD NICHTS GESCHRIEBEN");
             sb.AppendLine("=========================================================");
 
-            string scope = packRoot.TrimEnd('/') + "/interior";
-            if (!AssetDatabase.IsValidFolder(scope))
-            {
-                sb.AppendLine("Kein Unterordner 'interior' - es wird das ganze Paket betrachtet.");
-                scope = packRoot;
-            }
+            // Genau der Ordner, der uebergeben wurde. Kein Anhaengen von "/interior", kein
+            // Zurueckfallen auf einen anderen Pfad: ein Bericht, der etwas anderes gelesen hat
+            // als sein Kopf behauptet, ist schlimmer als gar keiner - er sieht richtig aus.
+            string scope = packRoot.TrimEnd('/');
 
             if (!AssetDatabase.IsValidFolder(scope))
             {
-                sb.AppendLine("Ordner nicht gefunden: " + scope);
+                sb.AppendLine("Bereich: " + scope);
+                sb.AppendLine();
+                sb.AppendLine("ORDNER GIBT ES NICHT. Es wurde nichts gelesen und nichts ersetzt.");
                 return sb.ToString();
             }
 
-            sb.AppendLine("Bereich: " + scope);
+            sb.AppendLine("Bereich: " + scope + "   (genau dieser Pfad, rekursiv)");
             sb.AppendLine();
 
             var structures = new List<Structure>();
@@ -909,12 +929,57 @@ namespace CatchIfYouCan.EditorTools
                     st.Depth = Mathf.Max(st.Depth, child.HierarchyPath.Split('/').Length);
                 }
 
+                st.Opening = FindOpening(go);
+                st.Role = ClassifyPiece(path, st.EffectiveSize, st.Children.Count, st.Opening);
                 structures.Add(st);
             }
 
             structures.Sort((a, b) => b.Children.Count.CompareTo(a.Children.Count));
 
             sb.AppendLine("Prefabs im Bereich: " + structures.Count);
+            sb.AppendLine();
+
+            var scenes = AssetDatabase.FindAssets("t:Scene", new[] { scope });
+            sb.AppendLine("Szenen im Bereich: " + scenes.Length);
+            for (int i = 0; i < scenes.Length; i++)
+                sb.AppendLine("   " + AssetDatabase.GUIDToAssetPath(scenes[i]));
+            sb.AppendLine();
+
+            // ---- Semantische Rollen
+            var byRole = new SortedDictionary<string, int>();
+            for (int i = 0; i < structures.Count; i++)
+                Bump(byRole, structures[i].Role.ToString());
+
+            sb.AppendLine("--- SEMANTISCHE ROLLEN ---");
+            sb.AppendLine("  Aus Form, Ordner und Inhalt, nicht aus dem Dateinamen allein.");
+            sb.AppendLine("  Was hier NON_STRUCTURAL oder ROOM_ASSEMBLY heisst, darf das");
+            sb.AppendLine("  Architekturraster NICHT mitbestimmen.");
+            sb.AppendLine();
+            foreach (var pair in byRole)
+                sb.AppendLine(string.Format("  {0,-22} {1,4}", pair.Key, pair.Value));
+            sb.AppendLine();
+
+            sb.AppendLine("--- STRUKTURELLE TEILE IM EINZELNEN ---");
+            sb.AppendLine(string.Format("  {0,-20} {1,-24} {2,-7} {3}",
+                "ROLLE", "EFFEKTIV BxHxT (m)", "KINDER", "PREFAB"));
+            for (int i = 0; i < structures.Count; i++)
+            {
+                var st = structures[i];
+                if (st.Role == Role.NON_STRUCTURAL || st.Role == Role.EMPTY)
+                    continue;
+
+                sb.AppendLine(string.Format("  {0,-20} {1,-24} {2,-7} {3}",
+                    st.Role, V(st.EffectiveSize), st.Children.Count,
+                    st.Path.Substring(scope.Length).TrimStart('/')));
+            }
+            sb.AppendLine();
+
+            int nonStructural = 0;
+            for (int i = 0; i < structures.Count; i++)
+                if (structures[i].Role == Role.NON_STRUCTURAL || structures[i].Role == Role.EMPTY)
+                    nonStructural++;
+            sb.AppendLine("  Als NICHT strukturell eingestuft und aus dem Raster ausgeschlossen: " +
+                          nonStructural);
             sb.AppendLine();
 
             // ---- Was ist ueberhaupt was
@@ -1014,11 +1079,7 @@ namespace CatchIfYouCan.EditorTools
                 if (st.Children.Count == 0)
                     continue;
 
-                var go = AssetDatabase.LoadAssetAtPath<GameObject>(st.Path);
-                if (go == null)
-                    continue;
-
-                var op = FindOpening(go);
+                var op = st.Opening;
                 var size = st.EffectiveSize;
 
                 if (!op.Found)
@@ -1145,8 +1206,45 @@ namespace CatchIfYouCan.EditorTools
                     list.Add(new Vector2(x, z));
                 }
 
+                // Ein entpacktes Objekt hat keine PrefabInstance. Es steht als GameObject mit
+                // einem MeshFilter und einem Transform in der Szene, und die drei kennen sich
+                // nur ueber fileIDs. Also wird der Graph gegangen: MeshFilter nennt sein
+                // GameObject und sein Mesh, Transform nennt sein GameObject und seine Position -
+                // ueber die GameObject-fileID zusammengefuehrt ergibt das Mesh plus Ort.
+                var meshOfGameObject = new Dictionary<string, string>();
+                foreach (Match m in Regex.Matches(text,
+                             @"--- !u!33 &\d+\s*\nMeshFilter:(?:(?!--- !u!).)*?m_GameObject: \{fileID: (\d+)\}(?:(?!--- !u!).)*?m_Mesh: \{fileID: -?\d+, guid: ([0-9a-f]{32})",
+                             RegexOptions.Singleline))
+                {
+                    meshOfGameObject[m.Groups[1].Value] = m.Groups[2].Value;
+                }
+
+                int unpacked = 0;
+                foreach (Match m in Regex.Matches(text,
+                             @"--- !u!4 &\d+\s*\nTransform:(?:(?!--- !u!).)*?m_GameObject: \{fileID: (\d+)\}(?:(?!--- !u!).)*?m_LocalPosition: \{x: (-?[\d.eE+-]+), y: (-?[\d.eE+-]+), z: (-?[\d.eE+-]+)\}",
+                             RegexOptions.Singleline))
+                {
+                    if (!meshOfGameObject.TryGetValue(m.Groups[1].Value, out string meshGuid))
+                        continue;
+
+                    if (!float.TryParse(m.Groups[2].Value, NumberStyles.Float, CultureInfo.InvariantCulture, out float ux) ||
+                        !float.TryParse(m.Groups[4].Value, NumberStyles.Float, CultureInfo.InvariantCulture, out float uz))
+                        continue;
+
+                    string key = "mesh:" + meshGuid;
+                    if (!byPrefab.TryGetValue(key, out var ulist))
+                    {
+                        ulist = new List<Vector2>();
+                        byPrefab[key] = ulist;
+                    }
+                    ulist.Add(new Vector2(ux, uz));
+                    unpacked++;
+                }
+
                 sb.AppendLine("    Prefab-Instanzen mit Position: " +
-                              CountAll(byPrefab) + " aus " + byPrefab.Count + " verschiedenen Prefabs");
+                              (CountAll(byPrefab) - unpacked));
+                sb.AppendLine("    entpackte Objekte, ueber ihr Mesh gruppiert: " + unpacked);
+                sb.AppendLine("    Gruppen insgesamt: " + byPrefab.Count);
                 sb.AppendLine();
 
                 var ordered = new List<KeyValuePair<string, List<Vector2>>>(byPrefab);
@@ -1159,10 +1257,13 @@ namespace CatchIfYouCan.EditorTools
                     if (entry.Value.Count < 2)
                         continue;
 
-                    string name = Path.GetFileNameWithoutExtension(
-                        AssetDatabase.GUIDToAssetPath(entry.Key));
+                    string guid = entry.Key.StartsWith("mesh:", StringComparison.Ordinal)
+                        ? entry.Key.Substring(5) : entry.Key;
+                    string name = Path.GetFileNameWithoutExtension(AssetDatabase.GUIDToAssetPath(guid));
                     if (string.IsNullOrEmpty(name))
-                        name = entry.Key.Substring(0, 8);
+                        name = guid.Substring(0, 8);
+                    if (entry.Key.StartsWith("mesh:", StringComparison.Ordinal))
+                        name = "[mesh] " + name;
 
                     var xs = new List<float>();
                     var zs = new List<float>();
@@ -1264,6 +1365,124 @@ namespace CatchIfYouCan.EditorTools
             public string Kind;        // TUER / FENSTER / (keine)
         }
 
+        /// <summary>What a piece is, decided from its shape, its folder and its contents.</summary>
+        private enum Role
+        {
+            FLOOR_OR_CEILING,
+            WALL,
+            WALL_WITH_DOOR,
+            WALL_WITH_WINDOW,
+            DOOR_LEAF,
+            WINDOW_LEAF,
+            CORNER_OR_COLUMN,
+            TRIM,
+            STAIRS_CANDIDATE,
+            RAILING_CANDIDATE,
+            ROOM_ASSEMBLY,
+            HOUSE_SECTION,
+            DECAL_OR_OVERLAY,
+            NON_STRUCTURAL,
+            EMPTY,
+        }
+
+        /// <summary>
+        /// Whether this piece is credible as a WALL, which is the only thing an opening detector
+        /// may run on.
+        ///
+        /// <para>
+        /// The previous pass ran it on everything and duly reported a fireplace, a column and a
+        /// set of wallpaper patches as doorways. Every one of those is a shape with a gap in it;
+        /// none of them is a wall. A wall is thin, tall, wide, and thin by a wide margin - a
+        /// fireplace 3.25 wide and 1.65 deep has a width-to-thickness ratio of 2, a wall has 10
+        /// or more.
+        /// </para>
+        /// </summary>
+        private static bool IsWallCandidate(Vector3 size, out float width, out float height, out float thickness)
+        {
+            // Thickness is the thinnest axis; height is Y; width is whichever horizontal axis is left.
+            thickness = Mathf.Min(size.x, size.z);
+            width = Mathf.Max(size.x, size.z);
+            height = size.y;
+
+            if (size.y <= Mathf.Min(size.x, size.z))
+                return false;                                  // lying down - a floor, not a wall
+
+            if (thickness < 0.02f || thickness > 0.80f) return false;
+            if (height < 2.0f || height > 5.5f) return false;
+            if (width < 1.0f) return false;
+            if (width / Mathf.Max(0.01f, thickness) < 4f) return false;
+            if (height / Mathf.Max(0.01f, thickness) < 4f) return false;
+
+            return true;
+        }
+
+        private static void Bump<T>(SortedDictionary<T, int> map, T key)
+        {
+            map.TryGetValue(key, out int n);
+            map[key] = n + 1;
+        }
+
+        private static bool ContainsAny(string haystack, string[] needles)
+        {
+            for (int i = 0; i < needles.Length; i++)
+            {
+                if (haystack.Contains(needles[i]))
+                    return true;
+            }
+
+            return false;
+        }
+
+        private static Role ClassifyPiece(string path, Vector3 size, int meshChildren, Opening opening)
+        {
+            if (meshChildren == 0)
+                return Role.EMPTY;
+
+            string lower = path.ToLowerInvariant();
+            float minAxis = Mathf.Min(size.x, Mathf.Min(size.y, size.z));
+
+            // A big multi-mesh thing is an assembly whatever its bounds look like.
+            if (meshChildren >= 25 || (size.x > 12f && size.z > 12f))
+                return Role.HOUSE_SECTION;
+            if (meshChildren >= 8)
+                return Role.ROOM_ASSEMBLY;
+
+            // Zero thickness is a plane: wallpaper, a poster, a painted-on detail.
+            if (minAxis < 0.02f)
+                return Role.DECAL_OR_OVERLAY;
+
+            if (ContainsAny(lower, new[] { "stair", "steps", "staircase" }) && size.y > 0.8f)
+                return Role.STAIRS_CANDIDATE;
+            if (ContainsAny(lower, new[] { "railing", "banister", "handrail", "balustrade" }))
+                return Role.RAILING_CANDIDATE;
+
+            // Flat and wide: a floor or a ceiling. Which of the two cannot be told from the mesh -
+            // the same slab serves both - so it is reported as the pair it is.
+            if (size.y < 0.45f && size.x > 1.5f && size.z > 1.5f)
+                return Role.FLOOR_OR_CEILING;
+
+            // Low and long against a wall: skirting, cornice, picture rail.
+            if (size.y < 0.5f && Mathf.Max(size.x, size.z) > 1.5f && minAxis < 0.3f)
+                return Role.TRIM;
+
+            if (IsWallCandidate(size, out _, out _, out _))
+            {
+                if (opening != null && opening.Found)
+                    return opening.Kind == "TUER" ? Role.WALL_WITH_DOOR : Role.WALL_WITH_WINDOW;
+                return Role.WALL;
+            }
+
+            // Tall and square-ish in plan: a column, a pillar, an inside corner.
+            if (size.y > 2f && Mathf.Max(size.x, size.z) < 2.5f)
+                return Role.CORNER_OR_COLUMN;
+
+            // A door leaf: person-sized, thin, and small overall.
+            if (size.y > 1.7f && size.y < 3.2f && Mathf.Max(size.x, size.z) < 1.8f && minAxis < 0.35f)
+                return Role.DOOR_LEAF;
+
+            return Role.NON_STRUCTURAL;
+        }
+
         /// <summary>
         /// Finds the empty rectangle in a wall by looking at the geometry, not at a child's name.
         ///
@@ -1287,23 +1506,18 @@ namespace CatchIfYouCan.EditorTools
 
             MeasureWorld(prefab, out Vector3 min, out Vector3 max);
             Vector3 size = max - min;
-            if (size.x < 0.05f || size.y < 0.05f)
+
+            // The gate. Without it this finds the gap between two wallpaper patches, the recess
+            // in a fireplace and the space beside a column, and calls all three a doorway.
+            if (!IsWallCandidate(size, out _, out _, out _))
                 return result;
 
-            // The wall plane is the two widest axes; the thinnest is the thickness.
-            int thin = size.x <= size.y && size.x <= size.z ? 0 : (size.z <= size.y ? 2 : 1);
+            int thin = size.x <= size.z ? 0 : 2;
             int uAxis = thin == 0 ? 2 : 0;
             int vAxis = 1;
-            if (thin == 1)
-            {
-                // A flat, floor-like piece has no vertical opening to find.
-                return result;
-            }
 
             float uSize = size[uAxis];
             float vSize = size[vAxis];
-            if (uSize < 0.5f || vSize < 0.5f)
-                return result;
 
             int cols = resolution;
             int rows = Mathf.Max(8, Mathf.RoundToInt(resolution * vSize / uSize));
@@ -1344,19 +1558,42 @@ namespace CatchIfYouCan.EditorTools
             float left = rx * uSize / cols;
             float bottom = ry * vSize / rows;
 
-            // Below this it is a modelling gap between two pieces, not a way through.
-            if (w < 0.5f || h < 1.0f)
+            float rightSolid = uSize - left - w;
+            float lintel = vSize - bottom - h;
+
+            // An opening is ENCLOSED. Wall to its left, wall to its right, and - the test that
+            // rejects the wallpaper patches - wall above it. A gap running the full height of a
+            // piece is the space between two pieces, not a hole in one.
+            if (left < 0.15f || rightSolid < 0.15f || lintel < 0.15f)
                 return result;
+
+            // And it is a hole in a wall, not most of the wall. Past this the piece is two
+            // fragments that happen to share a prefab.
+            if (w * h > uSize * vSize * 0.6f)
+                return result;
+
+            bool door = bottom < 0.20f;
+            if (door)
+            {
+                if (w < 0.6f || w > 2.5f || h < 1.6f || h > 3.2f)
+                    return result;
+            }
+            else
+            {
+                if (bottom < 0.30f) return result;            // neither on the floor nor a sill
+                if (w < 0.4f || w > 3.0f || h < 0.4f || h > 2.5f)
+                    return result;
+            }
 
             result.Found = true;
             result.Width = w;
             result.Height = h;
             result.LeftSolid = left;
-            result.RightSolid = uSize - left - w;
+            result.RightSolid = rightSolid;
             result.BottomV = bottom;
             result.CentreU = left + w * 0.5f;
-            result.Lintel = vSize - bottom - h;
-            result.Kind = bottom < 0.15f ? "TUER" : "FENSTER";
+            result.Lintel = lintel;
+            result.Kind = door ? "TUER" : "FENSTER";
             return result;
         }
 
