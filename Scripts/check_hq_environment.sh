@@ -1043,6 +1043,56 @@ else:
     bad("the scene is marked dirty and left for the user to save",
         "saving on the user's behalf removes their chance to look first")
 
+# ---- the lobby is AUTHORED, and the switch that hides it is load-bearing ----------------------
+#
+# Nothing builds the lobby at runtime: all thirty-odd objects are in 01_MainMenu.unity, and
+# MainMenuModeController.interactiveRoomRoots switches the one root on when the player leaves the
+# cinematic menu. The room being OFF IN THE FILE is not tidiness - its own Awake says why: Unity
+# does not define whether that Awake runs before or after the Awake and OnEnable of everything
+# under the room, so a room that is active when the scene loads has already had its moon light
+# claim the scene's sun and its emitters start, over the menu. So an editing switch must put it
+# back before anything else reads the scene.
+auth = code("Assets/CatchIfYouCan/Editor/MainMenuLobbyAuthoring.cs") or ""
+
+if auth and "EditorSceneManager.sceneSaving" in auth and "EditorSceneManager.sceneSaved" in auth:
+    ok("the room is switched off for the write, so the file always has it dormant")
+else:
+    bad("the room is switched off for the write, so the file always has it dormant",
+        "a saved-active room runs its Awake over the menu on the next load")
+
+if "PlayModeStateChange.ExitingEditMode" in auth and "PlayModeStateChange.EnteredEditMode" in auth:
+    ok("the room is switched off before Play and restored after")
+else:
+    bad("the room is switched off before Play and restored after",
+        "entering Play serialises what the editor holds, not what the file says")
+
+# Only the active flag. An editing aid that also moved something would be indistinguishable from
+# the user having moved it.
+for forbidden, why in [
+        ("AddComponent", "an editing switch adds nothing"),
+        ("DestroyImmediate", "an editing switch deletes nothing"),
+        ("localPosition", "an editing switch moves nothing"),
+        ("sharedMaterial", "an editing switch repaints nothing")]:
+    if auth and forbidden not in auth:
+        ok("the lobby switch never touches %s" % forbidden)
+    else:
+        bad("the lobby switch never touches %s" % forbidden, why)
+
+# Found by walking the scene, not with GameObject.Find - that one skips inactive objects, and an
+# inactive object is exactly what this is looking for.
+if "GetRootGameObjects()" in auth and "GameObject.Find(" not in auth:
+    ok("the dormant room is found by walking the scene, not by GameObject.Find")
+else:
+    bad("the dormant room is found by walking the scene, not by GameObject.Find",
+        "GameObject.Find skips inactive objects, which is the only kind this looks for")
+
+# And the hand-placed house must not inherit the room's dormancy.
+if "IsChildOf(lobby.transform)" in auth:
+    ok("the check warns when the hand-placed house hangs under the dormant room")
+else:
+    bad("the check warns when the hand-placed house hangs under the dormant room",
+        "a house parented into the lobby is invisible whenever the lobby sleeps")
+
 print()
 print("  %d passed, %d failed" % (passed, failed))
 sys.exit(1 if failed else 0)

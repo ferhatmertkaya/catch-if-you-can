@@ -339,8 +339,18 @@ place that number lives; everything else derives it.
   manual correction hides the bad reparent that caused it — an organisational folder sits at the
   origin unrotated and unscaled so it cannot shift what is put into it later, nothing is added,
   removed, switched on or off, or unpacked, anything the audit could not classify is offered
-  unticked rather than moved, and the scene is left dirty for the user to save after looking.
-  92 checks.
+  unticked rather than moved, and the scene is left dirty for the user to save after looking. And
+  it holds the lobby's dormancy, which is load-bearing rather than tidy: nothing builds that room
+  at runtime — all thirty-odd objects are authored in `01_MainMenu.unity` and
+  `MainMenuModeController.interactiveRoomRoots` merely switches the one root on — but a room that
+  is ACTIVE when the scene loads has already had its moon light claim the scene's sun and its
+  emitters start over the menu, because Unity does not define whether that controller's `Awake`
+  runs before or after theirs. So the editing switch turns it off in `sceneSaving` and on again in
+  `sceneSaved`, and off on `ExitingEditMode` because entering Play serialises what the editor
+  holds rather than what the file says; it touches only the active flag, finds the room by walking
+  the scene rather than with `GameObject.Find` (which skips inactive objects, the only kind this
+  looks for), and warns when the hand-placed house has been parented under the room, where it
+  would vanish with it. 100 checks.
 
 All ten run in CI (`.github/workflows/determinism.yml`). Run them locally before
 pushing; they need nothing but a shell (and `python3` for the roster checks).

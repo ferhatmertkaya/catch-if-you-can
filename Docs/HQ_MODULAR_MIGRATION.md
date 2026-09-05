@@ -486,3 +486,43 @@ of tidying. A prefab instance whose role cannot be read off a component is offer
   nothing in the project references it by name to switch it back on. The tool moves it and leaves
   it off; enabling it is a behaviour change and belongs to whoever turned it off.
 - `Lobby_Portal`'s `surface` field is `None` in the saved scene.
+
+
+## Why the lobby was only visible in Play — and why it stays that way in the file
+
+Nothing builds it at runtime. Every one of its thirty-odd objects is authored in
+`01_MainMenu.unity`: floor, four walls, ceiling, the whole window assembly, the safety floor,
+three lights, the moon shaft, the exterior with its ridge, trees and ruins, the ambience, the
+mirror corner, armchair, table, investigation board, player spawn and `Lobby_Portal`. The scene
+also carries a `MeshFilter` and `MeshRenderer` on each — there is no runtime factory for any of
+it.
+
+It is invisible in Edit Mode for one reason: `MainMenu_Lobby` is saved with `m_IsActive: 0`, and
+`MainMenuModeController.interactiveRoomRoots` holds exactly that one object.
+`SetRoomActive(true)` runs when the player leaves the cinematic menu. Stop, and the scene reloads
+from disk, dormant again.
+
+**That dormancy in the file is load-bearing.** `MainMenuModeController.Awake` says so in its own
+words: Unity does not define whether that `Awake` runs before or after the `Awake` and `OnEnable`
+of everything under the room, so a room that is already active when the scene loads has had its
+moon light claim the scene's sun and its emitters start — over the top of the menu. Its
+`SetRoomActive(false)` is the belt to that braces, and it cannot undo what already ran.
+
+So there is nothing to bake, and simply leaving the switch on would reintroduce the bug the
+design exists to prevent.
+
+`Catch If You Can → Main Menu → Lobby bearbeiten` toggles the room visible for editing and
+puts it back where it matters: it is switched off in `sceneSaving` and restored in `sceneSaved`,
+so the file always has it dormant; and switched off on `ExitingEditMode`, because entering Play
+serialises what the editor is holding rather than what the file says. Only the active flag is
+touched — nothing is added, moved, deleted or repainted.
+
+`Authored Lobby pruefen` reports the object count, whether a second `MainMenu_Lobby` has
+appeared, whether floor, ceiling, walls, spawn, portal and lighting are present, and whether
+`05_HQ_MANUAL_HOUSE` has ended up *under* the lobby — where it would inherit the dormancy and
+vanish from Edit Mode along with it. Keeping it as its own scene root is what makes hand-placed
+pieces visible at all times and survive Play/Stop untouched.
+
+**Runtime-created, and correctly so:** the Player (`PlayerSpawner.Spawn`), the persistent
+services (`CiycServices`), the runtime UI canvas, the portal's RenderTexture and camera, and the
+horror events' transient state. None of those belong in a scene file.
