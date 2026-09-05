@@ -320,7 +320,13 @@ place that number lives; everything else derives it.
   shell, which way is up is measured on the instantiated object because the meshes carry their
   height on Z, one density is measured on prefab 5 and floor and ceiling are derived from it by
   texel parity and SAID to be derived, and the doorway is the pack's own 1.25 x 2.60 so the leaf
-  drops in unsqueezed while still leaving a lintel. 66 checks.
+  drops in unsqueezed while still leaving a lintel, and an insert is positioned by its MESH rather
+  than by its pivot — this pack's pivots sit 13 to 40 m from their own geometry, so placing by
+  pivot puts the door thirty metres from the doorway — measured on the visible parts only (the
+  disabled wall shell is most of the prefab) and from transformed corners so rotation cannot skew
+  it. A room can also be built BY HAND through the same builder: `HQRoomAuthoring` describes a
+  room and makes no geometry of its own, and the window rule has one home, explicit for a person
+  and derived for the generator, so a hand-built room cannot drift from a generated one. 72 checks.
 
 All ten run in CI (`.github/workflows/determinism.yml`). Run them locally before
 pushing; they need nothing but a shell (and `python3` for the roster checks).

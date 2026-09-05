@@ -72,6 +72,29 @@ namespace CatchIfYouCan.Procedural
         public static GameObject Build(LayoutRoom room, Vector3 worldPosition, Transform parent,
             ModularInteriorCatalog catalog, out string error)
         {
+            // Which outside walls get a window is DERIVED from the room's identity here, never
+            // rolled: a draw from a CiycRandom stream would advance it and reach back into
+            // generation. Hand authoring passes its own mask to the overload below instead.
+            int windowMask = 0;
+            for (int d = 0; d < Directions.Cardinal.Length; d++)
+            {
+                var dir = Directions.Cardinal[d];
+                if (!room.HasDoor(dir) && room.IsOpen(dir) && WantsWindow(room, dir))
+                    windowMask |= LayoutRoom.DirectionMask(dir);
+            }
+
+            return Build(room, worldPosition, parent, catalog, windowMask, out error);
+        }
+
+        /// <summary>
+        /// The same room, with the windows named explicitly rather than derived.
+        ///
+        /// This is the entry point for hand authoring: a person deciding which wall gets a
+        /// window is making a choice, and a choice does not belong in a hash of anything.
+        /// </summary>
+        public static GameObject Build(LayoutRoom room, Vector3 worldPosition, Transform parent,
+            ModularInteriorCatalog catalog, int windowMask, out string error)
+        {
             error = null;
 
             var size = new Vector3(
@@ -93,7 +116,7 @@ namespace CatchIfYouCan.Procedural
             BuildCeiling(roomRoot.transform, size, catalog);
 
             for (int d = 0; d < Directions.Cardinal.Length; d++)
-                BuildWall(roomRoot.transform, room, Directions.Cardinal[d], size, catalog);
+                BuildWall(roomRoot.transform, room, Directions.Cardinal[d], size, catalog, windowMask);
 
             var module = roomRoot.GetComponent<RoomModule>();
             if (module == null)
@@ -131,16 +154,12 @@ namespace CatchIfYouCan.Procedural
         // --------------------------------------------------------------------- walls
 
         private static void BuildWall(Transform parent, LayoutRoom room,
-            SocketDirection direction, Vector3 size, ModularInteriorCatalog catalog)
+            SocketDirection direction, Vector3 size, ModularInteriorCatalog catalog, int windowMask)
         {
             // The layout decides what this wall is. A door connection means a real hole, not a
             // solid wall with a door drawn on it.
             bool hasDoor = room.HasDoor(direction);
-
-            // A window only where there is no door and the wall faces outside. Derived from the
-            // room's identity, never rolled: a draw from a CiycRandom stream would advance that
-            // stream and reach back into generation.
-            bool hasWindow = !hasDoor && room.IsOpen(direction) && WantsWindow(room, direction);
+            bool hasWindow = !hasDoor && (windowMask & LayoutRoom.DirectionMask(direction)) != 0;
 
             ModuleRole role = hasDoor ? ModuleRole.WallWithDoorway
                             : hasWindow ? ModuleRole.WallWithWindow
@@ -245,8 +264,35 @@ namespace CatchIfYouCan.Procedural
 
             OrientUpright(go.transform, role);
 
-            // Placed after the orientation, because the orientation moves what "up" means.
-            go.transform.localPosition = localPosition + insert.LocalOffset;
+            // Placed by the MESH, never by the pivot.
+            //
+            // This pack's pivots sit 13 to 40 metres from the geometry they belong to - the
+            // inventory reads "Pivot 32.5 m" for the door wall and "31.4 m" for the window -
+            // because these were exported from one authored apartment and every piece kept that
+            // scene's origin. Setting localPosition puts the PIVOT there, so the door itself
+            // landed tens of metres away: on screen, a door frame somewhere near the ceiling and
+            // a window above it.
+            //
+            // So the wanted point is where the kept geometry's centre has to end up, and the
+            // transform is offset by whatever it takes to put it there. Measured after the
+            // orientation, because turning the piece upright moves its centre too.
+            Vector3 target = localPosition + insert.LocalOffset;
+
+            if (TryMeasureInSpace(go.transform, wall, out Bounds placed))
+            {
+                go.transform.localPosition = target - placed.center;
+                Core.CIYCLog.Info("[CIYC][House] " + role + "-Einsatz: Mesh " +
+                                  placed.size.ToString("F2") + ", Pivot lag " +
+                                  placed.center.magnitude.ToString("F1") + " m neben der " +
+                                  "Oeffnung und wurde ausgeglichen.");
+            }
+            else
+            {
+                go.transform.localPosition = target;
+                Core.CIYCLog.Warn("[CIYC][House] " + role + "-Einsatz: keine sichtbare Geometrie " +
+                                  "messbar, er wird ueber seinen Pivot gesetzt. Bei diesem Paket " +
+                                  "liegt der bis zu 40 m daneben.");
+            }
         }
 
         /// <summary>
@@ -322,7 +368,7 @@ namespace CatchIfYouCan.Procedural
         /// </summary>
         private static void OrientUpright(Transform insert, string role)
         {
-            if (!TryMeasureLocalBounds(insert, out Bounds bounds))
+            if (!TryMeasureInSpace(insert, insert, out Bounds bounds))
                 return;
 
             Vector3 size = bounds.size;
@@ -341,35 +387,64 @@ namespace CatchIfYouCan.Procedural
                               "aufgerichtet.");
         }
 
-        private static bool TryMeasureLocalBounds(Transform root, out Bounds bounds)
+        /// <summary>
+        /// The bounds of the parts that are actually VISIBLE, expressed in <paramref name="space"/>.
+        ///
+        /// <para>
+        /// Visible only. Most of a vendor wall prefab has just been switched off - it is the wall
+        /// shell around the door - and measuring it would centre the door on the shell it was
+        /// separated from.
+        /// </para>
+        /// <para>
+        /// Eight corners per mesh rather than a centre and a size, because a rotated child's
+        /// axis-aligned size is not its size in the parent's frame. This runs a handful of times
+        /// per room, so correctness costs nothing worth saving.
+        /// </para>
+        /// </summary>
+        private static bool TryMeasureInSpace(Transform root, Transform space, out Bounds bounds)
         {
             bounds = default;
-            root.GetComponentsInChildren(true, _insertFilters);
+            root.GetComponentsInChildren(true, _insertRenderers);
 
             bool started = false;
-            for (int i = 0; i < _insertFilters.Count; i++)
+            for (int i = 0; i < _insertRenderers.Count; i++)
             {
-                Mesh mesh = _insertFilters[i].sharedMesh;
-                if (mesh == null)
+                Renderer renderer = _insertRenderers[i];
+                if (!renderer.enabled)
                     continue;
 
-                Bounds b = mesh.bounds;
-                Vector3 centre = _insertFilters[i].transform.localPosition + b.center;
-                Vector3 size = Vector3.Scale(b.size, _insertFilters[i].transform.localScale);
+                var filter = renderer.GetComponent<MeshFilter>();
+                if (filter == null || filter.sharedMesh == null)
+                    continue;
 
-                if (!started)
+                Bounds local = filter.sharedMesh.bounds;
+                for (int c = 0; c < 8; c++)
                 {
-                    bounds = new Bounds(centre, size);
-                    started = true;
-                }
-                else
-                {
-                    bounds.Encapsulate(new Bounds(centre, size));
+                    Vector3 corner = local.center + Vector3.Scale(local.extents, Corner(c));
+                    Vector3 point = space.InverseTransformPoint(
+                        filter.transform.TransformPoint(corner));
+
+                    if (!started)
+                    {
+                        bounds = new Bounds(point, Vector3.zero);
+                        started = true;
+                    }
+                    else
+                    {
+                        bounds.Encapsulate(point);
+                    }
                 }
             }
 
-            _insertFilters.Clear();
+            _insertRenderers.Clear();
             return started;
+        }
+
+        private static Vector3 Corner(int index)
+        {
+            return new Vector3((index & 1) == 0 ? -1f : 1f,
+                               (index & 2) == 0 ? -1f : 1f,
+                               (index & 4) == 0 ? -1f : 1f);
         }
 
         private static void DisableColliders(GameObject go)
@@ -398,8 +473,6 @@ namespace CatchIfYouCan.Procedural
             new System.Collections.Generic.List<Collider>(8);
         private static readonly System.Collections.Generic.List<Renderer> _insertRenderers =
             new System.Collections.Generic.List<Renderer>(8);
-        private static readonly System.Collections.Generic.List<MeshFilter> _insertFilters =
-            new System.Collections.Generic.List<MeshFilter>(8);
 
         /// <summary>
         /// Collision that matches the geometry, taken from the same sections the mesh was built

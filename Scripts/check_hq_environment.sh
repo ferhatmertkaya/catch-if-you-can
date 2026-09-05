@@ -846,6 +846,63 @@ else:
     bad("the doorway leaves a lintel under a 3 m ceiling",
         "a door as tall as the room has no header and no wall above it")
 
+# ---- a vendor insert is placed by its MESH, never by its pivot --------------------------------
+#
+# This pack's pivots sit 13 to 40 m from the geometry they belong to: the inventory reads
+# "Pivot 32.5 m" for the door wall and "31.4 m" for the window, because every piece kept the
+# origin of the one apartment scene they were exported from. Setting localPosition puts the
+# PIVOT at the opening, so the door itself lands tens of metres away - on screen, a door frame
+# up near the ceiling and a window above it.
+if "TryMeasureInSpace(go.transform, wall, out Bounds placed)" in mrb_code and \
+        "target - placed.center" in mrb_code:
+    ok("an insert is positioned by its mesh, correcting a pivot that is metres away")
+else:
+    bad("an insert is positioned by its mesh, correcting a pivot that is metres away",
+        "placing by pivot puts a door 30 m from the doorway in this pack")
+
+# Measured on the VISIBLE parts. Most of a vendor wall prefab has just been switched off - it is
+# the shell around the door - and including it would centre the door on the shell.
+measure = re.search(r"private static bool TryMeasureInSpace.*?\n        \}", mrb_code, re.S)
+mbody = measure.group(0) if measure else ""
+if mbody and "if (!renderer.enabled)" in mbody:
+    ok("only the visible parts are measured, not the wall shell that was switched off")
+else:
+    bad("only the visible parts are measured, not the wall shell that was switched off",
+        "the disabled shell is most of the prefab and would drag the centre onto itself")
+
+# Eight corners, because a rotated child's axis-aligned size is not its size in the parent frame.
+if mbody and "Corner(c)" in mbody and "space.InverseTransformPoint" in mbody:
+    ok("bounds are taken from transformed corners, so rotation cannot skew them")
+else:
+    bad("bounds are taken from transformed corners, so rotation cannot skew them",
+        "centre-plus-size ignores rotation and the insert lands off the opening")
+
+# ---- a room can be built by hand, through the same builder ------------------------------------
+#
+# Hand authoring must not become a second implementation of the room. It hands the production
+# builder a room description written by a person; everything else is identical.
+hand = code("Assets/CatchIfYouCan/Scripts/Procedural/HQRoomAuthoring.cs") or ""
+
+if hand and "ModularRoomBuilder.Build(" in hand:
+    ok("the hand-built room goes through the production builder")
+else:
+    bad("the hand-built room goes through the production builder",
+        "a second room implementation is the mistake this project has already made twice")
+
+if hand and "StructuralMeshFactory" not in hand and "CreatePrimitive" not in hand:
+    ok("the hand-built room builds no geometry of its own")
+else:
+    bad("the hand-built room builds no geometry of its own",
+        "it describes a room; making one is the builder's job")
+
+# The window choice is explicit for a person and derived for the generator - and the derivation
+# stays in one place, so hand authoring cannot drift from what a mission builds.
+if "int windowMask, out string error)" in mrb_code and "WantsWindow(room, dir)" in mrb_code:
+    ok("windows are explicit for hand authoring and derived for the generator, from one place")
+else:
+    bad("windows are explicit for hand authoring and derived for the generator, from one place",
+        "two copies of the rule is how a hand-built room stops matching a generated one")
+
 print()
 print("  %d passed, %d failed" % (passed, failed))
 sys.exit(1 if failed else 0)

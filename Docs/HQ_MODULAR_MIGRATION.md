@@ -324,6 +324,53 @@ authored scale instead of being squeezed. Both numbers are private to Stage B, o
 engine-free assembly and absent from the layout hash — this document already marked them
 negotiable. 2.60 under a 3.00 m ceiling still leaves 0.40 m of lintel.
 
+## Inserts are placed by their mesh, not by their pivot
+
+This is the one number in the inventory that decides everything about placement, and it is the
+same one that says the pack is not a kit:
+
+```
+1   (3.99, 1.55, 4.05)   Pivot 32.5 m
+7   (3.76, 2.23, 4.12)   Pivot 31.4 m
+5   (3.96, 0.10, 4.02)   Pivot 23.9 m
+```
+
+Every piece kept the origin of the one apartment scene it was exported from, so its pivot sits
+13 to 40 m from its own geometry. Setting `localPosition` puts the **pivot** at the opening,
+which puts the door itself tens of metres away — on screen, a door frame up near the ceiling and
+a window above it.
+
+So the wanted point is where the kept geometry's *centre* has to end up, and the transform is
+offset by whatever it takes to put it there. Measured after the orientation, because turning a
+piece upright moves its centre too; measured on the **visible** parts only, because most of the
+prefab has just been switched off and is the wall shell the door was separated from; and taken
+from eight transformed corners rather than a centre and a size, because a rotated child's
+axis-aligned size is not its size in the parent's frame. The correction is logged with the
+distance it had to make up.
+
+## Building a room by hand
+
+`HQRoomAuthoring` — *Add Component → Catch If You Can → HQ Room (hand-built)*.
+
+Set the size, tick which walls carry a door and which carry a window, drop the
+`ModularInteriorCatalog` in, then right-click the component → **Raum bauen**.
+
+It is not a second implementation. It calls the same `ModularRoomBuilder` the house generator
+calls, so what appears is the production path: the same meshes, the same UVs in metres, the same
+HQ materials, the same colliders, the same inserts. What it changes is who decides — a person
+writing a room description instead of the layout deriving one.
+
+The window choice is the one place the two paths differ, and deliberately: the generator derives
+it from the room's identity (never from a `CiycRandom` stream, which would advance generation),
+while a person names the walls outright. The derivation lives in one place and calls the explicit
+overload, so a hand-built room cannot drift from what a mission builds.
+
+What comes out is ordinary GameObjects. Move a wall, delete one, nudge the door, add a light —
+it is a normal hierarchy, not a live preview that overwrites edits. Rebuilding replaces it, so
+build first and edit after.
+
+Leaving the catalog empty is useful too: neutral grey, no inserts, just the shape.
+
 ## If the pattern size still looks wrong
 
 It is two numbers, and the loop is short. Open `ModularInteriorCatalog.asset`, change
