@@ -1798,8 +1798,8 @@ else
 fi
 
 # The ground is PROVEN before anything is committed, and a miss refuses rather than drops.
-if printf '%s' "$SEAM" | grep -qE 'Physics\.Raycast\(probeFrom, Vector3\.down' &&
-   printf '%s' "$SEAM" | grep -qE 'failureReason=NO_GROUND' &&
+if printf '%s' "$SEAM" | grep -qE 'Physics\.RaycastAll\(probeFrom, Vector3\.down' &&
+   printf '%s' "$SEAM" | grep -qE 'failureReason=NO_GROUND_IN_DESTINATION' &&
    printf '%s' "$SEAM" | grep -qE 'onResult\?\.Invoke\(false\)'; then
   ok "no ground under the arrival refuses the crossing"
 else
@@ -2080,7 +2080,7 @@ fi
 # The anchor is PROVEN against collision, not taken from a transform's name. A room's Root is
 # the room's origin, which is not necessarily its floor.
 EMA="$(code "$IB" | sed -n '/private void EnsureMissionEntryAnchor/,/^        }$/p')"
-if printf '%s' "$EMA" | grep -qE 'Physics\.Raycast\(root \+ Vector3\.up \* 3f, Vector3\.down' &&
+if printf '%s' "$EMA" | grep -qE 'Physics\.RaycastAll\(root \+ Vector3\.up \* 3f, Vector3\.down' &&
    printf '%s' "$EMA" | grep -qE 'Physics\.SyncTransforms\(\)'; then
   ok "the entry anchor is measured against real floor collision"
 else
@@ -2090,12 +2090,48 @@ fi
 
 # A miss leaves the anchor NULL, and null refuses the crossing. Placing it anyway would be the
 # fall with extra steps.
-if printf '%s' "$EMA" | grep -qE 'no mission entry anchor was built' &&
+if printf '%s' "$EMA" | grep -qE 'no mission entry ' &&
    ! printf '%s' "$EMA" | grep -qE 'go\.transform\.position = root;'; then
   ok "no floor under the entrance leaves the anchor null rather than guessed"
 else
   bad "no floor under the entrance leaves the anchor null rather than guessed" \
       "an anchor placed without a floor under it is the fall with extra steps"
+fi
+
+# ---- V13: ground must belong to the world being entered ---------------------------------------
+#
+# Physics queries are GLOBAL across every loaded scene, and during a crossing both are loaded.
+# A plain cast therefore accepts the lobby's own floor - and the lobby carries a 40 x 40 m
+# safety floor that sits under very nearly anywhere. The crossing was validated against a
+# surface that was unloaded seconds later, so the player landed and then fell.
+MWL="$ROOT/Assets/CatchIfYouCan/Scripts/Missions/MissionWorldLoader.cs"
+IB="$ROOT/Assets/CatchIfYouCan/Scripts/Procedural/InvestigationBootstrap.cs"
+SEAM="$(code "$MWL" | sed -n '/public static IEnumerator EnterSeamlessAsync/,/^        }$/p')"
+
+if printf '%s' "$SEAM" | grep -qE 'candidate\.collider\.gameObject\.scene != destinationScene' &&
+   printf '%s' "$SEAM" | grep -qE 'failureReason=NO_GROUND_IN_DESTINATION'; then
+  ok "the crossing only stands on ground in the destination scene"
+else
+  bad "the crossing only stands on ground in the destination scene" \
+      "the lobby's safety floor validates almost any arrival and is then unloaded"
+fi
+
+EMA="$(code "$IB" | sed -n '/private void EnsureMissionEntryAnchor/,/^        }$/p')"
+if printf '%s' "$EMA" | grep -qE 'hits\[i\]\.collider\.gameObject\.scene != here'; then
+  ok "the entry anchor only stands on ground in its own scene"
+else
+  bad "the entry anchor only stands on ground in its own scene" \
+      "anchoring the doorway to the lobby's floor moves the hole to a scene that is unloaded"
+fi
+
+# Nearest hit wins. RaycastAll does not sort, and standing on the roof of something is not
+# standing on the floor under it.
+if printf '%s' "$SEAM" | grep -qE 'candidate\.distance < ground\.distance' &&
+   printf '%s' "$EMA" | grep -qE 'hits\[i\]\.distance < floor\.distance'; then
+  ok "the nearest valid surface is chosen, not the first one returned"
+else
+  bad "the nearest valid surface is chosen, not the first one returned" \
+      "RaycastAll is unsorted; the first hit can be a roof"
 fi
 
 echo

@@ -401,13 +401,34 @@ namespace CatchIfYouCan.Procedural
             // built - so ask, or the ray is cast against a world the physics scene has not seen.
             Physics.SyncTransforms();
 
-            if (!Physics.Raycast(root + Vector3.up * 3f, Vector3.down, out RaycastHit floor, 8f,
-                                 ~0, QueryTriggerInteraction.Ignore))
+            // The floor has to be in THIS scene. Physics queries are global across every loaded
+            // scene, and while a portal is open the lobby is loaded too - complete with a
+            // 40 x 40 m safety floor that sits under very nearly anywhere. Accepting it would
+            // anchor the doorway to a surface that is unloaded the moment the player arrives.
+            UnityEngine.SceneManagement.Scene here = gameObject.scene;
+            RaycastHit[] hits = Physics.RaycastAll(root + Vector3.up * 3f, Vector3.down, 8f, ~0,
+                                                   QueryTriggerInteraction.Ignore);
+
+            bool found = false;
+            RaycastHit floor = default;
+            for (int i = 0; i < hits.Length; i++)
             {
-                CIYCLog.Error("[CIYC][Portal][Handoff] Nothing solid under the entrance room at " +
-                              root.ToString("F2") + ", so no mission entry anchor was built. The " +
-                              "house generated but its floor has no collision - a player put " +
-                              "there would fall through it.");
+                if (hits[i].collider == null || hits[i].collider.gameObject.scene != here)
+                    continue;
+
+                if (!found || hits[i].distance < floor.distance)
+                {
+                    floor = hits[i];
+                    found = true;
+                }
+            }
+
+            if (!found)
+            {
+                CIYCLog.Error("[CIYC][Portal][Handoff] Nothing solid IN THIS SCENE under the " +
+                              "entrance room at " + root.ToString("F2") + ", so no mission entry " +
+                              "anchor was built. The house generated but its floor has no " +
+                              "collision of its own - a player put there would fall through it.");
                 return;
             }
 

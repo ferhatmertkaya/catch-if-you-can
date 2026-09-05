@@ -185,7 +185,12 @@ place that number lives; everything else derives it.
   collision inside the entrance room, not the van's spawn — that stands outdoors on
   ground this project does not have, which is a fall past a skybox. One transform feeds
   the preview camera and the crossing, so what is shown and what is walked into cannot
-  diverge, and no floor under the entrance leaves it null, which refuses. 197 checks.
+  diverge, and no floor under the entrance leaves it null, which refuses. And it holds
+  both floor tests to the RIGHT WORLD: a physics query is global across every loaded
+  scene, and while a portal is open the lobby is loaded too — complete with a 40x40 m
+  safety floor that sits under very nearly anywhere, so a scene-blind probe validates
+  an arrival against a surface that is unloaded seconds later and the player lands and
+  then falls. 200 checks.
 
 - `Scripts/check_agent_architecture.sh` — the roster holds 40 unique roles with
   every field, the roster and `AGENT_OWNERSHIP.md` name the same roles, the

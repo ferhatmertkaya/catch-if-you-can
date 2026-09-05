@@ -413,14 +413,57 @@ namespace CatchIfYouCan.Missions
             // only synced at the fixed step - so ask for the sync rather than hope for it.
             Physics.SyncTransforms();
 
+            // ---- the ground has to belong to the world being ENTERED ------------------------
+            //
+            // Physics.Raycast is global across every loaded scene, and during a crossing BOTH
+            // are loaded. A plain cast therefore accepts the lobby's own floor - and the lobby
+            // carries a 40 x 40 m safety floor, which sits under very nearly anywhere. The
+            // crossing was validated against a surface that was unloaded seconds later, so the
+            // player landed and then fell: exactly the reported "you arrive, then drop".
+            //
+            // Only the destination scene can hold somebody up, so only it is asked.
+            Scene destinationScene = world.gameObject.scene;
+
             Vector3 probeFrom = mapped + Vector3.up * 2f;
-            if (!Physics.Raycast(probeFrom, Vector3.down, out RaycastHit ground, 8f, ~0,
-                                 QueryTriggerInteraction.Ignore))
+            RaycastHit[] hits = Physics.RaycastAll(probeFrom, Vector3.down, 8f, ~0,
+                                                   QueryTriggerInteraction.Ignore);
+
+            bool found = false;
+            RaycastHit ground = default;
+            var rejected = new System.Text.StringBuilder();
+
+            for (int i = 0; i < hits.Length; i++)
+            {
+                RaycastHit candidate = hits[i];
+                if (candidate.collider == null)
+                    continue;
+
+                if (candidate.collider.gameObject.scene != destinationScene)
+                {
+                    rejected.Append(" ").Append(candidate.collider.name)
+                            .Append("(scene=").Append(candidate.collider.gameObject.scene.name)
+                            .Append(")");
+                    continue;
+                }
+
+                // Nearest first: RaycastAll does not sort, and standing on the roof of something
+                // is not the same as standing on the floor under it.
+                if (!found || candidate.distance < ground.distance)
+                {
+                    ground = candidate;
+                    found = true;
+                }
+            }
+
+            if (!found)
             {
                 CIYCLog.Error(Diag + "refused: mappedDestination=" + mapped.ToString("F2") +
-                              " groundHit=<none> - nothing solid within 8 m below the arrival. " +
-                              "The player stays in the lobby with their controls. " +
-                              "success=false failureReason=NO_GROUND");
+                              " groundHit=<none in " + destinationScene.name + ">" +
+                              " rejectedFromOtherScenes:" +
+                              (rejected.Length > 0 ? rejected.ToString() : " <none>") +
+                              " - nothing solid within 8 m below the arrival belongs to the world " +
+                              "being entered. The player stays in the lobby with their controls. " +
+                              "success=false failureReason=NO_GROUND_IN_DESTINATION");
                 onResult?.Invoke(false);
                 yield break;
             }
