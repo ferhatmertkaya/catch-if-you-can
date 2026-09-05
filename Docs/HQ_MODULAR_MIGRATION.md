@@ -371,6 +371,56 @@ build first and edit after.
 
 Leaving the catalog empty is useful too: neutral grey, no inserts, just the shape.
 
+## Building by hand out of the purchased pieces
+
+`Modular Interior → Bauteile pruefen und setzen` opens a browser over one folder of the pack. It
+measures each piece and badges it — BEREIT, MODUL x2, PIVOT 32m, MATERIAL FEHLT, KEIN URP,
+SZENEN-EXPORT — and places it, either plain or inside a CIYC wrapper whose origin sits at the
+piece's bottom centre. It writes nothing: no reimport, no material edit, no scale change, and the
+audit runs on a button rather than per repaint.
+
+### The sizes are a ladder, not a scale error
+
+Measured from the inventory, against prefab 5's 3.97 m as the module:
+
+| piece | width | multiple |
+|---|---:|---|
+| 16 | 11.90 m | **exactly 3×** |
+| 15 | 7.94 m | **exactly 2×** |
+| 1, 2, 5, 10, 11, 12, 14, 24 | 3.96–4.01 m | 1× |
+| 3 | 3.84 m | 1× |
+| 8 (wide window) | 6.73 m | special |
+| 4, 6, 7, 9 | 3.36–3.78 m | special |
+| 13, 22, 23 | 0.73–1.88 m | special |
+
+Every one of them is 4.02–4.13 m tall — a spread of eleven centimetres across nineteen pieces.
+There is no unit mismatch and no per-FBX scale difference among the wall prefabs: 15 and 16 are
+double- and triple-width walls, to the centimetre. Scaling them down to match the others would
+break a wall that was already right, which is why the browser badges them `MODUL x2` rather than
+`OVERSIZED`, and why nothing here rescales anything.
+
+The genuinely huge objects — `room1` 48×24×51, `room2`, `room3`, `moduls` 102×18×69, `furniture`
+80×24×33 — are scene exports. They badge as `SZENEN-EXPORT` and are not building material.
+
+### White has three causes, and the browser says which
+
+1. **The material is meant to be white.** `arch big white` carries a real 1024² base map
+   (`1_arch big_AlbedoTransparency`) on `Universal Render Pipeline/Lit`. Painted trim beside
+   wallpaper is what an old apartment looks like; nothing is wrong with it.
+2. **The material has no base map at all.** The pack ships textureless duplicates beside its
+   textured materials — `door base`, `door detail`, `mirror`, `beth`, `SOAP`, `1` and others
+   appear twice, once with a texture and once without. A prefab pointing at the untextured one
+   draws flat. That is the FBX-embedded material rather than the one the pack authored.
+3. **A null slot, or a shader that does not draw.**
+
+Only the third is a fault in the strict sense; the second is a wrong reference and the first is
+correct art. The browser prints the base map, its size and the material's asset path for every
+slot, so which of the three applies is read rather than guessed.
+
+**One thing to check with it:** `HQVerifiedCatalog.DoorParts` names `door base` and `door detail`,
+and both exist in the pack in a textured and an untextured version. If the door leaf comes through
+flat, that is the pair to look at first.
+
 ## If the pattern size still looks wrong
 
 It is two numbers, and the loop is short. Open `ModularInteriorCatalog.asset`, change

@@ -903,6 +903,81 @@ else:
     bad("windows are explicit for hand authoring and derived for the generator, from one place",
         "two copies of the rule is how a hand-built room stops matching a generated one")
 
+# ---- the piece browser LOOKS, and does not touch ----------------------------------------------
+#
+# Hand-building means dragging purchased pieces in, and the three questions that keep coming back
+# are: why is that one so much bigger, why is that one white, and where is it relative to its own
+# origin. The browser answers them by measuring. It must not answer them by editing the pack -
+# a pack-wide reimport is what made the machine unusable, and scaling a piece to make it match is
+# how a mismatch becomes a mystery.
+browser = code("Assets/CatchIfYouCan/Editor/HQPieceBrowser.cs") or ""
+
+for forbidden, why in [
+        ("AssetDatabase.Refresh(", "a refresh can trigger a pack-wide reimport"),
+        ("AssetDatabase.ImportAsset(", "reimporting a vendor asset is a pack edit"),
+        ("SetTextureScale(", "retiling a vendor material edits a purchased asset"),
+        ("SaveAssets(", "the browser writes nothing at all")]:
+    if browser and forbidden not in browser:
+        ok("the piece browser does not call %s" % forbidden.rstrip("("))
+    else:
+        bad("the piece browser does not call %s" % forbidden.rstrip("("), why)
+
+# Nothing is scaled. The audit found the wall pieces share one height and a module ladder, so
+# there is no scale to correct - and correcting one without proof is the rule this pass exists
+# under.
+if browser and "localScale =" not in browser:
+    ok("the piece browser never rescales a purchased piece")
+else:
+    bad("the piece browser never rescales a purchased piece",
+        "scaling to make pieces match hides whether they were ever mismatched")
+
+# A multiple of the module width is a DESIGNED size. Prefab 15 is exactly twice the module and
+# 16 exactly three times; marking those oversized and shrinking them would break a wall that was
+# right.
+if "ModuleMultiple" in browser and "Mathf.Abs(multiple - nearest) < 0.04f" in browser:
+    ok("a piece that is a whole multiple of the module is read as designed, not as oversized")
+else:
+    bad("a piece that is a whole multiple of the module is read as designed, not as oversized",
+        "15 and 16 are exactly 2x and 3x the module width")
+
+# The module width is the pack's own median, not a number this project picked.
+if "widths[widths.Count / 2]" in browser:
+    ok("the module width is the pack's own median rather than a hard-coded 4 m")
+else:
+    bad("the module width is the pack's own median rather than a hard-coded 4 m",
+        "a constant stops being true for the next pack")
+
+# The audit runs on a button and is cached. Scanning inside OnGUI would re-open every prefab on
+# every repaint.
+if "private List<Piece> _pieces;" in browser and "Audit(_folder, out _moduleWidth)" in browser:
+    ok("the audit runs on demand and is cached, not per repaint")
+else:
+    bad("the audit runs on demand and is cached, not per repaint",
+        "opening every prefab each frame is what made the editor unusable")
+
+# The vendor prefab goes in as a prefab INSTANCE - link, materials and geometry as purchased -
+# and only the wrapper around it carries the corrected origin.
+if "PrefabUtility.InstantiatePrefab(prefab, wrapper.transform)" in browser and \
+        "instance.transform.localPosition = -grip" in browser:
+    ok("the wrapper corrects the origin and the vendor prefab goes in untouched")
+else:
+    bad("the wrapper corrects the origin and the vendor prefab goes in untouched",
+        "a piece whose origin is 30 m away cannot be placed by typing a position")
+
+# White has three causes and they are not guessable from the screen, so the material line says
+# which one applies: no base map at all, versus a base map that is simply white paint.
+# Scoped to the method that writes the line. The closing paragraph of the report explains what
+# "KEINE BaseMap" means, so a file-wide grep stays green while the line that would say it is
+# gone - which is the failure this check exists to prevent, for the third time in this file.
+browserraw = read("Assets/CatchIfYouCan/Editor/HQPieceBrowser.cs") or ""
+desc = re.search(r"private static MaterialInfo Describe.*?\n        \}", browserraw, re.S)
+dbody2 = desc.group(0) if desc else ""
+if dbody2 and "KEINE BaseMap" in dbody2:
+    ok("a material with no base map is named as such, not left to look like a lost material")
+else:
+    bad("a material with no base map is named as such, not left to look like a lost material",
+        "this pack ships textureless FBX duplicates beside its textured materials")
+
 print()
 print("  %d passed, %d failed" % (passed, failed))
 sys.exit(1 if failed else 0)

@@ -326,7 +326,14 @@ place that number lives; everything else derives it.
   disabled wall shell is most of the prefab) and from transformed corners so rotation cannot skew
   it. A room can also be built BY HAND through the same builder: `HQRoomAuthoring` describes a
   room and makes no geometry of its own, and the window rule has one home, explicit for a person
-  and derived for the generator, so a hand-built room cannot drift from a generated one. 72 checks.
+  and derived for the generator, so a hand-built room cannot drift from a generated one. And it holds
+  the piece browser to LOOKING: it never reimports, never retiles a vendor material, never writes
+  an asset and never rescales a purchased piece — a whole multiple of the pack's own median module
+  width is a DESIGNED size, not an oversized one (15 and 16 are exactly 2x and 3x to the
+  centimetre), the audit runs on a button rather than per repaint, the wrapper corrects the origin
+  while the vendor prefab goes in as an untouched instance, and a material with no base map is
+  named as such rather than left looking like a lost one — this pack ships textureless FBX
+  duplicates beside its textured materials. 82 checks.
 
 All ten run in CI (`.github/workflows/determinism.yml`). Run them locally before
 pushing; they need nothing but a shell (and `python3` for the roster checks).
