@@ -171,7 +171,11 @@ place that number lives; everything else derives it.
   being destroyed silently, the handover counts the cameras that can actually reach
   Display 1, the input gate is released by the handover rather than by a destruction
   order, and no case card is dropped over a room the player already walked into.
-  181 checks.
+  And it keeps the lobby's KIT: the lobby is the preparation area, so what the player
+  picked up walks through with them — the mission installs a starter loadout only where
+  there was no lobby to take one from, the hand anchor that holstered items hang from is
+  wired on every route, and what they walked in with is reported, because an empty bag
+  and a lost bag look identical in a dark house. 185 checks.
 
 - `Scripts/check_agent_architecture.sh` — the roster holds 40 unique roles with
   every field, the roster and `AGENT_OWNERSHIP.md` name the same roles, the

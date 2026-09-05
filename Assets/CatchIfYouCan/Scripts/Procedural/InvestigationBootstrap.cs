@@ -738,10 +738,25 @@ namespace CatchIfYouCan.Procedural
             var inventory = buildResult.Root.GetComponent<PlayerInventory>();
             inventory?.SetHandAnchor(handAnchor);
 
-            // The loadout is chosen here and INSTALLED here. Choosing it used to be the whole
-            // of it: the list was filled and nothing ever turned a definition into an object,
-            // so every item but the torch PlayerFactory builds was unreachable, and so was the
-            // evidence they produce.
+            // ---- who decides what the player carries ---------------------------------------
+            //
+            // On the DIRECT load there is no lobby, so the mission has to hand the player their
+            // kit or they arrive with nothing but the torch PlayerFactory builds. The loadout is
+            // chosen here and INSTALLED here; choosing it used to be the whole of it, and
+            // nothing ever turned a definition into an object.
+            //
+            // On the PORTAL route the lobby IS the preparation area. The player walked around
+            // it, picked things up and walked through a doorway carrying them - so the answer to
+            // "what do they have" is already settled, and topping their bag up here would put
+            // back the items they deliberately left on the shelf. InstallLoadout is idempotent
+            // per item and would not overwrite anything, but it would fill every slot they chose
+            // to leave empty, which is the same disagreement wearing a politer face.
+            if (_seamlessEntry)
+            {
+                ReportCarriedEquipment(inventory);
+                return;
+            }
+
             EquipmentManager.Instance?.GiveStarterLoadout();
             MissionEquipmentInstaller.InstallLoadout(inventory);
 
@@ -749,6 +764,50 @@ namespace CatchIfYouCan.Procedural
             // every spawn path gets it. This used to be done here by reading a private field
             // off a second, parallel flashlight implementation that the player never carried,
             // which meant the "am I standing in my own light" check was wired to nothing.
+        }
+
+        /// <summary>
+        /// Says what the player actually walked in with.
+        ///
+        /// <para>
+        /// Arriving with nothing is a legitimate choice on this route - the lobby is where kit is
+        /// taken, and taking none of it is allowed. It is also indistinguishable from equipment
+        /// having been lost in the handover, so it is said out loud either way rather than left
+        /// to be discovered in a dark house.
+        /// </para>
+        /// </summary>
+        private static void ReportCarriedEquipment(PlayerInventory inventory)
+        {
+            if (inventory == null)
+            {
+                CIYCLog.Error("[CIYC][Portal][Handoff] EQUIPMENT the player has no inventory " +
+                              "component at all, so nothing could have survived the crossing.");
+                return;
+            }
+
+            var carried = new System.Text.StringBuilder();
+            int count = 0;
+
+            for (int i = 0; i < PlayerInventory.SelectableSlotCount; i++)
+            {
+                Equipment.EquipmentBase item = inventory.GetSlot(i);
+                if (item == null)
+                    continue;
+
+                count++;
+                carried.Append(" [").Append(i).Append("]=").Append(item.name);
+            }
+
+            string line = "[CIYC][Portal][Handoff] EQUIPMENT carried=" + count +
+                          " selectedSlot=" + inventory.SelectedIndex +
+                          " torch=" + (inventory.Torch != null ? inventory.Torch.name : "<none>") +
+                          " slots:" + (carried.Length > 0 ? carried.ToString() : " <empty>") +
+                          " (the lobby's loadout was kept; no starter kit was installed over it)";
+
+            if (count == 0)
+                CIYCLog.Warn(line);
+            else
+                CIYCLog.Info(line);
         }
 
         private void SpawnGhost(MissionRuntime mission)

@@ -1907,6 +1907,51 @@ else
       "a full-screen intro on the portal route is a loading screen by another name"
 fi
 
+# ---- V11: the lobby's kit walks through the doorway -------------------------------------------
+#
+# The lobby is the preparation area: the player walks around it, picks equipment up and carries
+# it through. On the DIRECT load there is no lobby, so the mission must hand them a kit; on the
+# portal route doing that puts back every item they deliberately left on the shelf.
+IB="$ROOT/Assets/CatchIfYouCan/Scripts/Procedural/InvestigationBootstrap.cs"
+WIRE="$(code "$IB" | sed -n '/private void WirePlayerEquipment/,/^        }$/p')"
+
+if printf '%s' "$WIRE" | grep -qE 'if \(_seamlessEntry\)' &&
+   printf '%s' "$WIRE" | grep -qE 'MissionEquipmentInstaller\.InstallLoadout\('; then
+  ok "the mission installs a loadout only where there was no lobby to take one from"
+else
+  bad "the mission installs a loadout only where there was no lobby to take one from" \
+      "the direct load still needs the kit; the portal route must keep what was carried"
+fi
+
+# The skip has to come BEFORE the install, or it is decoration.
+SKIP_LINE="$(printf '%s' "$WIRE" | grep -n 'if (_seamlessEntry)' | head -1 | cut -d: -f1)"
+INSTALL_LINE="$(printf '%s' "$WIRE" | grep -n 'InstallLoadout(' | head -1 | cut -d: -f1)"
+if [ -n "$SKIP_LINE" ] && [ -n "$INSTALL_LINE" ] && [ "$SKIP_LINE" -lt "$INSTALL_LINE" ]; then
+  ok "the carried loadout is kept before any starter kit is installed"
+else
+  bad "the carried loadout is kept before any starter kit is installed" \
+      "skip=$SKIP_LINE install=$INSTALL_LINE"
+fi
+
+# The hand anchor is still wired on both routes - it is what holstered items hang from, and an
+# unwired anchor drops everything the player was carrying on the floor of a scene being unloaded.
+if printf '%s' "$WIRE" | grep -qE 'inventory\?\.SetHandAnchor\(handAnchor\)'; then
+  ok "the hand anchor is wired on every route"
+else
+  bad "the hand anchor is wired on every route" \
+      "held and holstered items hang from it; unwired, they are lost with the lobby"
+fi
+
+# Arriving empty-handed is allowed and indistinguishable from equipment lost in the handover, so
+# it is said out loud rather than discovered in a dark house.
+if code "$IB" | grep -qE 'private static void ReportCarriedEquipment' &&
+   code "$IB" | grep -qE 'Handoff\] EQUIPMENT carried='; then
+  ok "what the player walked in with is reported"
+else
+  bad "what the player walked in with is reported" \
+      "an empty bag and a lost bag look identical without it"
+fi
+
 echo
 echo "  $PASS passed, $FAIL failed"
 if [ "$FAIL" -ne 0 ]; then
