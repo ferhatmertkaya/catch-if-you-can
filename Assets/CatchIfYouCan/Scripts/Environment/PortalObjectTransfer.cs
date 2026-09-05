@@ -75,11 +75,22 @@ namespace CatchIfYouCan.Environment
             Vector3 planePoint = _sourcePlane.position;
             Vector3 planeNormal = _sourcePlane.forward;
 
+            // This portal only carries what is on ITS side of the pair. The registry is global,
+            // so without this an object that has already gone through would keep being measured
+            // against the plane it left - and its position in the destination world has nothing
+            // to do with that plane, so sooner or later it reads as a second crossing and is
+            // carried again, from a place it is not, to a place it already is.
+            //
+            // It is also what makes the system symmetric: an instance armed the other way round
+            // picks up the objects on the other side by the same test, with no direction encoded
+            // anywhere.
+            Scene sourceScene = _sourcePlane.gameObject.scene;
+
             IReadOnlyList<PortalTransferable> all = PortalTransferable.All;
             for (int i = all.Count - 1; i >= 0; i--)
             {
                 PortalTransferable item = all[i];
-                if (item == null)
+                if (item == null || item.gameObject.scene != sourceScene)
                     continue;
 
                 float side = Vector3.Dot(item.transform.position - planePoint, planeNormal);

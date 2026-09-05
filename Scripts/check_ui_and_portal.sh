@@ -2038,6 +2038,18 @@ else
       "check=$CHECK_LINE unload=$UNLOAD_LINE - after the unload there is nothing left to count"
 fi
 
+# A portal carries only what is on ITS side. PortalTransferable's registry is global, so without
+# a scene test an object that has already gone through keeps being measured against the plane it
+# left - and its position in the destination world has nothing to do with that plane, so it
+# eventually reads as a second crossing and is carried again, from a place it is not.
+if code "$OT" | grep -qE 'Scene sourceScene = _sourcePlane\.gameObject\.scene' &&
+   code "$OT" | grep -qE 'item\.gameObject\.scene != sourceScene'; then
+  ok "a portal only carries objects from its own scene"
+else
+  bad "a portal only carries objects from its own scene" \
+      "an object already through would be measured against the plane it left"
+fi
+
 echo
 echo "  $PASS passed, $FAIL failed"
 if [ "$FAIL" -ne 0 ]; then

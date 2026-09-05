@@ -180,7 +180,7 @@ place that number lives; everything else derives it.
   the picture and died with the scene — the same object changes scene now, never
   rebuilt, with its velocity and spin rotated through the pair rather than zeroed, on a
   sign change inside the opening rather than an overlap, once rather than every physics
-  step, and only when something declared it transferable. 192 checks.
+  step, and only when something declared it transferable. 193 checks.
 
 - `Scripts/check_agent_architecture.sh` — the roster holds 40 unique roles with
   every field, the roster and `AGENT_OWNERSHIP.md` name the same roles, the
