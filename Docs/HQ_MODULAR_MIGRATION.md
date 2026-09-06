@@ -802,3 +802,51 @@ box, and an empty box intersects nothing. Read without checking, that says "ther
 here" — the same output as a genuinely missing wall, from a completely different cause. The probe
 falls back to the renderer's bounds on the same object, which is the same geometry and is what
 the eye sees anyway.
+
+## The room is too big for the player, and the reference is in code
+
+The hand-built lobby reads as oversized. The reference it has to match is **not** a measuring
+cube placed in the scene — it is `PlayerFactory.CapsuleHeight` = 1.86 m and
+`PlayerFactory.EyeHeight` = 1.68 m, the numbers the game actually builds the player from. A cube
+is a second source for a number that already has one, and the moment the two disagree the room
+gets scaled to the cube while the player keeps the constant. So `HQRoomScaleAudit` reads the
+constants; a cube, if there is one, is only reported.
+
+What can be read from the scene file alone, without the pack:
+
+| | |
+|---|---|
+| wall module spacing, north run | **3.3001 m**, six pieces, five identical gaps |
+| wall module spacing, west run | 3.2972 m |
+| room footprint from the wall runs | ≈ 16.8 × 13.6 m |
+| `FLOOR_Lobby_01` (a scaled Unity cube) | 25.80 × 41.90 m, 0.02 m thick |
+
+What cannot: the clear height, the door height and the window sill, because those live in meshes
+inside the gitignored pack. Menu `Catch If You Can/Lobby/Raumgroesse messen` measures them in
+Unity and proposes a factor. It changes nothing.
+
+It derives the factor from the **clear height** alone — finished floor top to ceiling underside —
+because that is the only room dimension measurable without guessing which piece is a door. A
+floor piece is wide, flat and low; a ceiling piece is wide, flat and high; neither is decided by
+name, since this pack numbers its prefabs. Every other source is listed with its placed size so
+the door and window heights can be *read off* rather than inferred. If either surface is missing
+the tool refuses to produce a number: a guessed clear height puts the whole room out by a
+constant, which is the hardest kind of wrong to see.
+
+World bounds are the right measurement here and are **not** CLAUDE.md mistake 12. That mistake
+was dividing a wanted size by a world AABB to get a *local* scale, which double-applies every
+ancestor's scale. What is wanted here is a world height in metres, and the factor is a *ratio* of
+two world heights — the ancestor chain cancels out of a ratio.
+
+### Scaling the room makes the portal wall worse, not better
+
+The portal's opening is fixed at 4.70 × 2.40 m and is a child of `MainMenu_Lobby`, not of the
+pack pieces, so it does **not** shrink with the room. The wall it has to be cut into does.
+`ResolveWall` needs one collider at least as wide as the opening; the modules are 3.30 m and
+already too narrow, and any factor below 1 makes them narrower still. At a factor of 0.75 they
+are 2.48 m against a 4.70 m opening.
+
+So the two problems have to be settled in the right order: measure the wall
+(`Catch If You Can/Lobby/Portalwand messen`), decide how the portal gets a wall it can cut, and
+only then scale — or accept that the portal wall becomes a dedicated object sized in metres,
+independent of the module grid, which is what `wallCollider` is for.

@@ -996,6 +996,73 @@ else
   fi
 fi
 
+# ---- der Massstab des Raums wird gemessen, nicht geraten ------------------------------------
+# Der Raum ist zu gross fuer den Spieler. Ein Faktor, der aus einem Blick auf den Bildschirm
+# kommt, ist genau so falsch wie 0.8 oder 0.75 - und er faellt erst auf, wenn schon alles
+# darunter haengt.
+SCALEAUDIT="$EDT/HQRoomScaleAudit.cs"
+if [ ! -f "$SCALEAUDIT" ]; then
+  bad "es gibt ein Werkzeug, das den Massstab des Raums misst" "erwartet $SCALEAUDIT"
+  bad "der Massstab wird gegen die Spielerkonstanten gerechnet" "Datei fehlt"
+  bad "der Faktor ist ein Verhaeltnis, kein geratener Wert" "Datei fehlt"
+  bad "das Massstabswerkzeug aendert nichts" "Datei fehlt"
+  bad "eine nicht messbare lichte Hoehe wird nicht geraten" "Datei fehlt"
+  bad "der Raum-Massstab nennt die Folge fuer das Portal" "Datei fehlt"
+else
+  ok "es gibt ein Werkzeug, das den Massstab des Raums misst"
+
+  # Gegen die Konstanten, aus denen der Spieler wirklich gebaut wird. Ein Messwuerfel in der
+  # Szene waere eine zweite Quelle fuer dieselbe Zahl - und sobald beide auseinanderlaufen,
+  # wird der Raum auf den Wuerfel skaliert, waehrend der Spieler die Konstante behaelt.
+  if code "$SCALEAUDIT" | grep -qE 'PlayerFactory\.CapsuleHeight' \
+     && code "$SCALEAUDIT" | grep -qE 'PlayerFactory\.EyeHeight'; then
+    ok "der Massstab wird gegen die Spielerkonstanten gerechnet"
+  else
+    bad "der Massstab wird gegen die Spielerkonstanten gerechnet" \
+        "1.86 m Kapsel und 1.68 m Auge stehen im Code; ein Wuerfel in der Szene ist eine " \
+        "zweite Quelle fuer dieselbe Zahl"
+  fi
+
+  # Ziel geteilt durch gemessen. Kein Literal, das wie ein Faktor aussieht.
+  if code "$SCALEAUDIT" | grep -qE 'Targets\[i\][[:space:]]*/[[:space:]]*clear'; then
+    ok "der Faktor ist ein Verhaeltnis, kein geratener Wert"
+  else
+    bad "der Faktor ist ein Verhaeltnis, kein geratener Wert" \
+        "Ziel geteilt durch gemessene lichte Hoehe, sonst ist es 0.8 mit mehr Schritten"
+  fi
+
+  writes=""
+  for call in 'EditorUtility.SetDirty' 'AssetDatabase.SaveAssets' 'Undo\.' 'DestroyImmediate' \
+              'SetParent' 'localScale[[:space:]]*=' 'SetActive'; do
+    code "$SCALEAUDIT" | grep -qE "$call" && writes="$writes $call"
+  done
+  if [ -n "$writes" ]; then
+    bad "das Massstabswerkzeug aendert nichts" "gefunden:$writes"
+  else
+    ok "das Massstabswerkzeug aendert nichts"
+  fi
+
+  # Ohne Boden UND Decke gibt es keine lichte Hoehe. Eine geratene legt den ganzen Raum daneben,
+  # und zwar gleichmaessig, was am schwersten zu sehen ist.
+  if code "$SCALEAUDIT" | grep -qE 'KEINE LICHTE HOEHE MESSBAR'; then
+    ok "eine nicht messbare lichte Hoehe wird nicht geraten"
+  else
+    bad "eine nicht messbare lichte Hoehe wird nicht geraten" \
+        "ohne Boden und Decke muss das Werkzeug abbrechen statt zu schaetzen"
+  fi
+
+  # Und es sagt die eine Folge, die niemand erwartet: die Oeffnung des Portals ist in Metern
+  # festgelegt und skaliert NICHT mit, die Wand aber schon.
+  if code "$SCALEAUDIT" | grep -qE 'ReportPortal' \
+     && code "$SCALEAUDIT" | grep -qE 'OpeningSize'; then
+    ok "der Raum-Massstab nennt die Folge fuer das Portal"
+  else
+    bad "der Raum-Massstab nennt die Folge fuer das Portal" \
+        "die Oeffnung skaliert nicht mit, die Wandmodule schon - das Problem wird kleiner " \
+        "skaliert, nicht geloest"
+  fi
+fi
+
 split=""
 for obj in Lobby_Wall_North_Left Lobby_Wall_North_Right Lobby_Wall_North_Header \
            Lobby_Wall_North_Fill Lobby_DoorJamb_Left Lobby_DoorJamb_Right Lobby_DoorLintel; do
