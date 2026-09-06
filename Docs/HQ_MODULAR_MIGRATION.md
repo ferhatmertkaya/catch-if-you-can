@@ -668,3 +668,44 @@ index is built once per run from a single index query.
 **The smallest safe correction, when a lost mapping is proven:** set the proposed material on the
 **instance's renderer** — an override inside the CIYC wrapper, never on the purchased prefab and
 never on the purchased material. That stays reversible and leaves the pack untouched.
+
+
+## The first question is which source the object came from
+
+A run of the doctor on a wall in the scene reported this, for every one of ten slots:
+
+```
+Material : Assets/HQ Modular House/interior/moduls/1.FBX
+BaseMap  : KEINE - zeichnet einfarbig
+```
+
+Every material was **inside the FBX**. That is a model instance: the object was dragged from
+`interior/moduls/1.FBX`, so its renderers use the materials embedded in the model — and this
+pack's embedded materials carry no textures at all. They are Unity's, generated from the FBX slot
+names.
+
+The pack's finished wall parts sit **beside** that FBX in `interior/moduls/walls prefabs/`, and
+they carry the authored materials: the inventory shows `1.prefab` using `blue`, `door detail`,
+`wallpaper3` and `white` — none of which the FBX knows about.
+
+So a grey wall is usually not a broken material assignment. It is the wrong source, and no
+material swap fixes it: **drag the prefab from `walls prefabs/`, not the FBX from `moduls/`.**
+The doctor now says so first, before it discusses any individual slot.
+
+### A bare number proves nothing
+
+That same run proposed the window materials `1`, `2`, `3`, `4` for the wall's slots of the same
+names. Those materials are named after the *window* FBX (`window LP 1-2_1_AlbedoTransparency`),
+and the wall's slots just happen to be numbered too. That is a name collision, not a
+correspondence — the tool was taking its own naming convention for a law, on exactly the evidence
+that is weakest.
+
+A slot name now has to carry at least three letters before it can prove a match. `SHKAF3`,
+`bachek` and `door base` still resolve; `1` through `6` no longer propose anything, and the
+report says why.
+
+`door base` and `door detail` remain correct matches — their textures are literally
+`5_door base_AlbedoTransparency` and `5_door detail_AlbedoTransparency`, and the materials live
+in `interior/customization/door materials/`. `door base` has four candidates (`blue`, `brown`,
+`whire door base`, `whire v2 door base 1`), which is a colour choice rather than an ambiguity, and
+the report lists them all.

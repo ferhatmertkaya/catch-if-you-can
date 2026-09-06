@@ -1218,6 +1218,40 @@ else:
     bad("a textureless material with no twin is left alone rather than replaced",
         "ten of the pack's thirty textureless names have no twin; some surfaces are just plain")
 
+# ---- the FIRST question is which source the object came from ----------------------------------
+#
+# A model dragged from the project window is a MODEL INSTANCE: its renderers use the materials
+# embedded in the FBX, and this pack's embedded materials carry no textures at all. The pack's own
+# prefabs sit beside the FBX in walls prefabs/ and carry the authored ones - prefab 1 uses blue,
+# door detail, wallpaper3 and white, none of which the FBX knows about. So a grey wall is often
+# not a broken assignment at all; it is the wrong source, and no material swap fixes it.
+# Anchored on the SIGNATURE, not the name. "ReportModelSourceX" contains "ReportModelSource",
+# so a name-only grep stays green through a rename - which is how both tamper tests for this
+# block first passed against a broken build.
+if "ReportModelSource(MeshRenderer[] renderers" in doc and "ReportModelSource(renderers, sb)" in doc \
+        and "IsModelFile(AssetDatabase.GetAssetPath(" in doc:
+    ok("a model instance is named as such before any material is blamed")
+else:
+    bad("a model instance is named as such before any material is blamed",
+        "swapping materials on an FBX instance treats the wrong source as a broken material")
+
+# And a bare number is not evidence. This pack has wall slots 1-6 and window materials 1-4 named
+# after a different FBX; matching those to each other proposed window glass for a door wall.
+if "IsTooWeakToMatch(name)" in doc and "IsTooWeakToMatch(string name)" in doc \
+        and "char.IsLetter(" in doc:
+    ok("a numeric slot name is refused as too weak to prove a match")
+else:
+    bad("a numeric slot name is refused as too weak to prove a match",
+        "wall slots 1-6 and window materials 1-4 are a name collision, not a correspondence")
+
+weak = re.search(r"private static bool IsTooWeakToMatch\(string name\).*?\n        \}", doc, re.S)
+wbody = weak.group(0) if weak else ""
+if wbody and "return true;" in wbody:
+    ok("a name with no letters at all matches nothing")
+else:
+    bad("a name with no letters at all matches nothing",
+        "digits and punctuation say nothing about which surface this is")
+
 print()
 print("  %d passed, %d failed" % (passed, failed))
 sys.exit(1 if failed else 0)

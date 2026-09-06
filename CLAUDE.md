@@ -369,7 +369,13 @@ place that number lives; everything else derives it.
   names textures `<fbx>_<slot>_AlbedoTransparency`, so a textureless `SHKAF3` is matched to the
   authored `commode1` by `4_SHKAF3_AlbedoTransparency`, and 20 of 30 textureless names line up
   that way — and a textureless material with no twin is left alone, because ten of them have none
-  and some trim is painted white on purpose. 117 checks.
+  and some trim is painted white on purpose. And it asks WHICH SOURCE first: an object whose
+  materials all live inside a model file is a model instance dragged from the FBX, whose embedded
+  materials carry no texture in this pack — the finished parts sit beside it in `walls prefabs/`
+  with `wallpaper3` and `white` on them — so that is named before any single slot is blamed, and a
+  slot name with fewer than three letters proposes nothing, because this pack has wall slots 1-6
+  and window materials 1-4 named after a different FBX and matching those to each other offered
+  window glass for a door wall. 120 checks.
 
 All ten run in CI (`.github/workflows/determinism.yml`). Run them locally before
 pushing; they need nothing but a shell (and `python3` for the roster checks).

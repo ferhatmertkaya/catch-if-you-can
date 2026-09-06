@@ -107,6 +107,8 @@ namespace CatchIfYouCan.EditorTools
                 return;
             }
 
+            ReportModelSource(renderers, sb);
+
             for (int r = 0; r < renderers.Length; r++)
             {
                 MeshRenderer renderer = renderers[r];
@@ -149,6 +151,69 @@ namespace CatchIfYouCan.EditorTools
             sb.AppendLine();
         }
 
+        /// <summary>
+        /// Says when every material on this object comes out of a model file.
+        ///
+        /// <para>
+        /// This is the first thing to check and the cheapest thing to fix. A model dragged from
+        /// the project window is a MODEL INSTANCE: its renderers use the materials embedded in
+        /// the FBX, which in this pack carry no textures at all. The pack's own prefabs, beside
+        /// the FBX in <c>walls prefabs/</c>, carry the authored materials instead - prefab 1 uses
+        /// blue, door detail, wallpaper3 and white, none of which the FBX knows about.
+        /// </para>
+        /// <para>
+        /// So a wall that came from the FBX is not a broken material assignment. It is the wrong
+        /// source, and no material swap is needed to fix it: use the prefab.
+        /// </para>
+        /// </summary>
+        private static void ReportModelSource(MeshRenderer[] renderers, StringBuilder sb)
+        {
+            int fromModel = 0, total = 0;
+
+            for (int r = 0; r < renderers.Length; r++)
+            {
+                Material[] slots = renderers[r].sharedMaterials;
+                for (int s = 0; s < slots.Length; s++)
+                {
+                    if (slots[s] == null)
+                        continue;
+
+                    total++;
+                    if (IsModelFile(AssetDatabase.GetAssetPath(slots[s])))
+                        fromModel++;
+                }
+            }
+
+            if (total == 0 || fromModel < total)
+                return;
+
+            sb.AppendLine("   >>> MODELL-INSTANZ: alle " + total + " Materialien liegen IM " +
+                          "Modell (FBX), nicht als eigene Assets.");
+            sb.AppendLine("       Das ist kein kaputtes Material, sondern die falsche Quelle. " +
+                          "Die eingebetteten");
+            sb.AppendLine("       FBX-Materialien dieses Pakets haben keine Texturen; die " +
+                          "fertigen Wandteile liegen");
+            sb.AppendLine("       daneben in 'walls prefabs/' und tragen wallpaper3, white und " +
+                          "die Tuermaterialien.");
+            sb.AppendLine("       ZUERST das PREFAB statt der FBX in die Szene ziehen - dann " +
+                          "eruebrigt sich alles");
+            sb.AppendLine("       Weitere unten.");
+            sb.AppendLine();
+        }
+
+        private static bool IsModelFile(string path)
+        {
+            if (string.IsNullOrEmpty(path))
+                return false;
+
+            string lower = path.ToLowerInvariant();
+            return lower.EndsWith(".fbx", StringComparison.Ordinal) ||
+                   lower.EndsWith(".obj", StringComparison.Ordinal) ||
+                   lower.EndsWith(".blend", StringComparison.Ordinal) ||
+                   lower.EndsWith(".dae", StringComparison.Ordinal) ||
+                   lower.EndsWith(".max", StringComparison.Ordinal);
+        }
+
         private static void Describe(Material material, int slot,
             Dictionary<string, List<Material>> bySlotName, StringBuilder sb,
             ref int white, ref int lost, ref int nonUrp)
@@ -189,6 +254,18 @@ namespace CatchIfYouCan.EditorTools
             // No base map. Which of the two reasons applies is decided by looking for the
             // authored twin, not by the name looking innocent.
             sb.AppendLine("           BaseMap  : KEINE - zeichnet einfarbig");
+
+            if (IsTooWeakToMatch(material.name.Trim()))
+            {
+                white++;
+                sb.AppendLine("           -> Der Slot heisst '" + material.name + "'. Ein " +
+                              "blosser Zahlenname beweist keine Zuordnung:");
+                sb.AppendLine("              dieses Paket hat Wand-Slots 1-6 UND " +
+                              "Fenstermaterialien 1-4 aus einer anderen FBX.");
+                sb.AppendLine("              Es wird nichts vorgeschlagen. Kommt das Teil aus " +
+                              "einer FBX, siehe oben.");
+                return;
+            }
 
             List<Material> twins = Twins(material.name, bySlotName);
             if (twins == null || twins.Count == 0)
@@ -297,8 +374,30 @@ namespace CatchIfYouCan.EditorTools
             if (string.IsNullOrEmpty(materialName))
                 return null;
 
-            bySlotName.TryGetValue(materialName.Trim(), out List<Material> twins);
+            string name = materialName.Trim();
+
+            // A bare number is not evidence of anything. This pack has slots called 1 to 6 on
+            // the wall meshes AND materials called 1 to 4 for the windows, named after a
+            // completely different FBX - matching those to each other proposed window glass for
+            // a door wall, which is the correspondence being taken for a law. A name has to
+            // carry something of its own before it can prove a match.
+            if (IsTooWeakToMatch(name))
+                return null;
+
+            bySlotName.TryGetValue(name, out List<Material> twins);
             return twins;
+        }
+
+        /// <summary>Digits and punctuation alone say nothing about which surface this is.</summary>
+        private static bool IsTooWeakToMatch(string name)
+        {
+            for (int i = 0; i < name.Length; i++)
+            {
+                if (char.IsLetter(name[i]))
+                    return name.Length < 3;
+            }
+
+            return true;
         }
 
         private static string Path(GameObject go)

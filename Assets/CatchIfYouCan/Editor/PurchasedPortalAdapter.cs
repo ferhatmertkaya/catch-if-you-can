@@ -320,7 +320,7 @@ namespace CatchIfYouCan.EditorTools
             // overwritten on the first frame of play.
             int portals = 0;
             foreach (LobbyPortal lobbyPortal in
-                     UnityEngine.Object.FindObjectsByType<LobbyPortal>(FindObjectsSortMode.None))
+                     UnityEngine.Object.FindObjectsByType<LobbyPortal>(FindObjectsInactive.Include))
             {
                 SerializedObject so = new SerializedObject(lobbyPortal);
                 if (!WriteStyle(so, energy, mask, spark))
