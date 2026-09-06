@@ -850,3 +850,44 @@ So the two problems have to be settled in the right order: measure the wall
 (`Catch If You Can/Lobby/Portalwand messen`), decide how the portal gets a wall it can cut, and
 only then scale — or accept that the portal wall becomes a dedicated object sized in metres,
 independent of the module grid, which is what `wallCollider` is for.
+
+## Applying the factor
+
+Measured: clear height **3.92 m**. Wanted: **2.95 m**. Factor **2.95 / 3.92 = 0.752551**, which is
+the 0.7526 the measurement produced — the quotient is written rather than the rounded result, so
+the two numbers cannot drift apart later. Over the room's full height the difference is 0.2 mm.
+
+`Catch If You Can/Lobby/Raum skalieren` creates `HQ_ROOM_SCALE_ROOT` at the origin, unrotated and
+unscaled, parents every `HQ_*` root and `FLOOR_Lobby_01` under it, sets one uniform scale, and
+then moves the root vertically so the finished floor top lands at world Y = 0. It refuses in two
+cases and reports rather than claims in a third:
+
+- **The room is no longer the room that was measured.** A factor is only valid for the
+  measurement it came from. Applied to a room somebody has since rebuilt it is simply a wrong
+  number, and a uniformly wrong room is the hardest kind of wrong to see. So it re-measures
+  first and stops if the clear height has moved more than 5 cm from 3.92.
+- **`HQ_ROOM_SCALE_ROOT` already exists.** A second run squares the factor: 0.7526 becomes
+  0.5664, and the room ends up half its original height instead of three quarters.
+- **The result is measured, not computed.** After scaling it measures the clear height and the
+  floor top again and prints "erreicht" or "NICHT ERREICHT" against the target. Door and window
+  heights are read off the per-source listing, not multiplied out of the factor.
+
+Reparenting goes through `Undo.SetTransformParent`, which preserves the world transform, and
+every root's world position, rotation and lossy scale is re-measured afterwards. A drift is
+reported and never silently corrected — a manual correction hides the bad reparent that caused
+it. Only the root is given a scale; scaling individual pieces is the distortion that was
+explicitly ruled out. The scene is left dirty rather than saved.
+
+### What the room shrinking leaves behind
+
+The room gets smaller. The things standing *in* it do not, because they are excluded on purpose:
+`Lobby_PlayerSpawn`, the three lights, `Lobby_MirrorCorner`, `Lobby_Armchair`,
+`Lobby_AntiqueTable`, `Lobby_InvestigationBoard`, `Lobby_MoonShaft`, `Lobby_Window_Blocker` and
+`Lobby_Portal` all sit under `MainMenu_Lobby`.
+
+**No choice of pivot fixes this.** They are spread across the room, and one uniform factor can
+hold exactly one point still. Keeping the spawn in place puts the portal in the wrong wall;
+keeping the portal in place moves the spawn. The tool therefore prints, for every direct child of
+`MainMenu_Lobby`, the position the same map would give it — and applies none of them. Moving the
+spawn is a decision about where the player stands; moving the portal is a decision about a
+doorway that has no wall to cut yet anyway.

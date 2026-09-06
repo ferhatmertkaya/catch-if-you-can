@@ -1024,7 +1024,7 @@ else
   fi
 
   # Ziel geteilt durch gemessen. Kein Literal, das wie ein Faktor aussieht.
-  if code "$SCALEAUDIT" | grep -qE 'Targets\[i\][[:space:]]*/[[:space:]]*clear'; then
+  if code "$SCALEAUDIT" | grep -qE 'Targets\[i\][[:space:]]*/[[:space:]]*r\.ClearHeight'; then
     ok "der Faktor ist ein Verhaeltnis, kein geratener Wert"
   else
     bad "der Faktor ist ein Verhaeltnis, kein geratener Wert" \
@@ -1060,6 +1060,111 @@ else
     bad "der Raum-Massstab nennt die Folge fuer das Portal" \
         "die Oeffnung skaliert nicht mit, die Wandmodule schon - das Problem wird kleiner " \
         "skaliert, nicht geloest"
+  fi
+fi
+
+# ---- eine Messung, von beiden Werkzeugen benutzt --------------------------------------------
+# Zwei Kopien von "wie hoch ist dieser Raum" waeren sich an dem Tag einig, an dem sie
+# geschrieben wurden, und wuerden beim ersten Korrigieren auseinanderlaufen - lautlos, weil der
+# Anwender dann mit einem Faktor skaliert, den die Messung nie vorgeschlagen hat.
+MEAS="$EDT/HQRoomMeasurement.cs"
+APPLY="$EDT/HQRoomScaleApply.cs"
+if [ ! -f "$MEAS" ] || [ ! -f "$APPLY" ]; then
+  bad "Messung und Anwendung teilen sich eine Implementierung" "erwartet $MEAS und $APPLY"
+  bad "der angewendete Faktor ist abgeleitet, nicht getippt" "Datei fehlt"
+  bad "ein veraenderter Raum bricht die Skalierung ab" "Datei fehlt"
+  bad "zweimal skalieren wird abgelehnt" "Datei fehlt"
+  bad "das Umhaengen wird nachgemessen statt behauptet" "Datei fehlt"
+  bad "eine Verschiebung wird gemeldet, nicht von Hand korrigiert" "Datei fehlt"
+  bad "das Ergebnis wird nachgemessen, nicht behauptet" "Datei fehlt"
+  bad "nur die Wurzel bekommt einen Massstab" "Datei fehlt"
+  bad "die Szene wird nicht selbst gespeichert" "Datei fehlt"
+  bad "was neben dem Raum stehen bleibt, wird genannt und nicht bewegt" "Datei fehlt"
+else
+  if code "$APPLY" | grep -qE 'HQRoomMeasurement\.Measure' \
+     && code "$EDT/HQRoomScaleAudit.cs" | grep -qE 'HQRoomMeasurement\.Measure'; then
+    ok "Messung und Anwendung teilen sich eine Implementierung"
+  else
+    bad "Messung und Anwendung teilen sich eine Implementierung" \
+        "eine zweite Kopie derselben Messung driftet lautlos auseinander"
+  fi
+
+  # Ziel geteilt durch gemessen, als Quotient im Code. Ein getipptes 0.7526 haette keine
+  # Herkunft mehr, sobald eine der beiden Zahlen sich aendert.
+  if code "$APPLY" | grep -qE 'TargetClearHeight[[:space:]]*/[[:space:]]*ExpectedClearHeight'; then
+    ok "der angewendete Faktor ist abgeleitet, nicht getippt"
+  else
+    bad "der angewendete Faktor ist abgeleitet, nicht getippt" \
+        "0.7526 ohne Herkunft ist beim naechsten Umbau einfach eine falsche Zahl"
+  fi
+
+  # Ein Faktor gilt nur fuer die Messung, aus der er stammt.
+  if code "$APPLY" | grep -qE 'drift[[:space:]]*>[[:space:]]*PreconditionTolerance'; then
+    ok "ein veraenderter Raum bricht die Skalierung ab"
+  else
+    bad "ein veraenderter Raum bricht die Skalierung ab" \
+        "auf einen umgebauten Raum angewendet ist der Faktor schlicht falsch"
+  fi
+
+  # Zweimal angewendet quadriert er sich: 0.7526 wird 0.5664, und der Raum ist dann halb so
+  # hoch wie gewollt statt drei Viertel.
+  if code "$APPLY" | grep -qE 'ABGEBROCHEN.*gibt es schon'; then
+    ok "zweimal skalieren wird abgelehnt"
+  else
+    bad "zweimal skalieren wird abgelehnt" "ein zweiter Lauf quadriert den Faktor"
+  fi
+
+  if code "$APPLY" | grep -qE 'Undo\.SetTransformParent'; then
+    ok "das Umhaengen wird nachgemessen statt behauptet"
+  else
+    bad "das Umhaengen wird nachgemessen statt behauptet" \
+        "SetTransformParent haelt die Welttransformation - das zu sagen ist nicht dasselbe " \
+        "wie es geprueft zu haben"
+  fi
+
+  if code "$APPLY" | grep -qE 'NICHT von Hand korrigiert'; then
+    ok "eine Verschiebung wird gemeldet, nicht von Hand korrigiert"
+  else
+    bad "eine Verschiebung wird gemeldet, nicht von Hand korrigiert" \
+        "eine Handkorrektur verdeckt das schlechte Umhaengen, das sie noetig gemacht hat"
+  fi
+
+  # Kein "fertig" ohne Nachmessung. Das ist die eine Zusage, die der Auftrag ausdruecklich
+  # verlangt hat.
+  if code "$APPLY" | grep -qE 'NICHT ERREICHT' \
+     && code "$APPLY" | grep -qE 'heightMiss[[:space:]]*<=[[:space:]]*ResultTolerance'; then
+    ok "das Ergebnis wird nachgemessen, nicht behauptet"
+  else
+    bad "das Ergebnis wird nachgemessen, nicht behauptet" \
+        "eine erreichte Hoehe muss gemessen sein, nicht aus dem Faktor gerechnet"
+  fi
+
+  # Genau eine Stelle setzt einen Massstab, und das ist die Wurzel. Einzelne Teile zu
+  # skalieren waere das Verzerren, das ausdruecklich verboten war.
+  scales=$(code "$APPLY" | grep -cE 'localScale[[:space:]]*=' || true)
+  rootscales=$(code "$APPLY" | grep -cE 'root\.transform\.localScale[[:space:]]*=' || true)
+  if [ "$scales" = "$rootscales" ] && [ "$rootscales" -gt 0 ]; then
+    ok "nur die Wurzel bekommt einen Massstab"
+  else
+    bad "nur die Wurzel bekommt einen Massstab" \
+        "$scales Zuweisungen, davon $rootscales an der Wurzel - einzelne Teile zu skalieren " \
+        "verzerrt sie gegeneinander"
+  fi
+
+  if code "$APPLY" | grep -qE 'EditorSceneManager\.SaveScene'; then
+    bad "die Szene wird nicht selbst gespeichert" \
+        "das Ergebnis gehoert angesehen, bevor es in der Datei steht"
+  else
+    ok "die Szene wird nicht selbst gespeichert"
+  fi
+
+  # Der Raum schrumpft, was darin steht nicht. Das ist die Folge, die im Auftrag fehlt.
+  if code "$APPLY" | grep -qE 'ReportStrandedAnchors' \
+     && code "$APPLY" | grep -qE 'NICHTS DAVON WURDE ANGEWENDET'; then
+    ok "was neben dem Raum stehen bleibt, wird genannt und nicht bewegt"
+  else
+    bad "was neben dem Raum stehen bleibt, wird genannt und nicht bewegt" \
+        "Spawn, Lichter, Moebel und Portal schrumpfen nicht mit und stehen danach falsch"
   fi
 fi
 

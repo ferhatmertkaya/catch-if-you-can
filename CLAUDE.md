@@ -200,7 +200,7 @@ place that number lives; everything else derives it.
   `AddComponent`, one line above the `SetParent` that decides the scene — every runtime manager
   is parented before its component is added, and a rejected floor is named together with the
   scene that owns it, because "no floor" covered both an empty ray and a house in the wrong
-  scene and those need different fixes. 220 checks.
+  scene and those need different fixes. 230 checks.
 
 - `Scripts/check_agent_architecture.sh` — the roster holds 40 unique roles with
   every field, the roster and `AGENT_OWNERSHIP.md` name the same roles, the
