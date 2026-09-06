@@ -29,6 +29,9 @@ namespace CatchIfYouCan.Interaction
     [DisallowMultipleComponent]
     [AddComponentMenu("Catch If You Can/Lobby Investigation Board")]
     public sealed class LobbyInvestigationBoard : MonoBehaviour, IInteractable
+#if UNITY_EDITOR
+        , Art.IEditorPreviewBuildable
+#endif
     {
         [Header("Interaction")]
         [Tooltip("Reach, in metres. Matches the other lobby interactables rather than " +
@@ -99,6 +102,21 @@ namespace CatchIfYouCan.Interaction
         {
             Build();
         }
+
+#if UNITY_EDITOR
+        /// <summary>
+        /// The same Build the game runs. It makes a board and a trigger and nothing else - no
+        /// screen is opened until somebody interacts with it, which nobody does in Edit Mode.
+        /// </summary>
+        void Art.IEditorPreviewBuildable.BuildEditorPreview() => Build();
+
+        void Art.IEditorPreviewBuildable.ForgetEditorPreview()
+        {
+            _built = false;
+            _surfaceRenderer = null;
+            _surfaceMaterial = null;
+        }
+#endif
 
         private void OnDestroy()
         {

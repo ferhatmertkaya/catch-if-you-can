@@ -576,3 +576,41 @@ it at the root.
 | `CIYC_MainMenu_Corridor` | prefab instance (+ an added `Area Light`) | — | **nothing** | UNCLEAR — the cinematic set, not the walkable lobby, and no group is clearly right |
 
 `EventSystem` is a third empty leftover: a Transform and no EventSystem component.
+
+
+## Authoring previews for the runtime-built props
+
+`Lobby bearbeiten` now also builds the four lobby objects that have no geometry until the game
+runs, so the complete room can be decorated in Edit Mode.
+
+It asks the **same builders**. `MirrorCorner`, `RoomProp` and `LobbyInvestigationBoard` each
+expose one editor-only entry point through `IEditorPreviewBuildable`; there is no second,
+editor-side reconstruction of the mirror or the board, because that would be a second
+implementation of the same room and would drift the first time a measurement changed in one of
+them. This project has made that mistake with two flashlights and two inventories already.
+
+| object | builder | what the preview reuses | difference from runtime |
+|---|---|---|---|
+| `Lobby_AntiqueTable` | `RoomProp` | the same `Resources` prefab and fit | none |
+| `Lobby_Armchair` | `RoomProp` | the same `Resources` prefab and fit | none |
+| `Lobby_InvestigationBoard` | `LobbyInvestigationBoard` | the same frame, surface and rail build | none |
+| `Lobby_MirrorCorner` | `MirrorCorner` | the same frame, glass, lamp and fill | **no reflection camera, no RenderTexture** |
+
+The mirror is the only one that differs, and only there: `Build` took a `withReflection` flag,
+so the order and the measurements stay in one method and the preview simply does not call
+`BuildCamera`. Nothing renders per repaint and no RenderTexture is allocated.
+
+**Previews can never become content.** Every object a preview creates is renamed with the prefix
+`__EDITOR_PREVIEW_` and flagged `HideFlags.DontSave`, which keeps it out of the scene file no
+matter how the scene is saved. They are also removed explicitly in `sceneSaving` — two locks, not
+one — and rebuilt in `sceneSaved`.
+
+**And they are gone before Play.** `DontSave` keeps an object out of the *file* but not out of
+Play mode, and a preview that survived would stand beside the one the runtime builds: two
+armchairs, two mirrors, the second built by an editor. `ExitingEditMode` removes them first, then
+switches the room off; `EnteredEditMode` puts both back. Which objects are new is decided by
+snapshotting the holder's children before and after, not by trusting the builders to follow a
+naming convention they know nothing about.
+
+Removal also calls `ForgetEditorPreview`, so the `_built` guard is cleared and switching the view
+back on rebuilds rather than showing an empty holder again.

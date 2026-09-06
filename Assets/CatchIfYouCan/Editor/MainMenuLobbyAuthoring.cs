@@ -75,6 +75,11 @@ namespace CatchIfYouCan.EditorTools
             Apply(lobby, Editing);
 
             if (Editing)
+                BuildPreviews(lobby);
+            else
+                RemovePreviews(lobby);
+
+            if (Editing)
             {
                 Selection.activeGameObject = lobby;
                 SceneView.lastActiveSceneView?.FrameSelected();
@@ -91,6 +96,128 @@ namespace CatchIfYouCan.EditorTools
         {
             Menu.SetChecked(MenuPath, Editing);
             return FindLobby() != null;
+        }
+
+        /// <summary>
+        /// Marks everything an authoring preview creates, so it can never be mistaken for the
+        /// real thing and can never end up in the file.
+        /// </summary>
+        private const string PreviewPrefix = "__EDITOR_PREVIEW_";
+
+        /// <summary>
+        /// Builds the visible parts of the lobby objects that have none until the game runs.
+        ///
+        /// <para>
+        /// Four of them: the mirror corner, the armchair, the antique table and the
+        /// investigation board carry a script and no renderer, because their geometry is made in
+        /// <c>Start</c>. This asks those same builders for it now, through the one entry point
+        /// they expose for it - not a second reconstruction, which would drift from the real one
+        /// the first time a measurement changed.
+        /// </para>
+        /// <para>
+        /// What comes out is marked and flagged <c>DontSave</c>. That is the guarantee that
+        /// matters: a DontSave object is not written into the scene file, so no amount of
+        /// saving can turn a preview into content, and the mirror's camera - which is the one
+        /// thing the preview does not build - can never be serialised either.
+        /// </para>
+        /// </summary>
+        private static void BuildPreviews(GameObject lobby)
+        {
+            var targets = new List<Art.IEditorPreviewBuildable>();
+            lobby.GetComponentsInChildren(true, targets);
+
+            int built = 0, already = 0;
+
+            for (int i = 0; i < targets.Count; i++)
+            {
+                var component = targets[i] as Component;
+                if (component == null)
+                    continue;
+
+                if (HasPreview(component.transform))
+                {
+                    already++;
+                    continue;
+                }
+
+                // Snapshot first: the builders name their own children, so which objects are new
+                // is decided by comparing, not by trusting a naming convention they do not know
+                // about.
+                var before = new HashSet<Transform>();
+                foreach (Transform child in component.transform)
+                    before.Add(child);
+
+                targets[i].BuildEditorPreview();
+
+                foreach (Transform child in component.transform)
+                {
+                    if (before.Contains(child))
+                        continue;
+
+                    child.name = PreviewPrefix + child.name;
+                    MarkDontSave(child);
+                    built++;
+                }
+            }
+
+            Debug.Log("[CIYC][Lobby] " + built + " Vorschau-Objekte gebaut" +
+                      (already > 0 ? ", " + already + " waren schon da" : "") +
+                      ". Sie heissen " + PreviewPrefix + "* und sind DontSave: sie landen NIE " +
+                      "in der Szenendatei und verschwinden beim Ausschalten und vor Play.");
+        }
+
+        /// <summary>
+        /// Removes every preview and lets the components forget they built one, so switching the
+        /// view back on rebuilds instead of showing an empty holder again.
+        /// </summary>
+        private static int RemovePreviews(GameObject lobby)
+        {
+            var targets = new List<Art.IEditorPreviewBuildable>();
+            lobby.GetComponentsInChildren(true, targets);
+
+            int removed = 0;
+
+            for (int i = 0; i < targets.Count; i++)
+            {
+                var component = targets[i] as Component;
+                if (component == null)
+                    continue;
+
+                bool had = false;
+                for (int c = component.transform.childCount - 1; c >= 0; c--)
+                {
+                    Transform child = component.transform.GetChild(c);
+                    if (!child.name.StartsWith(PreviewPrefix, System.StringComparison.Ordinal))
+                        continue;
+
+                    Object.DestroyImmediate(child.gameObject);
+                    removed++;
+                    had = true;
+                }
+
+                if (had)
+                    targets[i].ForgetEditorPreview();
+            }
+
+            return removed;
+        }
+
+        private static bool HasPreview(Transform holder)
+        {
+            foreach (Transform child in holder)
+            {
+                if (child.name.StartsWith(PreviewPrefix, System.StringComparison.Ordinal))
+                    return true;
+            }
+
+            return false;
+        }
+
+        private static void MarkDontSave(Transform root)
+        {
+            var all = root.GetComponentsInChildren<Transform>(true);
+            for (int i = 0; i < all.Length; i++)
+                all[i].gameObject.hideFlags = HideFlags.DontSave;
         }
 
         private static void Apply(GameObject lobby, bool visible)
@@ -117,7 +244,15 @@ namespace CatchIfYouCan.EditorTools
                 return;
 
             GameObject lobby = FindLobby(scene);
-            if (lobby != null && lobby.activeSelf)
+            if (lobby == null)
+                return;
+
+            // DontSave already keeps these out of the file. Removing them as well means the
+            // saved scene is byte-for-byte what it would have been without the preview, rather
+            // than relying on one flag being right.
+            RemovePreviews(lobby);
+
+            if (lobby.activeSelf)
                 lobby.SetActive(false);
         }
 
@@ -127,8 +262,13 @@ namespace CatchIfYouCan.EditorTools
                 return;
 
             GameObject lobby = FindLobby(scene);
-            if (lobby != null && !lobby.activeSelf)
+            if (lobby == null)
+                return;
+
+            if (!lobby.activeSelf)
                 lobby.SetActive(true);
+
+            BuildPreviews(lobby);
         }
 
         /// <summary>
@@ -149,19 +289,34 @@ namespace CatchIfYouCan.EditorTools
             if (change == PlayModeStateChange.ExitingEditMode)
             {
                 GameObject lobby = FindLobby();
-                if (lobby != null && lobby.activeSelf)
-                {
+                if (lobby == null)
+                    return;
+
+                // The previews go FIRST. DontSave keeps them out of the file but not out of
+                // Play, and a preview that survived into Play would sit beside the one the
+                // runtime builds - two armchairs, two mirrors, and the second one built by an
+                // editor.
+                int removed = RemovePreviews(lobby);
+
+                if (lobby.activeSelf)
                     lobby.SetActive(false);
-                    Debug.Log("[CIYC][Lobby] Fuer Play abgeschaltet - der Raum muss beim " +
-                              "Szenenstart schlafen, sonst laufen sein Mondlicht und seine " +
-                              "Emitter ueber dem Menue an. Nach Play wieder sichtbar.");
-                }
+
+                Debug.Log("[CIYC][Lobby] Fuer Play abgeschaltet und " + removed +
+                          " Vorschau-Objekte entfernt - der Raum muss beim Szenenstart " +
+                          "schlafen, sonst laufen sein Mondlicht und seine Emitter ueber dem " +
+                          "Menue an, und die Laufzeit baut ihre Requisiten selbst. Nach Play " +
+                          "wieder sichtbar.");
             }
             else if (change == PlayModeStateChange.EnteredEditMode)
             {
                 GameObject lobby = FindLobby();
-                if (lobby != null && !lobby.activeSelf)
+                if (lobby == null)
+                    return;
+
+                if (!lobby.activeSelf)
                     lobby.SetActive(true);
+
+                BuildPreviews(lobby);
             }
         }
 

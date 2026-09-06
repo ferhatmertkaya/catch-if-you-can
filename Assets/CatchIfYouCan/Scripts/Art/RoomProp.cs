@@ -26,6 +26,9 @@ namespace CatchIfYouCan.Art
     [DisallowMultipleComponent]
     [AddComponentMenu("Catch If You Can/Room Prop")]
     public sealed class RoomProp : MonoBehaviour
+#if UNITY_EDITOR
+        , IEditorPreviewBuildable
+#endif
     {
         public enum FitAxis
         {
@@ -116,6 +119,21 @@ namespace CatchIfYouCan.Art
         {
             Build();
         }
+
+#if UNITY_EDITOR
+        /// <summary>
+        /// The same Build the game runs. This prop loads a prefab and fits it - there is no
+        /// runtime state in that, so the preview is not a reduced version of anything.
+        /// </summary>
+        void IEditorPreviewBuildable.BuildEditorPreview() => Build();
+
+        void IEditorPreviewBuildable.ForgetEditorPreview()
+        {
+            _built = false;
+            _model = null;
+            FittedSize = Vector3.zero;
+        }
+#endif
 
         private void Build()
         {

@@ -1094,13 +1094,57 @@ else:
 # the user having moved it.
 for forbidden, why in [
         ("AddComponent", "an editing switch adds nothing"),
-        ("DestroyImmediate", "an editing switch deletes nothing"),
         ("localPosition", "an editing switch moves nothing"),
         ("sharedMaterial", "an editing switch repaints nothing")]:
     if auth and forbidden not in auth:
         ok("the lobby switch never touches %s" % forbidden)
     else:
         bad("the lobby switch never touches %s" % forbidden, why)
+
+# It DOES delete now, and it has to: it owns the authoring previews it built. What must hold is
+# that it deletes nothing else. One call site, inside the method that removes previews, guarded
+# by the name test - so an object that is not a preview cannot reach it.
+destroys = len(re.findall(r"Object\.DestroyImmediate\(", auth))
+remove = re.search(r"private static int RemovePreviews.*?\n        \}", auth, re.S)
+rbody = remove.group(0) if remove else ""
+if destroys == 1 and rbody and "Object.DestroyImmediate(" in rbody and \
+        "StartsWith(PreviewPrefix" in rbody:
+    ok("the switch deletes only its own previews, from one guarded call site")
+else:
+    bad("the switch deletes only its own previews, from one guarded call site",
+        "%d DestroyImmediate call(s); authored content must never reach one" % destroys)
+
+# A preview is flagged DontSave, which is what keeps a preview out of the scene file however the
+# scene is saved - the removal on sceneSaving is the second lock, not the only one.
+if "HideFlags.DontSave" in auth and "PreviewPrefix" in auth:
+    ok("previews are marked and flagged DontSave, so they cannot be written into the scene")
+else:
+    bad("previews are marked and flagged DontSave, so they cannot be written into the scene",
+        "an unmarked preview is indistinguishable from authored content the next day")
+
+# And they must be gone before Play, or the runtime builds a second armchair beside the first.
+play = re.search(r"PlayModeStateChange\.ExitingEditMode.*?\n            \}", auth, re.S)
+pbody = play.group(0) if play else ""
+if pbody and "RemovePreviews(lobby)" in pbody:
+    ok("previews are removed before Play, so the runtime builds each prop exactly once")
+else:
+    bad("previews are removed before Play, so the runtime builds each prop exactly once",
+        "DontSave keeps them out of the file but not out of Play")
+
+# The preview asks the SAME builder. A separate editor-side reconstruction of the mirror would
+# be a second implementation of the same room, and would drift on the first measurement change.
+mirror = code("Assets/CatchIfYouCan/Scripts/Art/MirrorCorner.cs") or ""
+if "Build(bool withReflection)" in mirror and "if (withReflection)" in mirror:
+    ok("the mirror preview is the same builder with the reflection left out")
+else:
+    bad("the mirror preview is the same builder with the reflection left out",
+        "a second editor-side mirror is a second implementation of the same room")
+
+if auth and "BuildEditorPreview()" in auth and "new GameObject" not in auth:
+    ok("the editor builds no geometry of its own; it asks the components for theirs")
+else:
+    bad("the editor builds no geometry of its own; it asks the components for theirs",
+        "geometry authored twice drifts the first time one copy changes")
 
 # Found by walking the scene, not with GameObject.Find - that one skips inactive objects, and an
 # inactive object is exactly what this is looking for.

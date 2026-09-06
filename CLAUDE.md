@@ -356,7 +356,13 @@ place that number lives; everything else derives it.
   to sort the hierarchy ticks only what was PROVEN: the default follows the verdict rather than
   being set per branch, proven is kept apart from conditional and from unclear, and moving the
   lobby under a folder is offered conditional because its visibility would then also depend on
-  that folder staying active. 102 checks.
+  that folder staying active. And it holds the authoring previews for those four holders to being
+  the SAME builder: `MirrorCorner.Build` took a `withReflection` flag rather than growing an
+  editor-side twin, the editor makes no geometry of its own, every preview object is prefixed and
+  flagged `HideFlags.DontSave` so it cannot reach the scene file however the scene is saved, the
+  switch deletes only its own previews from one name-guarded call site, and they are removed
+  before Play — `DontSave` keeps an object out of the file but not out of Play, and a surviving
+  preview would stand beside the one the runtime builds. 106 checks.
 
 All ten run in CI (`.github/workflows/determinism.yml`). Run them locally before
 pushing; they need nothing but a shell (and `python3` for the roster checks).

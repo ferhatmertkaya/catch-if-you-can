@@ -78,6 +78,9 @@ namespace CatchIfYouCan.Art
     [DisallowMultipleComponent]
     [AddComponentMenu("Catch If You Can/Mirror Corner")]
     public sealed class MirrorCorner : MonoBehaviour
+#if UNITY_EDITOR
+        , IEditorPreviewBuildable
+#endif
     {
         [Header("Mirror")]
         [Tooltip("Glass size in metres. Small on purpose - it is a corner mirror, not a wall of " +
@@ -269,6 +272,17 @@ namespace CatchIfYouCan.Art
 
         private void Build()
         {
+            Build(withReflection: true);
+        }
+
+        /// <summary>
+        /// <paramref name="withReflection"/> is false only for an authoring preview. Everything
+        /// else is identical, in the same order, from the same measurements - the mirror the
+        /// editor shows is the mirror the game builds, minus the camera and the RenderTexture
+        /// that would otherwise be rendering on every repaint.
+        /// </summary>
+        private void Build(bool withReflection)
+        {
             if (_built)
                 return;
             _built = true;
@@ -289,13 +303,26 @@ namespace CatchIfYouCan.Art
 
             BuildFrame(lit);
             BuildGlass();
-            BuildCamera();
+
+            if (withReflection)
+                BuildCamera();
 
             if (buildLamp)
                 BuildLamp(lit);
             if (buildFill)
                 BuildFill();
         }
+
+#if UNITY_EDITOR
+        void IEditorPreviewBuildable.BuildEditorPreview() => Build(withReflection: false);
+
+        void IEditorPreviewBuildable.ForgetEditorPreview()
+        {
+            _built = false;
+            _surface = null;
+            _glassMaterial = null;
+        }
+#endif
 
         private void BuildFrame(Shader lit)
         {
