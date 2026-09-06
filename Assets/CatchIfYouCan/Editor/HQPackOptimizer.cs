@@ -35,7 +35,7 @@ namespace CatchIfYouCan.EditorTools
         private string _report = "AUDIT druecken. Es wird dabei nichts geaendert.";
         private Vector2 _scroll;
 
-        [MenuItem("Catch If You Can/HQ Assets/Pack Optimizer [REIMPORT]", false, 504)]
+        [MenuItem("Catch If You Can/9. ENTWICKLER - DEBUG/HQ Pack Optimizer [REIMPORT]", false, 940)]
         public static void Open()
         {
             var w = GetWindow<HQPackOptimizer>(true, "HQ Pack Optimizer");

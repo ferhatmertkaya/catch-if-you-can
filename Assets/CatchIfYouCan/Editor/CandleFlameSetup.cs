@@ -57,7 +57,7 @@ namespace CatchIfYouCan.EditorTools
         private static readonly Color FlameTint = new Color(1f, 0.93f, 0.82f, 1f);
         private const float FlameIntensity = 1.8f;
 
-        [MenuItem("Catch If You Can/Assets bauen/Kerzenflammen-Material [SCHREIBT ASSET]", false, 1008)]
+        [MenuItem("Catch If You Can/4. SPIELINHALT/Content/Kerzenflammen-Material [SCHREIBT ASSET]", false, 435)]
         public static void BuildMenuItem()
         {
             var log = new StringBuilder();

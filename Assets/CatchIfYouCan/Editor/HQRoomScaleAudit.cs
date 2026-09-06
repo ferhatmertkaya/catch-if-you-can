@@ -28,12 +28,12 @@ namespace CatchIfYouCan.EditorTools
     /// </summary>
     public static class HQRoomScaleAudit
     {
-        private const string MenuPath = "Catch If You Can/Safe Inspection/Raumgroesse messen [NUR LESEN]";
+        private const string MenuPath = "Catch If You Can/1. LOBBY/Raumgroesse messen [NUR LESEN]";
 
         /// <summary>Ceiling targets to price, in metres of clear height.</summary>
         private static readonly float[] Targets = { 2.80f, 2.95f, 3.10f };
 
-        [MenuItem(MenuPath, false, 109)]
+        [MenuItem(MenuPath, false, 102)]
         private static void Measure()
         {
             var sb = new StringBuilder();

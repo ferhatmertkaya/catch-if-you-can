@@ -67,14 +67,14 @@ namespace CatchIfYouCan.EditorTools
         private Vector2 _scroll;
         private Classification _classified;
 
-        [MenuItem("Catch If You Can/Safe Inspection/HQ-Paket pruefen (Fenster) [NUR LESEN]", false, 101)]
+        [MenuItem("Catch If You Can/2. HQ MODULAR HOUSE/Alle HQ-Bauteile pruefen [NUR LESEN]", false, 201)]
         public static void OpenAudit()
         {
             var w = GetWindow<ModularInteriorTools>(true, "Modularer Innenausbau");
             w.minSize = new Vector2(620f, 520f);
         }
 
-        [MenuItem("Catch If You Can/Safe Inspection/HQ Architektur-Forensik: interior [NUR LESEN]", false, 102)]
+        [MenuItem("Catch If You Can/9. ENTWICKLER - DEBUG/Architecture Forensics/interior [NUR LESEN]", false, 900)]
         public static void OpenForensicsInterior()
         {
             var w = GetWindow<ModularInteriorTools>(true, "Modularer Innenausbau");
@@ -83,7 +83,7 @@ namespace CatchIfYouCan.EditorTools
             w._report = MeasureArchitecture(w._packFolder);
         }
 
-        [MenuItem("Catch If You Can/Safe Inspection/HQ Architektur-Forensik: ganzes Paket [NUR LESEN]", false, 103)]
+        [MenuItem("Catch If You Can/9. ENTWICKLER - DEBUG/Architecture Forensics/ganzes Paket [NUR LESEN]", false, 901)]
         public static void OpenForensicsFullPackage()
         {
             var w = GetWindow<ModularInteriorTools>(true, "Modularer Innenausbau");
@@ -92,7 +92,7 @@ namespace CatchIfYouCan.EditorTools
             w._report = MeasureArchitecture(w._packFolder);
         }
 
-        [MenuItem("Catch If You Can/Safe Inspection/Umgebung pruefen [NUR LESEN]", false, 104)]
+        [MenuItem("Catch If You Can/9. ENTWICKLER - DEBUG/External Assets/Umgebung pruefen [NUR LESEN]", false, 961)]
         public static void OpenValidate()
         {
             var w = GetWindow<ModularInteriorTools>(true, "Modularer Innenausbau");

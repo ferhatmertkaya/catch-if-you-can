@@ -937,14 +937,31 @@ for forbidden, why in [
     else:
         bad("the piece browser does not call %s" % forbidden.rstrip("("), why)
 
-# Nothing is scaled. The audit found the wall pieces share one height and a module ladder, so
-# there is no scale to correct - and correcting one without proof is the rule this pass exists
-# under.
-if browser and "localScale =" not in browser:
-    ok("the piece browser never rescales a purchased piece")
+# The purchased PIECE is never scaled. This was "nothing is scaled at all", and that was the
+# right rule while there was no measured game scale to place at: the audit found the wall pieces
+# share one height and a module ladder, so any per-piece correction would have been invented, and
+# scaling to make pieces match is how a mismatch becomes a mystery.
+#
+# There is a measured one now - 2.95 / 3.92, from the lobby's own clear height - and it goes on a
+# CIYC WRAPPER, once, uniformly, from HQScale. The rule is therefore sharpened rather than
+# dropped: the vendor instance's own transform stays at 1, and no scale is ever derived from
+# measuring a piece.
+scale_writes = [l.strip() for l in browser.split("\n") if "localScale =" in l]
+on_instance = [l for l in scale_writes if "instance." in l or "plain." in l]
+from_measurement = [l for l in scale_writes if "bounds" in l.lower() or "Size" in l]
+if not on_instance and not from_measurement:
+    ok("the piece browser never rescales the purchased piece itself (%d wrapper write(s))"
+       % len(scale_writes))
 else:
-    bad("the piece browser never rescales a purchased piece",
-        "scaling to make pieces match hides whether they were ever mismatched")
+    bad("the piece browser never rescales the purchased piece itself",
+        (["on the vendor instance: " + l for l in on_instance] +
+         ["derived from measuring the piece: " + l for l in from_measurement]))
+
+if not scale_writes or all("HQScale.Factor" in l for l in scale_writes):
+    ok("any scale the browser writes comes from the one measured factor")
+else:
+    bad("any scale the browser writes comes from the one measured factor",
+        [l for l in scale_writes if "HQScale.Factor" not in l])
 
 # A multiple of the module width is a DESIGNED size. Prefab 15 is exactly twice the module and
 # 16 exactly three times; marking those oversized and shrinking them would break a wall that was

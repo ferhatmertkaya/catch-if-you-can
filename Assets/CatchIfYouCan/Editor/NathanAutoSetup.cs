@@ -88,7 +88,7 @@ namespace CatchIfYouCan.EditorTools
         }
 
         /// <summary>Lets the safety net run again without restarting the editor.</summary>
-        [MenuItem("Catch If You Can/Assets bauen/Nathan neu bauen, falls fehlend [SCHREIBT ASSET]", false, 1011)]
+        [MenuItem("Catch If You Can/4. SPIELINHALT/Characters/Nathan neu bauen, falls fehlend [SCHREIBT ASSET]", false, 404)]
         private static void ForceRetry()
         {
             SessionState.SetBool(AttemptedKey, false);

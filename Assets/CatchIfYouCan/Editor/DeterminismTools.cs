@@ -21,7 +21,7 @@ namespace CatchIfYouCan.EditorTools
         private const string GoldenTablePath =
             "Assets/CatchIfYouCan/Scripts/Procedural/Deterministic/GoldenSeedTable.cs";
 
-        [MenuItem(MenuRoot + "Assets bauen/Golden Seeds erzeugen [SCHREIBT CODE]", false, 1013)]
+        [MenuItem(MenuRoot + "9. ENTWICKLER - DEBUG/Determinism/Golden Seeds erzeugen [SCHREIBT CODE]", false, 913)]
         public static void GenerateGoldenSeeds()
         {
             bool proceed = EditorUtility.DisplayDialog(
@@ -42,7 +42,7 @@ namespace CatchIfYouCan.EditorTools
                       $"{GenerationVersion.Current}: {GoldenTablePath}");
         }
 
-        [MenuItem(MenuRoot + "Safe Inspection/Golden Seeds pruefen [NUR LESEN]", false, 111)]
+        [MenuItem(MenuRoot + "9. ENTWICKLER - DEBUG/Determinism/Golden Seeds pruefen [NUR LESEN]", false, 910)]
         public static void ValidateGoldenSeeds()
         {
             var content = ContentSnapshot.CreateFallback();
@@ -89,10 +89,10 @@ namespace CatchIfYouCan.EditorTools
                 "GenerationVersion and regenerate the table deliberately.", "OK");
         }
 
-        [MenuItem(MenuRoot + "Safe Inspection/Zwei Layouts vergleichen [NUR LESEN]", false, 112)]
+        [MenuItem(MenuRoot + "9. ENTWICKLER - DEBUG/Determinism/Zwei Layouts vergleichen [NUR LESEN]", false, 911)]
         public static void OpenCompareWindow() => LayoutCompareWindow.Open();
 
-        [MenuItem(MenuRoot + "Safe Inspection/Layout-Bericht ausgeben [NUR LESEN]", false, 113)]
+        [MenuItem(MenuRoot + "9. ENTWICKLER - DEBUG/Determinism/Layout-Bericht ausgeben [NUR LESEN]", false, 912)]
         public static void PrintLayoutReport()
         {
             var layout = HouseLayoutBuilder.Generate(

@@ -35,7 +35,7 @@ namespace CatchIfYouCan.EditorTools
     {
         private const string PackRoot = "Assets/HQ Modular House";
 
-        [MenuItem("Catch If You Can/Safe Inspection/HQ Material-Doktor (Auswahl) [NUR LESEN]", false, 100)]
+        [MenuItem("Catch If You Can/2. HQ MODULAR HOUSE/Materialien pruefen (Auswahl) [NUR LESEN]", false, 204)]
         private static void Diagnose()
         {
             GameObject[] selection = Selection.gameObjects;

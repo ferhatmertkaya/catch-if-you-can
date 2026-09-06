@@ -17,7 +17,7 @@ namespace CatchIfYouCan.EditorTools
         private const string GhostMaterialPath = "Assets/CatchIfYouCan/Materials/Ghost_RiggedDissolve.mat";
         private const string MonsterPrefabsRoot = "Assets/CatchIfYouCan/Prefabs/Ghost/AllMonsters";
 
-        [MenuItem("Catch If You Can/Debug and Legacy/Integrate External Assets [MASSENAENDERUNG]", false, 1200)]
+        [MenuItem("Catch If You Can/9. ENTWICKLER - DEBUG/Migration/Integrate External Assets [MASSENAENDERUNG]", false, 950)]
         public static void IntegrateExternalAssets()
         {
             if (!DangerousCommandGate.Confirm(

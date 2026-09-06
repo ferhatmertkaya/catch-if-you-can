@@ -38,14 +38,18 @@ namespace CatchIfYouCan.EditorTools
     /// </summary>
     public static class HQRoomScaleApply
     {
-        private const string MenuPath = "Catch If You Can/Scene Authoring/Raum skalieren [UNDO]";
+        private const string MenuPath = "Catch If You Can/1. LOBBY/HQ-Raum skalieren [UNDO]";
         private const string RootName = HQRoomMeasurement.ScaleRootName;
 
-        /// <summary>The clear height the factor was derived from. Verified before applying.</summary>
-        private const float ExpectedClearHeight = 3.92f;
+        /// <summary>
+        /// The clear height the factor was derived from, and the one wanted. Both from
+        /// <see cref="HQScale"/>, which is where the placement wrapper and the migration read
+        /// them too - four copies of one measurement would agree today and diverge the first
+        /// time the room was re-measured.
+        /// </summary>
+        private const float ExpectedClearHeight = HQScale.ReferenceClearHeight;
 
-        /// <summary>The clear height wanted, in metres.</summary>
-        private const float TargetClearHeight = 2.95f;
+        private const float TargetClearHeight = HQScale.TargetClearHeight;
 
         /// <summary>How far the room may have moved since it was measured and still count.</summary>
         private const float PreconditionTolerance = 0.05f;
@@ -56,7 +60,7 @@ namespace CatchIfYouCan.EditorTools
         /// <summary>Derived, never typed. 2.95 / 3.92.</summary>
         private static float Factor => TargetClearHeight / ExpectedClearHeight;
 
-        [MenuItem(MenuPath, false, 301)]
+        [MenuItem(MenuPath, false, 103)]
         private static void Apply()
         {
             var sb = new StringBuilder();

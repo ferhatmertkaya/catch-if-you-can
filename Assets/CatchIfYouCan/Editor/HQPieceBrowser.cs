@@ -41,7 +41,7 @@ namespace CatchIfYouCan.EditorTools
         private bool _onlyReady;
         private float _moduleWidth;
 
-        [MenuItem("Catch If You Can/HQ Assets/Bauteile pruefen und setzen [UNDO]", false, 501)]
+        [MenuItem("Catch If You Can/2. HQ MODULAR HOUSE/Bauteile ansehen und setzen [UNDO]", false, 200)]
         public static void Open()
         {
             var w = GetWindow<HQPieceBrowser>(false, "HQ Bauteile", true);
@@ -128,11 +128,19 @@ namespace CatchIfYouCan.EditorTools
 
                     using (new EditorGUILayout.VerticalScope(GUILayout.Width(110f)))
                     {
-                        if (GUILayout.Button("Setzen"))
-                            Place(piece, false);
+                        // The production button first, and named after what it produces. The
+                        // other two stay because forensics needs them - comparing a corrected
+                        // piece against the vendor's own size is how a wrong factor is caught -
+                        // but a piece placed ORIGINAL no longer matches the room, and that is
+                        // not the button somebody reaches for by accident.
+                        if (GUILayout.Button("Setzen auf CIYC-Spielmass"))
+                            Place(piece, fixPivot: true, gameScale: true);
 
-                        if (GUILayout.Button("Setzen + Pivot fix"))
-                            Place(piece, true);
+                        if (GUILayout.Button("Setzen + Pivot fix (Vendor-Groesse)"))
+                            Place(piece, fixPivot: true, gameScale: false);
+
+                        if (GUILayout.Button("Setzen ORIGINAL (nur zum Vergleichen)"))
+                            Place(piece, fixPivot: false, gameScale: false);
                     }
                 }
 
@@ -181,7 +189,7 @@ namespace CatchIfYouCan.EditorTools
         /// a mismatch into a mystery.
         /// </para>
         /// </summary>
-        private static void Place(Piece piece, bool fixPivot)
+        private static void Place(Piece piece, bool fixPivot, bool gameScale)
         {
             var prefab = AssetDatabase.LoadAssetAtPath<GameObject>(piece.Path);
             if (prefab == null)
@@ -226,6 +234,18 @@ namespace CatchIfYouCan.EditorTools
             {
                 Debug.LogWarning("[CIYC][HQ] " + piece.Name + ": keine sichtbare Geometrie " +
                                  "messbar, der Pivot wurde NICHT korrigiert.");
+            }
+
+            if (gameScale)
+            {
+                // On the WRAPPER, uniformly, once. The purchased prefab inside keeps its own
+                // local values and its prefab link; nothing is applied back to the package.
+                wrapper.transform.localScale = Vector3.one * HQScale.Factor;
+                Debug.Log("[CIYC][HQ] " + piece.Name + " steht auf Spielmass " +
+                          HQScale.Factor.ToString("F6") + " (" +
+                          HQScale.TargetClearHeight.ToString("F2") + " / " +
+                          HQScale.ReferenceClearHeight.ToString("F2") +
+                          "). Das gekaufte Prefab darin ist unveraendert.");
             }
 
             Selection.activeGameObject = wrapper;

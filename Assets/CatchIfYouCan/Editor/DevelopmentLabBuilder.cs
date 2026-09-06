@@ -29,10 +29,10 @@ namespace CatchIfYouCan.EditorTools
     /// </summary>
     public static class DevelopmentLabBuilder
     {
-        [MenuItem("Catch If You Can/Debug and Legacy/Fehlende Lab-Szenen anlegen [SCHREIBT SZENEN]", false, 1205)]
+        [MenuItem("Catch If You Can/9. ENTWICKLER - DEBUG/Lab-Szenen/Fehlende anlegen [SCHREIBT SZENEN]", false, 980)]
         public static void CreateMissingLabScenes() => Create(overwriteExisting: false);
 
-        [MenuItem("Catch If You Can/Debug and Legacy/Alle Lab-Szenen neu bauen [UEBERSCHREIBT]", false, 1206)]
+        [MenuItem("Catch If You Can/9. ENTWICKLER - DEBUG/Lab-Szenen/Alle neu bauen [UEBERSCHREIBT]", false, 981)]
         public static void RebuildAllLabScenes()
         {
             if (!DangerousCommandGate.Confirm(

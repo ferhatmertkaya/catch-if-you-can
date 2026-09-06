@@ -86,7 +86,7 @@ namespace CatchIfYouCan.EditorTools
             AssetDatabase.CreateFolder(parent, path.Substring(slash + 1));
         }
 
-        [MenuItem(MenuRoot + "Assets bauen/Nathan Player Visual [SCHREIBT ASSET]", false, 1012)]
+        [MenuItem(MenuRoot + "4. SPIELINHALT/Characters/Nathan Player Visual [SCHREIBT ASSET]", false, 401)]
         public static void Build()
         {
             var log = new StringBuilder();
@@ -135,7 +135,7 @@ namespace CatchIfYouCan.EditorTools
             Debug.Log(log.ToString());
         }
 
-        [MenuItem(MenuRoot + "Safe Inspection/Nathan pruefen [NUR LESEN]", false, 110)]
+        [MenuItem(MenuRoot + "4. SPIELINHALT/Characters/Nathan pruefen [NUR LESEN]", false, 402)]
         public static void Validate()
         {
             var log = new StringBuilder();

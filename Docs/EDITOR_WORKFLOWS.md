@@ -194,3 +194,102 @@ Diese gelten ab jetzt, und `check_editor_menu.sh` setzt die ersten drei durch:
 5. **Ein Diagnosewerkzeug wird von Anfang an als solches gekennzeichnet**, nicht später
    einsortiert.
 6. **Kein Werkzeug speichert die offene Szene selbst.** Es markiert sie als geändert und sagt es.
+
+---
+
+# Nachtrag: das Menü in seiner heutigen Form
+
+Die sechs Gruppen oben sind ersetzt. Es sind jetzt diese, in dieser Reihenfolge:
+
+```
+Catch If You Can/
+├── 1. LOBBY                    7   den Menü-Raum bearbeiten und messen
+├── 2. HQ MODULAR HOUSE         7   alles, was das gekaufte Paket braucht
+├── 3. PORTAL                   2
+├── 4. SPIELINHALT             14   Characters · Equipment · Ghosts · Content
+├── 5. BUILD                    3
+└── 9. ENTWICKLER - DEBUG      20   Forensik, Determinismus, Migration, Legacy
+```
+
+53 Befehle. Zwei davon sind neu (`HQ-Massstab pruefen`, `Alle HQ-Bauteile auf Spielmass bringen`),
+51 sind dieselben wie vorher, nur woanders.
+
+**Zwei Punkte aus der Vorgabe gibt es nicht, und ich habe sie nicht erfunden:** „Portal prüfen"
+und „Portal reparieren". Hinter „Portal prüfen" stünde dasselbe Werkzeug wie hinter
+„Portalwand messen" — ein Duplikat. Ein „Portal reparieren" gibt es nicht: die fehlende Portalwand
+ist ausdrücklich als eigene Aufgabe zurückgestellt, und ein Menüpunkt, hinter dem nichts steht,
+ist schlimmer als keiner.
+
+---
+
+# Der HQ-Maßstab
+
+## Die Zahl
+
+**2.95 / 3.92 = 0.752551.** Gemessen, nicht gewählt: die von Hand gebaute Lobby stand auf 3.92 m
+lichter Höhe und sollte 2.95 haben. Im Code steht der **Quotient**, nicht die gerundete Zahl, an
+genau einer Stelle: `HQScale`. Der Raum-Skalierer, die Maßstabsprüfung, die Migration und der
+Setz-Knopf lesen alle von dort. Vier Kopien einer Messung wären sich heute einig und liefen beim
+nächsten Nachmessen auseinander — lautlos, weil jedes Werkzeug für sich stimmig bliebe.
+
+## Architektur oder Möbel?
+
+**Nach Ordner, nicht nach Dateiname.** Ein Namens-Klassifikator wurde an diesem Paket gemessen und
+fand **3 von 105** Prefabs: es nummeriert seine Teile durch und nennt sein Glas `Steklo`. Die
+Ordnerstruktur ist das, worin das Paket konsistent ist.
+
+| gilt als Architektur | gilt als Möbel |
+|---|---|
+| `/moduls/`, `/walls prefabs/`, `/walls/`, `/architecture/`, `/wall panel`, `/plinth`, `/customization/` | `/props/`, `/furniture/`, `/library/`, `/decor/` |
+
+Die Form ist **Bestätigung, nicht Entscheidung**: dünn in einer Achse, groß in den beiden anderen.
+Wo Ordner und Form sich widersprechen — ein Bücherregal ist auch dünn, hoch und breit — heißt das
+Ergebnis **UNKLAR** und das Teil wird nicht angefasst. Ein Möbelstück kann schon Realmaß haben;
+eines zu verkleinern, das richtig war, sieht man nie.
+
+**Das Portal ist ausgenommen.** Seine Öffnung ist eine Spielmaß-Größe, keine architektonische.
+
+## Doppelskalierung
+
+Entschieden wird auf **`lossyScale`**, nie auf `localScale`. Ein Vendor-Teil mit `localScale` 1 in
+einem korrigierten Wrapper **ist bereits auf Spielmaß** — sein eigenes Feld sagt das Gegenteil.
+
+Fünf Urteile:
+
+| | |
+|---|---|
+| `[KORREKT ]` | trägt den Faktor selbst oder steht unter einer korrigierten Wurzel |
+| `[ORIGINAL]` | Vendor-Größe, Ordner sagt Architektur, Form passt — **das wird umgestellt** |
+| `[MOEBEL  ]` | wird nie automatisch verkleinert |
+| `[UNKLAR  ]` | genannt, nicht geraten |
+| `[DOPPELT?]` | unter einer korrigierten Wurzel mit abweichendem Maßstab — **bricht die Migration ab** |
+
+Findet die Migration auch nur ein `[DOPPELT?]`, wendet sie **gar nichts** an: solange unklar ist,
+was dort schon einmal angewendet wurde, ist jede weitere Anwendung geraten.
+
+## Die drei Setz-Knöpfe
+
+```
+2. HQ MODULAR HOUSE/Bauteile ansehen und setzen [UNDO]
+```
+
+| Knopf | wofür |
+|---|---|
+| **Setzen auf CIYC-Spielmaß** | der Produktionsweg. Wrapper mit 0.752551, Pivot unten mittig |
+| Setzen + Pivot fix (Vendor-Größe) | Wrapper mit Pivot-Korrektur, ohne Maßstab |
+| Setzen ORIGINAL (nur zum Vergleichen) | das nackte Prefab. Forensik — passt nicht zum Raum |
+
+Der Maßstab sitzt **immer auf dem Wrapper**. Das gekaufte Prefab darin behält seine eigenen
+lokalen Werte und seine Prefab-Verbindung; nichts wird auf das Paket zurückgeschrieben.
+
+## Der Ablauf für neue Teile
+
+```
+1.  2. HQ MODULAR HOUSE/HQ-Massstab pruefen [NUR LESEN]
+2.  Teile setzen mit "Setzen auf CIYC-Spielmass"
+3.  2. HQ MODULAR HOUSE/Alle HQ-Bauteile auf Spielmass bringen [UNDO]   für Altbestand
+```
+
+Schritt 3 misst **immer zuerst** und druckt die vollständige Tabelle in die Konsole. Erst danach
+fragt es, mit den Stückzahlen im Dialog. Nichts ändert sich, bevor die Zahlen gelesen werden
+konnten.

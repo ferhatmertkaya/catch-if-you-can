@@ -203,7 +203,7 @@ place that number lives; everything else derives it.
   scene that owns it, because "no floor" covered both an empty ray and a house in the wrong
   scene and those need different fixes. 235 checks.
 
-- `Scripts/check_editor_menu.sh` — the editor menu stays legible. Fifty-one commands sit in
+- `Scripts/check_editor_menu.sh` — the editor menu stays legible, and the purchased architecture has ONE scale. The game scale is the measured ratio 2.95 / 3.92 in one place, with no tool carrying its own copy; the decision is made on effective world scale rather than `localScale`, because a vendor piece at localScale 1 inside a corrected wrapper IS already corrected and its own field says otherwise; an already-corrected ancestor is recognised and a second application is a named verdict rather than a silent pass; architecture is told from props by FOLDER, since a filename classifier caught 3 of 105 in a pack that numbers its prefabs and calls its glass Steklo; an undecidable piece is reported ambiguous rather than guessed, because a chair may already be at real-world size and shrinking one that was right is invisible; the portal is excluded, its opening being a gameplay dimension; the migration audits before it can apply and converts only original-size pieces; and the correction goes on a CIYC wrapper with nothing applied back to the purchased package. Also the menu itself: Fifty-one commands sit in
   seven named groups with none hiding in another root menu, every one carries a risk tag saying
   what it changes, everything under Safe Inspection is tagged read-only, the pack classifier
   that found 3 of 105 prefabs can no longer write the catalog (one writer, the verified one),
@@ -212,7 +212,7 @@ place that number lives; everything else derives it.
   through the whole scene rather than across its roots so tidying the hierarchy cannot hide it,
   no authoring command saves the open scene behind the user, and the four commands that can
   rewrite the project all go through ONE confirmation that states scope, count, reimport, saving
-  and the way out. 18 checks.
+  and the way out. 30 checks.
 
 - `Scripts/check_agent_architecture.sh` — the roster holds 40 unique roles with
   every field, the roster and `AGENT_OWNERSHIP.md` name the same roles, the
@@ -393,7 +393,7 @@ place that number lives; everything else derives it.
   with `wallpaper3` and `white` on them — so that is named before any single slot is blamed, and a
   slot name with fewer than three letters proposes nothing, because this pack has wall slots 1-6
   and window materials 1-4 named after a different FBX and matching those to each other offered
-  window glass for a door wall. 125 checks.
+  window glass for a door wall. 127 checks.
 
 All eleven run in CI (`.github/workflows/determinism.yml`). Run them locally before
 pushing; they need nothing but a shell (and `python3` for the roster checks).

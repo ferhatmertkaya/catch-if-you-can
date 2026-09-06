@@ -96,7 +96,7 @@ namespace CatchIfYouCan.EditorTools
         private List<Move> _plan;
         private Vector2 _scroll;
 
-        [MenuItem("Catch If You Can/Scene Authoring/Hierarchie sortieren [UNDO]", false, 302)]
+        [MenuItem("Catch If You Can/1. LOBBY/Hierarchie ordnen [UNDO]", false, 104)]
         public static void Open()
         {
             var w = GetWindow<MainMenuHierarchyTool>(false, "Hierarchie", true);

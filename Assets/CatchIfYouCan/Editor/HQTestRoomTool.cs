@@ -35,7 +35,7 @@ namespace CatchIfYouCan.EditorTools
         /// </summary>
         private static readonly Vec3i CellMm = new Vec3i(6000, 3000, 6000);
 
-        [MenuItem("Catch If You Can/HQ Assets/Testraum bauen [AENDERT SZENE]", false, 502)]
+        [MenuItem("Catch If You Can/9. ENTWICKLER - DEBUG/Test Room/Testraum bauen [AENDERT SZENE]", false, 930)]
         public static void BuildTestRoom()
         {
             var catalog = AssetDatabase.LoadAssetAtPath<ModularInteriorCatalog>(
@@ -90,7 +90,7 @@ namespace CatchIfYouCan.EditorTools
             SceneView.lastActiveSceneView?.FrameSelected();
         }
 
-        [MenuItem("Catch If You Can/HQ Assets/Testraum entfernen [UNDO]", false, 503)]
+        [MenuItem("Catch If You Can/9. ENTWICKLER - DEBUG/Test Room/Testraum entfernen [UNDO]", false, 931)]
         public static void Clear()
         {
             // GameObject.Find SKIPS INACTIVE OBJECTS, and a test room switched off to look past

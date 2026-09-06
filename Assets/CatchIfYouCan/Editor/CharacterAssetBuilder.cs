@@ -30,7 +30,7 @@ namespace CatchIfYouCan.EditorTools
         private const string NathanMaterialPath =
             "Assets/CatchIfYouCan/Art/Characters/Nathan/Materials/Nathan_Body.mat";
 
-        [MenuItem("Catch If You Can/Assets bauen/Charakter-Assets [SCHREIBT ASSET]", false, 1005)]
+        [MenuItem("Catch If You Can/4. SPIELINHALT/Characters/Charakter-Assets [SCHREIBT ASSET]", false, 400)]
         public static void BuildCharacterAssets()
         {
             EnsureFolder(Folder);

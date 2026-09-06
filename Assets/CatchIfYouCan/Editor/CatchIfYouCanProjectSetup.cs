@@ -54,7 +54,7 @@ namespace CatchIfYouCan.EditorTools
         // ran Setup Project.
         private static string[] RequiredScenes => Core.CiycScenes.ProductionPaths();
 
-        [MenuItem("Catch If You Can/Debug and Legacy/Setup Project [MASSENAENDERUNG]", false, 1202)]
+        [MenuItem("Catch If You Can/9. ENTWICKLER - DEBUG/Migration/Setup Project [MASSENAENDERUNG]", false, 952)]
         public static void SetupProject()
         {
             if (!DangerousCommandGate.Confirm(

@@ -50,7 +50,7 @@ namespace CatchIfYouCan.EditorTools
         private const string LabelName = "TapToStartText";
         private const string LabelMessage = "TAP ANYWHERE TO START";
 
-        [MenuItem("Catch If You Can/Scene Authoring/Logo und TAP-Text backen [AENDERT SZENE]", false, 304)]
+        [MenuItem("Catch If You Can/1. LOBBY/Logo und TAP-Text backen [AENDERT SZENE]", false, 105)]
         public static void BakeLogoIntoScene()
         {
             var sprite = AssetDatabase.LoadAssetAtPath<Sprite>(LogoPath);

@@ -15,7 +15,7 @@ namespace CatchIfYouCan.EditorTools
         private readonly Dictionary<AudioMixerGroupId, bool> _muteStates = new Dictionary<AudioMixerGroupId, bool>();
         private double _nextRefresh;
 
-        [MenuItem("Catch If You Can/Safe Inspection/Audio Debugger [NUR LESEN]", false, 108)]
+        [MenuItem("Catch If You Can/9. ENTWICKLER - DEBUG/Audio Debugger [NUR LESEN]", false, 970)]
         public static void ShowWindow()
         {
             GetWindow<CatchIfYouCanAudioDebuggerWindow>("CIYC Audio Debugger");

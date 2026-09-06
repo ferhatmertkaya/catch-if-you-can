@@ -60,18 +60,29 @@ EDITOR = "Assets/CatchIfYouCan/Editor"
 paths = []
 for f in glob.glob("Assets/**/*.cs", recursive=True):
     t = code(f) or ""
+
+    # A literal path in the attribute.
     paths += re.findall(r'\[MenuItem\("([^"]+)"', t)
-    for const in re.findall(r'const string MenuPath = "([^"]+)"', t):
-        paths.append(const)
-    root = re.search(r'const string MenuRoot = "([^"]+)"', t)
-    if root:
-        for leaf in re.findall(r'MenuItem\(MenuRoot \+ "([^"]+)"', t):
-            paths.append(root.group(1) + leaf)
 
-GROUPS = ("Safe Inspection", "Scene Authoring", "HQ Assets", "Portal",
-          "Build", "Assets bauen", "Debug and Legacy")
+    # Any constant in the file, so a path held in one is not invisible. Looking only for a
+    # constant NAMED MenuPath is how two commands went unlisted the first time this ran: the
+    # file that declared them called its constants CheckPath and MigratePath.
+    consts = dict(re.findall(r'const string (\w+)\s*=\s*"([^"]+)"', t))
+    for name in re.findall(r'\[MenuItem\((\w+)\s*[,)]', t):
+        if name in consts:
+            paths.append(consts[name])
 
-ours = [p for p in paths if p.startswith("Catch If You Can/")]
+    # A root constant plus a literal leaf.
+    for rootname, leaf in re.findall(r'\[MenuItem\((\w+) \+ "([^"]+)"', t):
+        if rootname in consts:
+            paths.append(consts[rootname] + leaf)
+
+GROUPS = ("1. LOBBY", "2. HQ MODULAR HOUSE", "3. PORTAL", "4. SPIELINHALT",
+          "5. BUILD", "9. ENTWICKLER - DEBUG")
+
+# Deduplicated: a MenuItem validate function ([MenuItem(path, true)]) names the same path as
+# the command it enables, and counting it twice would make the total lie.
+ours = sorted(set(p for p in paths if p.startswith("Catch If You Can/")))
 stray = [p for p in paths if "Catch If You Can" in p and not p.startswith("Catch If You Can/")]
 ungrouped = [p for p in ours if p.split("/")[1] not in GROUPS]
 
@@ -82,9 +93,9 @@ else:
         ["%s - looking under the project's own menu never finds it" % s for s in stray])
 
 if not ungrouped:
-    ok("every command sits in one of the seven groups (%d commands)" % len(ours))
+    ok("every command sits in one of the six groups (%d commands)" % len(ours))
 else:
-    bad("every command sits in one of the seven groups", sorted(ungrouped))
+    bad("every command sits in one of the six groups", sorted(ungrouped))
 
 # ------------------------------------------------------------------ 2. the labels say what happens
 
@@ -93,8 +104,8 @@ unlabelled = []
 for p in ours:
     leaf = p.split("/")[-1]
     group = p.split("/")[1]
-    if group == "Build":
-        continue                      # a build writes only into the build folder
+    if group == "5. BUILD":
+        continue                  # a build writes only into the build folder
     if not re.search(r"\[[A-Z ]+\]$", leaf):
         unlabelled.append(p)
 if not unlabelled:
@@ -102,13 +113,31 @@ if not unlabelled:
 else:
     bad("every command carries a risk tag", sorted(unlabelled))
 
-# Safe Inspection is the one promise the user relies on: click without thinking.
-mislabelled = [p for p in ours
-               if p.split("/")[1] == "Safe Inspection" and not p.endswith("[NUR LESEN]")]
-if not mislabelled:
-    ok("everything under Safe Inspection is tagged read-only")
+# [NUR LESEN] is the one promise the user relies on: click without thinking. So the tag has to
+# be earned - a command carrying it whose file writes is worse than an untagged one, because it
+# is trusted.
+WRITES = ("AssetDatabase.CreateAsset", "AssetDatabase.DeleteAsset", "AssetDatabase.MoveAsset",
+          "AssetDatabase.SaveAssets", "SaveAndReimport", "EditorSceneManager.SaveScene",
+          "PrefabUtility.SaveAsPrefabAsset")
+liars = []
+for f in glob.glob(EDITOR + "/*.cs"):
+    t = code(f) or ""
+    if not re.search(r'\[MenuItem\([^)]*\)\]', t):
+        continue
+    tagged = [p for p in re.findall(r'"([^"]*\[NUR LESEN\])"', t)]
+    if not tagged:
+        continue
+    # only files whose EVERY menu item is read-only can be judged as a whole
+    total = len(re.findall(r'\[MenuItem\(', t))
+    if total != len(tagged):
+        continue
+    hits = [w for w in WRITES if w in t]
+    if hits:
+        liars.append("%s: %s" % (os.path.basename(f), ", ".join(hits)))
+if not liars:
+    ok("nothing tagged [NUR LESEN] writes")
 else:
-    bad("everything under Safe Inspection is tagged read-only", sorted(mislabelled))
+    bad("nothing tagged [NUR LESEN] writes", sorted(liars))
 
 # ------------------------------------------------------------------ 3. one catalog writer
 
@@ -209,6 +238,92 @@ if gates == 1:
     ok("there is exactly one confirmation implementation")
 else:
     bad("there is exactly one confirmation implementation", "%d found" % gates)
+
+# ------------------------------------------------------------------ 8. one HQ scale, one source
+
+scale = code(EDITOR + "/HQScale.cs") or ""
+
+if "TargetClearHeight / ReferenceClearHeight" in scale:
+    ok("the game scale is a measured ratio, not a typed number")
+else:
+    bad("the game scale is a measured ratio, not a typed number",
+        "2.95 / 3.92 keeps the factor and its two inputs from drifting apart")
+
+# A literal 0.7526 anywhere else is a second source that stops tracking the first.
+copies = []
+for f in glob.glob(EDITOR + "/*.cs"):
+    if os.path.basename(f) == "HQScale.cs":
+        continue
+    t = code(f) or ""
+    if re.search(r"0\.75\d{2}f", t):
+        copies.append(os.path.basename(f))
+if not copies:
+    ok("no tool carries its own copy of the factor")
+else:
+    bad("no tool carries its own copy of the factor", sorted(copies))
+
+# localScale alone is the trap: a vendor piece at localScale 1 inside a corrected wrapper is
+# ALREADY at game scale, and its own field says otherwise.
+if "lossyScale" in scale and "EffectiveScale" in scale:
+    ok("the decision is made on effective world scale, not localScale")
+else:
+    bad("the decision is made on effective world scale, not localScale",
+        "a piece inside a corrected wrapper reads as uncorrected on its own field")
+
+if "UnderCorrectedAncestor" in scale and "ScaleRootName" in scale:
+    ok("an already-corrected ancestor is recognised")
+else:
+    bad("an already-corrected ancestor is recognised",
+        "applying 0.7526 to a piece that has it makes it 0.5664")
+
+if "DoubleScaleRisk" in scale:
+    ok("a double scaling is a named verdict, not a silent pass")
+else:
+    bad("a double scaling is a named verdict, not a silent pass")
+
+# The filename classifier was tried on this pack and caught 3 of 105. Folders are what the
+# pack is consistent about.
+if "IsArchitectureByPath" in scale and "ArchitectureFolders" in scale:
+    ok("architecture is told from props by folder, not by filename")
+else:
+    bad("architecture is told from props by folder, not by filename",
+        "this pack numbers its prefabs and calls its glass Steklo")
+
+if "Verdict.Ambiguous" in scale and "return null" in scale:
+    ok("an undecidable piece is reported as ambiguous rather than guessed")
+else:
+    bad("an undecidable piece is reported as ambiguous rather than guessed",
+        "a chair may already be at real-world size; shrinking one that was right is invisible")
+
+if "Lobby_Portal" in scale and "NeverTouch" in scale:
+    ok("the portal is excluded from the architecture scale system")
+else:
+    bad("the portal is excluded from the architecture scale system",
+        "its opening is a gameplay dimension solved independently")
+
+tools_scale = code(EDITOR + "/HQScaleTools.cs") or ""
+if "Verdict.OriginalSize" in tools_scale and "DangerousCommandGate.Confirm" in tools_scale:
+    ok("the migration converts only original-size pieces, after showing the counts")
+else:
+    bad("the migration converts only original-size pieces, after showing the counts")
+
+if "AppendTable" in tools_scale and tools_scale.index("AppendTable") < tools_scale.index("DangerousCommandGate.Confirm"):
+    ok("the migration audits before it can apply")
+else:
+    bad("the migration audits before it can apply", "nothing may change before the table is out")
+
+# The wrapper carries the correction; the purchased prefab is never written back to.
+browser = code(EDITOR + "/HQPieceBrowser.cs") or ""
+if "ApplyPrefabInstance" in browser or "ApplyPrefabInstance" in tools_scale:
+    bad("nothing is applied back to the purchased package",
+        "an override applied to the vendor asset changes the package itself")
+else:
+    ok("nothing is applied back to the purchased package")
+
+if "wrapper.transform.localScale = Vector3.one * HQScale.Factor" in browser:
+    ok("placement puts the correction on the wrapper, not on the vendor piece")
+else:
+    bad("placement puts the correction on the wrapper, not on the vendor piece")
 
 print()
 print("  %d passed, %d failed" % (passed, failed))

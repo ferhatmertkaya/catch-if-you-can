@@ -40,7 +40,7 @@ namespace CatchIfYouCan.EditorTools
 
         private static readonly Color SpectralGreen = new Color32(0x20, 0xBF, 0x5B, 0xFF);
 
-        [MenuItem("Catch If You Can/Scene Authoring/Tuer-Atmosphaere neu bauen [UNDO]", false, 303)]
+        [MenuItem("Catch If You Can/1. LOBBY/Tuer-Atmosphaere neu bauen [UNDO]", false, 106)]
         public static void RebuildDoorAtmosphere()
         {
             var scene = EditorSceneManager.GetActiveScene();

@@ -28,7 +28,7 @@ namespace CatchIfYouCan.EditorTools
     {
         private const string ResourcesRoot = "Assets/CatchIfYouCan/Resources/Ghosts";
 
-        [MenuItem("Catch If You Can/Assets bauen/Geist-Prefabs [SCHREIBT ASSET]", false, 1003)]
+        [MenuItem("Catch If You Can/4. SPIELINHALT/Ghosts/Geist-Prefabs [SCHREIBT ASSET]", false, 420)]
         public static void BuildAll()
         {
             var definitions = GhostDefinitionFactory.CreateAllDefaultGhosts();

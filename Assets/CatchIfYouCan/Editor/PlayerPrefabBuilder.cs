@@ -32,7 +32,7 @@ namespace CatchIfYouCan.EditorTools
         private const string RegistryFolder = "Assets/CatchIfYouCan/Resources";
         private const string RegistryPath = RegistryFolder + "/CIYC_ContentRegistry.asset";
 
-        [MenuItem("Catch If You Can/Assets bauen/Player-Prefab [SCHREIBT ASSET]", false, 1000)]
+        [MenuItem("Catch If You Can/4. SPIELINHALT/Content/Player-Prefab [SCHREIBT ASSET]", false, 431)]
         public static void BuildPlayerPrefab()
         {
             var prefab = Build();
@@ -61,7 +61,7 @@ namespace CatchIfYouCan.EditorTools
             EditorUtility.DisplayDialog("Player Prefab", report, "OK");
         }
 
-        [MenuItem("Catch If You Can/Assets bauen/Content-Registry [SCHREIBT ASSET]", false, 1001)]
+        [MenuItem("Catch If You Can/4. SPIELINHALT/Content/Content-Registry [SCHREIBT ASSET]", false, 430)]
         public static void CreateContentRegistry()
         {
             var registry = EnsureRegistry();
