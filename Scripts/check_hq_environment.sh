@@ -1161,6 +1161,63 @@ else:
     bad("the check warns when the hand-placed house hangs under the dormant room",
         "a house parented into the lobby is invisible whenever the lobby sleeps")
 
+# ---- the material doctor DIAGNOSES, and changes nothing ---------------------------------------
+#
+# White has three causes in this pack and they look identical on screen: a material that is meant
+# to be white and has a real base map, an empty slot, and a renderer pointing at the material
+# Unity generated from the FBX instead of the one the pack authored. Only the third is a fault,
+# and it is provable rather than guessable - the pack names its textures
+# <fbx>_<slot>_AlbedoTransparency, so a textureless "SHKAF3" has its authored twin in whichever
+# material carries "4_SHKAF3_AlbedoTransparency". Twenty of the pack's thirty textureless names
+# line up that way.
+doc = code("Assets/CatchIfYouCan/Editor/HQMaterialDoctor.cs") or ""
+
+for forbidden, why in [
+        ("SetTexture(", "the doctor never edits a material"),
+        ("sharedMaterials =", "the doctor never reassigns a renderer"),
+        ("sharedMaterial =", "the doctor never reassigns a renderer"),
+        ("AssetDatabase.Refresh(", "a refresh can trigger a pack-wide reimport"),
+        ("AssetDatabase.CreateAsset(", "the doctor writes no asset"),
+        ("SaveAssets(", "the doctor writes nothing at all"),
+        ("SetDirty(", "the doctor marks nothing dirty")]:
+    if doc and forbidden not in doc:
+        ok("the material doctor never calls %s" % forbidden.rstrip("( ="))
+    else:
+        bad("the material doctor never calls %s" % forbidden.rstrip("( ="), why)
+
+# It looks at the SELECTION. Walking the pack per object is what made the editor unusable.
+if "Selection.gameObjects" in doc:
+    ok("the material doctor inspects the selection, not the pack")
+else:
+    bad("the material doctor inspects the selection, not the pack",
+        "a pack-wide walk per object is the thing that has to stay out of this")
+
+# The one thing that does look wider is the material index, and it is built once per run from an
+# index query - not per object and not per repaint.
+diag = re.search(r"private static void Diagnose.*?\n        \}", doc, re.S)
+dbody3 = diag.group(0) if diag else ""
+if dbody3 and dbody3.count("IndexPackMaterials()") == 1:
+    ok("the pack material index is built once per run, not per object")
+else:
+    bad("the pack material index is built once per run, not per object",
+        "rebuilding it per object turns a diagnosis into a scan")
+
+# A proposal must carry its evidence: which texture name proves the correspondence.
+raw_doc = read("Assets/CatchIfYouCan/Editor/HQMaterialDoctor.cs") or ""
+if "VERLORENES MAPPING" in raw_doc and "Beleg" in raw_doc:
+    ok("a proposed material comes with the texture name that proves the match")
+else:
+    bad("a proposed material comes with the texture name that proves the match",
+        "a swap without evidence is the guess this whole pass exists to avoid")
+
+# And white with a base map is REPORTED AS FINE. Some trim is painted white on purpose, and
+# replacing it would be breaking correct art.
+if "NICHT ersetzen" in raw_doc:
+    ok("a textureless material with no twin is left alone rather than replaced")
+else:
+    bad("a textureless material with no twin is left alone rather than replaced",
+        "ten of the pack's thirty textureless names have no twin; some surfaces are just plain")
+
 print()
 print("  %d passed, %d failed" % (passed, failed))
 sys.exit(1 if failed else 0)

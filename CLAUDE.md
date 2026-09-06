@@ -362,7 +362,14 @@ place that number lives; everything else derives it.
   flagged `HideFlags.DontSave` so it cannot reach the scene file however the scene is saved, the
   switch deletes only its own previews from one name-guarded call site, and they are removed
   before Play — `DontSave` keeps an object out of the file but not out of Play, and a surviving
-  preview would stand beside the one the runtime builds. 106 checks.
+  preview would stand beside the one the runtime builds. And it holds the white-material diagnosis
+  to being a DIAGNOSIS: the doctor edits no material, reassigns no renderer, writes no asset and
+  triggers no reimport, it reads the selection rather than the pack, its pack index is built once
+  per run, a proposed swap carries the texture name that proves the correspondence — the pack
+  names textures `<fbx>_<slot>_AlbedoTransparency`, so a textureless `SHKAF3` is matched to the
+  authored `commode1` by `4_SHKAF3_AlbedoTransparency`, and 20 of 30 textureless names line up
+  that way — and a textureless material with no twin is left alone, because ten of them have none
+  and some trim is painted white on purpose. 117 checks.
 
 All ten run in CI (`.github/workflows/determinism.yml`). Run them locally before
 pushing; they need nothing but a shell (and `python3` for the roster checks).

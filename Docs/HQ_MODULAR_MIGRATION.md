@@ -614,3 +614,57 @@ naming convention they know nothing about.
 
 Removal also calls `ForgetEditorPreview`, so the `_built` guard is cleared and switching the view
 back on rebuilds rather than showing an empty holder again.
+
+
+## Why a purchased piece draws white
+
+Three causes, identical on screen, and only one of them is a fault.
+
+**1. The material is meant to be white.** `arch big white` carries a real 1024² base map
+(`1_arch big_AlbedoTransparency`) on `Universal Render Pipeline/Lit`. Painted trim beside
+wallpaper is what an old apartment looks like. Replacing it would be breaking correct art.
+
+**2. An empty slot, or a shader that does not draw.** Rare here, and the loudest kind: an empty
+slot takes Unity's built-in default, which is magenta under URP.
+
+**3. A lost material remapping** — the common one, and provable rather than guessable.
+
+The pack names its textures `<fbx>_<slot>_AlbedoTransparency`, where `<slot>` is the FBX's own
+material slot — which is also the name Unity gives the material it generates from that slot. So
+the pack contains two materials for the same surface: the generated one, named after the slot and
+carrying **no texture**, and the authored one, carrying the baked texture.
+
+Measured against the pack inventory, **20 of the 30 textureless material names have a textured
+counterpart named after them**:
+
+| textureless | authored twin | the texture that proves it |
+|---|---|---|
+| `SHKAF3` | `commode1` | `4_SHKAF3_AlbedoTransparency` |
+| `SHKAF 5` | `commode2` | `4_SHKAF 5_AlbedoTransparency` |
+| `bachek` | `part1` | `5сб_bachek_AlbedoTransparency` |
+| `rakovina` | `part2` | `5сб_rakovina_AlbedoTransparency` |
+| `trubi` | `part3` | `5сб_trubi_AlbedoTransparency` |
+| `unitaz` | `part5` | `5сб_unitaz_AlbedoTransparency` |
+| `tumba 1` | `nighstand green` | `Tumba 1_tumba 1_AlbedoTransparency` |
+| `Tumba 2` | `nighstand` | `Tumba 2_Tumba 2_AlbedoTransparency` |
+| `BRA` | `sconce` | `BRA_BRA_AlbedoTransparency1` |
+| `door base` | `blue` / `brown` | `5_door base_AlbedoTransparency` |
+| `door detail` | `whote door detail` | `5_door detail_AlbedoTransparency` |
+| `mirror`, `mirror base`, `SOAP`, `belie`, `detail`, `1`–`4` | … | same shape |
+
+Ten have no twin — `5`, `6`, `WALL`, `DAMAGED FACE/BACK`, `wood pannel1/5`, `Zerkalo`, `No Name`,
+and `beth`, whose texture is spelled `bath`. So the correspondence is a naming convention, not a
+law, which is exactly why the tool proposes and never applies.
+
+`Modular Interior → Material-Doktor (Auswahl pruefen)` runs on the **current selection** only. Per
+renderer it reports submesh count against slot count, and per slot the material's asset path, its
+shader and whether it is supported, its base map with resolution and texture path — then one of
+three verdicts: **OK**, **VERLORENES MAPPING** with the proposed twin and the texture name that
+proves it, or *no twin found, probably plain, do not replace*.
+
+It edits no material, reassigns no renderer, writes no asset and triggers no reimport. The pack
+index is built once per run from a single index query.
+
+**The smallest safe correction, when a lost mapping is proven:** set the proposed material on the
+**instance's renderer** — an override inside the CIYC wrapper, never on the purchased prefab and
+never on the purchased material. That stays reversible and leaves the pack untouched.
