@@ -891,3 +891,44 @@ keeping the portal in place moves the spawn. The tool therefore prints, for ever
 `MainMenu_Lobby`, the position the same map would give it — and applies none of them. Moving the
 spawn is a decision about where the player stands; moving the portal is a decision about a
 doorway that has no wall to cut yet anyway.
+
+## The branding canvas is one thing, not three
+
+Rebuilding the lobby by hand deleted `MainMenuBrandingCanvas`, and with it `GameLogo_Baked` and
+`TapToStartText`. The visible symptom is two missing things; the invisible one is a third.
+
+`MainMenuTapToStart` reads the tap straight from `Input`, deliberately — a full-screen invisible
+button would sit over the menu and swallow anything else the canvas might want later. So the
+label was never wired to anything: tapping still works, there is simply nothing on screen saying
+so. That is why nobody noticed until the menu was looked at.
+
+The logo has a runtime fallback. `RuntimeUIFactory.WireMainMenu` calls
+`GameObject.Find("GameLogo_Baked")` and, finding nothing, builds a `GameLogo` and loads the
+branding sprite — disabling the Image if the sprite is null, because an Image with no sprite
+draws a solid white quad. So the logo comes back as soon as the main-menu UI is built. The
+*baked* one, which exists to avoid that work, does not.
+
+The third thing is the one that would have been rebuilt wrong. The canvas is referenced from
+`MainMenuModeController.cinematicUiRoots`, which is how the handover hides it. Deleting the
+canvas left a `{fileID: 0}` in that array. **That null does not throw** — both loops in the
+controller skip nulls — it just means nothing is hidden when the player enters the lobby. Restore
+the canvas without restoring the reference and the logo and the label stay on screen, over the
+room. Restoring three quarters of a thing is how the next bug gets built.
+
+`MainMenuLogoBaker` therefore owns all four: canvas, logo, label, and the wiring. Three details
+in it are not incidental:
+
+- **The label comes from `RuntimeUIFactory.CreateText`**, not from hand-built TMP calls. The
+  project guards TextMeshPro behind `#if TMP_PRESENT || UNITY_TEXTMESHPRO` because it is
+  optional, and `CreateText` already makes the TMP-or-legacy decision and applies the branded
+  face by `FontRole`. Writing that branch a second time is the two-flashlights mistake. One
+  deliberate difference from the deleted original, stated rather than slipped in: the old label
+  was set in TMP's default sans, this one in the project's Header face.
+- **The wiring goes through a public method on the controller**, `EditorSetCinematicUiRoots`,
+  guarded by `#if UNITY_EDITOR`. Reflection and a `SerializedProperty` looked up by string both
+  keep compiling after the field is renamed and quietly stop doing anything — CLAUDE.md
+  mistake 4. The result is read back afterwards, because "I set it" and "it is set" are
+  different claims.
+- **Objects are found by walking the scene, not with `GameObject.Find`**, which skips inactive
+  ones. A canvas switched off at a handover and then saved is exactly that, and it would be
+  rebuilt beside the one already there.

@@ -69,6 +69,32 @@ namespace CatchIfYouCan.UI
                  "the logo and the TAP TO START label.")]
         [SerializeField] private GameObject[] cinematicUiRoots = new GameObject[0];
 
+#if UNITY_EDITOR
+        /// <summary>
+        /// The cinematic-only UI roots, for the editor tool that authors them.
+        ///
+        /// <para>
+        /// A public pair rather than reflection or a SerializedProperty looked up by string.
+        /// Both of those compile, review clean, and stop working silently the day this field is
+        /// renamed - CLAUDE.md mistake 4. A method the compiler checks cannot do that.
+        /// </para>
+        /// <para>
+        /// Editor-only, so no shipping code path can reach it. What it exists for is one
+        /// problem: the branding canvas is authored in the scene and referenced from here, and
+        /// when the canvas is rebuilt the reference is a null slot. A null slot does not throw -
+        /// both loops here skip nulls - it just means nothing is hidden at the handover, and the
+        /// logo and the TAP TO START label stay on screen over the lobby.
+        /// </para>
+        /// </summary>
+        public GameObject[] EditorCinematicUiRoots => cinematicUiRoots;
+
+        /// <summary>Replaces the cinematic UI roots. Editor authoring only.</summary>
+        public void EditorSetCinematicUiRoots(GameObject[] roots)
+        {
+            cinematicUiRoots = roots ?? new GameObject[0];
+        }
+#endif
+
         [Header("Cinematic camera")]
         [Tooltip("The menu camera. Its Camera and AudioListener are disabled at handover; the " +
                  "GameObject is left alone so the handover stays reversible later.")]

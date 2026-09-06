@@ -1168,6 +1168,68 @@ else
   fi
 fi
 
+# ---- die Branding-Canvas ist EIN Ding, nicht drei --------------------------------------------
+# Canvas, Logo, TAP-Beschriftung und der Eintrag, ueber den der Uebergang sie ausblendet, gehen
+# nur zusammen. Die Canvas wurde beim Umbau der Lobby geloescht; nur das Logo zurueckzubauen
+# haette zwei der anderen drei kaputt gelassen - keine Beschriftung, und ein leerer Platz in
+# cinematicUiRoots. Der leere Platz wirft nichts: die Schleife ueberspringt Nulls. Man sieht
+# ihn erst einen Bildschirm spaeter, als Branding ueber der Lobby.
+BAKER="$EDT/MainMenuLogoBaker.cs"
+if [ ! -f "$BAKER" ]; then
+  bad "ein Werkzeug baut die Branding-Canvas vollstaendig" "erwartet $BAKER"
+  bad "die TAP-Beschriftung kommt vom Textbauer des Projekts" "Datei fehlt"
+  bad "der Eintrag in cinematicUiRoots wird mitgesetzt" "Datei fehlt"
+  bad "das Eintragen laeuft ueber eine gepruefte Zusage" "Datei fehlt"
+  bad "die Canvas wird auch ausgeschaltet gefunden" "Datei fehlt"
+else
+  if code "$BAKER" | grep -qE 'LabelName[[:space:]]*=' \
+     && code "$BAKER" | grep -qE 'TAP ANYWHERE TO START'; then
+    ok "ein Werkzeug baut die Branding-Canvas vollstaendig"
+  else
+    bad "ein Werkzeug baut die Branding-Canvas vollstaendig" \
+        "ohne die Beschriftung steht der Spieler vor einem Menue, das nicht sagt, was zu tun ist"
+  fi
+
+  # Das Projekt kapselt TextMeshPro hinter TMP_PRESENT und hat dafuer EINEN Bauer. Die
+  # Verzweigung ein zweites Mal zu schreiben ist der Zwei-Taschenlampen-Fehler.
+  if code "$BAKER" | grep -qE 'RuntimeUIFactory\.CreateText'; then
+    ok "die TAP-Beschriftung kommt vom Textbauer des Projekts"
+  else
+    bad "die TAP-Beschriftung kommt vom Textbauer des Projekts" \
+        "die TextMeshPro-oder-Legacy-Entscheidung gehoert an die eine Stelle, die sie schon trifft"
+  fi
+
+  if code "$BAKER" | grep -qE 'EditorSetCinematicUiRoots'; then
+    ok "der Eintrag in cinematicUiRoots wird mitgesetzt"
+  else
+    bad "der Eintrag in cinematicUiRoots wird mitgesetzt" \
+        "sonst bleibt Logo und Beschriftung nach dem Uebergang ueber der Lobby stehen"
+  fi
+
+  # Weder Reflection noch eine SerializedProperty nach Zeichenkette: beide kompilieren nach
+  # einem Umbenennen weiter und tun lautlos nichts (Fehler 4).
+  if code "$BAKER" | grep -qE 'BindingFlags|FindProperty\('; then
+    bad "das Eintragen laeuft ueber eine gepruefte Zusage" \
+        "ein nach Zeichenkette gesuchtes Feld ueberlebt jedes Umbenennen und tut dann nichts"
+  elif code "$BAKER" | grep -qE 'controller\.EditorCinematicUiRoots'; then
+    ok "das Eintragen laeuft ueber eine gepruefte Zusage"
+  else
+    bad "das Eintragen laeuft ueber eine gepruefte Zusage" \
+        "gesetzt und gesetzt-worden sind zwei verschiedene Behauptungen; das Ergebnis " \
+        "gehoert zurueckgelesen"
+  fi
+
+  # GameObject.Find ueberspringt inaktive Objekte - und eine Canvas, die beim Uebergang
+  # ausgeschaltet und dann gespeichert wurde, ist genau das. Gefunden wird sie damit nicht,
+  # also stuende die neue neben der alten.
+  if code "$BAKER" | grep -qE 'GameObject\.Find\('; then
+    bad "die Canvas wird auch ausgeschaltet gefunden" \
+        "GameObject.Find ueberspringt inaktive Objekte; die Canvas wuerde doppelt gebaut"
+  else
+    ok "die Canvas wird auch ausgeschaltet gefunden"
+  fi
+fi
+
 split=""
 for obj in Lobby_Wall_North_Left Lobby_Wall_North_Right Lobby_Wall_North_Header \
            Lobby_Wall_North_Fill Lobby_DoorJamb_Left Lobby_DoorJamb_Right Lobby_DoorLintel; do
