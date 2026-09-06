@@ -18,3 +18,5 @@ MonoBehaviour:
   ModularInterior: {fileID: 0}
   WallMaterial: {fileID: 0}
   FloorMaterial: {fileID: 0}
+  CeilingMaterial: {fileID: 0}
+  TrimMaterial: {fileID: 0}
