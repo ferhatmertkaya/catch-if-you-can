@@ -59,7 +59,7 @@ namespace CatchIfYouCan.EditorTools
         /// </summary>
         private static readonly string[] WindowParts = { "1", "Steklo" };
 
-        [MenuItem("Catch If You Can/Modular Interior/Katalog aus GEPRUEFTEN Pfaden schreiben")]
+        [MenuItem("Catch If You Can/HQ Assets/Katalog schreiben (geprueft) [SCHREIBT ASSET]", false, 500)]
         public static void WriteVerifiedCatalog()
         {
             var sb = new StringBuilder();

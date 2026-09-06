@@ -28,12 +28,12 @@ namespace CatchIfYouCan.EditorTools
     /// </summary>
     public static class HQRoomScaleAudit
     {
-        private const string MenuPath = "Catch If You Can/Lobby/Raumgroesse messen";
+        private const string MenuPath = "Catch If You Can/Safe Inspection/Raumgroesse messen [NUR LESEN]";
 
         /// <summary>Ceiling targets to price, in metres of clear height.</summary>
         private static readonly float[] Targets = { 2.80f, 2.95f, 3.10f };
 
-        [MenuItem(MenuPath, false, 41)]
+        [MenuItem(MenuPath, false, 109)]
         private static void Measure()
         {
             var sb = new StringBuilder();
@@ -50,7 +50,7 @@ namespace CatchIfYouCan.EditorTools
                           "der Szene waere eine");
             sb.AppendLine("  zweite Quelle fuer dieselbe Zahl.");
 
-            List<GameObject> roots = HQRoomMeasurement.CollectRoots();
+            List<GameObject> roots = HQRoomMeasurement.CollectRoomObjects();
             AppendScope(roots, sb);
 
             if (roots.Count == 0)
@@ -85,7 +85,7 @@ namespace CatchIfYouCan.EditorTools
         internal static void AppendScope(List<GameObject> roots, StringBuilder sb)
         {
             sb.AppendLine();
-            sb.AppendLine("--- WAS ALS RAUM GEZAEHLT WIRD (" + roots.Count + " Wurzeln) ---");
+            sb.AppendLine("--- WAS ALS RAUM GEZAEHLT WIRD (" + roots.Count + " Objekte) ---");
             for (int i = 0; i < roots.Count && i < 60; i++)
                 sb.AppendLine("    " + roots[i].name + (roots[i].activeSelf ? "" : "   (AUS)"));
             if (roots.Count > 60)

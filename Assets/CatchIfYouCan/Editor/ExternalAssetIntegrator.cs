@@ -17,9 +17,22 @@ namespace CatchIfYouCan.EditorTools
         private const string GhostMaterialPath = "Assets/CatchIfYouCan/Materials/Ghost_RiggedDissolve.mat";
         private const string MonsterPrefabsRoot = "Assets/CatchIfYouCan/Prefabs/Ghost/AllMonsters";
 
-        [MenuItem("Catch If You Can/Integrate External Assets")]
+        [MenuItem("Catch If You Can/Debug and Legacy/Integrate External Assets [MASSENAENDERUNG]", false, 1200)]
         public static void IntegrateExternalAssets()
         {
+            if (!DangerousCommandGate.Confirm(
+                    "Integrate External Assets",
+                    "Das breiteste Werkzeug im Projekt. Es setzt Importer-Einstellungen und " +
+                    "reimportiert, legt Assets an, LOESCHT Assets, verschiebt und kopiert " +
+                    "Dateien, speichert Prefabs, erzeugt und zerstoert GameObjects, haengt sie " +
+                    "um, setzt Transforms und tauscht Materialien.\n\n" +
+                    "Es ist ein Migrationswerkzeug fuer den alten Kenney-Bestand. Der ist " +
+                    "geloescht.",
+                    DangerousCommandGate.UnknownCount,
+                    reimports: true, savesScenes: false,
+                    actionLabel: "Ja, Assets umschreiben"))
+                return;
+
             string report = RunIntegration();
             EditorUtility.DisplayDialog("Catch If You Can — Asset Integration", report, "OK");
         }

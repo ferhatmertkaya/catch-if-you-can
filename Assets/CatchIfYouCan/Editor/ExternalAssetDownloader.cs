@@ -28,7 +28,7 @@ namespace CatchIfYouCan.EditorTools
         }
 
 #if UNITY_EDITOR
-        [MenuItem("Catch If You Can/Download Missing External Assets")]
+        [MenuItem("Catch If You Can/Debug and Legacy/Download Missing External Assets [SCHREIBT DATEIEN]", false, 1201)]
         public static void DownloadMissingMenu()
         {
             bool ok = EnsureBundledAssetsPresent();

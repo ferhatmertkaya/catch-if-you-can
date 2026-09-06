@@ -744,18 +744,33 @@ else:
     bad("a refused density keeps the material, only dropping the number",
         "dropping the material too would put the room back to neutral grey")
 
-# ---- the density is sampled from the PACK, not from whatever the classifier caught -----------
+# ---- the classification is a REPORT, never a source anything is written from -----------------
 #
-# The classifier matches English filenames and this pack numbers its prefabs, so three
-# stragglers were classified - one of them 36 x 57 m, a demo assembly - and the density was
-# measured off those.
-cs = re.search(r"private static string ChooseSurfaces.*?\n        \}", tools, re.S)
-csbody = cs.group(0) if cs else ""
-if csbody and 'FindAssets("t:Prefab"' in csbody:
-    ok("surface materials are sampled across the pack, not across the classified handful")
+# It used to write the catalog. The classifier matches English filenames and this pack numbers
+# its prefabs and calls its glass "Steklo", so it caught 3 of 105 - one of them a 36 x 57 m demo
+# assembly - and the surface density was measured off those. That path is gone: the window
+# reports and nothing else, and the catalog has ONE writer, HQVerifiedCatalog, which resolves a
+# material on the piece that wears it.
+#
+# Checked as the absence of the write, not as the presence of a better sampling rule. A rule
+# inside a method nobody calls protects nothing.
+writes = [c for c in ("AssetDatabase.CreateAsset", "AssetDatabase.SaveAssets",
+                      "AssetDatabase.Refresh", "EditorUtility.SetDirty")
+          if c in tools]
+if not writes and "ChooseSurfaces" not in tools:
+    ok("the pack classification is a report, not a second catalog writer")
 else:
-    bad("surface materials are sampled across the pack, not across the classified handful",
-        "a filename classifier finds nothing in a pack whose prefabs are numbered")
+    bad("the pack classification is a report, not a second catalog writer",
+        "still writing: " + (", ".join(writes) if writes else "ChooseSurfaces survives"))
+
+# And the one writer that remains still samples the pack rather than a classified handful.
+verified = code("Assets/CatchIfYouCan/Editor/HQVerifiedCatalog.cs") or ""
+if "walls prefabs" in verified and "AssetDatabase.CreateAsset" in verified:
+    ok("the surviving catalog writer resolves materials on the piece that wears them")
+else:
+    bad("the surviving catalog writer resolves materials on the piece that wears them",
+        "this pack has three materials called 'white' and nineteen called '1'; a "
+        "project-wide search by name is a coin toss")
 
 # ---- the pack folder is FOUND, not assumed ---------------------------------------------------
 #

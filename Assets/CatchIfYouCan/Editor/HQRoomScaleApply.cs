@@ -38,8 +38,8 @@ namespace CatchIfYouCan.EditorTools
     /// </summary>
     public static class HQRoomScaleApply
     {
-        private const string MenuPath = "Catch If You Can/Lobby/Raum skalieren";
-        private const string RootName = "HQ_ROOM_SCALE_ROOT";
+        private const string MenuPath = "Catch If You Can/Scene Authoring/Raum skalieren [UNDO]";
+        private const string RootName = HQRoomMeasurement.ScaleRootName;
 
         /// <summary>The clear height the factor was derived from. Verified before applying.</summary>
         private const float ExpectedClearHeight = 3.92f;
@@ -56,7 +56,7 @@ namespace CatchIfYouCan.EditorTools
         /// <summary>Derived, never typed. 2.95 / 3.92.</summary>
         private static float Factor => TargetClearHeight / ExpectedClearHeight;
 
-        [MenuItem(MenuPath, false, 42)]
+        [MenuItem(MenuPath, false, 301)]
         private static void Apply()
         {
             var sb = new StringBuilder();
@@ -66,8 +66,10 @@ namespace CatchIfYouCan.EditorTools
 
             // ---------- precondition ----------
 
-            List<GameObject> roots = HQRoomMeasurement.CollectRoots();
-            roots.RemoveAll(g => g != null && g.name == RootName);
+            // Found through the whole scene rather than across its roots: the hierarchy tool
+            // offers to move these under a folder, and a root-only search would then report an
+            // empty room. CollectRoomObjects also excludes this tool's own container by name.
+            List<GameObject> roots = HQRoomMeasurement.CollectRoomObjects();
 
             GameObject existing = FindRoot();
             if (existing != null)
@@ -178,7 +180,7 @@ namespace CatchIfYouCan.EditorTools
             // ---------- what was actually achieved ----------
 
             sb.AppendLine();
-            sb.AppendLine("--- UNTER '" + RootName + "' (" + roots.Count + " Wurzeln) ---");
+            sb.AppendLine("--- UNTER '" + RootName + "' (" + roots.Count + " Objekte) ---");
             for (int i = 0; i < roots.Count; i++)
                 sb.AppendLine("    " + roots[i].name +
                               (roots[i].activeSelf ? "" : "   (AUS)"));

@@ -54,9 +54,20 @@ namespace CatchIfYouCan.EditorTools
         // ran Setup Project.
         private static string[] RequiredScenes => Core.CiycScenes.ProductionPaths();
 
-        [MenuItem("Catch If You Can/Setup Project")]
+        [MenuItem("Catch If You Can/Debug and Legacy/Setup Project [MASSENAENDERUNG]", false, 1202)]
         public static void SetupProject()
         {
+            if (!DangerousCommandGate.Confirm(
+                    "Setup Project",
+                    "Legt die Projektstruktur an: erzeugt Assets, importiert sie, schreibt " +
+                    "Dateien und ruft AssetDatabase.Refresh.\n\n" +
+                    "Gedacht fuer ein frisches Projekt. In einem eingerichteten Projekt hat es " +
+                    "nichts zu tun und kostet nur einen Refresh.",
+                    DangerousCommandGate.UnknownCount,
+                    reimports: true, savesScenes: false,
+                    actionLabel: "Ja, Projekt einrichten"))
+                return;
+
             string report = RunSetup();
             EditorUtility.DisplayDialog("Catch If You Can", report, "OK");
         }

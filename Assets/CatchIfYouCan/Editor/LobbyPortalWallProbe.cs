@@ -46,9 +46,9 @@ namespace CatchIfYouCan.EditorTools
     /// </summary>
     public static class LobbyPortalWallProbe
     {
-        private const string MenuPath = "Catch If You Can/Lobby/Portalwand messen";
+        private const string MenuPath = "Catch If You Can/Portal/Portalwand messen [NUR LESEN]";
 
-        [MenuItem(MenuPath, false, 40)]
+        [MenuItem(MenuPath, false, 700)]
         private static void Measure()
         {
             var portals = Object.FindObjectsByType<LobbyPortal>(

@@ -16,7 +16,7 @@ namespace CatchIfYouCan.EditorTools
         private const string EventsFolder = "Assets/CatchIfYouCan/ScriptableObjects/Audio";
         private const string GeneratedClipsFolder = "Assets/CatchIfYouCan/Audio/Generated";
 
-        [MenuItem("Catch If You Can/Audio/Build Audio Mixer")]
+        [MenuItem("Catch If You Can/Assets bauen/Audio-Mixer [SCHREIBT ASSET]", false, 1006)]
         public static void BuildAudioMixer()
         {
             EnsureAudioFolders();
@@ -36,7 +36,7 @@ namespace CatchIfYouCan.EditorTools
                 "OK");
         }
 
-        [MenuItem("Catch If You Can/Audio/Generate Default Audio Events")]
+        [MenuItem("Catch If You Can/Assets bauen/Audio-Ereignisse [SCHREIBT ASSET]", false, 1007)]
         public static void GenerateDefaultAudioEvents()
         {
             var result = GenerateDefaultAudioEventsInternal();

@@ -50,7 +50,7 @@ namespace CatchIfYouCan.EditorTools
         private const string LabelName = "TapToStartText";
         private const string LabelMessage = "TAP ANYWHERE TO START";
 
-        [MenuItem("Catch If You Can/Main Menu/Bake Logo Into Scene")]
+        [MenuItem("Catch If You Can/Scene Authoring/Logo und TAP-Text backen [AENDERT SZENE]", false, 304)]
         public static void BakeLogoIntoScene()
         {
             var sprite = AssetDatabase.LoadAssetAtPath<Sprite>(LogoPath);
@@ -134,15 +134,19 @@ namespace CatchIfYouCan.EditorTools
             if (labelGo != null)
                 EditorUtility.SetDirty(labelGo);
 
+            // Marked dirty, NOT saved. This used to call SaveScene, which meant one click here
+            // also wrote out every unrelated edit anyone had open - the only command in the
+            // project that could do that, and nothing said so. The result is now looked at
+            // first and saved by hand.
             EditorSceneManager.MarkSceneDirty(scene);
-            EditorSceneManager.SaveScene(scene);
 
             Selection.activeGameObject = canvasGo;
 
             Debug.Log(
-                "[CIYC] Branding canvas saved into 01_MainMenu: logo with a direct Sprite " +
-                "reference, and the label '" + LabelMessage + "'.\n" +
-                labelReport + "\n" + wiring);
+                "[CIYC] Branding-Canvas in 01_MainMenu gebaut: Logo mit direkter Sprite-Referenz " +
+                "und die Beschriftung '" + LabelMessage + "'.\n" +
+                labelReport + "\n" + wiring + "\n" +
+                "Die Szene ist GEAENDERT, aber NICHT gespeichert. Erst ansehen, dann speichern.");
         }
 
         /// <summary>

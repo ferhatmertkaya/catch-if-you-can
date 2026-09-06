@@ -16,7 +16,7 @@ namespace CatchIfYouCan.EditorTools
         private readonly List<string> _issues = new List<string>();
         private Vector2 _scroll;
 
-        [MenuItem("Catch If You Can/Validator")]
+        [MenuItem("Catch If You Can/Scene Authoring/Validator [OEFFNET SZENEN]", false, 305)]
         public static void ShowWindow()
         {
             GetWindow<CatchIfYouCanValidatorWindow>("CIYC Validator");

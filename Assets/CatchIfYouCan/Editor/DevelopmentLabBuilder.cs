@@ -29,21 +29,23 @@ namespace CatchIfYouCan.EditorTools
     /// </summary>
     public static class DevelopmentLabBuilder
     {
-        [MenuItem("Catch If You Can/Development/Create Missing Lab Scenes", false, 100)]
+        [MenuItem("Catch If You Can/Debug and Legacy/Fehlende Lab-Szenen anlegen [SCHREIBT SZENEN]", false, 1205)]
         public static void CreateMissingLabScenes() => Create(overwriteExisting: false);
 
-        [MenuItem("Catch If You Can/Development/Rebuild All Lab Scenes", false, 101)]
+        [MenuItem("Catch If You Can/Debug and Legacy/Alle Lab-Szenen neu bauen [UEBERSCHREIBT]", false, 1206)]
         public static void RebuildAllLabScenes()
         {
-            bool ok = EditorUtility.DisplayDialog(
-                "Rebuild All Lab Scenes",
-                "This replaces every DEV_ lab scene with a freshly generated one.\n\n" +
-                "Anything added to a lab scene by hand is lost. Fixtures built by the " +
-                "installers are not affected - they are code.",
-                "Rebuild", "Cancel");
+            if (!DangerousCommandGate.Confirm(
+                    "Alle Lab-Szenen neu bauen",
+                    "Ersetzt JEDE DEV_-Lab-Szene durch eine frisch erzeugte.\n\n" +
+                    "Alles, was von Hand in eine Lab-Szene gelegt wurde, ist danach weg. Was " +
+                    "die Installer bauen, bleibt - das ist Code.",
+                    DevelopmentScenes.All.Length,
+                    reimports: false, savesScenes: true,
+                    actionLabel: "Ja, alle neu bauen"))
+                return;
 
-            if (ok)
-                Create(overwriteExisting: true);
+            Create(overwriteExisting: true);
         }
 
         private static void Create(bool overwriteExisting)

@@ -35,7 +35,7 @@ namespace CatchIfYouCan.EditorTools
         private string _report = "AUDIT druecken. Es wird dabei nichts geaendert.";
         private Vector2 _scroll;
 
-        [MenuItem("Catch If You Can/HQ Pack Optimizer")]
+        [MenuItem("Catch If You Can/HQ Assets/Pack Optimizer [REIMPORT]", false, 504)]
         public static void Open()
         {
             var w = GetWindow<HQPackOptimizer>(true, "HQ Pack Optimizer");
@@ -69,14 +69,17 @@ namespace CatchIfYouCan.EditorTools
                 {
                     _report = "Erst AUDIT. Ohne Bestandsaufnahme wird nichts geaendert.";
                 }
-                else if (EditorUtility.DisplayDialog(
-                             "Import-Einstellungen aendern?",
-                             "Es werden " + _audit.Textures.Count + " Texturen und " +
-                             _audit.Models.Count + " Modelle unterhalb von\n\n" + _audit.Root +
-                             "\n\nneu importiert. Quelldateien bleiben unveraendert.\n\n" +
-                             "Das dauert lange und laesst sich nur durch erneutes Importieren " +
-                             "des Pakets vollstaendig zuruecknehmen.",
-                             "Aendern", "Abbrechen"))
+                else if (DangerousCommandGate.Confirm(
+                             "HQ Pack Optimizer",
+                             "Aendert AUSSCHLIESSLICH Textur-Importer-Einstellungen unterhalb " +
+                             "von\n\n" + _audit.Root + "\n\n" +
+                             "maxTextureSize (Standard und pro Plattform) und isReadable. Es " +
+                             "aendert KEIN Material, kein Mesh, kein Prefab, keine Szene, " +
+                             "keinen Shader und keine Texturdatei - nur, WIE importiert wird.\n\n" +
+                             "Zuruecknehmen geht nur, indem das Paket erneut importiert wird.",
+                             _audit.Textures.Count + _audit.Models.Count,
+                             reimports: true, savesScenes: false,
+                             actionLabel: "Ja, Import-Einstellungen aendern"))
                 {
                     _report = ApplySafeOptimization(_audit);
                     WriteReport(_report);

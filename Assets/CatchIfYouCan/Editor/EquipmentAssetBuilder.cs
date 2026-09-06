@@ -44,7 +44,7 @@ namespace CatchIfYouCan.EditorTools
         /// <summary>Radius of the trigger the interaction ray hits, in metres.</summary>
         private const float PickupRadius = 0.14f;
 
-        [MenuItem("Catch If You Can/Equipment/Build Equipment Prefabs", false, 20)]
+        [MenuItem("Catch If You Can/Assets bauen/Equipment-Prefabs [SCHREIBT ASSET]", false, 1002)]
         public static void BuildEquipmentPrefabs()
         {
             var catalog = AssetDatabase.LoadAssetAtPath<EquipmentCatalog>(CatalogPath);

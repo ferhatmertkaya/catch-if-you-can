@@ -1,3 +1,9 @@
+> **DIESES DOKUMENT BESCHREIBT DEN ZUSTAND VOR DEM UMBAU.**
+> Das Menü ist seit Commit `83b40c4` umgebaut. Was jetzt gilt, steht in
+> **`Docs/EDITOR_WORKFLOWS.md`**; die alte Struktur unten bleibt stehen, weil sie erklärt,
+> *warum* umgebaut wurde. Die vier kritischen Befunde am Ende sind alle behoben —
+> jeder ist unten mit **[BEHOBEN]** markiert.
+
 # Das Unity-Menü „Catch If You Can" — vollständige Bestandsaufnahme
 
 **Stand:** Commit `8529c2c`. **Nichts wurde ausgeführt, hinzugefügt, umbenannt oder gelöscht.**
@@ -68,7 +74,7 @@ Die vier Determinismus-Werkzeuge liegen in einem **anderen Wurzelmenü**. Wer nu
 | `Main Menu/Bake Logo Into Scene` | 🟡 | S | Baut Branding-Canvas, Logo, TAP-Beschriftung und trägt sie in `cinematicUiRoots` ein | Szene — **und speichert sie selbst** | ja, aber Szene wird gespeichert |
 | `Main Menu/Rebuild Door Atmosphere` | 🟡 | S | Baut Nebel, Licht und Glühen an der Menütür neu | Szenenobjekte, Materialien, mit `Undo` | ja |
 
-⚠️ **`Bake Logo Into Scene` ruft `EditorSceneManager.SaveScene`.** Es ist der einzige Menüpunkt,
+⚠️ **`Bake Logo Into Scene` ruft `EditorSceneManager.SaveScene`. [BEHOBEN]** Es markiert die Szene nur noch als geändert und sagt das auch.\n\n*(Ursprünglicher Befund:)* Es ist der einzige Menüpunkt,
 der die Szene ohne Rückfrage auf die Platte schreibt. Vorher speichern, was einem lieb ist.
 
 ## 3. Szene (1 Punkt)
@@ -94,7 +100,7 @@ statt sie von Hand zu korrigieren, markiert die Szene nur dirty.
 | `Modular Interior/Remove Test Room` | 🟡 | S | Löscht den Testraum | `DestroyImmediate` — **ohne Undo** |
 | `Modular Interior/Katalog aus GEPRUEFTEN Pfaden schreiben` | 🟡 | S | Schreibt den `ModularInteriorCatalog` aus verifizierten Asset-Pfaden | genau ein `.asset` |
 
-⚠️ **`Remove Test Room` benutzt `GameObject.Find`.** Das überspringt inaktive Objekte. Ein
+⚠️ **`Remove Test Room` benutzt `GameObject.Find`. [BEHOBEN]** Es läuft jetzt durch die Szene inklusive inaktiver Objekte und löscht über `Undo.DestroyObjectImmediate`.\n\n*(Ursprünglicher Befund:)* Das überspringt inaktive Objekte. Ein
 ausgeschalteter Testraum wird nicht gefunden und nicht entfernt — und der nächste `Build` stellt
 einen zweiten daneben.
 
@@ -243,7 +249,7 @@ Textur-Importer des HQ-Pakets
 
 ## Doppelte und überlappende Werkzeuge
 
-**1. Zwei Katalogschreiber.** `Katalog aus GEPRUEFTEN Pfaden schreiben` (HQVerifiedCatalog,
+**1. Zwei Katalogschreiber. [BEHOBEN]** Der Knopf im Fenster schreibt nicht mehr; `BuildCatalog`, `WireIntoContentCatalog` und `ChooseSurfaces` sind entfernt. `Katalog schreiben (geprueft)` ist der einzige Weg. `Katalog aus GEPRUEFTEN Pfaden schreiben` (HQVerifiedCatalog,
 5. Sept.) und der Knopf „2. Katalog bauen" im Modular-Interior-Fenster (ModularInteriorTools,
 4. Sept.) schreiben **dasselbe Asset** auf zwei Wegen. Der eine geht von verifizierten Pfaden aus,
 der andere von einer Namensklassifikation — und die Klassifikation hat in diesem Paket
@@ -270,7 +276,7 @@ versagt hat — es nummeriert seine Prefabs und nennt sein Glas `Steklo`. Die Fo
 Klassifikation und liest stur den Ordner. **Sie sollte weiter benutzt werden**, sobald eine Frage
 mit „was ist da wirklich" anfängt.
 
-**4. Zwei Umbau-Werkzeuge für dieselbe Szene.** `Szene/Hierarchie sortieren` und
+**4. Zwei Umbau-Werkzeuge für dieselbe Szene. [BEHOBEN]** `Raum skalieren` sucht nicht mehr nur Szenen-Wurzeln, sondern rekursiv durch die ganze Szene, den obersten Treffer je Zweig. Die Reihenfolge spielt keine Rolle mehr.\n\n*(Ursprünglicher Befund:)* `Szene/Hierarchie sortieren` und
 `Lobby/Raum skalieren` hängen beide Objekte in `01_MainMenu` um. Nacheinander in falscher
 Reihenfolge ausgeführt, kann das eine die Annahme des anderen brechen: `Raum skalieren` sucht
 `HQ_*` als **Szenen-Wurzeln**. Sortiert man vorher die Hierarchie und schiebt sie unter einen

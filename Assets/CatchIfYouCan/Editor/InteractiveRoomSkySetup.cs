@@ -64,7 +64,7 @@ namespace CatchIfYouCan.EditorTools
             "CIYC_NightSky_Cloudy",
         };
 
-        [MenuItem("Catch If You Can/Environment/Build Interactive Room Sky", false, 30)]
+        [MenuItem("Catch If You Can/Assets bauen/Interaktiver Raum: Himmel [REIMPORT]", false, 1009)]
         public static void Build()
         {
             var log = new StringBuilder();

@@ -41,7 +41,7 @@ namespace CatchIfYouCan.EditorTools
         private bool _onlyReady;
         private float _moduleWidth;
 
-        [MenuItem("Catch If You Can/Modular Interior/Bauteile pruefen und setzen")]
+        [MenuItem("Catch If You Can/HQ Assets/Bauteile pruefen und setzen [UNDO]", false, 501)]
         public static void Open()
         {
             var w = GetWindow<HQPieceBrowser>(false, "HQ Bauteile", true);

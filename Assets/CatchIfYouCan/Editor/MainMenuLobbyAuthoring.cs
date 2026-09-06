@@ -39,7 +39,7 @@ namespace CatchIfYouCan.EditorTools
     {
         private const string LobbyName = "MainMenu_Lobby";
         private const string EditingKey = "CIYC.MainMenuLobby.Editing";
-        private const string MenuPath = "Catch If You Can/Main Menu/Lobby bearbeiten";
+        private const string MenuPath = "Catch If You Can/Scene Authoring/Lobby bearbeiten [EDITOR]";
 
         /// <summary>True while the room is being shown for editing.</summary>
         public static bool Editing
@@ -57,7 +57,7 @@ namespace CatchIfYouCan.EditorTools
 
         // ------------------------------------------------------------------------- the switch
 
-        [MenuItem(MenuPath, false, 10)]
+        [MenuItem(MenuPath, false, 300)]
         private static void Toggle()
         {
             GameObject lobby = FindLobby();
@@ -322,7 +322,7 @@ namespace CatchIfYouCan.EditorTools
 
         // --------------------------------------------------------------------------- checking
 
-        [MenuItem("Catch If You Can/Main Menu/Authored Lobby pruefen", false, 11)]
+        [MenuItem("Catch If You Can/Safe Inspection/Authored Lobby pruefen [NUR LESEN]", false, 107)]
         private static void Validate()
         {
             var sb = new StringBuilder();

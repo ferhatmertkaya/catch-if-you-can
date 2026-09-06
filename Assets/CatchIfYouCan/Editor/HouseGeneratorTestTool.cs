@@ -8,7 +8,7 @@ namespace CatchIfYouCan.EditorTools
 {
     public static class HouseGeneratorTestTool
     {
-        [MenuItem("Catch If You Can/Generate 100 Houses")]
+        [MenuItem("Catch If You Can/Debug and Legacy/100 Haeuser generieren (Test) [AENDERT SZENE]", false, 1204)]
         public static void Generate100Houses()
         {
             var report = new StringBuilder();

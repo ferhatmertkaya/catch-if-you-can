@@ -72,7 +72,7 @@ namespace CatchIfYouCan.EditorTools
                      "source only - jeans selection mask"),
         };
 
-        [MenuItem("Catch If You Can/Characters/Fix Nathan Texture Import Settings", false, 12)]
+        [MenuItem("Catch If You Can/Assets bauen/Nathan Textur-Import korrigieren [REIMPORT]", false, 1010)]
         public static void FixMenuItem()
         {
             var log = new StringBuilder();

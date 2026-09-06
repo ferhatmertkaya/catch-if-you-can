@@ -69,7 +69,7 @@ namespace CatchIfYouCan.EditorTools
         // is the upper body — arms hanging rather than held out in the T-pose.
         private const float IdleSourceFrame = 50f;
 
-        private const string MenuRoot = "Catch If You Can/Characters/";
+        private const string MenuRoot = "Catch If You Can/";
 
         /// <summary>Creates an asset folder and any missing parents. No-op if it already exists.</summary>
         private static void EnsureFolder(string path)
@@ -86,7 +86,7 @@ namespace CatchIfYouCan.EditorTools
             AssetDatabase.CreateFolder(parent, path.Substring(slash + 1));
         }
 
-        [MenuItem(MenuRoot + "Build Nathan Player Visual", false, 10)]
+        [MenuItem(MenuRoot + "Assets bauen/Nathan Player Visual [SCHREIBT ASSET]", false, 1012)]
         public static void Build()
         {
             var log = new StringBuilder();
@@ -135,7 +135,7 @@ namespace CatchIfYouCan.EditorTools
             Debug.Log(log.ToString());
         }
 
-        [MenuItem(MenuRoot + "Validate Nathan Player Visual", false, 11)]
+        [MenuItem(MenuRoot + "Safe Inspection/Nathan pruefen [NUR LESEN]", false, 110)]
         public static void Validate()
         {
             var log = new StringBuilder();

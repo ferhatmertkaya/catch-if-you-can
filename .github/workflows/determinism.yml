@@ -52,3 +52,6 @@ jobs:
 
       - name: HQ modular environment guard
         run: Scripts/check_hq_environment.sh
+
+      - name: Editor menu guard
+        run: Scripts/check_editor_menu.sh

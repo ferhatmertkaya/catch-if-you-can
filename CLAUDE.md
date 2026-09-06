@@ -51,6 +51,7 @@ domains stop rather than guess. Every other domain continues.
 | `Docs/AGENT_OWNERSHIP.md` + `Docs/AGENT_ROSTER.json` | **Always.** Who owns what, the 40 specialist roles, and the 19 protected hotspots. |
 | `Docs/AGENT_TASK_ROUTER.md` | **Normative for how work is assigned.** Routing, the handoff contract, the review matrix, the blocked-domain rule. |
 | `Docs/PLATFORM_QUALITY_TIERS.md` | Anything that would differ between PC, console and mobile. Gameplay never differs; presentation may. |
+| `Docs/EDITOR_WORKFLOWS.md` | **Normativ für die Menüstruktur.** Bevor ein Editor-Werkzeug hinzukommt oder ein Menüpunkt verschoben wird. Welcher Befehl was ändert, und welche man ohne Rückfrage klicken darf. |
 | `Docs/PERFORMANCE_BUDGETS.md` | Before writing any performance number. Nothing is MEASURED yet, and saying it is fabricates evidence. |
 
 **The house is built in two stages, and only the first one is deterministic.** Stage A
@@ -201,6 +202,17 @@ place that number lives; everything else derives it.
   is parented before its component is added, and a rejected floor is named together with the
   scene that owns it, because "no floor" covered both an empty ray and a house in the wrong
   scene and those need different fixes. 235 checks.
+
+- `Scripts/check_editor_menu.sh` — the editor menu stays legible. Fifty-one commands sit in
+  seven named groups with none hiding in another root menu, every one carries a risk tag saying
+  what it changes, everything under Safe Inspection is tagged read-only, the pack classifier
+  that found 3 of 105 prefabs can no longer write the catalog (one writer, the verified one),
+  removing the test room finds an INACTIVE one - `GameObject.Find` skips those, so a switched-off
+  room survived and the next Build put a second beside it - and can be undone, the room is found
+  through the whole scene rather than across its roots so tidying the hierarchy cannot hide it,
+  no authoring command saves the open scene behind the user, and the four commands that can
+  rewrite the project all go through ONE confirmation that states scope, count, reimport, saving
+  and the way out. 18 checks.
 
 - `Scripts/check_agent_architecture.sh` — the roster holds 40 unique roles with
   every field, the roster and `AGENT_OWNERSHIP.md` name the same roles, the
@@ -383,7 +395,7 @@ place that number lives; everything else derives it.
   and window materials 1-4 named after a different FBX and matching those to each other offered
   window glass for a door wall. 125 checks.
 
-All ten run in CI (`.github/workflows/determinism.yml`). Run them locally before
+All eleven run in CI (`.github/workflows/determinism.yml`). Run them locally before
 pushing; they need nothing but a shell (and `python3` for the roster checks).
 
 ## The mistakes this project has already made

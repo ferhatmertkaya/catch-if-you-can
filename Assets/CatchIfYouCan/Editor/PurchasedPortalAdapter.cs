@@ -64,7 +64,7 @@ namespace CatchIfYouCan.EditorTools
         private Vector2 _scroll;
         private ScanResult _scan;
 
-        [MenuItem("Catch If You Can/Portal/Adopt Purchased Portal Pack")]
+        [MenuItem("Catch If You Can/Portal/Gekauftes Portal-Paket uebernehmen [SCHREIBT]", false, 701)]
         private static void Open()
         {
             PurchasedPortalAdapter window = GetWindow<PurchasedPortalAdapter>(

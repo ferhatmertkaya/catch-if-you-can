@@ -36,7 +36,7 @@ namespace CatchIfYouCan.EditorTools
         private Vector2 _scroll;
         private string _report = string.Empty;
 
-        [MenuItem("Catch If You Can/External Content/Validate Environment Content")]
+        [MenuItem("Catch If You Can/Safe Inspection/Content-Bestand pruefen [NUR LESEN]", false, 105)]
         public static void OpenValidate()
         {
             var w = GetWindow<EnvironmentContentTools>(true, "Umgebungs-Content");
@@ -44,7 +44,7 @@ namespace CatchIfYouCan.EditorTools
             w._report = Validate();
         }
 
-        [MenuItem("Catch If You Can/External Content/Audit Imported HQ Modular Pack")]
+        [MenuItem("Catch If You Can/Safe Inspection/Importiertes Paket pruefen [NUR LESEN]", false, 106)]
         public static void OpenAudit()
         {
             var w = GetWindow<EnvironmentContentTools>(true, "Umgebungs-Content");

@@ -67,14 +67,14 @@ namespace CatchIfYouCan.EditorTools
         private Vector2 _scroll;
         private Classification _classified;
 
-        [MenuItem("Catch If You Can/Modular Interior/Audit Pack")]
+        [MenuItem("Catch If You Can/Safe Inspection/HQ-Paket pruefen (Fenster) [NUR LESEN]", false, 101)]
         public static void OpenAudit()
         {
             var w = GetWindow<ModularInteriorTools>(true, "Modularer Innenausbau");
             w.minSize = new Vector2(620f, 520f);
         }
 
-        [MenuItem("Catch If You Can/Modular Interior/Architecture Forensics - Interior")]
+        [MenuItem("Catch If You Can/Safe Inspection/HQ Architektur-Forensik: interior [NUR LESEN]", false, 102)]
         public static void OpenForensicsInterior()
         {
             var w = GetWindow<ModularInteriorTools>(true, "Modularer Innenausbau");
@@ -83,7 +83,7 @@ namespace CatchIfYouCan.EditorTools
             w._report = MeasureArchitecture(w._packFolder);
         }
 
-        [MenuItem("Catch If You Can/Modular Interior/Architecture Forensics - Full HQ Package")]
+        [MenuItem("Catch If You Can/Safe Inspection/HQ Architektur-Forensik: ganzes Paket [NUR LESEN]", false, 103)]
         public static void OpenForensicsFullPackage()
         {
             var w = GetWindow<ModularInteriorTools>(true, "Modularer Innenausbau");
@@ -92,7 +92,7 @@ namespace CatchIfYouCan.EditorTools
             w._report = MeasureArchitecture(w._packFolder);
         }
 
-        [MenuItem("Catch If You Can/Modular Interior/Validate Environment")]
+        [MenuItem("Catch If You Can/Safe Inspection/Umgebung pruefen [NUR LESEN]", false, 104)]
         public static void OpenValidate()
         {
             var w = GetWindow<ModularInteriorTools>(true, "Modularer Innenausbau");
@@ -103,12 +103,25 @@ namespace CatchIfYouCan.EditorTools
         private void OnGUI()
         {
             EditorGUILayout.HelpBox(
-                "1. Paket pruefen  - zaehlt und klassifiziert, schreibt nichts.\n" +
-                "2. Katalog bauen  - schreibt GENAU EIN Asset: den Modular-Katalog.\n" +
-                "3. Kit vermessen  - Masse, Pivots, Ausrichtung, Collider, Raster. Schreibt nichts.\n" +
-                "4. Architektur-Forensik - liest GENAU den Ordner oben, rekursiv, ohne Umleitung.\n" +
-                "5. Umgebung pruefen - sagt, ob damit ein Haus gebaut werden kann.",
+                "Dieses Fenster SCHREIBT NICHTS. Alle Knoepfe lesen und berichten.\n\n" +
+                "1. Paket pruefen  - zaehlt und klassifiziert.\n" +
+                "2. Kit vermessen  - Masse, Pivots, Ausrichtung, Collider, Raster.\n" +
+                "3. Architektur-Forensik - liest GENAU den Ordner oben, rekursiv, ohne Umleitung.\n" +
+                "4. Umgebung pruefen - sagt, ob damit ein Haus gebaut werden kann.\n" +
+                "5. INVENTAR - was wirklich im Ordner liegt.",
                 MessageType.Info);
+
+            EditorGUILayout.HelpBox(
+                "Den Katalog schreibt dieses Fenster nicht mehr.\n\n" +
+                "Es tat es einmal, aus der Klassifikation nach Dateinamen - und die findet in " +
+                "diesem Paket 3 von 105 Prefabs, weil es seine Prefabs durchnummeriert und sein " +
+                "Glas 'Steklo' nennt. Ein Klick hier hat den geprueften Katalog durch einen " +
+                "schlechteren ersetzt, ohne zu warnen.\n\n" +
+                "Der Produktionsweg ist:\n" +
+                "Catch If You Can > HQ Assets > Katalog schreiben (geprueft)\n\n" +
+                "Die Klassifikation unten bleibt, weil sie als BERICHT nuetzlich ist. Sie ist " +
+                "nur keine Quelle mehr, aus der etwas geschrieben wird.",
+                MessageType.Warning);
 
             _packFolder = EditorGUILayout.TextField("Paket-Ordner", _packFolder);
 
@@ -118,19 +131,16 @@ namespace CatchIfYouCan.EditorTools
                 _report = Describe(_classified);
             }
 
-            if (GUILayout.Button("2. Katalog bauen (schreibt " + CatalogPath + ")"))
-                _report = BuildCatalog(_classified);
-
-            if (GUILayout.Button("3. Kit vermessen (schreibt nichts)"))
+            if (GUILayout.Button("2. Kit vermessen"))
                 _report = MeasureKit(_packFolder);
 
-            if (GUILayout.Button("4. Architektur-Forensik auf GENAU dem Ordner oben"))
+            if (GUILayout.Button("3. Architektur-Forensik auf GENAU dem Ordner oben"))
                 _report = MeasureArchitecture(_packFolder);
 
-            if (GUILayout.Button("5. Umgebung pruefen"))
+            if (GUILayout.Button("4. Umgebung pruefen"))
                 _report = ValidateEnvironment();
 
-            if (GUILayout.Button("6. INVENTAR - was liegt wirklich drin (schreibt nichts)"))
+            if (GUILayout.Button("5. INVENTAR - was liegt wirklich drin"))
                 _report = Inventory(_packFolder);
 
             EditorGUILayout.Space();
@@ -484,113 +494,6 @@ namespace CatchIfYouCan.EditorTools
 
         // -------------------------------------------------------------- Katalog bauen
 
-        /// <summary>
-        /// Hangs the freshly built kit off the catalog the RUNTIME actually reads.
-        ///
-        /// <para>
-        /// This used to be a sentence in the report asking the user to drag the asset into a
-        /// field, and it is the step that was missed: with 'Modular Interior' empty, the
-        /// generator can build no room from the pack and every room in the house falls back to
-        /// an untextured primitive box. A tool that produces an asset nothing points at has
-        /// done half a job - the same shape as content removed without removing what pointed
-        /// at it, only pointing the other way.
-        /// </para>
-        /// <para>
-        /// An existing reference is left alone and reported, because overwriting a hand-made
-        /// wiring is not this button's business.
-        /// </para>
-        /// </summary>
-        private static string WireIntoContentCatalog(ModularInteriorCatalog kit)
-        {
-            const string ContentCatalogPath =
-                "Assets/CatchIfYouCan/Resources/CatchIfYouCan/InvestigationContentCatalog.asset";
-
-            var content = AssetDatabase.LoadAssetAtPath<InvestigationContentCatalog>(ContentCatalogPath);
-            if (content == null)
-                return "WARNUNG: " + ContentCatalogPath + " gibt es nicht, der Katalog haengt " +
-                       "also an nichts. Ohne ihn baut der Generator KEINEN Raum aus dem Paket.\n";
-
-            if (content.ModularInterior == kit)
-                return "Verdrahtet: " + ContentCatalogPath + " zeigt bereits auf diesen Katalog.\n";
-
-            if (content.ModularInterior != null)
-                return "HINWEIS: " + ContentCatalogPath + " zeigt auf '" +
-                       content.ModularInterior.name + "' und wird nicht ueberschrieben. Wenn " +
-                       "das falsch ist, das Feld 'Modular Interior' von Hand aendern.\n";
-
-            content.ModularInterior = kit;
-            EditorUtility.SetDirty(content);
-            AssetDatabase.SaveAssets();
-            return "Verdrahtet: " + ContentCatalogPath + " -> Modular Interior = " +
-                   kit.name + ". Der Generator liest jetzt dieses Kit.\n";
-        }
-
-        /// <summary>
-        /// Picks the wall, floor and ceiling materials, and MEASURES the density each one is
-        /// authored at instead of assuming one.
-        ///
-        /// <para>
-        /// The pack normalises its UVs per piece: every wall maps its texture 0..1 across its
-        /// own width, so a tiling of 1.5 means 0.38 repeats per metre on a 3.95 m piece and 0.13
-        /// on an 11.90 m one. Generated geometry writes its UVs in metres, so the two only agree
-        /// if the density is restated in metres - and the only honest source for that number is
-        /// the asset itself: the material's own tiling divided by the piece it is used on.
-        /// </para>
-        /// <para>
-        /// Measured in the piece's OWN space. A world AABB would be right only while every
-        /// ancestor has scale 1, which is the mistake that once made a flashlight 2 mm long and
-        /// a room wall a hundred times too big.
-        /// </para>
-        /// <para>
-        /// Nothing is scanned for this. It reads the prefabs the classification already
-        /// selected, and no more.
-        /// </para>
-        /// </summary>
-        private static string ChooseSurfaces(ModularInteriorCatalog catalog, Classification c)
-        {
-            var sb = new StringBuilder();
-            sb.AppendLine("--- OBERFLAECHEN ---");
-
-            var found = new Dictionary<string, SurfaceCandidate>();
-
-            // Sampled across the PACK, not across the classified prefabs.
-            //
-            // The classifier matches English filenames and this pack numbers its prefabs, so
-            // ByRole held three stragglers - one of them a 36 x 57 m demo assembly - and the
-            // density was being measured off those. A wall material read from a fourteen-metre
-            // object says one texture tile covers nine metres, which on a six-metre wall is two
-            // thirds of a tile: not a pattern at all, just a smear that changes colour.
-            var prefabGuids = AssetDatabase.FindAssets("t:Prefab", new[] { c.Folder });
-            var paths = new List<string>(prefabGuids.Length);
-            for (int i = 0; i < prefabGuids.Length; i++)
-                paths.Add(AssetDatabase.GUIDToAssetPath(prefabGuids[i]));
-
-            paths.Sort(StringComparer.Ordinal);
-
-            for (int i = 0; i < paths.Count && i < SurfaceSampleLimit; i++)
-                CollectSurfaces(paths[i], found);
-
-            if (found.Count == 0)
-            {
-                sb.AppendLine("Keine Materialien auf den klassifizierten Prefabs gefunden.");
-                sb.AppendLine("Die Raeume bleiben in den neutralen Grautoenen.");
-                return sb.ToString();
-            }
-
-            // Named preferences first, then whatever was measured most often. The names come
-            // from the measured material families in Docs/HQ_MODULAR_MIGRATION.md; falling back
-            // to the commonest material means a renamed pack still produces a textured room.
-            catalog.WallSurface = Choose(found, sb, "Wand", "wallpaper3", "wallpaper1", "beton");
-            catalog.FloorSurface = Choose(found, sb, "Boden", "tile1", "beton", "wallpaper1");
-            catalog.CeilingSurface = Choose(found, sb, "Decke", "white", "beton", "wallpaper1");
-
-            sb.AppendLine();
-            sb.AppendLine("Die Dichte ist GEMESSEN (Kachelung des Materials geteilt durch die");
-            sb.AppendLine("Groesse des Teils, auf dem es liegt), nicht geschaetzt. Wo sie falsch");
-            sb.AppendLine("aussieht, im Katalog-Asset korrigieren - es sind zwei Zahlen.");
-            return sb.ToString();
-        }
-
         /// <summary>How many prefabs are opened to look for materials. Bounded on purpose.</summary>
         private const int SurfaceSampleLimit = 80;
 
@@ -813,80 +716,6 @@ namespace CatchIfYouCan.EditorTools
         private const float MinPatternMetres = 0.05f;
         private const float MaxPatternMetres = 6.0f;
         private const float MaxPatternAspect = 3.0f;
-
-        private static string BuildCatalog(Classification c)
-        {
-            if (c == null || c.Total == 0)
-                return "Erst 'Paket pruefen' - ohne Klassifikation wird nichts geschrieben.";
-
-            var sb = new StringBuilder();
-            sb.AppendLine("=== KATALOG BAUEN ===");
-
-            if (!AssetDatabase.IsValidFolder(CatalogFolder))
-            {
-                sb.AppendLine("FEHLER: " + CatalogFolder + " gibt es nicht.");
-                return sb.ToString();
-            }
-
-            var catalog = AssetDatabase.LoadAssetAtPath<ModularInteriorCatalog>(CatalogPath);
-            bool created = catalog == null;
-            if (created)
-            {
-                catalog = ScriptableObject.CreateInstance<ModularInteriorCatalog>();
-                AssetDatabase.CreateAsset(catalog, CatalogPath);
-            }
-
-            catalog.PackRootFolder = c.Folder;
-            catalog.PackDisplayName = Path.GetFileName(c.Folder.TrimEnd('/'));
-
-            var sets = new List<ModuleSet>();
-            foreach (ModuleRole role in Enum.GetValues(typeof(ModuleRole)))
-            {
-                if (!c.ByRole.TryGetValue(role, out var paths) || paths.Count == 0)
-                    continue;
-
-                var variants = new List<GameObject>(paths.Count);
-                for (int i = 0; i < paths.Count; i++)
-                {
-                    var go = AssetDatabase.LoadAssetAtPath<GameObject>(paths[i]);
-                    if (go != null)
-                        variants.Add(go);
-                }
-
-                if (variants.Count == 0)
-                    continue;
-
-                sets.Add(new ModuleSet
-                {
-                    Role = role,
-                    Categories = new RoomCategory[0],
-                    Variants = variants.ToArray(),
-                    // Measured from the first variant's own space. A world AABB here would be
-                    // wrong for the same reason it was wrong in the equipment factory.
-                    ModuleSize = MeasureLocalSize(variants[0]),
-                });
-
-                sb.AppendLine(string.Format("{0,-18} {1,4} Varianten, Modulmass {2}",
-                    role, variants.Count, MeasureLocalSize(variants[0]).ToString("F2")));
-            }
-
-            catalog.Modules = sets.ToArray();
-            sb.AppendLine();
-            sb.Append(ChooseSurfaces(catalog, c));
-
-            EditorUtility.SetDirty(catalog);
-            AssetDatabase.SaveAssets();
-            AssetDatabase.Refresh();
-
-            sb.AppendLine();
-            sb.AppendLine((created ? "Angelegt: " : "Aktualisiert: ") + CatalogPath);
-            sb.AppendLine();
-            sb.Append(WireIntoContentCatalog(catalog));
-            sb.AppendLine();
-            sb.AppendLine("Die Zuordnung ist geraten. Wo sie falsch ist, im Katalog-Asset");
-            sb.AppendLine("korrigieren - er ist eine ganz normale Liste.");
-            return sb.ToString();
-        }
 
         /// <summary>
         /// The size of a prefab in ITS OWN space: every mesh corner pushed through the

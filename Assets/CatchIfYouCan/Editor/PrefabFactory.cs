@@ -12,7 +12,7 @@ namespace CatchIfYouCan.EditorTools
     {
         private const string PrefabRoot = "Assets/CatchIfYouCan/Prefabs";
 
-        [MenuItem("Catch If You Can/Generate Placeholder Prefabs")]
+        [MenuItem("Catch If You Can/Debug and Legacy/Platzhalter-Prefabs erzeugen [SCHREIBT ASSET]", false, 1203)]
         public static void GeneratePlaceholderPrefabs()
         {
             EnsureFolder("Assets/CatchIfYouCan");

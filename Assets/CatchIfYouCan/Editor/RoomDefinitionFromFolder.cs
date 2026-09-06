@@ -43,7 +43,7 @@ namespace CatchIfYouCan.EditorTools
         private readonly List<string> _unmatched = new List<string>();
         private int _scanned;
 
-        [MenuItem("Catch If You Can/Rooms/Build Room Definitions From Folder")]
+        [MenuItem("Catch If You Can/Assets bauen/Raumdefinitionen aus Ordner [SCHREIBT ASSET]", false, 1004)]
         public static void Open()
         {
             var w = GetWindow<RoomDefinitionFromFolder>(true, "Raum-Prefabs zuordnen");

@@ -35,7 +35,7 @@ namespace CatchIfYouCan.EditorTools
         /// </summary>
         private static readonly Vec3i CellMm = new Vec3i(6000, 3000, 6000);
 
-        [MenuItem("Catch If You Can/Modular Interior/Build ONE Test Room")]
+        [MenuItem("Catch If You Can/HQ Assets/Testraum bauen [AENDERT SZENE]", false, 502)]
         public static void BuildTestRoom()
         {
             var catalog = AssetDatabase.LoadAssetAtPath<ModularInteriorCatalog>(
@@ -90,15 +90,37 @@ namespace CatchIfYouCan.EditorTools
             SceneView.lastActiveSceneView?.FrameSelected();
         }
 
-        [MenuItem("Catch If You Can/Modular Interior/Remove Test Room")]
+        [MenuItem("Catch If You Can/HQ Assets/Testraum entfernen [UNDO]", false, 503)]
         public static void Clear()
         {
-            GameObject existing = GameObject.Find(RoomName);
-            while (existing != null)
+            // GameObject.Find SKIPS INACTIVE OBJECTS, and a test room switched off to look past
+            // it is exactly that: not found, not removed - and the next Build puts a second one
+            // beside it. The scene is walked instead, inactive included, which is the only kind
+            // this has to catch.
+            int removed = 0;
+            var scene = UnityEngine.SceneManagement.SceneManager.GetActiveScene();
+            var roots = scene.GetRootGameObjects();
+
+            for (int i = 0; i < roots.Length; i++)
             {
-                Object.DestroyImmediate(existing);
-                existing = GameObject.Find(RoomName);
+                var all = roots[i].GetComponentsInChildren<Transform>(true);
+                for (int c = 0; c < all.Length; c++)
+                {
+                    if (all[c] == null || all[c].name != RoomName)
+                        continue;
+
+                    // Undo rather than DestroyImmediate: removing the wrong room by accident is
+                    // a lost afternoon otherwise, and there is no reason this cannot be undone.
+                    Undo.DestroyObjectImmediate(all[c].gameObject);
+                    removed++;
+                    break;      // its children went with it; this root's list is now stale
+                }
             }
+
+            Debug.Log(removed == 0
+                ? "[CIYC] Kein Testraum '" + RoomName + "' in der Szene - auch kein " +
+                  "ausgeschalteter."
+                : "[CIYC] " + removed + " Testraum/-raeume entfernt (rueckgaengig machbar).");
         }
 
         /// <summary>

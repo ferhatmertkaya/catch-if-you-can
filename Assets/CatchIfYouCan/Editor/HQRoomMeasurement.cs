@@ -46,24 +46,78 @@ namespace CatchIfYouCan.EditorTools
             public List<Piece> Pieces;
         }
 
-        /// <summary>
-        /// The room's roots, by name rather than by selection, so the same set is measured every
-        /// time and two runs can be compared.
-        /// </summary>
-        public static List<GameObject> CollectRoots()
-        {
-            var roots = new List<GameObject>();
-            var scene = UnityEngine.SceneManagement.SceneManager.GetActiveScene();
-            var all = scene.GetRootGameObjects();
+        /// <summary>The root the scaling tool parents the room under, once it has run.</summary>
+        public const string ScaleRootName = "HQ_ROOM_SCALE_ROOT";
 
-            for (int i = 0; i < all.Length; i++)
+        /// <summary>
+        /// The room's top-level pieces, by name rather than by selection, so the same set is
+        /// measured every time and two runs can be compared.
+        ///
+        /// <para>
+        /// Searched through the WHOLE scene, not only across its roots. Looking only at roots
+        /// worked exactly as long as nobody tidied the hierarchy: the hierarchy tool offers to
+        /// move these under a folder, and the moment it does, a root-only search finds nothing
+        /// and reports an empty room. The two tools would then have quietly disagreed about
+        /// which objects exist.
+        /// </para>
+        /// <para>
+        /// TOPMOST match only. A match's children are skipped, so a piece nested inside an
+        /// already-counted wrapper is not measured twice and, more importantly, is never
+        /// reparented out of its own wrapper by the scaling tool.
+        /// </para>
+        /// <para>
+        /// Inactive objects included. The lobby is saved switched off, and everything in it
+        /// with it.
+        /// </para>
+        /// </summary>
+        public static List<GameObject> CollectRoomObjects()
+        {
+            var found = new List<GameObject>();
+            var scene = UnityEngine.SceneManagement.SceneManager.GetActiveScene();
+            var roots = scene.GetRootGameObjects();
+
+            // Once the room has been scaled it lives under one root, and ITS CHILDREN are the
+            // pieces - the root itself is a container this created, not part of the room.
+            for (int i = 0; i < roots.Length; i++)
             {
-                string n = all[i].name;
-                if (n.StartsWith(RoomPrefix) || n == FloorName)
-                    roots.Add(all[i]);
+                if (roots[i].name != ScaleRootName)
+                    continue;
+                foreach (Transform child in roots[i].transform)
+                    found.Add(child.gameObject);
+                return found;
             }
-            return roots;
+
+            for (int i = 0; i < roots.Length; i++)
+                CollectTopmost(roots[i].transform, found);
+
+            return found;
         }
+
+        /// <summary>
+        /// Adds the first matching object down each branch and then stops descending it.
+        /// </summary>
+        private static void CollectTopmost(Transform t, List<GameObject> into)
+        {
+            if (t == null)
+                return;
+
+            if (IsRoomPiece(t.name))
+            {
+                into.Add(t.gameObject);
+                return;
+            }
+
+            foreach (Transform child in t)
+                CollectTopmost(child, into);
+        }
+
+        /// <summary>
+        /// Whether a name marks a piece of the hand-built room. The scaling root is excluded on
+        /// purpose - it begins with the same prefix, and counting it would make the room contain
+        /// its own container.
+        /// </summary>
+        public static bool IsRoomPiece(string name) =>
+            name != ScaleRootName && (name.StartsWith(RoomPrefix) || name == FloorName);
 
         /// <summary>Every renderer under the given objects, with its world box.</summary>
         public static List<Piece> CollectPieces(IList<GameObject> roots)
@@ -157,7 +211,7 @@ namespace CatchIfYouCan.EditorTools
         /// <summary>Convenience: collect and measure in one step.</summary>
         public static Result MeasureRoom()
         {
-            return Measure(CollectPieces(CollectRoots()));
+            return Measure(CollectPieces(CollectRoomObjects()));
         }
 
         /// <summary>

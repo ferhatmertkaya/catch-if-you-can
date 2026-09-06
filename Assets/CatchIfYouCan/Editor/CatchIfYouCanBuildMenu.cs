@@ -18,7 +18,7 @@ namespace CatchIfYouCan.EditorTools
         private const string AndroidReleasePath = "Builds/Android/CatchIfYouCan_release.apk";
         private const string IOSPath = "Builds/iOS";
 
-        [MenuItem("Catch If You Can/Build Android Development")]
+        [MenuItem("Catch If You Can/Build/Android Development", false, 900)]
         public static void BuildAndroidDevelopment()
         {
             if (!ValidateScenes())
@@ -36,7 +36,7 @@ namespace CatchIfYouCan.EditorTools
             RunBuild(options, "Android Development");
         }
 
-        [MenuItem("Catch If You Can/Build Android Release")]
+        [MenuItem("Catch If You Can/Build/Android Release", false, 901)]
         public static void BuildAndroidRelease()
         {
             if (!ValidateScenes())
@@ -56,7 +56,7 @@ namespace CatchIfYouCan.EditorTools
             RunBuild(options, "Android Release (IL2CPP)");
         }
 
-        [MenuItem("Catch If You Can/Build iOS")]
+        [MenuItem("Catch If You Can/Build/iOS", false, 902)]
         public static void BuildIOS()
         {
             BuildIOSInternal(false);
