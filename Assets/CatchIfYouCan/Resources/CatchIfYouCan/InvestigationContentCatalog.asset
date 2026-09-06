@@ -16,7 +16,7 @@ MonoBehaviour:
   RoomDefinitions: []
   DoorPrefab: {fileID: 0}
   ModularInterior: {fileID: 11400000, guid: fe6e6059c177b47ea9bad2d55b651621, type: 2}
-  WallMaterial: {fileID: 0}
-  FloorMaterial: {fileID: 0}
-  CeilingMaterial: {fileID: 0}
-  TrimMaterial: {fileID: 0}
+  WallMaterial: {fileID: 2100000, guid: bcce389759ba478eb92ba9cd523d9aa8, type: 2}
+  FloorMaterial: {fileID: 2100000, guid: db1d879d02d543bba661e9d69535a820, type: 2}
+  CeilingMaterial: {fileID: 2100000, guid: bfbf298e0a264f88b618b3369b6622b3, type: 2}
+  TrimMaterial: {fileID: 2100000, guid: 736551a4ca30444d8a349f3cf44a34ed, type: 2}

@@ -1252,6 +1252,59 @@ else:
     bad("a name with no letters at all matches nothing",
         "digits and punctuation say nothing about which surface this is")
 
+# ---------------------------------------------------------------- the vendor pack is DECLARED
+#
+# The pack is bought, licensed per seat and gitignored, so the scenes and catalogs that name its
+# guids resolve to nothing on any machine without it - which is the same shape as CLAUDE.md
+# mistake 14, content removed without removing what pointed at it, and must not be allowed to
+# hide behind it. The machine that HAS the pack writes down which guids are its, and the
+# reference guard reads that. These checks are about the writing-down staying honest.
+manifest_tool = "Scripts/write_vendor_manifest.sh"
+tool = read(manifest_tool) or ""
+
+if not tool:
+    bad("there is a way to declare which guids belong to a purchased pack",
+        "expected " + manifest_tool)
+else:
+    ok("there is a way to declare which guids belong to a purchased pack")
+
+    # The roots come from .gitignore, not from a list repeated in the script. A pack added to
+    # the ignore file and forgotten here would silently stop being covered, and its guids would
+    # then be reported as deleted project assets - a real failure wearing a false name.
+    if "grep -E '^/Assets/.+/$' .gitignore" in tool:
+        ok("the vendor roots are read from .gitignore rather than repeated")
+    else:
+        bad("the vendor roots are read from .gitignore rather than repeated",
+            "a second list of vendor folders is a second thing to forget")
+
+    # It reads .meta files and writes one text file. A tool that reimports or rewrites anything
+    # inside a purchased pack is how an Asset Store folder stops matching its own .meta files.
+    forbidden = [c for c in ("AssetDatabase", "ImportAsset", "Refresh", "mv \"$r", "rm -rf")
+                 if c in tool]
+    if forbidden:
+        bad("declaring the pack does not touch the pack",
+            "found: " + ", ".join(forbidden))
+    else:
+        ok("declaring the pack does not touch the pack")
+
+    # A .meta whose asset is gone describes nothing. Recording its guid would make the reference
+    # guard say "the pack changed under us" on the very machine that has the pack.
+    if "[ -e \"$asset\" ] || continue" in tool:
+        ok("a .meta with no asset behind it is not recorded as a vendor guid")
+    else:
+        bad("a .meta with no asset behind it is not recorded as a vendor guid",
+            "an orphan .meta would be recorded as an asset that exists")
+
+# And the guard that consumes it keeps its teeth in BOTH directions: a guid the manifest does
+# not name still fails, and so does one it names while the pack is installed.
+refguard = read("Scripts/check_asset_references.sh") or ""
+if "truly_missing" in refguard and "changed_pack" in refguard \
+        and "and that pack IS installed here" in refguard:
+    ok("a declared vendor guid still fails when the pack is actually installed")
+else:
+    bad("a declared vendor guid still fails when the pack is actually installed",
+        "otherwise the manifest becomes a way to excuse any missing asset")
+
 print()
 print("  %d passed, %d failed" % (passed, failed))
 sys.exit(1 if failed else 0)

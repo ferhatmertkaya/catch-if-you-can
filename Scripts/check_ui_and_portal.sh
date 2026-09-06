@@ -19,6 +19,7 @@ UI="$ROOT/Assets/CatchIfYouCan/Scripts/UI"
 ENV="$ROOT/Assets/CatchIfYouCan/Scripts/Environment"
 ART="$ROOT/Assets/CatchIfYouCan/Scripts/Art"
 SCENE="$ROOT/Assets/CatchIfYouCan/Scenes/01_MainMenu.unity"
+EDT="$ROOT/Assets/CatchIfYouCan/Editor"
 
 PASS=0
 FAIL=0
@@ -896,10 +897,103 @@ fi
 # ---- V9.6: eine Nordwand, keine Sockelleisten ----------------------------------------------
 # Die Nordwand ist EIN Quader ueber die volle Breite. Sie war einmal in Segmente mit einer
 # Tuerluecke zerlegt, dazu ein Rahmen und ein Laufzeit-Flicken; nichts davon darf zurueck.
-if grep -qE '^  m_Name: Lobby_Wall_North$' "$SCENE"; then
-  ok "die Lobby hat eine Nordwand"
+#
+# Geprueft wird die INVARIANTE, nicht der Name: das Portal braucht EINE Wand, in die es sein
+# Loch schneiden kann. Das ist entweder die gebaute Lobby_Wall_North oder ein ausdruecklich
+# eingetragenes wallCollider auf der Portal-Komponente. Auf den Namen allein zu pruefen war zu
+# eng - eine von Hand gebaute Wand aus gekauften Teilen erfuellt die Invariante genauso - und
+# zugleich zu weit: ein umbenanntes Objekt haette die Pruefung bestanden, waehrend das Portal
+# nichts mehr findet. ResolveWall sucht sonst per FORM, und ein Wandmodul, das schmaler ist
+# als die Oeffnung, faellt dort durch, ohne dass irgendetwas anderes es sagt.
+wall_named=$(grep -cE '^  m_Name: Lobby_Wall_North$' "$SCENE")
+wall_wired=$(grep -E '^  wallCollider: \{fileID: [0-9]+' "$SCENE" \
+             | grep -cvE '^  wallCollider: \{fileID: 0\}')
+if [ "$wall_named" -gt 0 ] || [ "$wall_wired" -gt 0 ]; then
+  ok "das Portal hat eine Wand, in die es schneiden kann"
 else
-  bad "die Lobby hat eine Nordwand" "ohne sie steht die Lobby zum Nachthimmel hin offen"
+  bad "das Portal hat eine Wand, in die es schneiden kann" \
+      "weder Lobby_Wall_North in der Szene noch wallCollider am Portal gesetzt; ResolveWall \
+sucht dann per Form und braucht EINEN Collider von mindestens der Oeffnungsbreite - ein \
+Wandmodul des gekauften Pakets ist schmaler und faellt durch. Messen mit \
+'Catch If You Can/Lobby/Portalwand messen'."
+fi
+
+# ---- die Portalwand wird GEMESSEN, nicht behauptet ------------------------------------------
+# Solange die Wand nicht steht, ist die einzige ehrliche Antwort eine Messung. Das Werkzeug
+# dafuer muss drei Dinge einhalten, sonst misst es etwas anderes als das, was zur Laufzeit
+# passiert - und eine Messung, der man nicht trauen kann, ist schlimmer als keine.
+PROBE="$EDT/LobbyPortalWallProbe.cs"
+if [ ! -f "$PROBE" ]; then
+  bad "es gibt ein Werkzeug, das die Portalwand misst" "erwartet $PROBE"
+  bad "das Messwerkzeug aendert nichts" "Datei fehlt"
+  bad "das Messwerkzeug liest das Portal ueber oeffentliche Zusagen" "Datei fehlt"
+  bad "das Messwerkzeug sieht auch ausgeschaltete Objekte" "Datei fehlt"
+  bad "das Messwerkzeug wendet dieselben drei Tests an wie ResolveWall" "Datei fehlt"
+  bad "ein leeres Collider-Bounds gilt nicht als 'nichts da'" "Datei fehlt"
+else
+  ok "es gibt ein Werkzeug, das die Portalwand misst"
+
+  # Ein Diagnosewerkzeug, das etwas veraendert, ist keine Diagnose. Besonders nicht dieses:
+  # es liefe ueber eine Szene, in der der Benutzer gerade von Hand gebaut hat.
+  writes=""
+  for call in 'EditorUtility.SetDirty' 'AssetDatabase.SaveAssets' 'AssetDatabase.CreateAsset' \
+              'Undo\.' 'DestroyImmediate' 'Object.Instantiate' 'SetActive'; do
+    code "$PROBE" | grep -qE "$call" && writes="$writes $call"
+  done
+  # Und es traegt insbesondere nicht selbst ein, was es messen soll.
+  code "$PROBE" | grep -qE 'wallCollider[[:space:]]*=' && writes="$writes wallCollider="
+  if [ -n "$writes" ]; then
+    bad "das Messwerkzeug aendert nichts" "gefunden:$writes"
+  else
+    ok "das Messwerkzeug aendert nichts"
+  fi
+
+  # CLAUDE.md Fehler 4: Reflection in fremde private Felder kompiliert, liest sich sauber und
+  # faellt beim naechsten Umbenennen still um. Das Portal sagt die drei Zahlen selbst zu.
+  if code "$PROBE" | grep -qE 'BindingFlags|GetField\(|GetProperty\(' ; then
+    bad "das Messwerkzeug liest das Portal ueber oeffentliche Zusagen" \
+        "Reflection in private Felder - beim naechsten Umbenennen still falsch"
+  elif code "$PROBE" | grep -qE 'portal\.OpeningSize' \
+    && code "$PROBE" | grep -qE 'portal\.MaxWallThickness' \
+    && code "$PROBE" | grep -qE 'portal\.AssignedWallCollider'; then
+    ok "das Messwerkzeug liest das Portal ueber oeffentliche Zusagen"
+  else
+    bad "das Messwerkzeug liest das Portal ueber oeffentliche Zusagen" \
+        "OpeningSize, MaxWallThickness und AssignedWallCollider muessen vom Portal kommen"
+  fi
+
+  # Der entscheidende Punkt. MainMenu_Lobby ist in der Datei AUS; zur Laufzeit ist sie AN,
+  # bevor das Portal aufgeht. Ein Suchlauf ohne inaktive Objekte meldet den Raum als leer
+  # und beschreibt damit genau den einen Moment nicht, um den es geht.
+  if code "$PROBE" | grep -qE 'FindObjectsInactive\.Include'; then
+    ok "das Messwerkzeug sieht auch ausgeschaltete Objekte"
+  else
+    bad "das Messwerkzeug sieht auch ausgeschaltete Objekte" \
+        "ohne FindObjectsInactive.Include ist die schlafende Lobby unsichtbar und der " \
+        "Bericht sagt 'nichts da' ueber einen Raum, der zur Laufzeit steht"
+  fi
+
+  # Dieselben drei Tests, nicht ungefaehr dieselben. Ein Werkzeug, das grosszuegiger misst
+  # als ResolveWall, meldet eine Wand, die das Portal dann ablehnt.
+  if code "$PROBE" | grep -qE 'thickness[[:space:]]*<=[[:space:]]*maxThickness' \
+     && code "$PROBE" | grep -qE 'width[[:space:]]*>=[[:space:]]*opening\.x' \
+     && code "$PROBE" | grep -qE 'height[[:space:]]*>=[[:space:]]*opening\.y'; then
+    ok "das Messwerkzeug wendet dieselben drei Tests an wie ResolveWall"
+  else
+    bad "das Messwerkzeug wendet dieselben drei Tests an wie ResolveWall" \
+        "Dicke gegen maxWallThickness, Breite und Hoehe gegen openingSize"
+  fi
+
+  # Auf einem inaktiven Objekt kann Collider.bounds eine leere Box liefern, und eine leere Box
+  # schneidet nichts. Ungeprueft liest sich das als 'da ist nichts' - dasselbe Ergebnis wie
+  # eine fehlende Wand, mit einer voellig anderen Ursache.
+  if code "$PROBE" | grep -qE 'MeasuredBounds' \
+     && code "$PROBE" | grep -qE 'b\.size[[:space:]]*!=[[:space:]]*Vector3\.zero'; then
+    ok "ein leeres Collider-Bounds gilt nicht als 'nichts da'"
+  else
+    bad "ein leeres Collider-Bounds gilt nicht als 'nichts da'" \
+        "eine leere Box schneidet nichts und liest sich als fehlende Wand"
+  fi
 fi
 
 split=""

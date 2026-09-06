@@ -137,6 +137,24 @@ namespace CatchIfYouCan.Environment
                  "what tells the two apart without naming either.")]
         [SerializeField, Min(0.05f)] private float maxWallThickness = 1f;
 
+        /// <summary>
+        /// The opening the tear is cut to, as authored. Read-only, and read by the editor's wall
+        /// probe so it can reproduce the acceptance test exactly rather than reaching into this
+        /// class's private fields - which compiles, reviews clean, and breaks silently on the
+        /// next rename.
+        /// </summary>
+        public Vector2 OpeningSize => style.openingSize;
+
+        /// <summary>How thick a collider may be across the opening and still count as the wall.</summary>
+        public float MaxWallThickness => maxWallThickness;
+
+        /// <summary>
+        /// The wall explicitly assigned in the scene, or null when the wall is to be found by
+        /// shape. Deliberately NOT the resolved wall: the two differ, and the difference is the
+        /// thing worth measuring.
+        /// </summary>
+        public Collider AssignedWallCollider => wallCollider;
+
         private bool _sealedByHunt;
         private Coroutine _sealing;
         private BoxCollider _threshold;

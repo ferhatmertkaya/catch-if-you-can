@@ -283,13 +283,82 @@ for path in tracked:
     for _, guid in REF.findall(body):
         refs.setdefault(guid, set()).add(path)
 
+# A guid nothing declares has two very different causes, and they are indistinguishable from
+# inside the repository:
+#
+#   1. CLAUDE.md mistake 14 - an asset was deleted and the things pointing at it were not. The
+#      scene looks fine until it is opened.
+#   2. It belongs to a purchased pack that is gitignored on purpose (Asset Store licence, and
+#      the LFS payload is already over GitHub's free allowance). On a machine with the pack it
+#      resolves; here it cannot.
+#
+# Telling them apart needs knowledge only a machine WITH the pack has, so that machine writes
+# it down: Scripts/write_vendor_manifest.sh records guid -> path for every vendor asset, and
+# the result is committed. Three-way verdict below. The teeth are kept: a guid the manifest
+# does not name still fails, and so does one it names while the pack IS installed - that means
+# the pack changed under us, which no absence excuses.
+vendor_roots = []
+try:
+    for line in io.open(os.path.join(root, ".gitignore"), encoding="utf-8",
+                        errors="replace").read().splitlines():
+        line = line.strip()
+        if line.startswith("/Assets/") and line.endswith("/"):
+            vendor_roots.append(line[1:-1])
+except OSError:
+    pass
+
+MANIFEST = "Docs/VENDOR_ASSET_MANIFEST.txt"
+vendor_guids = {}
+manifest_path = os.path.join(root, MANIFEST)
+if os.path.exists(manifest_path):
+    for line in io.open(manifest_path, encoding="utf-8", errors="replace").read().splitlines():
+        line = line.strip()
+        if not line or line.startswith("#"):
+            continue
+        parts = line.split(None, 1)
+        if len(parts) == 2 and re.match(r"^[0-9a-f]{32}$", parts[0]):
+            vendor_guids[parts[0]] = parts[1]
+
+installed = [r for r in vendor_roots if os.path.isdir(os.path.join(root, r))]
+
 unresolved = sorted(g for g in refs if g not in declared)
-if unresolved:
-    bad("every prefab instance in a scene or prefab resolves to an asset",
-        ["%s - named by %s" % (g, ", ".join(sorted(refs[g]))) for g in unresolved])
+absent_pack = []      # named by the manifest, pack not installed here - expected
+changed_pack = []     # named by the manifest, pack IS installed - the pack moved under us
+truly_missing = []    # named by nobody - mistake 14
+
+for g in unresolved:
+    if g not in vendor_guids:
+        truly_missing.append(g)
+        continue
+    owner = vendor_guids[g].split("/")
+    root_of = next((r for r in vendor_roots if vendor_guids[g].startswith(r + "/")), None)
+    if root_of is not None and root_of in installed:
+        changed_pack.append(g)
+    else:
+        absent_pack.append(g)
+
+if truly_missing or changed_pack:
+    detail = ["%s - named by %s" % (g, ", ".join(sorted(refs[g]))) for g in truly_missing]
+    detail += ["%s - %s, and that pack IS installed here" % (g, vendor_guids[g])
+               for g in changed_pack]
+    if not vendor_guids:
+        detail.append("no %s in this checkout - run Scripts/write_vendor_manifest.sh on the "
+                      "machine that has the purchased packs and commit the result, so this "
+                      "check can tell a missing pack from a deleted asset" % MANIFEST)
+    bad("every prefab instance resolves, or is a known vendor asset", detail)
 else:
-    ok("every prefab instance in a scene or prefab resolves to an asset (%d guid(s))"
-       % len(refs))
+    ok("every prefab instance resolves, or is a known vendor asset (%d guid(s))" % len(refs))
+
+if absent_pack:
+    note("%d guid(s) belong to a purchased pack that is not in this working copy; the manifest "
+         "names them, so this is the expected state here and not a broken reference"
+         % len(absent_pack))
+    for r in vendor_roots:
+        n = sum(1 for g in absent_pack if vendor_guids[g].startswith(r + "/"))
+        if n:
+            note("  %d from %s" % (n, r))
+    note("  a scene naming them cannot be opened without the pack; installing it is a "
+         "prerequisite for building, not something CI can supply")
 
 # ------------------------------- 6. and the ones behind git-lfs actually arrived
 

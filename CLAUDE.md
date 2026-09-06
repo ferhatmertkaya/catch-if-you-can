@@ -73,7 +73,7 @@ place that number lives; everything else derives it.
 ## The rules that are enforced, not trusted
 
 - `Scripts/check_determinism.sh` — the deterministic set stays pure and the
-  layout hash stays stable. 158 checks, all must pass.
+  layout hash stays stable. 148 checks, all must pass.
 - `Scripts/check_dev_scenes.sh` — no `DEV_` scene is ever enabled in the build
   list.
 - `Scripts/check_equipment_catalog.sh` — the eleven items keep their runtime
@@ -200,7 +200,7 @@ place that number lives; everything else derives it.
   `AddComponent`, one line above the `SetParent` that decides the scene — every runtime manager
   is parented before its component is added, and a rejected floor is named together with the
   scene that owns it, because "no floor" covered both an empty ray and a house in the wrong
-  scene and those need different fixes. 208 checks.
+  scene and those need different fixes. 214 checks.
 
 - `Scripts/check_agent_architecture.sh` — the roster holds 40 unique roles with
   every field, the roster and `AGENT_OWNERSHIP.md` name the same roles, the
@@ -241,14 +241,20 @@ place that number lives; everything else derives it.
   setup's ability to restore them. 24 checks.
 
 - `Scripts/check_asset_references.sh` — every asset a scene names really arrives on the
-  machine that opens it. Every git-lfs rule matches a tracked file, every git-lfs file is
+  machine that opens it, or is a DECLARED vendor asset. Every git-lfs rule matches a tracked file, every git-lfs file is
   stored as a pointer rather than as pack content, every `.meta` under `Assets` declares a
   guid, no two share one, every tracked asset carries its `.meta`, and every prefab instance
   in a scene or prefab resolves to an asset that exists. It also reads the working copy,
   which is where the failure actually lives: all-pointers is a checkout that never asked for
   LFS content and is fine, all-materialised is fine, and a mix of the two is a partial fetch
   — it names the files that are still pointers, because those are the ones Unity shows in
-  red. It reports the LFS payload against GitHub's free 1 GiB allowance. 12 checks.
+  red. It reports the LFS payload against GitHub's free 1 GiB allowance. And it tells an
+  EXPECTED absence from a broken one: the purchased packs are gitignored, so the guids a
+  scene names in them resolve to nothing here, which from inside the repository looks
+  exactly like mistake 14. `Scripts/write_vendor_manifest.sh`, run on the machine that has
+  the packs, writes down which guids are theirs; the guard then passes an absence the
+  manifest names while the pack is missing, and still fails a guid the manifest does not
+  name, or one it does name while the pack IS installed. 12 checks.
 
 - `Scripts/check_hq_environment.sh` — the house interior comes from a modular catalog, and
   nothing can quietly put the old one back. No production file names a Kenney content path
@@ -375,7 +381,7 @@ place that number lives; everything else derives it.
   with `wallpaper3` and `white` on them — so that is named before any single slot is blamed, and a
   slot name with fewer than three letters proposes nothing, because this pack has wall slots 1-6
   and window materials 1-4 named after a different FBX and matching those to each other offered
-  window glass for a door wall. 120 checks.
+  window glass for a door wall. 125 checks.
 
 All ten run in CI (`.github/workflows/determinism.yml`). Run them locally before
 pushing; they need nothing but a shell (and `python3` for the roster checks).
@@ -503,6 +509,27 @@ Repeating one of these is the most likely way to break something.
    because the rejection was silent about WHY. `Awake` cannot fix this on its own either:
    it runs inside `AddComponent`, one line above the `SetParent` that decides which scene
    the component is in.
+
+18. **A field cleared in the Inspector, which reads as no change at all.** The lobby was
+   rebuilt by hand and the commit that carried it also set `WallMaterial`, `FloorMaterial`,
+   `CeilingMaterial` and `TrimMaterial` on the Resources content catalog to `{fileID: 0}`.
+   Those four are the fallback room's surfaces, and the rule for a primitive with no material
+   is to switch its RENDERER off rather than ship Unity's magenta built-in default - so the
+   stand-in room does not go magenta, it goes INVISIBLE, with its colliders still holding the
+   player up. Nothing errors, nothing is missing, and the diff is four lines that look like
+   tidying. It was caught by a guard that checks the catalog's references resolve, and only
+   because clearing a reference and deleting the asset behind it produce the same "does not
+   resolve". The materials themselves were never gone; the pointing was.
+
+19. **A scene wired to a folder that is deliberately not in the repository.** The main menu now
+   instances 26 prefabs from the purchased HQ pack, which is gitignored - per-seat licence, and
+   the LFS payload is already over GitHub's free allowance. Every one of those guids resolves on
+   the machine that built the room and nowhere else, and from inside the repository that is
+   character-for-character the same evidence as mistake 14: a guid nothing declares. The two
+   need opposite responses and cannot be told apart by looking, so the machine that HAS the pack
+   writes down which guids are its (`Scripts/write_vendor_manifest.sh`) and commits the result.
+   The absence is then a named, expected state rather than a silent one - and a guid the
+   manifest does not name, or one it does name while the pack is installed, still fails.
 
 ## Unity Editor availability
 

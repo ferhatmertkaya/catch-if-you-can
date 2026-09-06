@@ -709,3 +709,96 @@ report says why.
 in `interior/customization/door materials/`. `door base` has four candidates (`blue`, `brown`,
 `whire door base`, `whire v2 door base 1`), which is a colour choice rather than an ambiguity, and
 the report lists them all.
+
+## The pack is a build dependency, and the repository now says so
+
+`01_MainMenu.unity` names 26 prefabs that live inside `Assets/HQ Modular House/`. That folder is
+gitignored on purpose — the pack is licensed per seat, and the repository's git-lfs payload is
+already 1.03 GiB against GitHub's free 1 GiB allowance. So on any machine without the pack those
+26 guids resolve to nothing, and Unity draws the scene with 26 missing prefabs.
+
+From inside the repository that is **indistinguishable** from CLAUDE.md mistake 14 — content
+deleted without deleting what pointed at it. Both are "a guid nothing declares". The difference
+is knowable only on a machine that has the pack installed, so that machine writes it down:
+
+```
+Scripts/write_vendor_manifest.sh
+```
+
+It walks the vendor roots — read from `.gitignore`, not repeated in the script, so a pack added
+to the ignore file cannot quietly stop being covered — records `guid  path` for every asset whose
+`.meta` declares one, and writes `Docs/VENDOR_ASSET_MANIFEST.txt`. It reads `.meta` files and
+writes one text file: it imports nothing, changes no import setting, and touches nothing inside a
+pack. A `.meta` whose asset is gone is skipped, because recording it would make the reference
+guard report "the pack changed under us" on the very machine that has the pack.
+
+Commit the result. `check_asset_references.sh` then reaches a three-way verdict instead of a
+two-way one:
+
+| the guid is… | and the pack is… | verdict |
+|---|---|---|
+| named by the manifest | not in this working copy | expected. A note, not a failure. |
+| named by the manifest | installed here | **fail** — the pack moved under us |
+| named by nobody | either | **fail** — mistake 14 |
+
+The teeth are the second and third rows. A manifest that could excuse any missing asset would be
+worse than no manifest at all; this one can only excuse an absence it can name, on a machine that
+demonstrably does not have the folder.
+
+What CI can no longer prove is anything about the contents of those 26 prefabs. That is the
+honest price: **installing the pack is a prerequisite for opening the main menu scene and for
+building the game.** It is not something CI can supply, and pretending otherwise by removing the
+check would only move the discovery to a worse moment.
+
+## The lobby shell was replaced by hand, and the portal lost its wall
+
+The procedural lobby shell — `Lobby_Floor`, `Lobby_Ceiling`, seven wall segments and seven window
+parts — was deleted from `01_MainMenu.unity` and replaced with hand-placed pieces from the pack.
+Three consequences follow, and only the first is obvious.
+
+**The portal has nothing to cut.** `Lobby_Wall_North` was the single solid box the tear was made
+in. `LobbyPortal.wallCollider` is `{fileID: 0}`, so `ResolveWall` falls back to finding the wall
+by SHAPE: one collider, at most `maxWallThickness` (1.00 m) across the opening's normal, and at
+least as wide and as tall as the opening (4.70 × 2.40 m). The pack's wall module is 3.97 m wide.
+Each module is its own collider, so two side by side do not add up to one wide enough — the
+support function is evaluated per collider, not per wall run. Whether anything at the opening
+passes depends on facts only the installed pack can answer, which is why
+`Catch If You Can/Lobby/Portalwand messen` measures rather than argues.
+
+**The guard now checks the invariant instead of the name.** "There is an object called
+`Lobby_Wall_North`" was too narrow — a wall built by hand out of purchased pieces satisfies the
+real requirement just as well — and at the same time too wide, because a renamed object would
+have passed while the portal found nothing. What is checked is: either the authored north wall is
+in the scene, or `wallCollider` is explicitly assigned.
+
+**The window went with it.** `Lobby_Wall_East_North` and `Lobby_Window_Glass` are gone, while
+`Lobby_Window_Blocker`, `Lobby_WindowMoonlight` and the whole `Lobby_Exterior` assembly remain.
+The moonlight and the silhouettes now shine through an opening that has no frame and no glass.
+
+## Measuring the portal wall
+
+`LobbyPortalWallProbe` (menu: `Catch If You Can/Lobby/Portalwand messen`) reports and changes
+nothing. It runs two passes because they answer different questions and disagree for a good
+reason.
+
+The **geometric** pass walks every collider in the open scenes, *inactive ones included*, and
+applies exactly the three tests `ResolveWall` applies. Inactive included is the whole point:
+`MainMenu_Lobby` is saved switched off, so in the editor its colliders are not in the physics
+scene at all — while at runtime the room is switched on before the portal ever opens. A physics
+query alone would report the room as empty and be wrong about the only moment that matters.
+
+The **physics** pass runs the same `Physics.OverlapBox` the runtime runs, reported as what the
+editor's physics scene can see right now, not as a verdict. Where the two disagree, the
+difference is the finding.
+
+It also lists renderers that overlap the opening and carry no collider, because "the wall is not
+solid" and "the wall is too narrow" look identical from inside the game and need different
+repairs. And it asks the portal for its opening, its thickness limit and its assigned wall
+through public read-only properties rather than reflecting into private fields — CLAUDE.md
+mistake 4, which compiles, reviews clean, and fails silently on the next rename.
+
+One detail is load-bearing: on an inactive GameObject `Collider.bounds` can come back as an empty
+box, and an empty box intersects nothing. Read without checking, that says "there is nothing
+here" — the same output as a genuinely missing wall, from a completely different cause. The probe
+falls back to the renderer's bounds on the same object, which is the same geometry and is what
+the eye sees anyway.
