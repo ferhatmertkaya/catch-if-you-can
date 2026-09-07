@@ -74,12 +74,18 @@ namespace CatchIfYouCan.Procedural
                  "Nichts an der Generierung ist geloescht: der Schalter fuehrt sie nur nicht " +
                  "aus. Wieder anschalten stellt genau denselben Ablauf wieder her, und der " +
                  "Seed bestimmt weiterhin dasselbe Haus wie vorher.")]
-        // Auf AN. Ausgeschaltet war er, weil der Kenney-Bestand entfernt wurde und die
-        // Generierung nur noch graue Primitivkisten baute. Sie baut jetzt erzeugte Geometrie
-        // in exakt der Groesse, die das Layout nennt, also gibt es wieder etwas zu sehen.
+        // AUS, auf ausdrueckliche Anweisung: das prozedural erzeugte Haus wird vorerst nicht
+        // gebaut, weil die Umgebung stattdessen in einer neuen, von Hand gebauten Szene
+        // entstehen soll.
+        //
+        // Geloescht ist nichts. Der Schalter fuehrt die Generierung nur nicht aus - Aufrufe,
+        // Layout, Hash, Einrichtung und Kataloge stehen unveraendert, und ein Umlegen auf true
+        // stellt aus demselben Seed exakt dasselbe Haus wieder her wie vorher. Genau dafuer
+        // gibt es diesen Schalter, und check_vertical_slice.sh haelt ihn frei.
+        //
         // InvestigationSceneInstaller haengt diese Komponente per AddComponent an, es gibt sie
         // in keiner Szene - dieser Anfangswert IST der wirksame Wert.
-        [SerializeField] private bool generateWorld = true;
+        [SerializeField] private bool generateWorld = false;
 
         [Tooltip("Groesse der leeren Ebene in Metern, wenn oben nichts generiert wird. Sie wird " +
                  "erst beim Betreten gebaut, nicht schon beim Vorbereiten - sonst haengt sie als " +
