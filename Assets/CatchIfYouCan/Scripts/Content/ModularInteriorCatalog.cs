@@ -64,6 +64,48 @@ namespace CatchIfYouCan.Content
     }
 
     /// <summary>
+    /// The last word on one surface: which material it uses, and how big the pattern is.
+    ///
+    /// <para>
+    /// <b>Why this exists beside <see cref="SurfaceMaterial"/>.</b> That one records a
+    /// MEASUREMENT - the size of the vendor piece the material was authored across - and a
+    /// measurement is not a design decision. It was right about the wall and derived by texel
+    /// parity for the floor and the ceiling, which is a reasonable guess and was two wrong
+    /// answers on screen: a parquet whose planks come out the size of a hand, and a ceiling
+    /// wearing a floor.
+    /// </para>
+    /// <para>
+    /// So this is the override, and it is deliberately blunt. A material here REPLACES the
+    /// pack's; a metres-per-tile here REPLACES the measured density. Both are optional and both
+    /// are visible in the Inspector, so the size of a floorboard is a number somebody can look
+    /// at and change rather than a division buried three files away.
+    /// </para>
+    /// <para>
+    /// One value, not one per room: the UVs are written in metres, so 4 m per tile is 4 m per
+    /// tile in a 3 m room and in a 6 m one. That is the whole reason the geometry is metre-
+    /// mapped, and it is what "the planks must be the same size everywhere" means.
+    /// </para>
+    /// </summary>
+    [Serializable]
+    public struct SurfaceTuning
+    {
+        [Tooltip("Ersetzt das Material aus dem Paket vollstaendig. Leer = das Paket-Material " +
+                 "benutzen.")]
+        public Material Replacement;
+
+        [Tooltip("Wie viele Meter eine Texturkachel abdeckt. Groesser = groesseres Muster " +
+                 "(breitere Dielen). 0 = die gemessene Dichte des Paket-Materials benutzen. " +
+                 "Gilt fuer JEDE Map des Materials, nicht nur die Farbe.")]
+        public float MetresPerTile;
+
+        public bool HasReplacement => Replacement != null;
+
+        public bool HasTiling => MetresPerTile > 0.001f;
+
+        public bool IsSet => HasReplacement || HasTiling;
+    }
+
+    /// <summary>
     /// One piece of vendor art placed into an opening the room already has.
     ///
     /// <para>
@@ -157,6 +199,28 @@ namespace CatchIfYouCan.Content
         public SurfaceMaterial WallSurface;
         public SurfaceMaterial FloorSurface;
         public SurfaceMaterial CeilingSurface;
+
+        [Header("Surface Overrides")]
+        [Tooltip("Die letzte Instanz ueber jede Flaeche: ein Material hier ersetzt das aus dem " +
+                 "Paket, eine Kachelgroesse hier ersetzt die gemessene Dichte. Beides " +
+                 "optional, beides im Inspector sichtbar - die Dielenbreite ist damit eine " +
+                 "Zahl, die man ansehen und aendern kann.")]
+        public SurfaceTuning WallTuning;
+        public SurfaceTuning FloorTuning;
+        public SurfaceTuning CeilingTuning;
+
+        [Header("Openings")]
+        [Tooltip("Das Tuerblatt. Die Textur wird EINMAL ueber das Blatt gespannt, nicht " +
+                 "gekachelt - sie IST eine Tuer. Fehlt sie, bleibt die Oeffnung leer und das " +
+                 "wird gemeldet: eine Tuer ohne Material waere unter URP magenta.")]
+        public Material DoorLeafMaterial;
+
+        [Tooltip("Zargen, Fensterrahmen und Bruestungen. Ein normales gekacheltes Material.")]
+        public Material TrimMaterial;
+
+        [Tooltip("Die Fensterscheibe. Ohne sie bekommt das Fenster nur seinen Rahmen und " +
+                 "bleibt ein Loch - gemeldet, nicht stillschweigend.")]
+        public Material GlassMaterial;
 
         [Header("Inserts")]
         [Tooltip("Die Tuer und das Fenster, aus den Wand-Prefabs des Pakets herausgeloest. " +

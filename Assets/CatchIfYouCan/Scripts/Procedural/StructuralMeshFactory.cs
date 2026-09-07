@@ -119,6 +119,38 @@ namespace CatchIfYouCan.Procedural
             return mesh;
         }
 
+        /// <summary>
+        /// A flat panel whose texture is stretched ONCE across each face, rather than tiled by
+        /// the metre.
+        ///
+        /// <para>
+        /// Everything else here is architecture: a wall, a floor, a ceiling, all of them carrying
+        /// a repeating surface, so metre-projected UVs are exactly right. A door leaf is not
+        /// architecture. Its texture IS a door - stiles, rails, panels, a keyhole - and tiling
+        /// that by the metre puts one and a bit doors across a 1.2 m leaf and two and a half up
+        /// it. The same is true of a pane of glass.
+        /// </para>
+        ///
+        /// <para>
+        /// Built centred on X and Z and rising from y = 0, like a wall, so a leaf goes exactly on
+        /// the line it hangs from.
+        /// </para>
+        /// </summary>
+        public static Mesh Panel(float width, float height, float thickness)
+        {
+            var key = new Key(Kind.Panel, width, height, thickness, 0f, 0f, 0f);
+            if (_cache.TryGetValue(key, out var cached) && cached != null)
+                return cached;
+
+            var mesh = Begin("CIYC_Panel_" + Fmt(width) + "x" + Fmt(height));
+            AddBoxNormalised(new Vector3(-width * 0.5f, 0f, -thickness * 0.5f),
+                             new Vector3(width * 0.5f, height, thickness * 0.5f));
+            Finish(mesh);
+
+            _cache[key] = mesh;
+            return mesh;
+        }
+
         // ------------------------------------------------------------------ sections
 
         /// <summary>
@@ -194,7 +226,7 @@ namespace CatchIfYouCan.Procedural
 
         // -------------------------------------------------------------------- building
 
-        private enum Kind { SolidWall, OpeningWall, Floor, Ceiling }
+        private enum Kind { SolidWall, OpeningWall, Floor, Ceiling, Panel }
 
         private struct Key
         {
@@ -268,6 +300,33 @@ namespace CatchIfYouCan.Procedural
         /// round off every edge in the house. UVs run in metres along the face's own two axes,
         /// so a 6 m wall and a 2 m wall show the same texture size.
         /// </summary>
+        /// <summary>
+        /// The same box, with every face's UV running 0..1 across that face instead of one unit
+        /// per metre. See <see cref="Panel"/> for why one kind of surface needs each.
+        /// </summary>
+        private static void AddBoxNormalised(Vector3 min, Vector3 max)
+        {
+            _uvNormaliseMin = min;
+            _uvNormaliseMax = max;
+            _uvNormalise = true;
+
+            // try/finally, because a mesh built with the flag left standing would silently
+            // renormalise the next wall - and a wall whose wallpaper runs 0..1 across its own
+            // span looks like a texture that was authored wrong, not like a leaked flag.
+            try
+            {
+                AddBox(min, max);
+            }
+            finally
+            {
+                _uvNormalise = false;
+            }
+        }
+
+        private static bool _uvNormalise;
+        private static Vector3 _uvNormaliseMin;
+        private static Vector3 _uvNormaliseMax;
+
         private static void AddBox(Vector3 min, Vector3 max)
         {
             // +X and -X: UV across Z (width of the face) and Y (height)
@@ -337,8 +396,38 @@ namespace CatchIfYouCan.Procedural
 
         private static void AddProjectedUv(Vector3 vertex, Vector3 uAxis, Vector3 vAxis)
         {
-            _uv.Add(new Vector2(Vector3.Dot(vertex, uAxis) * UvUnitsPerMetre,
-                                Vector3.Dot(vertex, vAxis) * UvUnitsPerMetre));
+            if (!_uvNormalise)
+            {
+                _uv.Add(new Vector2(Vector3.Dot(vertex, uAxis) * UvUnitsPerMetre,
+                                    Vector3.Dot(vertex, vAxis) * UvUnitsPerMetre));
+                return;
+            }
+
+            _uv.Add(new Vector2(NormalisedAlong(vertex, uAxis), NormalisedAlong(vertex, vAxis)));
+        }
+
+        /// <summary>
+        /// Where this vertex sits between the box's two ends along one axis, as 0..1.
+        ///
+        /// <para>
+        /// Min and max are taken from the PROJECTIONS rather than from the corner named "min",
+        /// because the face axes point both ways: the -X face runs its U along +Z and the +X
+        /// face along -Z, so for half the faces the box's min corner projects to the larger
+        /// number. Subtracting the wrong end there mirrors the texture on three faces of six,
+        /// which on a door reads as a handle that has swapped sides.
+        /// </para>
+        /// </summary>
+        private static float NormalisedAlong(Vector3 vertex, Vector3 axis)
+        {
+            float a = Vector3.Dot(_uvNormaliseMin, axis);
+            float b = Vector3.Dot(_uvNormaliseMax, axis);
+            float lo = Mathf.Min(a, b);
+            float span = Mathf.Abs(b - a);
+
+            if (span < 0.0001f)
+                return 0f;
+
+            return (Vector3.Dot(vertex, axis) - lo) / span;
         }
 
         private static string Fmt(float v) => v.ToString("0.00");

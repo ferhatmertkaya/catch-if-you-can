@@ -227,15 +227,141 @@ namespace CatchIfYouCan.Procedural
 
             AddWallColliders(go, hasDoor, hasWindow, span, size.y);
 
-            // The pack's contribution to a wall: the leaf that swings in a doorway, the frame
-            // and glass that sit in a window. Never a whole vendor wall - its pivot can be 29 m
-            // from its own mesh and its UVs are normalised to its own width.
-            if (hasDoor && catalog != null)
-                AddInsert(go.transform, catalog.DoorInsert, "Door",
-                          new Vector3(0f, DoorHeight * 0.5f, 0f));
-            else if (hasWindow && catalog != null)
-                AddInsert(go.transform, catalog.WindowInsert, "Window",
-                          new Vector3(0f, WindowSill + WindowHeight * 0.5f, 0f));
+            // ---- every opening has a NAME, and nothing is left as an unexplained hole -------
+            //
+            // Three roles and only three: a doorway, a window, or a wall. There is no fourth,
+            // and an opening that could not be filled says which one it was and why - "there is
+            // a rectangular hole in that wall" was, on the screen, the same picture for a
+            // doorway waiting for a leaf, a window waiting for glass, and a wall that had been
+            // cut for something nobody built.
+            if (!hasDoor && !hasWindow)
+                return;
+
+            string opening = hasDoor ? "DOORWAY" : "WINDOW";
+
+            // The pack's contribution first, if it has one that FITS. It is refused when it is a
+            // whole vendor wall, which is what this pack actually ships - see AddInsert.
+            bool filledByPack = hasDoor
+                ? AddInsert(go.transform, catalog != null ? catalog.DoorInsert : default, "Door",
+                            new Vector3(0f, DoorHeight * 0.5f, 0f))
+                : AddInsert(go.transform, catalog != null ? catalog.WindowInsert : default, "Window",
+                            new Vector3(0f, WindowSill + WindowHeight * 0.5f, 0f));
+
+            if (filledByPack)
+            {
+                Core.CIYCLog.Info("[CIYC][House][Opening] " + opening + " " + direction +
+                                  " filled by the pack's insert.");
+                return;
+            }
+
+            // CIYC's own. Generated geometry with a project material, at the exact size of the
+            // hole it is going into, because the hole and the thing filling it are computed from
+            // the same four constants rather than measured off each other.
+            if (hasDoor)
+            {
+                // The LINING only. The leaf hangs on the connection, not on the wall: a doorway
+                // is one hole shared by two rooms, and both of those rooms build a wall here, so
+                // a leaf per wall is two leaves per doorway swinging through each other. See
+                // ProceduralHouseGenerator.CreateDoorAt.
+                BuildDoorLining(go.transform, catalog);
+                Core.CIYCLog.Info("[CIYC][House][Opening] DOORWAY " + direction +
+                                  " lined; the leaf hangs on the connection.");
+                return;
+            }
+
+            BuildWindowAssembly(go.transform, catalog);
+            Core.CIYCLog.Info("[CIYC][House][Opening] WINDOW " + direction +
+                              " glazed at sill " + WindowSill.ToString("F2") + " m.");
+        }
+
+        // ------------------------------------------------------------- doorway and window
+
+        /// <summary>How far a lining or a frame overlaps the hole it sits in, per edge.</summary>
+        public const float LiningOverlap = 0.03f;
+
+        /// <summary>How far a lining or a frame stands proud of the wall, per face.</summary>
+        public const float LiningProud = 0.02f;
+
+        /// <summary>
+        /// The four sticks of timber that turn a rectangular hole into a doorway.
+        ///
+        /// <para>
+        /// Built per WALL, which is per side of the opening - a doorway between two rooms has a
+        /// lining in each, which is what a real one has. The leaf is the part there is only one
+        /// of, and it is built somewhere else for exactly that reason.
+        /// </para>
+        /// </summary>
+        private static void BuildDoorLining(Transform wall, ModularInteriorCatalog catalog)
+        {
+            Material trim = TrimMaterial(catalog);
+            float depth = WallThickness + LiningProud * 2f;
+            float half = DoorWidth * 0.5f;
+
+            AddFrameStick(wall, "DoorJamb_L", new Vector3(LiningOverlap * 2f, DoorHeight + LiningOverlap, depth),
+                          new Vector3(-(half + LiningOverlap), (DoorHeight + LiningOverlap) * 0.5f, 0f), trim);
+            AddFrameStick(wall, "DoorJamb_R", new Vector3(LiningOverlap * 2f, DoorHeight + LiningOverlap, depth),
+                          new Vector3(half + LiningOverlap, (DoorHeight + LiningOverlap) * 0.5f, 0f), trim);
+            AddFrameStick(wall, "DoorHead", new Vector3(DoorWidth + LiningOverlap * 4f, LiningOverlap * 2f, depth),
+                          new Vector3(0f, DoorHeight, 0f), trim);
+        }
+
+        /// <summary>
+        /// A frame in the opening and a pane of glass in the frame.
+        ///
+        /// <para>
+        /// No collider on either. The wall already carries ONE box across its whole span for a
+        /// window wall - a window is not a way through - so adding collision here would be a
+        /// second answer to a question that already has one.
+        /// </para>
+        /// </summary>
+        private static void BuildWindowAssembly(Transform wall, ModularInteriorCatalog catalog)
+        {
+            Material trim = TrimMaterial(catalog);
+            float depth = WallThickness + LiningProud * 2f;
+            float half = WindowWidth * 0.5f;
+            float bottom = WindowSill;
+            float top = WindowSill + WindowHeight;
+
+            AddFrameStick(wall, "WindowJamb_L", new Vector3(LiningOverlap * 2f, WindowHeight + LiningOverlap * 4f, depth),
+                          new Vector3(-(half + LiningOverlap), (bottom + top) * 0.5f, 0f), trim);
+            AddFrameStick(wall, "WindowJamb_R", new Vector3(LiningOverlap * 2f, WindowHeight + LiningOverlap * 4f, depth),
+                          new Vector3(half + LiningOverlap, (bottom + top) * 0.5f, 0f), trim);
+            AddFrameStick(wall, "WindowHead", new Vector3(WindowWidth + LiningOverlap * 4f, LiningOverlap * 2f, depth),
+                          new Vector3(0f, top + LiningOverlap, 0f), trim);
+            AddFrameStick(wall, "WindowSill", new Vector3(WindowWidth + LiningOverlap * 4f, LiningOverlap * 2f, depth + 0.04f),
+                          new Vector3(0f, bottom - LiningOverlap, 0f), trim);
+
+            Material glass = catalog != null ? catalog.GlassMaterial : null;
+            if (glass == null || !IsDrawable(glass, "Fensterglas"))
+            {
+                // No pane, and said out loud. A window with no glass is a hole in a wall, which
+                // is precisely the thing this whole pass exists to stop being unexplained.
+                Core.CIYCLog.Error("[CIYC][House][Opening] WINDOW: kein Glasmaterial im " +
+                                   "ModularInteriorCatalog (GlassMaterial). Das Fenster " +
+                                   "bekommt seinen Rahmen und bleibt eine OFFENE Oeffnung. " +
+                                   "Ein Material ohne Shader waere magenta - deshalb lieber " +
+                                   "sichtbar leer als sichtbar falsch.");
+                return;
+            }
+
+            // The pane is a PANEL: its texture is stretched once across it rather than tiled by
+            // the metre, because a pane of glass is one surface and not a wall of them.
+            var pane = Piece(wall, "WindowGlass",
+                             StructuralMeshFactory.Panel(WindowWidth, WindowHeight, 0.02f), glass);
+            pane.transform.localPosition = new Vector3(0f, WindowSill, 0f);
+        }
+
+        /// <summary>One piece of frame: a box, tiled by the metre like the trim it is.</summary>
+        private static void AddFrameStick(Transform wall, string name, Vector3 size,
+                                          Vector3 centre, Material material)
+        {
+            var mesh = StructuralMeshFactory.SolidWall(size.x, size.y, size.z);
+            var go = Piece(wall, name, mesh, material);
+
+            // SolidWall rises from y = 0, so the centre asked for becomes a bottom here. One
+            // conversion, in one place, rather than four call sites each subtracting half a
+            // height and one of them getting it wrong.
+            go.transform.localPosition = new Vector3(centre.x, centre.y - size.y * 0.5f, centre.z);
         }
 
         /// <summary>
@@ -256,11 +382,12 @@ namespace CatchIfYouCan.Procedural
         /// casting goes with it - a door leaf is not a wall.
         /// </para>
         /// </summary>
-        private static void AddInsert(Transform wall, Content.StructuralInsert insert,
+        /// <returns>True when a piece was actually placed in the opening.</returns>
+        private static bool AddInsert(Transform wall, Content.StructuralInsert insert,
             string role, Vector3 localPosition)
         {
             if (!insert.IsSet)
-                return;
+                return false;
 
             GameObject go = Object.Instantiate(insert.Prefab, wall);
             go.name = role + "_Insert";
@@ -281,7 +408,7 @@ namespace CatchIfYouCan.Procedural
                 // here would throw in the editor and merely take a frame in a build. One
                 // behaviour, both modes.
                 go.SetActive(false);
-                return;
+                return false;
             }
 
             OrientUpright(go.transform, role);
@@ -314,7 +441,7 @@ namespace CatchIfYouCan.Procedural
                                    "gesetzt worden, und der liegt in diesem Paket bis zu 40 m " +
                                    "neben der eigenen Geometrie. Die Oeffnung bleibt frei.");
                 go.SetActive(false);
-                return;
+                return false;
             }
 
             // ---- it has to BE a door before it is placed like one --------------------------
@@ -355,7 +482,7 @@ namespace CatchIfYouCan.Procedural
                                    "Oeffnung bereits - sie bleibt frei statt einen zweiten Rahmen " +
                                    "zu bekommen.");
                 go.SetActive(false);
-                return;
+                return false;
             }
 
             go.transform.localPosition = target - placed.center;
@@ -407,6 +534,8 @@ namespace CatchIfYouCan.Procedural
                                    " ragt mit Oberkante " + top.ToString("F3") +
                                    " ueber die lichte Hoehe " + CeilingClearance.ToString("F2") +
                                    " - er schneidet die Decke.");
+
+            return true;
         }
 
         /// <summary>
@@ -644,18 +773,42 @@ namespace CatchIfYouCan.Procedural
         private static Material _wall;
         private static Material _floor;
         private static Material _ceiling;
+        private static Material _trim;
 
         private static Material WallMaterial(ModularInteriorCatalog catalog) =>
             Surface(ref _wall, catalog != null ? catalog.WallSurface : default,
+                    catalog != null ? catalog.WallTuning : default,
                     new Color(0.72f, 0.70f, 0.67f), "CIYC_Wall");
 
         private static Material FloorMaterial(ModularInteriorCatalog catalog) =>
             Surface(ref _floor, catalog != null ? catalog.FloorSurface : default,
+                    catalog != null ? catalog.FloorTuning : default,
                     new Color(0.42f, 0.39f, 0.36f), "CIYC_Floor");
 
         private static Material CeilingMaterial(ModularInteriorCatalog catalog) =>
             Surface(ref _ceiling, catalog != null ? catalog.CeilingSurface : default,
+                    catalog != null ? catalog.CeilingTuning : default,
                     new Color(0.86f, 0.86f, 0.84f), "CIYC_Ceiling");
+
+        /// <summary>
+        /// Linings, frames and sills. A tiled material like any other, so it goes through the
+        /// same resolution - including "no material means switch the renderer off", because a
+        /// door frame drawn in Unity's built-in default is magenta under URP.
+        /// </summary>
+        private static Material TrimMaterial(ModularInteriorCatalog catalog)
+        {
+            if (_trim != null)
+                return _trim;
+
+            Material named = catalog != null ? catalog.TrimMaterial : null;
+            if (named != null && IsDrawable(named, "CIYC_Trim"))
+            {
+                _trim = named;
+                return _trim;
+            }
+
+            return Neutral(ref _trim, new Color(0.30f, 0.26f, 0.22f), "CIYC_RawTrim");
+        }
 
         /// <summary>A fresh process has resolved nothing. Unity keeps statics across play mode.</summary>
         [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
@@ -664,6 +817,7 @@ namespace CatchIfYouCan.Procedural
             _wall = null;
             _floor = null;
             _ceiling = null;
+            _trim = null;
         }
 
         /// <summary>
@@ -679,13 +833,38 @@ namespace CatchIfYouCan.Procedural
         /// </para>
         /// </summary>
         private static Material Surface(ref Material slot, Content.SurfaceMaterial surface,
-            Color fallbackColour, string name)
+            Content.SurfaceTuning tuning, Color fallbackColour, string name)
         {
             if (slot != null)
                 return slot;
 
+            // ---- the override wins, and it is allowed to win outright ----------------------
+            //
+            // SurfaceMaterial records a MEASUREMENT. The wall's was measured; the floor's and
+            // the ceiling's were DERIVED from it by texel parity, which is a reasonable guess
+            // and was two wrong answers on screen - a parquet with hand-sized planks, and a
+            // ceiling wearing a floor. A guess that can be overruled by a number somebody can
+            // see is worth keeping; one that cannot is not.
+            if (tuning.HasReplacement && IsDrawable(tuning.Replacement, name))
+            {
+                slot = ApplyTiling(tuning.Replacement, tuning, name);
+                Core.CIYCLog.Info("[CIYC][House][Surface] " + name + " uses the project's own '" +
+                                  tuning.Replacement.name + "'" + TilingSuffix(tuning) +
+                                  " instead of the pack's.");
+                return slot;
+            }
+
             if (surface.IsSet && IsDrawable(surface.Material, name))
             {
+                if (tuning.HasTiling)
+                {
+                    slot = ApplyTiling(surface.Material, tuning, name);
+                    Core.CIYCLog.Info("[CIYC][House][Surface] " + name + " uses the pack's '" +
+                                      surface.Material.name + "'" + TilingSuffix(tuning) +
+                                      " (the measured density was overruled).");
+                    return slot;
+                }
+
                 // An unknown size means "leave it alone": use the material exactly as authored
                 // rather than inventing a number. Dividing by a zero would blow the texture up
                 // to a single texel across the whole wall, which reads as a flat colour and
@@ -702,10 +881,69 @@ namespace CatchIfYouCan.Procedural
                 };
 
                 RebaseToMetres(slot, surface.AuthoredAcrossMetres);
+                Core.CIYCLog.Info("[CIYC][House][Surface] " + name + " uses the pack's '" +
+                                  surface.Material.name + "' at its measured " +
+                                  surface.AuthoredAcrossMetres.ToString("F2") + " m per tile.");
                 return slot;
             }
 
             return Neutral(ref slot, fallbackColour, "CIYC_Raw" + name);
+        }
+
+        /// <summary>
+        /// A COPY of the material at the wanted metres-per-tile, or the material itself when no
+        /// size was asked for.
+        ///
+        /// <para>
+        /// The vendor material is never edited - it is somebody's purchased asset and it is
+        /// shared with whatever else uses it. One copy per surface for the whole house.
+        /// </para>
+        /// <para>
+        /// The wanted density is reached by SCALING what the material already has rather than by
+        /// writing an absolute number into every map. A URP Lit material carries up to eight
+        /// textures and their tilings are deliberately different from each other - a detail
+        /// normal is often eight times finer than the colour. Overwriting them all with one
+        /// number flattens that on purpose-built materials; multiplying keeps it.
+        /// </para>
+        /// </summary>
+        private static Material ApplyTiling(Material source, Content.SurfaceTuning tuning, string name)
+        {
+            if (!tuning.HasTiling)
+                return source;
+
+            var copy = new Material(source) { name = name + "_" + source.name + "_perMetre" };
+
+            float wanted = 1f / tuning.MetresPerTile;
+            Vector2 baseScale = BaseScaleOf(copy);
+            var factor = new Vector2(
+                baseScale.x > 0.0001f ? wanted / baseScale.x : wanted,
+                baseScale.y > 0.0001f ? wanted / baseScale.y : wanted);
+
+            ScaleAllMaps(copy, factor);
+            return copy;
+        }
+
+        private static string TilingSuffix(Content.SurfaceTuning tuning) =>
+            tuning.HasTiling ? " at " + tuning.MetresPerTile.ToString("F2") + " m per tile" : "";
+
+        /// <summary>
+        /// The tiling the material's MAIN map carries, which is the one the others are relative
+        /// to. `_BaseMap` first because this project is URP; `_MainTex` after it, because a
+        /// material converted from Built-in keeps that name and would otherwise read as 1.
+        /// </summary>
+        private static Vector2 BaseScaleOf(Material material)
+        {
+            if (material.HasProperty("_BaseMap"))
+                return material.GetTextureScale("_BaseMap");
+
+            if (material.HasProperty("_MainTex"))
+                return material.GetTextureScale("_MainTex");
+
+            string[] names = material.GetTexturePropertyNames();
+            if (names != null && names.Length > 0 && material.HasProperty(names[0]))
+                return material.GetTextureScale(names[0]);
+
+            return Vector2.one;
         }
 
         /// <summary>
@@ -728,8 +966,24 @@ namespace CatchIfYouCan.Procedural
         /// </summary>
         private static void RebaseToMetres(Material material, Vector2 authoredAcrossMetres)
         {
-            var divisor = new Vector2(1f / authoredAcrossMetres.x, 1f / authoredAcrossMetres.y);
+            ScaleAllMaps(material, new Vector2(1f / authoredAcrossMetres.x,
+                                               1f / authoredAcrossMetres.y));
+        }
 
+        /// <summary>
+        /// Multiplies EVERY texture's tiling by the same factor.
+        ///
+        /// <para>
+        /// Every one, not the colour map alone. A URP Lit material carries up to eight, and the
+        /// measured wall materials use several - wallpaper3 has a detail normal and an occlusion
+        /// map, beton adds a parallax map. Rescaling three of them and leaving the rest is not
+        /// "mostly right": the colour moves and the surface detail stays, so the bumps stop
+        /// sitting on the pattern they belong to. That is what a warped wall actually is, and it
+        /// is much harder to recognise than a plainly wrong size.
+        /// </para>
+        /// </summary>
+        private static void ScaleAllMaps(Material material, Vector2 factor)
+        {
             string[] names = material.GetTexturePropertyNames();
             if (names == null)
                 return;
@@ -741,7 +995,7 @@ namespace CatchIfYouCan.Procedural
 
                 Vector2 authored = material.GetTextureScale(names[i]);
                 material.SetTextureScale(names[i],
-                    new Vector2(authored.x * divisor.x, authored.y * divisor.y));
+                    new Vector2(authored.x * factor.x, authored.y * factor.y));
             }
         }
 
@@ -827,9 +1081,14 @@ namespace CatchIfYouCan.Procedural
             var filter = go.AddComponent<MeshFilter>();
             filter.sharedMesh = mesh;
 
-            var renderer = go.AddComponent<MeshRenderer>();
-            if (material != null)
-                renderer.sharedMaterial = material;
+            go.AddComponent<MeshRenderer>();
+
+            // Through the ONE shared rule, not with an `if (material != null)` that quietly does
+            // nothing. A MeshRenderer with no material assigned is not invisible - URP draws it
+            // with its error shader, which is the same magenta this whole path exists to avoid.
+            // PrimitiveSurface switches the renderer OFF instead and names what was missing; any
+            // collider stays, so an invisible floor still holds the player up.
+            Art.PrimitiveSurface.Apply(go, material, "Raumflaeche '" + name + "'");
 
             return go;
         }

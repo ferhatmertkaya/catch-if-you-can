@@ -550,7 +550,10 @@ else:
 # EVERY map, not the colour map alone. Rescaling three properties and leaving the detail normal,
 # the occlusion and the parallax where they were does not read as a wrong size - it reads as a
 # warped surface, because the bumps stop sitting on the pattern they belong to.
-rebase = re.search(r"private static void RebaseToMetres.*?\n        \}", mrb_code, re.S)
+# Scoped to the multiplier itself rather than to RebaseToMetres, which now delegates to it.
+# The invariant is "every map moves by one shared factor"; which method holds the loop is not
+# the invariant, and pinning the check to a name made three of them fail with nothing broken.
+rebase = re.search(r"private static void ScaleAllMaps.*?\n        \}", mrb_code, re.S)
 rbody = rebase.group(0) if rebase else ""
 if rbody and "GetTexturePropertyNames()" in rbody and "GetTextureScale(names[i])" in rbody:
     ok("every texture map is rebased, not just the colour")
@@ -560,7 +563,7 @@ else:
 
 # Divided, never overwritten, so a map deliberately tiled finer than the base keeps that
 # relationship instead of being flattened onto one value.
-if rbody and "authored.x * divisor.x" in rbody:
+if rbody and "authored.x * factor.x" in rbody and "RebaseToMetres" in mrb_code:
     ok("maps are divided by one shared divisor, keeping their relative tiling")
 else:
     bad("maps are divided by one shared divisor, keeping their relative tiling",
@@ -587,7 +590,7 @@ else:
 # Scoped to the three methods that place an insert. The work moved out of AddInsert when the
 # insert stopped being "the whole vendor prefab" and became "the parts of it that are the door",
 # so a check pinned to one method name would report a broken invariant that is not broken.
-insert = re.search(r"private static void AddInsert.*?\n        \}", mrb_code, re.S)
+insert = re.search(r"private static \w+ AddInsert.*?\n        \}", mrb_code, re.S)
 keep = re.search(r"private static int KeepOnlyInsertParts.*?\n        \}", mrb_code, re.S)
 disable = re.search(r"private static void DisableColliders.*?\n        \}", mrb_code, re.S)
 ibody = "".join(m.group(0) for m in (insert, keep, disable) if m)
@@ -1380,7 +1383,7 @@ else:
 #
 # This pack's pivots sit 13 to 40 m from their own geometry. Falling back to one does not put a
 # door roughly right; it puts it tens of metres away, which on screen is a door near the ceiling.
-ins = re.search(r"private static void AddInsert.*?\n        \}", mod, re.S)
+ins = re.search(r"private static \w+ AddInsert.*?\n        \}", mod, re.S)
 insbody = ins.group(0) if ins else ""
 if "REFUSED" in insbody and "go.SetActive(false)" in insbody:
     ok("an unmeasurable insert is refused rather than placed by its vendor pivot")
@@ -1422,11 +1425,213 @@ else:
 
 # The refusal must leave the opening as the generated wall built it. Falling back to "place it
 # anyway, just lower" would put the wall through the room instead of through the ceiling.
-if re.search(r"go\.SetActive\(false\);\s*\n\s*return;", insbody):
+# "return false" rather than "return": AddInsert now reports whether it placed anything, so the
+# wall knows to build CIYC's own lining or window instead. The invariant is the same one - the
+# vendor piece is switched off and NOTHING is placed in its stead by this method.
+if re.search(r"go\.SetActive\(false\);\s*\n\s*return false;", insbody):
     ok("a refused insert leaves the generated opening exactly as it was")
 else:
     bad("a refused insert leaves the generated opening exactly as it was",
         "placing it anyway at a corrected height is the same wall in a different wrong place")
+
+# ---- every opening has a NAME -----------------------------------------------------------------
+#
+# "A large rectangular hole in the wall with nothing in it" was one picture with three different
+# causes behind it: a doorway waiting for a leaf, a window waiting for glass, and a wall cut for
+# something nobody built. A hole that says which of the three it is can be fixed; one that says
+# nothing cannot.
+wallm = re.search(r"private static void BuildWall.*?\n        \}", mod, re.S)
+wallbody = wallm.group(0) if wallm else ""
+
+if "[CIYC][House][Opening]" in wallbody and 'string opening = hasDoor ? "DOORWAY" : "WINDOW"' in wallbody:
+    ok("every generated opening is named DOORWAY or WINDOW in the log")
+else:
+    bad("every generated opening is named DOORWAY or WINDOW in the log",
+        "an unexplained rectangular hole is three different bugs wearing one picture")
+
+# There is no fourth kind. A wall with neither returns before any opening work, so nothing can
+# cut a hole and then walk past it.
+if re.search(r"if \(!hasDoor && !hasWindow\)\s*\n\s*return;", wallbody):
+    ok("a wall with no opening does no opening work at all")
+else:
+    bad("a wall with no opening does no opening work at all",
+        "an opening with no role is the hole nobody can explain")
+
+# ---- the leaf hangs on the CONNECTION, the lining on the wall ---------------------------------
+#
+# A doorway between two rooms is ONE hole that BOTH rooms build a wall around. A leaf per wall is
+# two leaves per doorway swinging through each other; a lining per wall is what a real doorway has.
+if "BuildDoorLining" in wallbody and "ModularDoorFactory" not in mod:
+    ok("the wall builds the door LINING; the leaf is built once per connection")
+else:
+    bad("the wall builds the door LINING; the leaf is built once per connection",
+        "two walls per doorway means two leaves swinging through each other")
+
+doorfac = code("Assets/CatchIfYouCan/Scripts/Procedural/ModularDoorFactory.cs") or ""
+
+# The same rule the primitive-door ban was always about: no material means no door, not a door
+# in Unity's built-in default - which is magenta under URP with an invisible blocker behind it.
+if "DoorLeafMaterial" in doorfac and re.search(r"if \(leafMaterial == null\)[\s\S]{0,900}?return null;", doorfac):
+    ok("a generated door with no material is refused, not shipped magenta")
+else:
+    bad("a generated door with no material is refused, not shipped magenta",
+        "a leaf carrying the built-in default is the magenta panel and the invisible wall")
+
+if "GameObject.CreatePrimitive" not in doorfac:
+    ok("the generated door is real geometry, not a bare primitive")
+else:
+    bad("the generated door is real geometry, not a bare primitive",
+        "CreatePrimitive arrives carrying Unity's built-in default material")
+
+# The hinge is a WRAPPER on the jamb. Rotating the leaf about its own centre swings half of it
+# into the wall it hangs in, which is the single most common way a generated door looks broken.
+if 'new GameObject("Hinge")' in doorfac and "leafWidth * 0.5f" in doorfac:
+    ok("the door swings about its edge, on a hinge wrapper, not about its own centre")
+else:
+    bad("the door swings about its edge, on a hinge wrapper, not about its own centre",
+        "rotating the leaf about its centre puts half the door inside the wall")
+
+# Collision follows the LEAF, so an open door is a way through and a closed one is not. A
+# collider on the root never moves, which is a doorway that is open to the eye and shut to the
+# body - the exact bug the primitive door caused.
+if re.search(r"leaf\.AddComponent<BoxCollider>", doorfac):
+    ok("the door's collider is on the leaf and moves with the swing")
+else:
+    bad("the door's collider is on the leaf and moves with the swing",
+        "a collider that does not swing is an invisible wall in every threshold")
+
+# ONE interaction system. E is already wired to InteractPressed in MobileInputController and read
+# by InteractionController; a generated door joins that rather than growing a second framework.
+idoor = code("Assets/CatchIfYouCan/Scripts/Interaction/InteractiveDoor.cs") or ""
+if "AddComponent<InteractiveDoor>" in doorfac and "door.Configure(" in doorfac:
+    ok("the generated door joins the existing interaction system")
+else:
+    bad("the generated door joins the existing interaction system",
+        "a second interaction framework is CLAUDE.md mistake 1 with a keyboard")
+
+# A public method, not reflection into the private hinge field (CLAUDE.md mistake 4).
+if re.search(r"public void Configure\(Transform hingeTransform, float openAngle\)", idoor):
+    ok("the hinge is handed over by a public method, not by reflection")
+else:
+    bad("the hinge is handed over by a public method, not by reflection",
+        "reflection compiles, reviews clean, and dies silently on the next rename")
+
+# ---- the size of a floorboard is a number somebody can look at --------------------------------
+#
+# SurfaceMaterial holds a MEASUREMENT, and the floor's and the ceiling's were derived from the
+# wall's by texel parity - a reasonable guess that was two wrong answers on screen. A guess that
+# can be overruled by an exposed number is worth keeping; one that cannot is not.
+cat3 = read("Assets/CatchIfYouCan/Scripts/Content/ModularInteriorCatalog.cs") or ""
+if "struct SurfaceTuning" in cat3 and "MetresPerTile" in cat3 and \
+        all(f in cat3 for f in ("WallTuning", "FloorTuning", "CeilingTuning")):
+    ok("every surface has one exposed metres-per-tile, not a magic per-room value")
+else:
+    bad("every surface has one exposed metres-per-tile, not a magic per-room value",
+        "a density buried three files away cannot be looked at or changed")
+
+apply = re.search(r"private static Material ApplyTiling.*?\n        \}", mod, re.S)
+abody = apply.group(0) if apply else ""
+
+# A COPY, always. The vendor material is somebody's purchased asset and is shared with whatever
+# else uses it.
+if abody and "new Material(source)" in abody and "if (!tuning.HasTiling)" in abody:
+    ok("a retiled surface is a copy; a material with no retiling is used as authored")
+else:
+    bad("a retiled surface is a copy; a material with no retiling is used as authored",
+        "editing the source edits a purchased asset, and everything else wearing it")
+
+# SCALED, not overwritten. A URP Lit material's eight maps carry deliberately different tilings -
+# a detail normal is often eight times finer - and one absolute number flattens all of them.
+if abody and "ScaleAllMaps(copy, factor)" in abody and "BaseScaleOf(copy)" in abody:
+    ok("the wanted density scales what the material has, keeping relative map tilings")
+else:
+    bad("the wanted density scales what the material has, keeping relative map tilings",
+        "writing one absolute tiling into every map destroys deliberate detail scales")
+
+# ---- a panel is stretched once, a wall is tiled by the metre -----------------------------------
+smf = code("Assets/CatchIfYouCan/Scripts/Procedural/StructuralMeshFactory.cs") or ""
+
+if "public static Mesh Panel(" in smf and "AddBoxNormalised" in smf:
+    ok("a door leaf and a pane of glass get 0..1 UVs, not one tile per metre")
+else:
+    bad("a door leaf and a pane of glass get 0..1 UVs, not one tile per metre",
+        "a door texture tiled by the metre is one and a bit doors across a 1.2 m leaf")
+
+# The flag MUST NOT leak. A wall built after a panel with the flag still standing would map its
+# wallpaper 0..1 across its own span, which looks like a texture authored wrong rather than like
+# a leaked flag - so it is cleared in a finally, not after the call.
+if re.search(r"finally\s*\n\s*\{\s*\n\s*_uvNormalise = false;", smf):
+    ok("the normalised-UV flag is cleared in a finally, so it cannot leak into the next wall")
+else:
+    bad("the normalised-UV flag is cleared in a finally, so it cannot leak into the next wall",
+        "a leaked flag maps the next wall's wallpaper 0..1 across its own span")
+
+# Both ends of the projection, because half the box faces run their axis backwards: the -X face
+# takes U along +Z and the +X face along -Z. Subtracting the wrong end mirrors three faces of six.
+if "private static float NormalisedAlong" in smf and "Mathf.Min(a, b)" in smf:
+    ok("normalised UVs take both ends of the projection, so no face is mirrored")
+else:
+    bad("normalised UVs take both ends of the projection, so no face is mirrored",
+        "a mirrored door face is a handle that swapped sides")
+
+# ---- what is behind a window ------------------------------------------------------------------
+#
+# 03_Investigation has no skybox material, and with none assigned Unity draws its own procedural
+# sky - which is DAYTIME BLUE. Every window and every opening showed a flat blue rectangle.
+light = code("Assets/CatchIfYouCan/Scripts/Environment/HouseLightingDirector.cs") or ""
+sky = code("Assets/CatchIfYouCan/Scripts/Art/CiycSky.cs") or ""
+
+if "RenderSettings.skybox = sky" in light and "CiycSky.LoadPanorama()" in light:
+    ok("the mission assigns its own sky instead of Unity's blue procedural one")
+else:
+    bad("the mission assigns its own sky instead of Unity's blue procedural one",
+        "no skybox material means a daylight blue rectangle in every opening")
+
+# Assigned on ENTRY, in the same method as the ambient and the fog, because RenderSettings
+# belongs to whichever scene is ACTIVE - and while a portal prepares this world, the lobby is.
+env = re.search(r"private static void ApplyEnvironment.*?\n        \}", light, re.S)
+if env and "RenderSettings.skybox" in env.group(0):
+    ok("the sky is set where the ambient is, so it lands in the mission's own scene")
+else:
+    bad("the sky is set where the ambient is, so it lands in the mission's own scene",
+        "RenderSettings belongs to the active scene, which during preparation is the lobby")
+
+# One path, one file. The lobby exterior and the investigation both want this material, and two
+# copies of a Resources path is CLAUDE.md mistake 3 waiting for a rename.
+lobbyx = code("Assets/CatchIfYouCan/Scripts/Art/LobbyExterior.cs") or ""
+if 'PanoramaResourcePath = "Sky/MAT_Skybox_HauntedNight"' in sky and \
+        "CiycSky.PanoramaResourcePath" in lobbyx and \
+        lobbyx.count('"Sky/MAT_Skybox_HauntedNight"') == 0:
+    ok("the night sky path is written once and shared")
+else:
+    bad("the night sky path is written once and shared",
+        "one string in two files is a rename away from resolving nowhere")
+
+# ---- an oversized block is REPORTED, not scaled until it looks acceptable ----------------------
+rep = code("Assets/CatchIfYouCan/Scripts/Procedural/HouseContentReport.cs") or ""
+
+if "SuspiciousSizeMetres" in rep and "path=" in rep and "mesh=" in rep:
+    ok("anything in a room bigger than a wardrobe is named with the path that made it")
+else:
+    bad("anything in a room bigger than a wardrobe is named with the path that made it",
+        "'there is a big dark cube' is a picture, and four different paths draw it")
+
+# Measured in the object's OWN space and then scaled - never Renderer.bounds, which is a WORLD
+# axis-aligned box and is bigger than the object whenever it is turned (CLAUDE.md mistake 12).
+lsize = re.search(r"private static Vector3 LocalSize.*?\n        \}", rep, re.S)
+lbody = lsize.group(0) if lsize else ""
+if lbody and "sharedMesh.bounds.size" in lbody and "lossyScale" in lbody and "renderer.bounds" not in lbody:
+    ok("the report measures in the object's own space, not as a world AABB")
+else:
+    bad("the report measures in the object's own space, not as a world AABB",
+        "a world AABB of a turned object is bigger than the object, and sends the reader after nothing")
+
+# Structure is exempt BY NAME, not by size: a floor IS six metres across.
+if "StructuralPrefixes" in rep and '"Floor"' in rep and '"Wall"' in rep:
+    ok("room structure is exempt by name, so the one line that matters is not buried")
+else:
+    bad("room structure is exempt by name, so the one line that matters is not buried",
+        "flagging every wall hides the one object that should not be that big")
 
 print()
 print("  %d passed, %d failed" % (passed, failed))

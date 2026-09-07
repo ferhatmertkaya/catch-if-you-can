@@ -269,6 +269,10 @@ namespace CatchIfYouCan.Procedural
             EnsureMinimumHideSpot(house, layout, roomsById);
             BuildNavigation(house);
 
+            // Last, and once: what is actually standing in the finished house, with anything
+            // that cannot be furniture named together with the path that made it.
+            HouseContentReport.Report(house);
+
             return house;
         }
 
@@ -458,10 +462,26 @@ namespace CatchIfYouCan.Procedural
             // InvestigationAudioBootstrap) pruefen bereits darauf.
             if (doorPrefab == null)
             {
+                // No PREFAB is not the same as no door. What the rule above forbids is a
+                // FABRICATED stand-in: two untextured cubes carrying Unity's built-in default
+                // material, which under URP is a magenta panel in the frame and an invisible
+                // blocker in the threshold. What it does not forbid is a real door, built at the
+                // exact size of the opening, wearing a material this project owns - and refused
+                // outright when that material is missing, which is the same rule again rather
+                // than an exception to it.
+                var built = ModularDoorFactory.Build(_activeHouseRoot, position, rotation,
+                                                     modularInteriorCatalog);
+                if (built != null)
+                {
+                    built.gameObject.tag = "Door";
+                    return built;
+                }
+
                 if (!_missingDoorPrefabReported)
                 {
                     _missingDoorPrefabReported = true;
-                    CIYCLog.Error("[CIYC][House] Kein Tuer-Prefab im Content-Katalog. Die " +
+                    CIYCLog.Error("[CIYC][House] Kein Tuer-Prefab im Content-Katalog und kein " +
+                                  "DoorLeafMaterial im ModularInteriorCatalog. Die " +
                                   "Tueroeffnungen bleiben leer statt einen Platzhalter zu " +
                                   "bekommen, der sie zumauert.");
                 }

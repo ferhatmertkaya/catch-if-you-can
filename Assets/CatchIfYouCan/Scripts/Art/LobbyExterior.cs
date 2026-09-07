@@ -36,7 +36,7 @@ namespace CatchIfYouCan.Art
         [Header("Sky")]
         [Tooltip("Skybox material, loaded from Resources so the built-in panoramic shader is " +
                  "always included in a player build.")]
-        [SerializeField] private string skyResourcePath = "Sky/MAT_Skybox_HauntedNight";
+        [SerializeField] private string skyResourcePath = CiycSky.PanoramaResourcePath;
 
         [Tooltip("Searched if the named material is missing, so a renamed sky still shows up " +
                  "rather than leaving the window black.")]

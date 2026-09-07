@@ -461,3 +461,238 @@ Ghost-AI, Evidence, UI, die deterministische Stage A, `MissionTheme.SuburbanHous
 3. Konsole nach `NullReferenceException` filtern. Erwartet: keine aus `VanAudioController`.
 4. Konsole nach `[CIYC][Audio]` filtern. Steht dort „stood down", ist die Reihenfolge wie
    beschrieben und der maßgebliche Aufruf hat installiert.
+
+---
+
+# Nachtrag 2: Decken, Dielen, Öffnungen, Türen
+
+Auftrag: Decken, Boden-UV, offene Wandlöcher, überdimensionierte Platzhalter-Würfel und
+interaktive Türen. Audit zuerst, dann bauen.
+
+## Was der Audit ergeben hat
+
+### CEILING_01 — Ursache
+
+Die Decke wird **einmal** pro Raum gebaut (`ModularRoomBuilder.BuildCeiling`, ein Aufruf, eine
+`BoxCollider`-freie Fläche bei `y = size.y`). Es gibt **keine** doppelte Deckenlage und keine
+Vendor-Decke darüber — das Paket enthält *null* Deckenteile, das ist gemessen und steht in
+`HQ_MODULAR_MIGRATION.md`.
+
+Die Ursache ist das **Material**. `CeilingSurface` zeigt auf ein Paket-Material, und seine
+`AuthoredAcrossMetres` von 2.6415 × 2.6415 wurde nicht an ihm gemessen, sondern aus der
+Wandmessung per Texel-Parität **abgeleitet**. Das ist eine vernünftige Schätzung und war auf dem
+Bildschirm eine falsche Antwort: eine Decke, die aussieht wie ein Fußboden, in einer Kachelgröße,
+die zu nichts gehört. Die Wandmessung selbst ist echt (Prefab 5, 3.95 × 4.00 m); Boden und Decke
+waren geraten.
+
+### FLOOR_UV_01 — Ursache
+
+Nicht das Material und nicht die Geometrie. Die UVs der erzeugten Flächen laufen in **Metern**
+(`StructuralMeshFactory.UvUnitsPerMetre = 1`), also ist die Dielenbreite ausschließlich die
+Kachelung des Materials — und die kam aus derselben abgeleiteten 2.6415, die auch die Decke
+bekommen hat. Eine Kachel alle 2.64 m auf einer Parketttextur mit vielen Dielen ergibt
+handbreite Dielen.
+
+Weil die UVs in Metern liegen, ist die Dielenbreite **schon jetzt** in einem 3-m-Raum und in
+einem 6-m-Raum dieselbe. Diese Forderung war bereits erfüllt; falsch war nur die Zahl.
+
+### OPENING_01 / WINDOW_01 — Ursache, und sie ist nicht die, nach der es aussieht
+
+Zwei getrennte Dinge, die dasselbe Bild ergeben.
+
+1. **Es war nichts da, was die Öffnung füllt.** Die Wand schneidet ein echtes Loch
+   (`WallWithOpening`), und das einzige, was hineingesetzt wurde, war das Vendor-Insert — das
+   seit dem letzten Durchgang zu Recht abgelehnt wird, weil es ein ganzes 4-m-Wandteil ist. Also
+   blieb das Loch leer. Es gab keine CIYC-eigene Tür, keinen Rahmen und keine Scheibe.
+
+2. **Was man durch das Loch sah, war Unitys Standardhimmel.** `03_Investigation.unity` hat
+   `m_SkyboxMaterial: {fileID: 0}` — **kein Skybox-Material**. Ohne eines zeichnet Unity ihren
+   eingebauten Prozedur-Himmel, und der ist **taghellblau**. Das ist das „plain blue rectangle"
+   wörtlich: nicht ein Debug-Material, nicht ein fehlendes Fensterglas, sondern der Himmel.
+   `MAT_Skybox_HauntedNight` existiert seit Aufgabe 26 und war in keiner Szene zugewiesen.
+
+### PLACEHOLDER_01 — **nicht bestimmbar aus dem Repository, deshalb jetzt gemessen**
+
+`InvestigationContentCatalog.asset` hat `PropDefinitions: []` und `RoomDefinitions: []`. Der
+Möbel-Fallback, der früher Würfel erzeugte, spawnt also **gar nichts**. Die einzigen Primitive,
+die der Generator baut, sind der Lichtschalter (0.12 × 0.18 × 0.04 m) und der Sicherungskasten
+(0.35 × 0.50 × 0.12 m) — beide zu klein, um das zu sein, was auf dem Screenshot steht.
+
+Aus dem Code allein lässt sich der Block nicht benennen, und ihn zu raten wäre genau der Fehler,
+den der Auftrag verbietet („do not scale the huge cube until it looks acceptable"). Deshalb gibt
+es jetzt `HouseContentReport`: nach jeder Generierung wird **jeder Renderer in jedem Raum**
+gemessen und alles, was größer als ein Kleiderschrank ist (2.60 m in irgendeiner Achse), mit
+Name, Raum, Größe, Position, Mesh, Material, Shader, `enabled` und **Hierarchie-Pfad** genannt.
+Struktur ist nach *Namen* ausgenommen, nicht nach Größe — ein Boden *ist* sechs Meter breit.
+
+Gemessen wird im **Eigenraum** des Objekts mal `lossyScale`, nie `Renderer.bounds`: das ist eine
+weltachsenparallele Box und bei einem gedrehten Objekt größer als das Objekt (CLAUDE.md
+Fehler 12).
+
+## Was gebaut wurde
+
+### Decke
+
+`ModularInteriorCatalog` hat jetzt pro Fläche eine `SurfaceTuning`: ein **Ersatzmaterial** und
+eine **Kachelgröße in Metern**, beides optional, beides im Inspector sichtbar. Ein Material dort
+ersetzt das Paket-Material vollständig; eine Kachelgröße dort überstimmt die gemessene Dichte.
+
+* **Finales Deckenmaterial:** `MAT_Room_Ceiling`
+  (`Assets/CatchIfYouCan/Art/Environment/InteractiveRoom/Materials/`, Textur
+  `CIYC_Room_Ceiling_BaseColor.png`) — projekteigener viktorianischer Putz, URP Lit, seit
+  Aufgabe 12 im Projekt und bisher nur im InteractiveRoom benutzt.
+* **Finale Kachelgröße Decke:** **1.42 m pro Kachel.** Das ist genau die Dichte, in der das
+  Material authored wurde (4.24 Kacheln über 6 m = 1.415 m), nur jetzt in Metern statt in
+  Raumbreiten ausgedrückt.
+
+### Boden
+
+Material **unverändert** — der Auftrag sagt, es ist richtig.
+
+* **Finale Kachelgröße Boden:** **4.00 m pro Kachel** (vorher abgeleitete 2.6415). Das Muster
+  wird damit um Faktor 1.51 größer.
+
+Diese Zahl ist ein **Startwert, kein Messergebnis**: das HQ-Paket liegt hier nicht vor, seine
+Texturen sind nicht lesbar, und eine Dielenbreite ist ohnehin eine Designentscheidung. Sie steht
+deshalb offen im Inspector (`ModularInteriorCatalog > Floor Tuning > Metres Per Tile`) — größer =
+breitere Dielen.
+
+Die Umrechnung skaliert **jede** Map des Materials um denselben Faktor, relativ zur Kachelung der
+Basismap. Ein Detail-Normal, das absichtlich achtmal feiner läuft, bleibt achtmal feiner. Eine
+absolute Zahl in jede Map zu schreiben hätte das plattgemacht.
+
+### Öffnungen
+
+Jede Öffnung hat jetzt eine **Rolle** und wird als solche geloggt (`[CIYC][House][Opening]`).
+Drei gibt es und keine vierte: DOORWAY, WINDOW, oder die Wand ist geschlossen und macht gar keine
+Öffnungsarbeit.
+
+* **Türlaibung** (`BuildDoorLining`): zwei Pfosten und ein Sturz aus dem Trim-Material, 3 cm
+  Überdeckung, 2 cm vor der Wandfläche — **pro Wand**, denn eine Tür zwischen zwei Räumen hat in
+  jedem Raum eine Laibung.
+* **Fenster** (`BuildWindowAssembly`): vier Rahmenhölzer plus eine Scheibe.
+  * **Brüstung 0.90 m, Oberkante 1.80 m** — die Konstanten `WindowSill` und `WindowHeight`, aus
+    denen auch das Loch geschnitten wird. Loch und Füllung kommen aus derselben Zahl, sie können
+    also nicht auseinanderlaufen.
+  * **Glasmaterial:** `MAT_Room_Glass` (projekteigen, URP).
+  * **Kein Collider am Glas.** Die Fensterwand trägt bereits **eine** Box über ihre ganze Breite
+    — ein Fenster ist kein Durchgang — also wäre das eine zweite Antwort auf eine schon
+    beantwortete Frage.
+
+### Türen
+
+* **Blatt:** erzeugte Geometrie, `StructuralMeshFactory.Panel`, **1.19 × 2.56 × 0.045 m** in
+  einer Öffnung von 1.25 × 2.60. Material: `MAT_VictorianHauntedDoor`
+  (`Art/Environment/Doors/CIYC_VictorianHauntedDoor/Materials/`), URP Lit mit BaseColor, Normal,
+  Roughness und Metallic.
+* **Unterkante 0.00 m, Oberkante 2.56 m**, lichte Höhe 3.00 m — beides wird zur Laufzeit
+  **nachgemessen** und geloggt, samt einer Fehlerzeile, wenn das Blatt die Decke schneidet.
+* **Ein Blatt pro Verbindung**, gebaut in `ProceduralHouseGenerator.CreateDoorAt` aus der
+  Türliste des Layouts. Nicht pro Wand: eine Tür zwischen zwei Räumen ist *ein* Loch, um das
+  *beide* Räume eine Wand bauen, und ein Blatt pro Wand wären zwei Blätter, die durcheinander
+  schwingen.
+* **Das Scharnier ist ein Wrapper**, kein Pivot am Blatt: ein Kindobjekt auf dem linken Pfosten,
+  das Blatt hängt um seine halbe Breite versetzt daran. Das Blatt um seine eigene Mitte zu drehen
+  hätte die Hälfte davon in die Wand geschwenkt.
+* **Der Collider sitzt am Blatt** und schwingt mit. Geschlossen versperrt er die Schwelle, offen
+  steht er an der Wand. Ein Collider an der Wurzel wäre die unsichtbare Wand in jeder Schwelle —
+  genau der alte Fehler.
+
+**Warum das keine Rückkehr des verbotenen Primitiv-Türblatts ist:** die alte Notlösung baute zwei
+Würfel **ohne Material**, was unter URP eine magenta Fläche im Rahmen und einen unsichtbaren
+Blocker davor bedeutet. Die Regel war nie „keine erzeugte Tür", sondern „nichts Erfundenes ohne
+Material". Ist `DoorLeafMaterial` leer, wird **gar nichts** gebaut und die Öffnung bleibt frei —
+dieselbe Regel, nicht eine Ausnahme davon. `check_hq_environment.sh` prüft beide Hälften.
+
+### Interaktion mit E
+
+**Kein zweites Framework.** Der Weg existierte vollständig und war nur nicht angeschlossen:
+
+```
+MobileInputController      Input.GetKeyDown(KeyCode.E)   → InteractPressed
+InteractionController      Raycast 2.75 m                → IInteractable am Treffer
+InteractiveDoor            IInteractable                 → Interact() → SetOpen()
+```
+
+Gefehlt hat nur ein Objekt mit `InteractiveDoor` **und** einem Collider im Strahl. Beides bringt
+das erzeugte Blatt jetzt mit. Die Mobile-Taste läuft durch dieselbe `InteractPressed`-Eigenschaft
+und ist damit automatisch mit dabei.
+
+`InteractiveDoor.Configure(Transform hinge, float openAngle)` ist eine **öffentliche Methode**,
+keine Reflection in das private `hinge`-Feld (CLAUDE.md Fehler 4). Öffnungswinkel 92°.
+
+### Himmel
+
+`HouseLightingDirector.ApplyEnvironment` setzt jetzt `RenderSettings.skybox` auf
+`MAT_Skybox_HauntedNight`. Dort und nicht in der Szenendatei, weil `RenderSettings` zur **aktiven**
+Szene gehört — und während das Portal diese Welt vorbereitet, ist die Lobby aktiv. Genau diese
+Einschränkung gilt für Ambient und Nebel in derselben Methode schon.
+
+Für die Helligkeit ist das **neutral**: das Ambient ist `Flat` aus `NightAmbient` und kommt nicht
+vom Himmel. Es ändert sich, was man durch eine Öffnung *sieht*, nicht wie viel Licht im Raum ist.
+
+Der Resources-Pfad steht jetzt einmal in `Art/CiycSky` statt zweimal (CLAUDE.md Fehler 3).
+
+### Kein stilles Magenta mehr in der Raumhülle
+
+`ModularRoomBuilder.Piece` hatte ein `if (material != null)`, das ohne Material nichts tat — und
+ein `MeshRenderer` ohne zugewiesenes Material ist nicht unsichtbar, URP zeichnet ihn mit dem
+Fehler-Shader. Jetzt geht jede erzeugte Fläche durch `Art.PrimitiveSurface`: Material fehlt →
+Renderer **aus** und genannt, Collider bleibt.
+
+## Determinismus
+
+`Scripts/Procedural/Deterministic/` unverändert, 0 geänderte Dateien. `check_determinism.sh`
+148/148. `MissionTheme.SuburbanHouse`, `HOUSE_DEFAULT_A` und die Golden Seeds nicht angefasst.
+Alles hier ist Stage B: wie ein Raum aussieht, nicht welcher Raum wo liegt.
+
+## Performance
+
+Kein Reimport, kein `AssetDatabase`-Scan, kein Reflection-Render. Die Rahmenhölzer benutzen
+`StructuralMeshFactory.SolidWall`, das nach Maßen cached — vier Hölzer teilen sich im ganzen Haus
+eine Handvoll Meshes. Drei Flächenmaterialien plus Trim für das ganze Haus, einmal aufgelöst.
+Türblatt-Mesh ebenfalls gecached. `HouseContentReport` läuft **einmal** nach der Generierung.
+
+## Geänderte Dateien
+
+| Datei | Was |
+|---|---|
+| `Scripts/Procedural/StructuralMeshFactory.cs` | `Panel()` mit 0..1-UVs; `AddBoxNormalised` mit `finally` |
+| `Scripts/Procedural/ModularRoomBuilder.cs` | Öffnungsrollen, Laibung, Fenster, `SurfaceTuning`, `ScaleAllMaps`, `Piece` ohne stilles Magenta |
+| `Scripts/Procedural/ModularDoorFactory.cs` | **neu** — Blatt, Scharnier, Collider, Verweigerung |
+| `Scripts/Procedural/HouseContentReport.cs` | **neu** — misst jeden Renderer, nennt jeden Übergroßen |
+| `Scripts/Procedural/ProceduralHouseGenerator.cs` | erzeugte Tür statt leerer Öffnung; Bericht am Ende |
+| `Scripts/Content/ModularInteriorCatalog.cs` | `SurfaceTuning`, Tür-, Trim- und Glasmaterial |
+| `Scripts/Interaction/InteractiveDoor.cs` | `Configure(hinge, openAngle)` |
+| `Scripts/Environment/HouseLightingDirector.cs` | Himmel beim Betreten |
+| `Scripts/Art/CiycSky.cs` | **neu** — ein Pfad für den Nachthimmel |
+| `Scripts/Art/LobbyExterior.cs` | benutzt diesen Pfad |
+| `ScriptableObjects/Content/ModularInteriorCatalog.asset` | die Zahlen und Materialien oben |
+| `Scripts/check_hq_environment.sh` | 139 → 160 Prüfungen |
+
+## NICHT GETESTET — das ist deiner
+
+Kein Unity hier. Nichts unten ist eine Behauptung über den Bildschirm.
+
+1. `03_Investigation` öffnen, Play.
+2. **Konsole nach `[CIYC][House][Content]` filtern.** Das ist die Antwort auf den großen dunklen
+   Block. Steht dort `oversized=0`, ist er weg; steht dort mehr, nennt jede Zeile Name, Raum,
+   Größe, Mesh, Material, Shader und Hierarchie-Pfad — **schick mir die Zeilen**, dann ist es
+   eine Ein-Zeilen-Korrektur statt einer Vermutung.
+3. **`[CIYC][House][Surface]`** — drei Zeilen: Wand, Boden, Decke, jede mit Materialnamen und
+   Kachelgröße. Sind die Dielen immer noch zu klein, ist die Zahl
+   `ModularInteriorCatalog > Floor Tuning > Metres Per Tile`; größer machen, neu generieren.
+4. **`[CIYC][House][Opening]`** — pro Wand mit Loch eine Zeile. Keine Zeile bei einem sichtbaren
+   Loch heißt: die Wand hält sich für geschlossen, und das ist Stage A, nicht Stage B.
+5. **`[CIYC][House][Door]`** — pro Tür Blattmaß, Material, Unter- und Oberkante. Erwartet:
+   `bottomY` auf Bodenhöhe, `topY` rund 2.56 m.
+6. **Vor eine Tür stellen, E drücken.** Erwartet: Prompt „Open Door", Blatt schwingt ~92° um die
+   Kante, offen kann man durch, geschlossen nicht.
+7. **Nach oben schauen.** Erwartet: viktorianischer Putz, keine Dielen, eine Fläche.
+8. **Durch ein Fenster schauen.** Erwartet: Nachthimmel-Panorama, kein Blau.
+9. **`NullReferenceException` filtern.** Erwartet: keine.
+
+Sollte etwas an der Tür 90° verdreht in der Wand stehen: das Blatt wird mit
+`Quaternion.Euler(0, RotationIndex * 90, 0)` gesetzt, derselben Konvention, mit der
+`ModularRoomBuilder` die Wände dreht (Nord/Süd unrotiert, Ost/West 90°). Die beiden *sollten*
+übereinstimmen, verifiziert ist das nur im Code, nicht auf dem Bildschirm.

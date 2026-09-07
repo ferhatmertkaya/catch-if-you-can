@@ -39,6 +39,18 @@ MonoBehaviour:
   CeilingSurface:
     Material: {fileID: 2100000, guid: ab2a92eb898207d40b6dd52927f2514f, type: 2}
     AuthoredAcrossMetres: {x: 2.6415362, y: 2.6415362}
+  WallTuning:
+    Replacement: {fileID: 0}
+    MetresPerTile: 0
+  FloorTuning:
+    Replacement: {fileID: 0}
+    MetresPerTile: 4
+  CeilingTuning:
+    Replacement: {fileID: 2100000, guid: bfbf298e0a264f88b618b3369b6622b3, type: 2}
+    MetresPerTile: 1.42
+  DoorLeafMaterial: {fileID: 2100000, guid: 51d73995330e74c7e9ee835bfc36582e, type: 2}
+  TrimMaterial: {fileID: 2100000, guid: 736551a4ca30444d8a349f3cf44a34ed, type: 2}
+  GlassMaterial: {fileID: 2100000, guid: e479663be9444643a0f8aca5f22d3178, type: 2}
   DoorInsert:
     Prefab: {fileID: 1344754602766918, guid: f47d59529d2f53c48a9f80f5c11946c6, type: 3}
     KeepMaterials:

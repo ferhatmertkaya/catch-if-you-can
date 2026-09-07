@@ -84,6 +84,36 @@ namespace CatchIfYouCan.Interaction
 
         public void SetLocked(bool value) => locked = value;
 
+        /// <summary>
+        /// Hands a runtime-built door its hinge and its swing.
+        ///
+        /// <para>
+        /// A public method rather than reflection into the private fields (CLAUDE.md mistake 4):
+        /// reflection compiles, reviews clean and dies silently on the next rename - and the
+        /// rename that kills it here would leave every generated door rotating about its own
+        /// centre, which swings half the leaf into the wall it hangs in.
+        /// </para>
+        ///
+        /// <para>
+        /// Safe to call after <see cref="Awake"/>: the door is put back into its closed state
+        /// afterwards, on the new hinge, so a component added and configured on the next line
+        /// does not keep the angle it computed against itself.
+        /// </para>
+        /// </summary>
+        public void Configure(Transform hingeTransform, float openAngle)
+        {
+            if (hingeTransform != null)
+                hinge = hingeTransform;
+
+            if (openAngle > 0.1f)
+                maxAngle = openAngle;
+
+            _isOpen = startOpen;
+            _targetAngle = _isOpen ? maxAngle : minAngle;
+            _currentAngle = _targetAngle;
+            ApplyAngle(_currentAngle);
+        }
+
         public void ForceOpenByGhost()
         {
             if (!ghostControllable || locked)

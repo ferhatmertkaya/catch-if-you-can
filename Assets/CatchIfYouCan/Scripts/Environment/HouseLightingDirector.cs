@@ -137,6 +137,25 @@ namespace CatchIfYouCan.Environment
             RenderSettings.fogMode = FogMode.ExponentialSquared;
             RenderSettings.fogColor = NightFog;
             RenderSettings.fogDensity = FogDensity;
+
+            // ---- what is behind a window, and behind an unfinished opening ------------------
+            //
+            // 03_Investigation has NO skybox material. With none assigned, Unity draws its own
+            // procedural sky, and that sky is DAYTIME BLUE - so every window and every opening
+            // in the house showed a flat blue rectangle, which reads as a hole where something
+            // was meant to be rather than as a sky.
+            //
+            // Assigned here rather than in the scene file: RenderSettings belongs to whichever
+            // scene is ACTIVE, and while a portal prepares this world the lobby is still the
+            // active one. Everything in this method has that constraint already, which is why
+            // it runs on entry.
+            //
+            // Safe for the lighting: the ambient above is Flat and comes from NightAmbient, not
+            // from the sky, so swapping a bright procedural sky for a dark panorama changes what
+            // is SEEN through an opening and not how much light is in the rooms.
+            Material sky = Art.CiycSky.LoadPanorama();
+            if (sky != null)
+                RenderSettings.skybox = sky;
         }
 
         /// <summary>
