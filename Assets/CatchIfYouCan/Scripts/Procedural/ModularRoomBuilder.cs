@@ -58,7 +58,18 @@ namespace CatchIfYouCan.Procedural
         /// </summary>
         public const float WindowWidth = 2.05f;
         public const float WindowHeight = 0.90f;
-        public const float WindowSill = 1.55f;
+        // 0.90 m, not 1.55. The sill was set from the vendor wall the window was extracted
+        // from, and that piece is 4 m tall - under this project's 3.00 m ceiling the opening
+        // ran 1.55 to 2.45 and left 0.55 m of wall above it, which reads as a window near the
+        // ceiling. A residential sill is 0.85 to 1.00 m; 0.90 puts the head at 1.80 m, just
+        // above eye level at 1.68.
+        public const float WindowSill = 0.90f;
+
+        /// <summary>
+        /// The clear height a generated room is built to, used to check that an insert does not
+        /// reach through the ceiling. Read from the same place the rooms are sized from.
+        /// </summary>
+        public const float CeilingClearance = 3.00f;
 
         /// <summary>
         /// Builds the room's shell from generated geometry.
@@ -277,22 +288,73 @@ namespace CatchIfYouCan.Procedural
             // transform is offset by whatever it takes to put it there. Measured after the
             // orientation, because turning the piece upright moves its centre too.
             Vector3 target = localPosition + insert.LocalOffset;
+            string source = insert.Prefab != null ? insert.Prefab.name : "<null>";
 
-            if (TryMeasureInSpace(go.transform, wall, out Bounds placed))
+            if (!TryMeasureInSpace(go.transform, wall, out Bounds placed))
             {
-                go.transform.localPosition = target - placed.center;
-                Core.CIYCLog.Info("[CIYC][House] " + role + "-Einsatz: Mesh " +
-                                  placed.size.ToString("F2") + ", Pivot lag " +
-                                  placed.center.magnitude.ToString("F1") + " m neben der " +
-                                  "Oeffnung und wurde ausgeglichen.");
+                // NOT placed by the pivot. This pack's pivots sit 13 to 40 m from their own
+                // geometry, so falling back to one does not put the door roughly right - it puts
+                // it tens of metres away, which on screen is a door frame near the ceiling. An
+                // insert that cannot be measured is refused, and the prefab is named.
+                Core.CIYCLog.Error("[CIYC][House][Insert] role=" + role +
+                                   " prefab=" + source +
+                                   " measured=NO kept=" + kept +
+                                   " -> REFUSED. Ohne Messung waere er ueber seinen Pivot " +
+                                   "gesetzt worden, und der liegt in diesem Paket bis zu 40 m " +
+                                   "neben der eigenen Geometrie. Die Oeffnung bleibt frei.");
+                go.SetActive(false);
+                return;
+            }
+
+            go.transform.localPosition = target - placed.center;
+
+            // Measured again AFTER the move, because what matters is where it ended up, not
+            // what it was asked to do.
+            float bottom, top;
+            if (TryMeasureInSpace(go.transform, wall, out Bounds finalBounds))
+            {
+                bottom = finalBounds.min.y;
+                top = finalBounds.max.y;
             }
             else
             {
-                go.transform.localPosition = target;
-                Core.CIYCLog.Warn("[CIYC][House] " + role + "-Einsatz: keine sichtbare Geometrie " +
-                                  "messbar, er wird ueber seinen Pivot gesetzt. Bei diesem Paket " +
-                                  "liegt der bis zu 40 m daneben.");
+                bottom = float.NaN;
+                top = float.NaN;
             }
+
+            float wantedTop = role == "Door" ? DoorHeight : WindowSill + WindowHeight;
+            float wantedBottom = role == "Door" ? 0f : WindowSill;
+
+            Core.CIYCLog.Info("[CIYC][House][Insert] role=" + role +
+                              " prefab=" + source +
+                              " kept=" + kept +
+                              " measured=YES" +
+                              " meshSize=" + placed.size.ToString("F3") +
+                              " meshCenterBefore=" + placed.center.ToString("F3") +
+                              " pivotOffset=" + placed.center.magnitude.ToString("F2") + "m" +
+                              " target=" + target.ToString("F3") +
+                              " finalLocal=" + go.transform.localPosition.ToString("F3") +
+                              " finalWorld=" + go.transform.position.ToString("F3") +
+                              " bottomLocalY=" + bottom.ToString("F3") +
+                              " topLocalY=" + top.ToString("F3") +
+                              " wantedBottom=" + wantedBottom.ToString("F2") +
+                              " wantedTop=" + wantedTop.ToString("F2"));
+
+            // The two claims worth checking, checked rather than assumed: the thing stands on
+            // the finished floor, and it does not reach through the ceiling.
+            const float Tolerance = 0.05f;
+            if (!float.IsNaN(bottom) && Mathf.Abs(bottom - wantedBottom) > Tolerance)
+                Core.CIYCLog.Error("[CIYC][House][Insert] role=" + role + " prefab=" + source +
+                                   " steht NICHT auf der gewollten Hoehe: Unterkante " +
+                                   bottom.ToString("F3") + " statt " + wantedBottom.ToString("F2") +
+                                   " (Abweichung " + Mathf.Abs(bottom - wantedBottom).ToString("F3") +
+                                   " m).");
+
+            if (!float.IsNaN(top) && top > CeilingClearance)
+                Core.CIYCLog.Error("[CIYC][House][Insert] role=" + role + " prefab=" + source +
+                                   " ragt mit Oberkante " + top.ToString("F3") +
+                                   " ueber die lichte Hoehe " + CeilingClearance.ToString("F2") +
+                                   " - er schneidet die Decke.");
         }
 
         /// <summary>

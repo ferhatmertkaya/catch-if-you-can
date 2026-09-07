@@ -270,3 +270,98 @@ altem Katalog baut ein anderes Haus als der Host.
 - **Welcher der beiden Einsatz-Pfade die Tür hochsetzt.** Braucht die Konsole.
 - **Was das HQ-Paket an Möbeln enthält.** Braucht `Alle HQ-Bauteile prüfen` bei dir.
 - **Welche Objekte konkret magenta sind.** Braucht die Auswahl im Editor.
+
+---
+
+# Phase A–C — umgesetzt
+
+**Stand:** die Befunde oben sind Stand des Audits. Was hier steht, ist umgesetzt.
+Der Möbel- und Raumtyp-Teil (Phasen D–F) ist **nicht** angefasst.
+
+## Geänderte Dateien
+
+| Datei | was |
+|---|---|
+| `Scripts/Missions/MissionDefinition.cs` | `MapName` → „Victorian Street" |
+| `Scripts/Art/PrimitiveSurface.cs` | **neu** — die eine Regel gegen Magenta |
+| `Scripts/Procedural/ProceduralHouseGenerator.cs` | benutzt sie |
+| `Scripts/Procedural/PrimitiveRoomFactory.cs` | benutzt sie; Türmaße von der modularen Seite |
+| `Scripts/Procedural/InvestigationBootstrap.cs` | Ersatzboden bekommt ein Material |
+| `Scripts/Procedural/VanBuilder.cs` | benutzt sie |
+| `Scripts/Environment/ApartmentShell.cs` | benutzt sie |
+| `Scripts/Procedural/ModularRoomBuilder.cs` | Brüstung 0.90; Einsatz instrumentiert und verweigert |
+| `Scripts/check_hq_environment.sh` | 127 → 136 Prüfungen |
+
+## Konstanten, alt gegen neu
+
+| | vorher | jetzt |
+|---|---|---|
+| Türbreite, primitiv | 1.20 m | **1.25 m** (aus `ModularRoomBuilder`) |
+| Türhöhe, primitiv | 2.20 m | **2.60 m** (aus `ModularRoomBuilder`) |
+| Türbreite/-höhe, modular | 1.25 / 2.60 m | unverändert |
+| Fensterbrüstung | 1.55 m | **0.90 m** |
+| Fensterhöhe | 0.90 m | unverändert |
+| Fenster-Oberkante | 2.45 m | **1.80 m** |
+| Lichte Höhe | 3.00 m | unverändert |
+
+Der primitive Weg liest die Türmaße jetzt **aus** `ModularRoomBuilder` statt eigene zu führen.
+Zwei Zahlen für eine Öffnung waren die Ursache dafür, dass Editor und Build verschiedene Häuser
+zeigten.
+
+## Magenta: jede bekannte Stelle
+
+`Art.PrimitiveSurface.Apply(go, material, expected)` ist **die eine Regel**: Material drauf, oder
+**Renderer aus** plus eine Fehlerzeile mit Objekt, erwartetem Material und Grund. Der Collider
+bleibt — ein unsichtbarer Boden trägt den Spieler noch.
+
+| Stelle | vorher | jetzt |
+|---|---|---|
+| `ProceduralHouseGenerator` | eigene, korrekte Fassung | benutzt die Regel |
+| `PrimitiveRoomFactory` | eigene, korrekte Fassung | benutzt die Regel |
+| `InvestigationBootstrap.BuildEmptyFloor` | **keine Zuweisung → magenta** | URP-Lit oder Renderer aus |
+| `VanBuilder.CreateCube` | `if (material != null)` → magenta | benutzt die Regel |
+| `ApartmentShell.Box` | `if (material != null)` → magenta | benutzt die Regel |
+
+Der Guard prüft die Regel **einmal** und dann jede der fünf Stellen einzeln — „die meisten
+benutzen sie" war genau der Zustand vorher.
+
+**Nicht angefasst:** kein globaler Konvertierungslauf, kein Material geändert, die Tapeten-Logik
+unberührt, das Hivemind-Paket nicht importiert.
+
+## Phase C: was der Einsatz jetzt meldet
+
+Pro Tür und Fenster eine Zeile `[CIYC][House][Insert]` mit: Rolle, Prefab, behaltene Renderer,
+ob gemessen werden konnte, Mesh-Größe, Mesh-Mittelpunkt vor der Korrektur, Pivot-Abstand,
+Ziel, lokale und globale Endposition, Unter- und Oberkante, Soll-Unterkante und Soll-Oberkante.
+
+**Der Pivot-Rückfall ist entfernt.** Konnte nicht gemessen werden, wird der Einsatz **abgelehnt**
+(`REFUSED`, Objekt abgeschaltet, Prefab genannt) statt über einen Pivot gesetzt zu werden, der in
+diesem Paket bis zu 40 m neben der eigenen Geometrie liegt. Die Öffnung bleibt dann leer — sichtbar
+falsch, aber am richtigen Ort.
+
+Zwei harte Prüfungen nach dem Setzen, gegen die **nachgemessene** Lage:
+Unterkante ≈ Soll (Tür 0.00 m, Fenster 0.90 m) mit 5 cm Toleranz, und Oberkante ≤ 3.00 m.
+Jede Verletzung ist eine Fehlerzeile mit beiden Zahlen.
+
+## Determinismus
+
+**Keine Datei unter `Scripts/Procedural/Deterministic/` wurde angefasst** — 0 geänderte Dateien
+im Kern. `MapDefinition`, `ContentSnapshot`, `HouseLayoutGraph`, `SeedManager`, `LayoutHash` und
+`GenerationVersion` sind unverändert. Alles Geänderte ist Stage B: es entscheidet, wie ein Raum
+aussieht, nicht welcher Raum wo liegt. `check_determinism.sh` läuft mit 148 von 148.
+
+`MissionTheme.SuburbanHouse`, `mapDefinitionId = "HOUSE_DEFAULT_A"` und die Golden Seeds sind
+**nicht** angefasst.
+
+## Testablauf in Unity — NICHT GETESTET, das ist deiner
+
+1. `03_Investigation` öffnen, Play, ein Haus generieren lassen.
+2. Konsole nach `[CIYC][House][Insert]` filtern. Erwartet pro Tür:
+   `measured=YES`, `bottomLocalY≈0.000`, `topLocalY≈2.600`.
+   Steht dort `measured=NO ... REFUSED`, ist die Ursache der hohen Türen gefunden — schick mir
+   die Zeile mit dem `prefab=`-Namen.
+3. Nach `[CIYC][WorldMaterial]` filtern. Jede Zeile ist ein Objekt, das jetzt **unsichtbar** statt
+   magenta ist, mit dem erwarteten Material im Klartext.
+4. Fenster ansehen: Brüstung auf Hüfthöhe, Oberkante knapp über Augenhöhe.
+5. Tapeten vergleichen — an der Wand-Generierung wurde nichts geändert.
+6. Missionsauswahl: der erste Ort heißt „Victorian Street".

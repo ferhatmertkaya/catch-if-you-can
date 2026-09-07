@@ -362,14 +362,32 @@ else:
 # ASSIGNED when it had a material and did nothing when the shader lookup failed, so a missing
 # shader produced a magenta house and not one line of log. CLAUDE.md mistake 2, in the one place
 # that builds every fallback room.
-gen = read("Assets/CatchIfYouCan/Scripts/Procedural/ProceduralHouseGenerator.cs") or ""
-m = re.search(r"private static GameObject CreateNeutralPrimitive.*?\n        \}", gen, re.S)
-body = m.group(0) if m else ""
-if "renderer.enabled = false" in body and "[CIYC][WorldMaterial]" in body:
-    ok("a primitive with no material is hidden, not left magenta")
+#
+# The rule itself lives in Art/PrimitiveSurface.cs now, because it has to hold at EVERY site
+# that makes a primitive - and it did not: the diagnostic floor, the van and the apartment shell
+# could each ship magenta while the two generators could not. So the rule is checked once, and
+# each site is checked for USING it.
+surface = code("Assets/CatchIfYouCan/Scripts/Art/PrimitiveSurface.cs") or ""
+if "renderer.enabled = false" in surface and "[CIYC][WorldMaterial]" in surface:
+    ok("the shared surface rule hides a materialless primitive instead of leaving it magenta")
 else:
-    bad("a primitive with no material is hidden, not left magenta - skipping the "
-        "assignment leaves Unity's built-in default, which is magenta under URP")
+    bad("the shared surface rule hides a materialless primitive instead of leaving it magenta",
+        "skipping the assignment leaves Unity's built-in default, which is magenta under URP")
+
+# Every site that makes a primitive goes through it. Named individually, because "most of them
+# do" is exactly the state this was in.
+for label, path in (
+        ("the house generator", "Assets/CatchIfYouCan/Scripts/Procedural/ProceduralHouseGenerator.cs"),
+        ("the room factory", "Assets/CatchIfYouCan/Scripts/Procedural/PrimitiveRoomFactory.cs"),
+        ("the diagnostic floor", "Assets/CatchIfYouCan/Scripts/Procedural/InvestigationBootstrap.cs"),
+        ("the van", "Assets/CatchIfYouCan/Scripts/Procedural/VanBuilder.cs"),
+        ("the apartment shell", "Assets/CatchIfYouCan/Scripts/Environment/ApartmentShell.cs")):
+    src = code(path) or ""
+    if "PrimitiveSurface.Apply" in src:
+        ok("%s gives its primitives a surface through the shared rule" % label)
+    else:
+        bad("%s gives its primitives a surface through the shared rule" % label,
+            "a primitive left without a material draws magenta under URP")
 
 # ---- the room shell a fallback builds is TEXTURED, and its materials survive a build ---------
 #
@@ -429,7 +447,7 @@ else:
 # surface, it leaves Unity's built-in default, which is magenta under URP.
 mm = re.search(r"private static GameObject CreatePrimitive\(PrimitiveType type.*?\n        \}", prf, re.S)
 mbody = mm.group(0) if mm else ""
-if "renderer.enabled = false" in mbody and "[CIYC][WorldMaterial]" in mbody:
+if "PrimitiveSurface.Apply" in mbody:
     ok("a room primitive with no material is hidden, not left magenta")
 else:
     bad("a room primitive with no material is hidden, not left magenta",
@@ -1336,6 +1354,45 @@ if "truly_missing" in refguard and "changed_pack" in refguard \
 else:
     bad("a declared vendor guid still fails when the pack is actually installed",
         "otherwise the manifest becomes a way to excuse any missing asset")
+
+# ---- the two generation paths agree about a door ---------------------------------------------
+#
+# They did not: 1.20 x 2.20 in the primitive fallback against 1.25 x 2.60 in the modular path.
+# A fallback that looks plausible at the wrong size teaches a different building scale than the
+# one that ships, and the difference is only visible by walking through both.
+prim = code("Assets/CatchIfYouCan/Scripts/Procedural/PrimitiveRoomFactory.cs") or ""
+if "DoorWidth = ModularRoomBuilder.DoorWidth" in prim and \
+        "DoorHeight = ModularRoomBuilder.DoorHeight" in prim:
+    ok("both generation paths cut the same door opening")
+else:
+    bad("both generation paths cut the same door opening",
+        "the development fallback must not teach a different building scale than production")
+
+mod = code("Assets/CatchIfYouCan/Scripts/Procedural/ModularRoomBuilder.cs") or ""
+sill = re.search(r"WindowSill\s*=\s*([0-9.]+)f", mod)
+if sill and 0.80 <= float(sill.group(1)) <= 1.00:
+    ok("the window sill is a residential height (%s m)" % sill.group(1))
+else:
+    bad("the window sill is a residential height",
+        "1.55 m came from a 4 m vendor wall and puts the head at 2.45 m under a 3.00 m ceiling")
+
+# ---- an insert that cannot be measured is REFUSED, never placed by its pivot -----------------
+#
+# This pack's pivots sit 13 to 40 m from their own geometry. Falling back to one does not put a
+# door roughly right; it puts it tens of metres away, which on screen is a door near the ceiling.
+ins = re.search(r"private static void AddInsert.*?\n        \}", mod, re.S)
+insbody = ins.group(0) if ins else ""
+if "REFUSED" in insbody and "go.SetActive(false)" in insbody:
+    ok("an unmeasurable insert is refused rather than placed by its vendor pivot")
+else:
+    bad("an unmeasurable insert is refused rather than placed by its vendor pivot",
+        "a pivot in this pack can be 40 m from the geometry it belongs to")
+
+if "wantedBottom" in insbody and "CeilingClearance" in insbody:
+    ok("a placed insert is checked against the floor and the ceiling, not assumed")
+else:
+    bad("a placed insert is checked against the floor and the ceiling, not assumed",
+        "where it ended up is a measurement, not what it was asked to do")
 
 print()
 print("  %d passed, %d failed" % (passed, failed))

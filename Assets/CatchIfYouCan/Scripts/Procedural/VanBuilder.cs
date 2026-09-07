@@ -191,9 +191,10 @@ namespace CatchIfYouCan.Procedural
             go.name = name;
             go.transform.SetParent(parent, false);
             go.transform.localScale = size;
-            var renderer = go.GetComponent<Renderer>();
-            if (renderer != null && material != null)
-                renderer.sharedMaterial = material;
+            // Not "assign it if there is one". Without the assignment the primitive keeps
+            // Unity's built-in default material, which is a Built-in-pipeline shader and draws
+            // magenta under URP - so the null case was the visible one.
+            Art.PrimitiveSurface.Apply(go, material, "van part " + name);
             return go;
         }
     }

@@ -206,8 +206,9 @@ namespace CatchIfYouCan.Environment
             go.transform.localPosition = localCentre;
             go.transform.localScale = size;
 
-            if (material != null)
-                go.GetComponent<Renderer>().sharedMaterial = material;
+            // Same rule as everywhere else: a primitive with no material keeps Unity's built-in
+            // default, which is magenta under URP. Hidden and logged beats magenta.
+            Art.PrimitiveSurface.Apply(go, material, "apartment shell " + name);
 
             return go;
         }

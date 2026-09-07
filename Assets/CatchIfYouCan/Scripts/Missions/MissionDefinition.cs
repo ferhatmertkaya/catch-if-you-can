@@ -13,7 +13,12 @@ namespace CatchIfYouCan.Missions
     public class MissionDefinition : ScriptableObject
     {
         [Header("Identity")]
-        public string MapName = "Suburban Home";
+        /// <summary>
+        /// The name the player reads. Only this - not <see cref="MissionTheme.SuburbanHouse"/>,
+        /// which is an enum other systems switch on, and not MapDefinition's "HOUSE_DEFAULT_A",
+        /// which feeds the layout hash and would invalidate every stored seed.
+        /// </summary>
+        public string MapName = "Victorian Street";
         public MissionTheme Theme = MissionTheme.SuburbanHouse;
 
         [Header("Difficulty")]

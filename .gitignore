@@ -79,3 +79,7 @@ mono_crash.mem.*.blob
 # ihn zu beheben.
 /Assets/Hivemind/
 /Assets/Hivemind.meta
+
+# Beipack des Friedhofs-Pakets: ein Ordner mit einer Werbe-Verknuepfung, kein Projektinhalt.
+/Assets/!GET_MORE_ASSETS_FOR_FREE/
+/Assets/!GET_MORE_ASSETS_FOR_FREE.meta

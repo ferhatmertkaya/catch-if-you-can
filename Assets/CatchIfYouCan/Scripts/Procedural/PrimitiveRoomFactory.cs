@@ -9,8 +9,12 @@ namespace CatchIfYouCan.Procedural
     {
         public static readonly Vector3 DefaultRoomSize = new Vector3(6f, 3f, 6f);
         private const float WallThickness = 0.2f;
-        private const float DoorWidth = 1.2f;
-        private const float DoorHeight = 2.2f;
+        // The SAME opening the modular path cuts. These were 1.20 x 2.20 while
+        // ModularRoomBuilder used 1.25 x 2.60, so the development fallback taught a different
+        // building scale than the production path - and a fallback that looks right at the
+        // wrong size is worse than one that looks obviously provisional.
+        private const float DoorWidth = ModularRoomBuilder.DoorWidth;
+        private const float DoorHeight = ModularRoomBuilder.DoorHeight;
 
         /// <summary>
         /// One texture tile per metre of surface. That is the convention the authored room
@@ -467,26 +471,12 @@ namespace CatchIfYouCan.Procedural
             go.name = name;
             go.transform.SetParent(parent, false);
 
-            var renderer = go.GetComponent<Renderer>();
-            if (renderer == null)
-                return go;
-
-            if (material != null)
-            {
-                renderer.sharedMaterial = material;
-                return go;
-            }
-
-            // Not "leave it as it is". GameObject.CreatePrimitive arrives carrying Unity's
+            // Through the one shared rule. GameObject.CreatePrimitive arrives carrying Unity's
             // built-in default material, which is a Built-in-pipeline shader and draws solid
             // magenta under URP - so skipping the assignment does not produce a plain surface,
-            // it produces the loudest possible wrong one. A hidden wall is a bug somebody
-            // reports; a magenta wall is a bug three people explain differently.
-            renderer.enabled = false;
-            Core.CIYCLog.Error("[CIYC][WorldMaterial] object=" + name +
-                               " material=<none> shader=<CiycShaders.FindLit returned null>" +
-                               " renderer=disabled reason=a primitive with no material of its " +
-                               "own draws Unity's built-in default, which is magenta under URP");
+            // it produces the loudest possible wrong one. Art.PrimitiveSurface switches the
+            // renderer off and says what was missing.
+            Art.PrimitiveSurface.Apply(go, material, "room surface for " + name);
             return go;
         }
 

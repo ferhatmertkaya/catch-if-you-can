@@ -538,6 +538,16 @@ namespace CatchIfYouCan.Procedural
             // gewuenschten Kantenlaenge.
             floor.transform.localScale = Vector3.one * (emptyFloorSize * 0.1f);
             floor.tag = "Environment";
+
+            // Der Boden kam bisher ohne Materialzuweisung. GameObject.CreatePrimitive bringt
+            // Unitys eingebautes Standardmaterial mit, und das ist ein Built-in-Shader: unter
+            // URP magenta. Ausgerechnet der Ersatzboden, der auftaucht, wenn KEINE Welt gebaut
+            // wurde - also genau dann, wenn man ohnehin nach der Ursache sucht.
+            Shader lit = Art.CiycShaders.FindLit();
+            Material surface = lit != null
+                ? new Material(lit) { color = new Color(0.18f, 0.18f, 0.20f) }
+                : null;
+            Art.PrimitiveSurface.Apply(floor, surface, "Ersatzboden (keine Welt generiert)");
         }
 
         /// <summary>

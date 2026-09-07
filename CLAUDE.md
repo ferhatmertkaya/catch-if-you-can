@@ -393,7 +393,7 @@ place that number lives; everything else derives it.
   with `wallpaper3` and `white` on them — so that is named before any single slot is blamed, and a
   slot name with fewer than three letters proposes nothing, because this pack has wall slots 1-6
   and window materials 1-4 named after a different FBX and matching those to each other offered
-  window glass for a door wall. 127 checks.
+  window glass for a door wall. 136 checks.
 
 All eleven run in CI (`.github/workflows/determinism.yml`). Run them locally before
 pushing; they need nothing but a shell (and `python3` for the roster checks).

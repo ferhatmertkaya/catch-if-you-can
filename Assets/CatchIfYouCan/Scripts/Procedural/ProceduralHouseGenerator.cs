@@ -575,19 +575,14 @@ namespace CatchIfYouCan.Procedural
 
             // No shader, so no material - and doing nothing here is NOT neutral.
             // GameObject.CreatePrimitive arrives carrying Unity's built-in default material,
-            // which is a Built-in-pipeline shader and draws solid MAGENTA under URP. The old
-            // code simply skipped the assignment and returned, so a missing shader produced a
-            // magenta house and not one line of log.
+            // which is a Built-in-pipeline shader and draws solid MAGENTA under URP.
             //
-            // The renderer is switched off instead. CLAUDE.md is explicit that a missing object
-            // beats a magenta one, and the COLLIDER stays - an invisible floor still holds the
-            // player up, where a magenta one only tells them something is wrong in a language
-            // that looks like a level.
-            renderer.enabled = false;
-            CIYCLog.Error("[CIYC][WorldMaterial] object=" + name + " material=<none> " +
-                          "shader=<CiycShaders.FindLit returned null> supported=false - the " +
-                          "renderer is switched off rather than left on Unity's built-in " +
-                          "default, which draws magenta under URP. Its collider is untouched.");
+            // Through the one shared rule (Art.PrimitiveSurface), which switches the RENDERER
+            // off and names what was missing. The COLLIDER stays - an invisible floor still
+            // holds the player up, where a magenta one only says something is wrong in a
+            // language that looks like a level.
+            Art.PrimitiveSurface.Apply(go, null, "generated primitive " + name +
+                                       " (CiycShaders.FindLit returned null)");
             return go;
         }
 
