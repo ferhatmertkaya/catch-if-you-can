@@ -221,6 +221,18 @@ namespace CatchIfYouCan.Player
         /// </summary>
         public const float CapsuleHeight = 1.86f;
 
+        /// <summary>
+        /// Der Radius derselben Kapsel.
+        ///
+        /// <para>
+        /// Benannt, weil ihn ausser dem Rig jetzt auch die Einrichtung braucht: die Mindestbreite
+        /// eines Laufwegs ist der Durchmesser des Spielers plus Sicherheitsmarge, und die als
+        /// eigene Zahl zu tippen hiesse, zwei Wahrheiten ueber dieselbe Kapsel zu haben. Der Wert
+        /// ist unveraendert der, den <c>PlayerRigBuilder</c> immer gesetzt hat.
+        /// </para>
+        /// </summary>
+        public const float CapsuleRadius = 0.35f;
+
         /// <summary>Placeholder wood footsteps, replaced by dropping real recordings in.</summary>
         public const string FootstepClipResourcePath = "Audio/SFX/Footsteps";
 

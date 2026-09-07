@@ -45,6 +45,7 @@ domains stop rather than guess. Every other domain continues.
 | `Docs/NETWORKING.md` | Anything multiplayer. No netcode package is installed yet. |
 | `Docs/MULTIPLAYER_RUNTIME_ARCHITECTURE.md` | **Normative for the boundaries.** Who owns what, and why the pose is never replicated. |
 | `Docs/GHOST_EVIDENCE_AUTHORITY.md` | **Normative.** Any change to what counts as evidence, or to who decides it. |
+| `Docs/ROOM_FURNISHING.md` | **Normativ für die Einrichtung.** Wer entscheidet, was in einem Raum steht, in welcher Reihenfolge, und was auf keinen Fall zugestellt werden darf. |
 | `Docs/HQ_MODULAR_MIGRATION.md` | **Normative for the environment migration.** The measured contract of the imported house pack: what it actually is, its openings, its materials, the UV formula for generated geometry, and why the logical cell does not move. |
 | `Docs/PURCHASED_PORTAL_PACK.md` | **Normative for the seam.** Adopting a bought portal asset. What crosses from HDRP to URP and what cannot, why the artwork may lend the portal its look and never its shape, and why the images are copied rather than referenced. |
 | `Docs/CROSSPLAY_PLATFORM_MATRIX.md` | Adding a platform, or anything tempted to branch on one. |
@@ -213,6 +214,21 @@ place that number lives; everything else derives it.
   no authoring command saves the open scene behind the user, and the four commands that can
   rewrite the project all go through ONE confirmation that states scope, count, reimport, saving
   and the way out. 30 checks.
+
+- `Scripts/check_room_furnishing.sh` — die Räume werden nach Funktion eingerichtet, und nichts
+  davon greift in die Generierung zurück. Der Würfel-Ersatz für ein fehlendes Möbelstück ist weg
+  und kann nicht zurück; die Einrichtung zieht keinen `CiycRandom`-Strom, fragt die Physikszene
+  nicht und hängt an keiner Instanz-ID; die Sperrzonen — Türschwenkbereich mit der echten
+  Blattdicke, Laufwege in der Breite des Spieler-Colliders, Fenster als Höhengrenze statt als
+  Verbot — stehen fest, bevor das erste Möbel gesetzt wird, und werden am Ende gegen das
+  Ergebnis nachgemessen; Möbelmaße stehen in keinem Asset, sondern werden im eigenen Raum des
+  Modells gemessen und je Sorte einmal gecacht; gesetzt wird über die gemessene Mitte statt über
+  einen Pivot, der in diesem Paket 40 m danebenliegt; Deko liegt auf einer geprüften Fläche, die
+  sie tragen kann, und trägt weder Rigidbody noch aktiven Collider; ein Licht entsteht nur an
+  einer wirklich platzierten Leuchte, aus dem Budget und ohne Echtzeitschatten; eingerichtet wird
+  vor der Lichtschaltersuche und vor dem NavMesh; eine Raumart ohne Profil wird gemeldet statt
+  umgewidmet; und der Inhaltsbericht meldet ein Unity-Primitivmesh unabhängig von seiner Größe —
+  der Würfel war 1 m groß und wäre unter jeder Größenschwelle durchgerutscht. 28 checks.
 
 - `Scripts/check_agent_architecture.sh` — the roster holds 40 unique roles with
   every field, the roster and `AGENT_OWNERSHIP.md` name the same roles, the
@@ -395,7 +411,7 @@ place that number lives; everything else derives it.
   and window materials 1-4 named after a different FBX and matching those to each other offered
   window glass for a door wall. 136 checks.
 
-All eleven run in CI (`.github/workflows/determinism.yml`). Run them locally before
+All twelve run in CI (`.github/workflows/determinism.yml`). Run them locally before
 pushing; they need nothing but a shell (and `python3` for the roster checks).
 
 ## The mistakes this project has already made
@@ -542,6 +558,21 @@ Repeating one of these is the most likely way to break something.
    writes down which guids are its (`Scripts/write_vendor_manifest.sh`) and commits the result.
    The absence is then a named, expected state rather than a silent one - and a guid the
    manifest does not name, or one it does name while the pack is installed, still fails.
+
+20. **Ein eingebauter Ersatz-Snapshot, der so tat, als gäbe es Inhalt.** Die Räume waren leer
+   und enthielten trotzdem dunkle Blöcke, und beides hatte dieselbe Ursache in zwei Schritten.
+   `ContentSnapshotFactory.Create` liefert bei leeren Katalogen `ContentSnapshot.CreateFallback()`
+   — vier erfundene Archetypen, `FURN_SHELF`, `FURN_TABLE`, `PROP_CRATE`, `PROP_LAMP`. Stage A
+   plant daraus ordentlich Möbel und faltet die Platzierungen in den Layout-Hash, also *gab* es
+   Möbel, aus Sicht der Generierung. Stage B fand dann für keine davon eine `PropDefinition` —
+   beide Kataloge sind seit dem Entfernen der Kenney-Inhalte leer (Fehler 14) — und
+   `PropSpawner` baute je Platzierung einen Würfel. Nicht einmal in der geplanten Größe: der
+   Aufrufer gab `definition != null ? definition.BoundsSize : Vector3.one` mit, und mit null
+   fiel das auf **1 × 1 × 1 m**, im dunklen Trim-Material, mehrere pro Raum. Aus einem Meter
+   Entfernung im First-Person füllt einer davon das Bild. Der Fallback-Snapshot war als
+   Sicherheitsnetz gedacht und war in Wahrheit eine Quelle, die Inhalt *behauptete*, den es
+   nicht gab. Ein Größenfilter hätte ihn nie gefangen — ein Kleiderschrank ist größer. Was ihn
+   verrät, ist das Unity-Primitivmesh, und genau darauf schaut der Bericht jetzt.
 
 ## Unity Editor availability
 

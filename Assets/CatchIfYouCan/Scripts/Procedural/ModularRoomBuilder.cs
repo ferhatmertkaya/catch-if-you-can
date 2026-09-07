@@ -147,6 +147,26 @@ namespace CatchIfYouCan.Procedural
             module.Configure(room.Category, new Bounds(Vector3.up * (size.y * 0.5f), size), room.RoomId);
             module.CollectSockets();
 
+            // Was diese Huelle geworden ist, schreibt sie auf - Groesse, Tueren, Fenster.
+            //
+            // Die Einrichtung braucht das, und sie darf es nicht ein zweites Mal ableiten: die
+            // Fenstermaske entsteht oben aus der Identitaet des Raums, und wer sie spaeter noch
+            // einmal berechnet, hat zwei Implementierungen derselben Entscheidung (CLAUDE.md
+            // Fehler 1). Die gehen genau dann auseinander, wenn jemand die Regel aendert und nur
+            // eine Stelle findet.
+            int doorMask = 0;
+            for (int d = 0; d < Directions.Cardinal.Length; d++)
+            {
+                if (room.HasDoor(Directions.Cardinal[d]))
+                    doorMask |= LayoutRoom.DirectionMask(Directions.Cardinal[d]);
+            }
+
+            var shell = roomRoot.GetComponent<Furnishing.RoomShellInfo>();
+            if (shell == null)
+                shell = roomRoot.AddComponent<Furnishing.RoomShellInfo>();
+
+            shell.Configure(size, doorMask, windowMask, room.Category, room.RoomId);
+
             return roomRoot;
         }
 

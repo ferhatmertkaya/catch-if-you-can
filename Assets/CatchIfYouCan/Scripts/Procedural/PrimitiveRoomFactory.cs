@@ -486,21 +486,19 @@ namespace CatchIfYouCan.Procedural
             go.layer = LayerMask.NameToLayer("Default");
         }
 
-        public static GameObject CreateFallbackProp(string propName, Vector3 size, Material material)
-        {
-            EnsureMaterials();
-
-            // A material the caller chose is used exactly as the caller authored it. Only this
-            // class's own trim stand-in is re-tiled, because only that one is a texture being
-            // stretched over a box whose size nobody picked.
-            Material chosen = material != null ? material : Surface(_trimMaterial, size);
-
-            // Through the one helper, so a prop with no material is hidden and reported for the
-            // same reason a wall is, instead of being the one primitive in this file that still
-            // ships Unity's magenta default.
-            var go = CreatePrimitive(PrimitiveType.Cube, null, propName, chosen);
-            go.transform.localScale = size;
-            return go;
-        }
+        // ---- CreateFallbackProp ist ENTFERNT ------------------------------------------------
+        //
+        // Sie baute einen Wuerfel im dunklen Trim-Material fuer jede geplante Moebelplatzierung,
+        // fuer die es keine PropDefinition gab - und weil der Content-Katalog seit dem Entfernen
+        // der Kenney-Inhalte leer ist (CLAUDE.md Fehler 14) und ContentSnapshotFactory bei leeren
+        // Katalogen einen eingebauten Ersatz-Snapshot liefert, war das JEDE. Der Aufrufer gab
+        // dabei nicht einmal die geplante Groesse mit: "definition == null" fiel auf
+        // Vector3.one, also stand in jedem Raum ein 1-m-Wuerfel pro geplantem Moebelstueck.
+        //
+        // Das ist der grosse dunkle Block. Ein Platzhalter, der wie fertiger Inhalt aussieht,
+        // ist genau der Fehler, den dieses Projekt schon dreimal gemacht hat, und die Methode
+        // bleibt deshalb nicht als unbenutzte Einladung stehen. Eingerichtet wird durch
+        // Furnishing.RoomFurnisher, aus echten Moebel-Prefabs; fehlt eines, bleibt die Stelle
+        // leer und wird gemeldet.
     }
 }

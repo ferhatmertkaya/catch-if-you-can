@@ -34,7 +34,7 @@ namespace CatchIfYouCan.Player
             // PlayerController owns these at Awake; matched here so the capsule is never
             // briefly the wrong size on the frame it is built.
             controller.height = PlayerFactory.CapsuleHeight;
-            controller.radius = 0.35f;
+            controller.radius = PlayerFactory.CapsuleRadius;
             controller.center = new Vector3(0f, PlayerFactory.CapsuleHeight * 0.5f, 0f);
 
             var cameraRoot = new GameObject("CameraRoot");

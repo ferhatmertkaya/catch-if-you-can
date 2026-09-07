@@ -50,6 +50,8 @@ namespace CatchIfYouCan.Procedural
                  "einen Erfolg aussehen.")]
         [SerializeField] private Content.ModularInteriorCatalog modularInteriorCatalog;
 
+        [SerializeField] private Content.RoomFurnishingCatalog roomFurnishingCatalog;
+
         [SerializeField] private RoomDefinition[] roomDefinitions;
         [SerializeField] private PropDefinition[] propDefinitions;
 
@@ -262,6 +264,14 @@ namespace CatchIfYouCan.Procedural
 
             ConnectDoors(house, layout, roomsById);
             SealUnusedOpenings(house, layout, roomsById);
+
+            // VOR InstallRoomInteractables, und das ist die Reihenfolge, nicht die Gewohnheit:
+            // jenes sucht je Raum ein Light und baut nur dann einen Lichtschalter dazu. Solange
+            // nichts Lampen aufstellte, fand es keins - das ist die gemeldete Bilanz "0 von 0
+            // practicals", und sie war kein Fehler der Suche, sondern das ehrliche Ergebnis eines
+            // Hauses ohne Lampen. Und VOR BuildNavigation, damit die Moebel im NavMesh landen.
+            FurnishRooms(house, layout);
+
             InstallRoomInteractables(house);
             SpawnProps(layout, roomsById);
             AssignGhostRoom(house, layout, roomsById);
@@ -523,6 +533,111 @@ namespace CatchIfYouCan.Procedural
             }
         }
 
+        /// <summary>
+        /// Richtet jeden Raum nach seiner Funktion ein.
+        ///
+        /// <para>
+        /// STAGE B. Der Grundriss steht schon und wird hier nur gelesen; nichts davon geht in den
+        /// Layout-Hash. Der Zufall kommt aus einem eigenen, aus (Seed, Raum-ID) abgeleiteten
+        /// Strom, nicht aus einem CiycRandom-Strom - einen von denen zu ziehen wuerde ihn
+        /// weitertreiben und damit in die Grundrisserzeugung zurueckgreifen.
+        /// </para>
+        /// </summary>
+        private void FurnishRooms(GeneratedHouse house, HouseLayout layout)
+        {
+            if (roomFurnishingCatalog == null)
+            {
+                CIYCLog.Warn("[CIYC][House][Furnish] Kein RoomFurnishingCatalog im " +
+                             "Content-Katalog. Die Raeume bleiben LEER - das ist sichtbar " +
+                             "unfertig und damit besser als Wuerfel, die wie Moebel aussehen. " +
+                             "Katalog fuellen mit: Catch If You Can > Content > " +
+                             "Build Room Furnishing Catalog.");
+                return;
+            }
+
+            var cache = new Furnishing.FurniturePrefabCache();
+            var reports = new List<Furnishing.FurnishReport>(house.Rooms.Count);
+
+            for (int i = 0; i < house.Rooms.Count; i++)
+            {
+                GeneratedRoomInstance room = house.Rooms[i];
+                if (room?.Root == null)
+                    continue;
+
+                var shell = room.Root.GetComponent<Furnishing.RoomShellInfo>();
+                if (shell == null)
+                {
+                    // Nur die modulare Huelle schreibt eine. Ein Raum aus einem fertigen
+                    // Prefab oder aus der Primitiv-Notloesung hat keine, und ohne die Masse und
+                    // die Tuerlage waere jede Platzierung geraten.
+                    CIYCLog.Warn("[CIYC][House][Furnish] Raum " + room.Root.name +
+                                 " hat keine RoomShellInfo und wird nicht eingerichtet.");
+                    continue;
+                }
+
+                reports.Add(Furnishing.RoomFurnisher.Furnish(room, shell, roomFurnishingCatalog,
+                                                             cache, layout.Seed));
+            }
+
+            ReportFurnishing(reports, cache);
+        }
+
+        /// <summary>
+        /// Eine kompakte Zusammenfassung, und die Ausreisser einzeln.
+        ///
+        /// Nicht eine Warnung je fehlgeschlagenem Platzierungsversuch: ein Stuhl, der an der
+        /// ersten Wand nicht passt und an der zweiten schon, ist der Normalfall dieses Verfahrens
+        /// und keine Meldung wert. Was gemeldet wird, ist ein Raum ohne Einrichtung, ein
+        /// fehlendes Kernmoebel und ein blockierter Laufweg.
+        /// </summary>
+        private void ReportFurnishing(List<Furnishing.FurnishReport> reports,
+                                      Furnishing.FurniturePrefabCache cache)
+        {
+            int furnished = 0, major = 0, decor = 0, lights = 0;
+            var problems = new System.Text.StringBuilder();
+
+            for (int i = 0; i < reports.Count; i++)
+            {
+                Furnishing.FurnishReport r = reports[i];
+                major += r.Major;
+                decor += r.Decor;
+                lights += r.Lights;
+
+                if (r.Major > 0 || r.Optional > 0 || r.Decor > 0)
+                    furnished++;
+
+                bool bad = r.MissingRoles.Count > 0 || !r.WalkwaysClear ||
+                           (r.Major == 0 && r.Optional == 0);
+
+                if (bad && problems.Length < 1200)
+                    problems.Append("\n  - ").Append(r.Compact());
+
+                if (roomFurnishingCatalog != null && roomFurnishingCatalog.VerboseDiagnostics)
+                {
+                    CIYCLog.Info("[CIYC][House][Furnish] " + r.Compact() +
+                                 (r.Rejected.Count > 0 ? " verworfen: " + string.Join("; ", r.Rejected) : ""));
+                }
+            }
+
+            string headline = "[CIYC][House][Furnish] rooms=" + reports.Count +
+                              " furnished=" + furnished +
+                              " majorPieces=" + major + " decor=" + decor + " lights=" + lights;
+
+            if (cache.Missing.Count > 0)
+            {
+                headline += " missingAssets=" + cache.Missing.Count + " (" +
+                            string.Join(", ", cache.Missing) + ")";
+            }
+
+            if (problems.Length == 0)
+            {
+                CIYCLog.Info(headline + " - jeder Raum mit einem Profil ist eingerichtet.");
+                return;
+            }
+
+            CIYCLog.Warn(headline + ". Diese Raeume brauchen Aufmerksamkeit:" + problems);
+        }
+
         private void SpawnProps(HouseLayout layout, Dictionary<int, GeneratedRoomInstance> roomsById)
         {
             var spawner = new PropSpawner(propRoot);
@@ -780,6 +895,9 @@ namespace CatchIfYouCan.Procedural
 
             if (modularInteriorCatalog == null)
                 modularInteriorCatalog = catalog.ModularInterior;
+
+            if (roomFurnishingCatalog == null)
+                roomFurnishingCatalog = catalog.RoomFurnishing;
 
             // These four were declared on the catalog and read by nobody: a field that looks
             // like a setting and changes nothing. They drive the room shell now.

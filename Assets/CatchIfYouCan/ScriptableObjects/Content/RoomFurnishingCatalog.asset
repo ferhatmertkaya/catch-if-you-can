@@ -1,0 +1,57 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 0cca75c771d443f4a7ca2c691082e228, type: 3}
+  m_Name: RoomFurnishingCatalog
+  m_EditorClassIdentifier: Assembly-CSharp::CatchIfYouCan.Content.RoomFurnishingCatalog
+  SourceDescription: 'Projekteigene Props aus Resources. Die Moebel des HQ Modular
+    House Pakets traegt "Catch If You Can > Content > Build Room Furnishing Catalog"
+    nach - das Paket ist gitignored, seine Prefab-Referenzen koennen deshalb nur auf
+    einer Maschine gesetzt werden, die es installiert hat.'
+  Entries:
+  - Id: CIYC_Armchair
+    Role: 2
+    Prefab: {fileID: 0}
+    ResourcePath: Props/CIYC_Armchair
+    MaterialOverride: {fileID: 2100000, guid: a17c95e3b60d4f82ba49c7e01d386f5a, type: 2}
+    Rooms: []
+    Anchor: 0
+    ClearanceFront: 0.5
+    MountHeight: 0
+    Weight: 1
+    IsLightFixture: 0
+  - Id: CIYC_AntiqueTable_Coffee
+    Role: 3
+    Prefab: {fileID: 0}
+    ResourcePath: Props/CIYC_AntiqueTable
+    MaterialOverride: {fileID: 2100000, guid: d45f81b309e74a26bc93e5701f8a2d6c, type: 2}
+    Rooms: []
+    Anchor: 1
+    ClearanceFront: 0.3
+    MountHeight: 0
+    Weight: 1
+    IsLightFixture: 0
+  - Id: CIYC_AntiqueTable_Side
+    Role: 4
+    Prefab: {fileID: 0}
+    ResourcePath: Props/CIYC_AntiqueTable
+    MaterialOverride: {fileID: 2100000, guid: d45f81b309e74a26bc93e5701f8a2d6c, type: 2}
+    Rooms: []
+    Anchor: 0
+    ClearanceFront: 0.3
+    MountHeight: 0
+    Weight: 1
+    IsLightFixture: 0
+  MajorPiecesPerTenSquareMetres: 4
+  DecorPerTenSquareMetres: 3
+  LightsPerRoom: 1
+  PlacementAttempts: 12
+  VerboseDiagnostics: 0

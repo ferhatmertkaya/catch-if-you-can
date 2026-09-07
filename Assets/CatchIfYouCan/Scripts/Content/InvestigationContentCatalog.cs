@@ -17,6 +17,12 @@ namespace CatchIfYouCan.Content
                  "nicht durch Ersatz verdeckt.")]
         public ModularInteriorCatalog ModularInterior;
 
+        [Tooltip("Die Moebel. Getrennt vom Modulkatalog, weil der die STRUKTUR liefert - Wand, " +
+                 "Boden, Decke, Tuer, Fenster - und die aus erzeugter Geometrie mit " +
+                 "Paket-Oberflaechen entsteht, waehrend Moebel fertige Prefabs sind. Leer heisst: " +
+                 "die Raeume bleiben leer, und das wird gemeldet statt durch Wuerfel ersetzt.")]
+        public RoomFurnishingCatalog RoomFurnishing;
+
         [Header("Room Surfaces")]
         [Tooltip("Die Materialien fuer die vom Code gebaute Raumhuelle. Sie werden pro " +
                  "Flaeche gekachelt: eine Kachel je Meter, wie in MAT_Room_Wall authored " +

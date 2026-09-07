@@ -82,7 +82,20 @@ namespace CatchIfYouCan.Procedural
                     Vector3 size = LocalSize(renderer);
                     float largest = Mathf.Max(size.x, Mathf.Max(size.y, size.z));
 
-                    if (largest <= SuspiciousSizeMetres)
+                    // Zwei Gruende, gemeldet zu werden, und der zweite ist der wichtigere.
+                    //
+                    // GROESSE allein reicht nicht: ein Kleiderschrank ist 2.2 m hoch und voellig
+                    // richtig, und ihn zu melden wuerde die eine Zeile begraben, auf die es
+                    // ankommt. Der Wuerfel, der dieses Projekt beschaeftigt hat, war 1 x 1 x 1 m
+                    // und waere unter jeder vernuenftigen Groessenschwelle durchgerutscht.
+                    //
+                    // Was ihn verraet, ist seine HERKUNFT: er trug ein Unity-Primitivmesh. Ein
+                    // eingerichteter Raum enthaelt keine Wuerfel, Kapseln oder Kugeln - alles
+                    // darin ist ein Modell mit einem Namen. Also wird beides geprueft.
+                    bool oversized = largest > SuspiciousSizeMetres;
+                    bool primitive = IsUnityPrimitive(MeshNameOf(renderer));
+
+                    if (!oversized && !primitive)
                         continue;
 
                     suspiciousCount++;
@@ -99,6 +112,9 @@ namespace CatchIfYouCan.Procedural
                                                              renderer.sharedMaterial.shader != null
                                       ? renderer.sharedMaterial.shader.name : "<none>")
                                   .Append(" enabled=").Append(renderer.enabled)
+                                  .Append(" flagged=").Append(oversized
+                                      ? (primitive ? "gross+primitiv" : "gross")
+                                      : "primitiv")
                                   .Append(" path=").Append(PathOf(renderer.transform, room.Root.transform));
                     }
                 }
@@ -107,20 +123,46 @@ namespace CatchIfYouCan.Procedural
             string headline = "[CIYC][House][Content] rooms=" + house.Rooms.Count +
                               " renderers=" + total + " structural=" + structural +
                               " loose=" + (total - structural) +
-                              " oversized=" + suspiciousCount +
-                              " (threshold " + SuspiciousSizeMetres.ToString("F2") + " m)";
+                              " flagged=" + suspiciousCount +
+                              " (groesser als " + SuspiciousSizeMetres.ToString("F2") +
+                              " m oder auf einem Unity-Primitivmesh)";
 
             if (suspiciousCount == 0)
             {
-                Core.CIYCLog.Info(headline + " - nothing in a room is bigger than a wardrobe.");
+                Core.CIYCLog.Info(headline + " - kein Platzhalter und nichts Ueberdimensioniertes.");
                 return;
             }
 
-            Core.CIYCLog.Error(headline + ". These are not furniture-sized, so each is either a " +
-                               "placeholder standing in for content that does not exist yet or a " +
-                               "piece that was never scaled after it was created. The hierarchy " +
-                               "path says which:" + suspicious +
-                               (suspiciousCount > 6 ? "\n  ... and more" : ""));
+            Core.CIYCLog.Error(headline + ". Jedes davon ist entweder ein Platzhalter fuer " +
+                               "Inhalt, den es noch nicht gibt, oder ein Stueck, das nach dem " +
+                               "Erzeugen nie skaliert wurde. Der Hierarchie-Pfad sagt, welches:" +
+                               suspicious + (suspiciousCount > 6 ? "\n  ... und weitere" : ""));
+        }
+
+        /// <summary>
+        /// Ob dieses Mesh eines von Unitys eingebauten Primitiven ist.
+        ///
+        /// <para>
+        /// <c>GameObject.CreatePrimitive</c> gibt seinem Mesh immer denselben Namen: "Cube",
+        /// "Capsule", "Sphere", "Cylinder", "Plane", "Quad". Ein Objekt in einem eingerichteten
+        /// Raum, das so ein Mesh traegt, ist ein Platzhalter - unabhaengig davon, wie gross es
+        /// ist und wie ordentlich es texturiert wurde.
+        /// </para>
+        /// </summary>
+        private static bool IsUnityPrimitive(string meshName)
+        {
+            switch (meshName)
+            {
+                case "Cube":
+                case "Capsule":
+                case "Sphere":
+                case "Cylinder":
+                case "Plane":
+                case "Quad":
+                    return true;
+                default:
+                    return false;
+            }
         }
 
         private static bool IsStructural(string name)

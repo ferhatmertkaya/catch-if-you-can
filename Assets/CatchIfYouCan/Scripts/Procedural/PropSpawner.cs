@@ -30,6 +30,9 @@ namespace CatchIfYouCan.Procedural
         }
 
         /// <summary>Instantiates every planned placement. Returns how many were built.</summary>
+        private int _skipped;
+        private string _skippedSample;
+
         public int SpawnPlacements(
             IReadOnlyList<LayoutProp> placements,
             PropDefinition[] library,
@@ -38,11 +41,25 @@ namespace CatchIfYouCan.Procedural
             if (placements == null || placements.Count == 0)
                 return 0;
 
+            _skipped = 0;
+            _skippedSample = null;
+
             int spawned = 0;
             for (int i = 0; i < placements.Count; i++)
             {
                 if (TrySpawn(placements[i], library, roomsById))
                     spawned++;
+            }
+
+            if (_skipped > 0)
+            {
+                Core.CIYCLog.Warn("[CIYC][House][Props] " + _skipped + " von " + placements.Count +
+                                  " geplanten Platzierungen uebersprungen, weil der " +
+                                  "Content-Katalog keine PropDefinition dafuer hat (z. B. '" +
+                                  _skippedSample + "'). Stage A plant sie aus dem eingebauten " +
+                                  "Ersatz-Snapshot, den ContentSnapshotFactory bei leeren " +
+                                  "Katalogen liefert. Sie bekommen KEINEN Wuerfel mehr - die " +
+                                  "Einrichtung kommt aus dem RoomFurnishingCatalog.");
             }
 
             return spawned;
@@ -62,19 +79,31 @@ namespace CatchIfYouCan.Procedural
 
             Quaternion rotation = Quaternion.Euler(0f, placement.RotationIndex * 90f, 0f);
 
-            GameObject instance;
-            if (definition != null && definition.Prefab != null)
+            // ---- ohne Prefab wird KEIN Moebelstueck erfunden --------------------------------
+            //
+            // Hier stand der grosse dunkle Block, und seine Herkunft ist belegt:
+            // ContentSnapshotFactory.Create liefert bei leeren Katalogen einen eingebauten
+            // Ersatz-Snapshot (FURN_SHELF, FURN_TABLE, PROP_CRATE, PROP_LAMP). Stage A plant
+            // daraus Moebel und faltet die Platzierungen in den Layout-Hash. Stage B findet dann
+            // fuer keine davon eine PropDefinition - beide Kataloge sind seit dem Entfernen der
+            // Kenney-Inhalte leer (CLAUDE.md Fehler 14) - und baute je Platzierung einen
+            // 1x1x1-Wuerfel im dunklen Trim-Material, weil "definition == null" auf
+            // "size = Vector3.one" fiel. Mehrere davon pro Raum, mitten im Zimmer, und aus einem
+            // Meter Entfernung im First-Person fuellt einer davon das Bild.
+            //
+            // Ein Platzhalter, der wie fertiger Inhalt aussieht, ist genau der Fehler, den dieses
+            // Projekt schon dreimal gemacht hat. Die Platzierung wird stattdessen uebersprungen
+            // und gezaehlt; eingerichtet wird durch RoomFurnisher, mit echten Moebeln.
+            if (definition == null || definition.Prefab == null)
             {
-                instance = Object.Instantiate(definition.Prefab, position, rotation, _propRoot);
+                _skipped++;
+                if (_skippedSample == null)
+                    _skippedSample = placement.PropDefinitionId;
+
+                return false;
             }
-            else
-            {
-                Vector3 size = definition != null ? definition.BoundsSize : Vector3.one;
-                string propName = definition != null ? definition.PropName : placement.PropDefinitionId;
-                instance = PrimitiveRoomFactory.CreateFallbackProp(propName, size, null);
-                instance.transform.SetParent(_propRoot, false);
-                instance.transform.SetPositionAndRotation(position, rotation);
-            }
+
+            GameObject instance = Object.Instantiate(definition.Prefab, position, rotation, _propRoot);
 
             var category = roomsById != null && roomsById.TryGetValue(placement.RoomId, out var room)
                 ? room.Category.ToString()

@@ -55,3 +55,6 @@ jobs:
 
       - name: Editor menu guard
         run: Scripts/check_editor_menu.sh
+
+      - name: Room furnishing guard
+        run: Scripts/check_room_furnishing.sh
