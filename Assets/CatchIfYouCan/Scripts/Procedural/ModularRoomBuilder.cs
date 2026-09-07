@@ -72,6 +72,17 @@ namespace CatchIfYouCan.Procedural
         public const float CeilingClearance = 3.00f;
 
         /// <summary>
+        /// How far a vendor insert may stand proud of the opening it fills, per axis.
+        ///
+        /// <para>
+        /// A door leaf carries a frame and an architrave, so it is legitimately wider and taller
+        /// than the hole. A 4 m wall is not, and telling the two apart by measurement is the only
+        /// way that survives a pack whose parts are named <c>1</c> and <c>Steklo</c>.
+        /// </para>
+        /// </summary>
+        public const float InsertOverhangAllowance = 0.40f;
+
+        /// <summary>
         /// Builds the room's shell from generated geometry.
         ///
         /// Everything it needs is already in the LayoutRoom, decided in Stage A and folded into
@@ -302,6 +313,47 @@ namespace CatchIfYouCan.Procedural
                                    " -> REFUSED. Ohne Messung waere er ueber seinen Pivot " +
                                    "gesetzt worden, und der liegt in diesem Paket bis zu 40 m " +
                                    "neben der eigenen Geometrie. Die Oeffnung bleibt frei.");
+                go.SetActive(false);
+                return;
+            }
+
+            // ---- it has to BE a door before it is placed like one --------------------------
+            //
+            // The measurement above works. What it measured was a whole 4 m vendor wall:
+            // meshSize=(3.991, 4.054, 0.650) for the door and (3.764, 4.116, 0.402) for the
+            // window, against openings of 1.25 x 2.60 and 2.05 x 0.90. Centring a 4.05 m object
+            // on 1.30 m MUST put its top at 3.33 m and its bottom 0.73 m below the floor, so the
+            // two height errors below were not a placement bug at all - they were the correct
+            // arithmetic on the wrong object.
+            //
+            // The cause is upstream: KeepOnlyInsertParts matched the wall shell as well, because
+            // the shell wears one of the named materials. kept=2 looked like a clean selection
+            // and was a wall plus a leaf. And it is also what "there are two door frames" is -
+            // the generated wall already carries the opening with its reveal, and the insert
+            // added a second, wall-sized one over it.
+            //
+            // So the size is checked against the opening the piece is meant to fill. A frame or
+            // an architrave legitimately stands a little proud of the hole; a whole wall does
+            // not. A refusal leaves the generated opening exactly as it was - which is a clean,
+            // correctly sized doorway, not a hole in the fiction.
+            float openingWidth = role == "Door" ? DoorWidth : WindowWidth;
+            float openingHeight = role == "Door" ? DoorHeight : WindowHeight;
+
+            if (placed.size.x > openingWidth + InsertOverhangAllowance ||
+                placed.size.y > openingHeight + InsertOverhangAllowance)
+            {
+                Core.CIYCLog.Error("[CIYC][House][Insert] role=" + role +
+                                   " prefab=" + source +
+                                   " kept=" + kept +
+                                   " measured=" + placed.size.ToString("F3") +
+                                   " opening=" + openingWidth.ToString("F2") + " x " +
+                                   openingHeight.ToString("F2") +
+                                   " (+" + InsertOverhangAllowance.ToString("F2") + " m Ueberstand erlaubt)" +
+                                   " -> REFUSED: das ist keine Tuer und kein Fenster, das ist ein " +
+                                   "ganzes Wandteil. Die KeepMaterials " + Join(insert.KeepMaterials) +
+                                   " treffen die Wandschale mit. Die erzeugte Wand traegt ihre " +
+                                   "Oeffnung bereits - sie bleibt frei statt einen zweiten Rahmen " +
+                                   "zu bekommen.");
                 go.SetActive(false);
                 return;
             }

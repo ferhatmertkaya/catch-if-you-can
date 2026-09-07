@@ -1394,6 +1394,40 @@ else:
     bad("a placed insert is checked against the floor and the ceiling, not assumed",
         "where it ended up is a measurement, not what it was asked to do")
 
+# ---- and it has to BE a door before it is placed like one ------------------------------------
+#
+# The measurement works and measured a whole 4 m vendor wall: (3.991, 4.054, 0.650) for the door
+# and (3.764, 4.116, 0.402) for the window, against openings of 1.25 x 2.60 and 2.05 x 0.90.
+# Centring a 4.05 m object on 1.30 m MUST put its top at 3.33 m and its bottom 0.73 m under the
+# floor, so the two height errors were the correct arithmetic on the wrong object - and the
+# second door frame the room grew was that wall standing over the generated opening.
+#
+# KeepOnlyInsertParts cannot tell it: kept=2 is a clean-looking count for a shell plus a leaf,
+# because the shell wears one of the named materials. Only the SIZE separates them.
+if ("openingWidth" in insbody and "openingHeight" in insbody and
+        "InsertOverhangAllowance" in insbody and "REFUSED" in insbody and
+        "go.SetActive(false)" in insbody):
+    ok("an insert bigger than its opening is refused as the vendor wall it is")
+else:
+    bad("an insert bigger than its opening is refused as the vendor wall it is",
+        "a 4 m wall centred on a 1.30 m door lintel is two frames and a hole in the floor")
+
+# The allowance is ONE named constant, not a number written twice. A door frame and a window
+# reveal stand proud of their holes by the same kind of amount, and two literals drift.
+if re.search(r"public const float InsertOverhangAllowance = 0\.40f;", mod):
+    ok("the overhang a frame may have is one named allowance")
+else:
+    bad("the overhang a frame may have is one named allowance",
+        "two literals for the same tolerance drift, and the drift looks like a placement bug")
+
+# The refusal must leave the opening as the generated wall built it. Falling back to "place it
+# anyway, just lower" would put the wall through the room instead of through the ceiling.
+if re.search(r"go\.SetActive\(false\);\s*\n\s*return;", insbody):
+    ok("a refused insert leaves the generated opening exactly as it was")
+else:
+    bad("a refused insert leaves the generated opening exactly as it was",
+        "placing it anyway at a corrected height is the same wall in a different wrong place")
+
 print()
 print("  %d passed, %d failed" % (passed, failed))
 sys.exit(1 if failed else 0)

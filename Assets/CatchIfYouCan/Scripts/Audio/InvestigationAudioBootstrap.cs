@@ -50,17 +50,46 @@ namespace CatchIfYouCan.Audio
                 TryLateInstall();
         }
 
+        /// <summary>
+        /// The safety net for an investigation that started without anybody calling
+        /// <see cref="InstallAfterHouseGeneration"/>. It is not the route, and it must not
+        /// pre-empt the route.
+        ///
+        /// <para>
+        /// <b>It did, and it cost the whole audio layer.</b>
+        /// <c>GameManager.BeginMission</c> raises <c>InvestigationStarted</c> while the mission
+        /// is being RESOLVED - which in <c>InvestigationBootstrap.PrepareWorld</c> is before the
+        /// van is built, before the house is generated and before the player exists. This ran
+        /// there, found nothing, installed nothing against nothing, and set <c>_installed</c>.
+        /// The real call a few seconds later then returned on its first line. No footsteps, no
+        /// heartbeat, no sanity audio, no room tone, no door audio, no ghost audio - and a
+        /// <see cref="VanAudioController"/> that had been handed a null van and threw once per
+        /// frame for the rest of the mission.
+        /// </para>
+        ///
+        /// <para>
+        /// So it stands down while the world it would install against does not exist yet, and
+        /// leaves <c>_installed</c> alone, so the authoritative call still counts.
+        /// </para>
+        /// </summary>
         private void TryLateInstall()
         {
-            var houseGen = FindAnyObjectByType<ProceduralHouseGenerator>();
             var player = Core.LocalPlayerService.Root;
             var ghost = FindAnyObjectByType<GhostController>();
-            VanBuildResult van = null;
             var vanRoot = GameObject.Find("InvestigationVan");
-            if (vanRoot != null)
+
+            if (player == null && ghost == null && vanRoot == null)
             {
-                van = new VanBuildResult { Root = vanRoot };
+                CIYCLog.Warn("[CIYC][Audio] InvestigationStarted arrived before the world " +
+                             "existed - no player, no van, no ghost - so the late audio install " +
+                             "stood down instead of installing against nothing and locking " +
+                             "itself in. InvestigationBootstrap installs the audio properly once " +
+                             "the world is built.");
+                return;
             }
+
+            VanBuildResult van = vanRoot != null ? new VanBuildResult { Root = vanRoot } : null;
+
             // House reference unavailable post-hoc; room zones may already exist from installer on generator object.
             InstallAfterHouseGeneration(null, player, ghost, van);
         }

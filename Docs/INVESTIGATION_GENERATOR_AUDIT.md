@@ -365,3 +365,99 @@ aussieht, nicht welcher Raum wo liegt. `check_determinism.sh` läuft mit 148 von
 4. Fenster ansehen: Brüstung auf Hüfthöhe, Oberkante knapp über Augenhöhe.
 5. Tapeten vergleichen — an der Wand-Generierung wurde nichts geändert.
 6. Missionsauswahl: der erste Ort heißt „Victorian Street".
+
+---
+
+# Nachtrag: was der erste echte Lauf gezeigt hat
+
+Der Log aus dem laufenden Spiel beantwortet die offene Frage aus Phase C — und die Antwort ist
+**keiner der beiden Fehlerpfade**, die ich vorhergesagt hatte. Die Messung funktioniert:
+
+```
+role=Door   prefab=1 kept=2 measured=YES meshSize=(3.991, 4.054, 0.650) pivotOffset=2.05m
+            target=(0.000, 1.300, 0.000) -> bottomLocalY=-0.727 topLocalY=3.327
+role=Window prefab=7 kept=2 measured=YES meshSize=(3.764, 4.116, 0.402) pivotOffset=0.00m
+            target=(0.000, 1.350, 0.000) -> bottomLocalY=-0.708 topLocalY=3.408
+```
+
+Die Instrumentierung hat also getan, wozu sie da war, und die Diagnose liegt eine Stufe höher:
+`meshSize` ist **rund 4 m × 4 m — ein ganzes Vendor-Wandteil**, kein Türblatt (1.25 × 2.60) und
+kein Fensterflügel (2.05 × 0.90). Ein 4.05 m hohes Objekt auf 1.30 m zu zentrieren **muss** die
+Oberkante auf 3.33 m und die Unterkante 0.73 m unter den Boden legen. Die beiden Fehlerzeilen
+waren die richtige Rechnung am falschen Objekt.
+
+Ursache: `KeepOnlyInsertParts` hat die Wandschale mitbehalten, weil sie eines der genannten
+Materialien trägt. `kept=2` sieht nach einer sauberen Auswahl aus und war Schale + Blatt. Das ist
+auch die zweite Beobachtung aus demselben Lauf — „als Türrahmen nimmt er einmal
+`WallWithDoorway_West`, einmal `Door_Insert`": die erzeugte Wand trägt ihre Öffnung samt Laibung
+bereits, und das Insert hat eine zweite, wandgroße darübergestellt.
+
+**Die Größe entscheidet jetzt.** Vor dem Setzen wird die gemessene Ausdehnung gegen die Öffnung
+geprüft, die das Teil füllen soll, mit einer gemeinsamen Zugabe (`InsertOverhangAllowance`,
+0.40 m) für Rahmen und Laibung. Was darüber liegt, ist ein Wandteil und wird mit genannten Zahlen
+abgelehnt; die erzeugte Öffnung bleibt so, wie die Wand sie gebaut hat — eine saubere, richtig
+bemaßte Tür. Materialnamen zu raten wäre Fehler 3 in neuen Kleidern; das Paket liegt hier nicht
+vor, und eine Messung, die 4 m sagt, braucht keine Vermutung.
+
+## „der fällt runter"
+
+Der Lauf war ein **Direktstart** von `03_Investigation` (`InvestigationBootstrap.Start` →
+`BootstrapSequence` im Stack), nicht der Portalweg. Auf diesem Weg spawnt `SpawnPlayer` am
+`PlayerSpawn` des Vans:
+
+```
+entryAnchor=PlayerSpawn  playerAt=(0.0, 0.1, -9.6)     ... später: worldPosition=(-0.23, -9.57, -10.06)
+```
+
+`y = 0.1` ist die Oberkante des Van-Bodens (Slab 0.08 m). Der Van steht bei `VanAnchor (0, 0, -14)`,
+sein Boden reicht bis `z = -10.15` — und **dieses Projekt hat kein Terrain**. Der Van ist eine
+Insel im Nichts: hineingesetzt, hinausgelaufen, gefallen. Der Portalweg ist dem nie begegnet, weil
+er auf `MissionEntryAnchor` landet, einem Punkt, der gegen echte Bodenkollision im Eingangsraum
+**nachgewiesen** ist.
+
+Der Direktstart benutzt jetzt denselben Anker. Beide Wege kommen damit an derselben Stelle an —
+was den Direktstart überhaupt erst zu einem brauchbaren Test des Portalwegs macht. Der Van-Spawn
+bleibt als Rückfall für einen Lauf ohne Haus (`generateWorld = false`) und wird dabei **gemeldet**,
+denn „ich falle durch die Welt" und „es gab kein Haus zum Draufstehen" sind derselbe Bildschirm.
+
+`ArrivalPoint` selbst ist **nicht** angefasst: das Portal bindet seine Ansicht daran, und
+`check_ui_and_portal.sh` prüft die Definition.
+
+## Der Audio-Layer war nie installiert
+
+Hunderte `NullReferenceException` pro Sekunde aus `VanAudioController.UpdateRainOnMetal`
+(`VanAudioController.cs:58`) waren nicht der Fehler, sondern sein Auspuff.
+
+`GameManager.BeginMission` feuert `InvestigationStarted`, **während die Mission aufgelöst wird** —
+in `PrepareWorld`, also bevor der Van gebaut, das Haus erzeugt und der Spieler gespawnt ist.
+`InvestigationAudioBootstrap.HandleInvestigationStarted` lief dort, fand nichts, installierte
+nichts gegen nichts, und setzte `_installed`. Der eigentliche Aufruf aus
+`InvestigationBootstrap.InstallAudio` ein paar Sekunden später kehrte damit in seiner ersten Zeile
+zurück: keine Schritte, kein Herzschlag, keine Sanity-Audio, keine Raumtöne, keine Türgeräusche,
+keine Geisteraudio — und ein `VanAudioController`, dem ein `null`-Van übergeben wurde und der
+seine nie erzeugten Quellen jeden Frame ansprach.
+
+Zwei Änderungen, beide klein:
+
+* Der Nachinstallierer **steht ab**, solange die Welt, gegen die er installieren würde, nicht
+  existiert (kein Spieler, kein Van, kein Geist), und lässt `_installed` in Ruhe — der
+  maßgebliche Aufruf zählt weiter.
+* `VanAudioController` merkt sich, ob `SetupSources` gelaufen ist, und läuft ohne Quellen gar
+  nicht erst. Ein Van, den es nicht gibt, wird einmal gemeldet statt 60-mal pro Sekunde geworfen.
+
+## Was NICHT angefasst wurde
+
+Portal, Lobby, Player, CameraRoot, CharacterController, Inventar, Equipment, Multiplayer,
+Ghost-AI, Evidence, UI, die deterministische Stage A, `MissionTheme.SuburbanHouse`,
+`HOUSE_DEFAULT_A`, die Golden Seeds, Phasen D–F.
+
+## Testablauf in Unity — NICHT GETESTET, das ist deiner
+
+1. `03_Investigation` öffnen, Play. Erwartet: der Spieler steht **im Eingangsraum**, nicht im Van.
+   Die Zeile `[CIYC][Portal][Handoff] mission entry anchor at ...` nennt den Punkt.
+2. Konsole nach `[CIYC][House][Insert]` filtern. Erwartet pro Tür/Fenster jetzt
+   `-> REFUSED: ... das ist ein ganzes Wandteil` mit `measured=` und `opening=`. Die Türöffnung ist
+   dann **einfach** gerahmt (nur `WallWithDoorway_*`), nicht doppelt.
+3. Konsole nach `NullReferenceException` filtern. Erwartet: keine aus `VanAudioController`.
+4. Konsole nach `[CIYC][Audio]` filtern. Steht dort „stood down", ist die Reihenfolge wie
+   beschrieben und der maßgebliche Aufruf hat installiert.

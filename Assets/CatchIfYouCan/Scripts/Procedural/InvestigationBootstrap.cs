@@ -804,7 +804,38 @@ namespace CatchIfYouCan.Procedural
             // Input is live immediately here, which is what this scene always did: it fades
             // in over a player that is already in control, rather than handing control over
             // at the end of a transition the way the menu does.
-            Transform arrival = _van?.PlayerSpawnPoint;
+            //
+            // ---- WHERE, and this is the fall ----------------------------------------------
+            //
+            // The van's PlayerSpawn stands on the van's own floor slab, and the van stands
+            // OUTSIDE. There is no terrain in this project, so the van is an island in the void:
+            // the player is dropped into it, steps out of the open back and falls past the
+            // skybox. Nothing about that is a physics bug - it is a spawn point with nothing
+            // around it, and it only ever bit the DIRECT load, because the portal route lands
+            // the player somewhere else entirely.
+            //
+            // That somewhere else is MissionEntryAnchor: a point PROVEN against real floor
+            // collision inside the entrance room, in this scene, by
+            // <see cref="EnsureMissionEntryAnchor"/>. It already exists by the time this runs -
+            // PrepareWorld builds it - so the direct load uses the same point the doorway opens
+            // onto. Both routes then arrive in the same place, which is also what makes opening
+            // 03_Investigation directly a usable test of the portal route rather than a
+            // different game.
+            //
+            // The van's spawn stays as the fallback, because a run with generateWorld off has no
+            // house and no anchor - and using it is REPORTED, since "I fell through the world"
+            // and "there was no house to stand in" are the same screen.
+            Transform arrival = _missionEntry != null ? _missionEntry : _van?.PlayerSpawnPoint;
+
+            if (_missionEntry == null)
+            {
+                CIYCLog.Warn("[CIYC][Investigation] No mission entry anchor, so the player is " +
+                             "spawned at " + (arrival != null
+                                 ? "the van's '" + arrival.name + "'"
+                                 : "no point at all") +
+                             ". The van stands outdoors on ground this project does not have, " +
+                             "so walking out of it is a fall past the skybox.");
+            }
 
             var buildResult = arrival != null
                 ? PlayerSpawner.Spawn(GroundedSpawn(arrival), arrival.rotation, true,
