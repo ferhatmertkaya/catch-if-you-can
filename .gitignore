@@ -68,3 +68,14 @@ mono_crash.mem.*.blob
 # Bilder, die das Spiel wirklich braucht, nach Assets/CatchIfYouCan/Resources/Portal/.
 /Assets/Knife/
 /Assets/Knife.meta
+
+# Gekaufter Friedhofs-Pack (Hivemind, Fantasy Cemetery). Wird NICHT eingecheckt, aus denselben
+# zwei Gruenden wie die anderen: Asset-Store-Lizenz pro Platz, und die LFS-Nutzlast liegt schon
+# ueber GitHubs freiem Kontingent.
+#
+# Dazu ein dritter, der hier besonders zaehlt: der Ordner heisst HDRP(Default). Ein HDRP-Material
+# in einem URP-Projekt findet seinen Shader nicht und wird magenta gezeichnet - genau das Bild,
+# das gerade in 03_Investigation zu sehen ist. Es einzuchecken wuerde den Fehler verteilen statt
+# ihn zu beheben.
+/Assets/Hivemind/
+/Assets/Hivemind.meta
