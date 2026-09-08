@@ -155,6 +155,27 @@ namespace CatchIfYouCan.Environment
         /// </summary>
         public Collider AssignedWallCollider => wallCollider;
 
+#if UNITY_EDITOR
+        /// <summary>
+        /// Traegt die Wand ein, in die diese Oeffnung geschnitten wird. Nur aus dem Editor.
+        ///
+        /// <para>
+        /// Eine oeffentliche Methode statt Reflection in das private Feld (CLAUDE.md Fehler 4).
+        /// Sie aendert nichts am Portal selbst - weder seine Lage, noch seine Oeffnung, noch
+        /// seine Kameras oder sein Material. Sie fuellt genau das Feld, das dieses Portal in
+        /// seiner eigenen Fehlermeldung verlangt ("Assign 'wallCollider' on this component"),
+        /// wenn die Formsuche keine Wand findet - und die findet hier keine, weil ein Wandmodul
+        /// des gekauften Pakets schmaler ist als die Oeffnung und jedes Modul sein eigenes
+        /// Collider hat. Drei nebeneinander addieren sich nicht zu einem.
+        /// </para>
+        /// </summary>
+        public void EditorAssignWallCollider(Collider wall)
+        {
+            wallCollider = wall;
+            UnityEditor.EditorUtility.SetDirty(this);
+        }
+#endif
+
         private bool _sealedByHunt;
         private Coroutine _sealing;
         private BoxCollider _threshold;

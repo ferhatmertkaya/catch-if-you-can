@@ -241,3 +241,91 @@ Vendor-Prefabs entpackt.
    Wand mit Abstand. Ansehen, dann behalten oder Strg+Z.
 6. Play und nach oben schauen: Nachthimmel statt Blau.
 7. Konsole nach `Standing_Lamp` filtern. Erwartet: nichts.
+
+
+---
+
+# Nachtrag: die drei übersprungenen Wandteile sind die Portalwand
+
+Der Lauf des Werkzeugs auf der Maschine mit dem Paket:
+
+```
+101 Objekte brauchen Kollision, 6 haben schon eine.
+  Architektur (MeshCollider, nicht konvex): 53
+  Moebel (BoxCollider aus gemessenen Mesh-Bounds): 45
+  UEBERSPRUNGEN, weil sie in die Portaloeffnung ragen (3):  4 (8)   4 (15)   4 (14)
+  Zu klein oder ohne Mesh, uebersprungen: 4
+```
+
+53 + 45 + 3 = 101. Die Zahlen gehen auf.
+
+**Eine Korrektur an meinem Audit:** ich hatte acht Collider aus der Szenendatei gezählt, das
+Werkzeug meldet sechs. Kein Widerspruch — drei davon (`Lobby_Armchair`, `Lobby_AntiqueTable`,
+`Lobby_InvestigationBoard`) haben im Editor keinen Renderer, weil sie ihre Geometrie erst in
+`Start()` bauen, und das Werkzeug läuft über Renderer. Umgekehrt sieht es Collider, die **in**
+einem Prefab stecken und in der Szenendatei gar nicht auftauchen. Für Kollision ist das Werkzeug
+die verlässlichere Quelle, nicht die YAML.
+
+## Was die drei Teile sind
+
+`4 (8)`, `4 (14)` und `4 (15)` stehen laut Audit bei z = 5.03 bzw. 5.48 und x = 16…19. Das
+Portal steht auf **(20.00, 0.00, 4.97)**. Das sind also nicht drei zufällige Wandstücke in der
+Nähe der Öffnung — **das ist die Wand, in die das Portal schneidet.**
+
+## Warum sie keinen eigenen Collider bekommen dürfen
+
+`LobbyPortal` hält seine Wand in genau einem Feld und schaltet sie um:
+
+```csharp
+private void SetWallOpen(bool open)
+{
+    if (_wallSolid != null) _wallSolid.enabled = !open;   // EIN Collider
+    if (_aperture  != null) _aperture.SetActive(open);    // vier Streifen um das Loch
+}
+```
+
+Geschlossen ist die Wand massiv; offen wird sie abgeschaltet und `Portal_WallAperture` mit
+`Wall_Left`, `Wall_Right`, `Wall_Header`, `Wall_Sill` tritt an ihre Stelle. **Ein Portal kann
+genau ein Collider öffnen.** Hätten die drei Module je ein eigenes, könnte das Portal sie nicht
+abschalten — der Spieler stünde vor einer unsichtbaren Wand, obwohl die Tür sichtbar offen ist.
+Das ist derselbe Fehler wie der alte Primitiv-Türblocker, nur an der Haustür.
+
+Das Überspringen war also nicht Vorsicht, sondern die richtige Antwort.
+
+## Und es ist derselbe Befund wie der rote Guard
+
+`check_ui_and_portal` meldet seit dem Lobby-Umbau: *„das Portal hat eine Wand, in die es
+schneiden kann"* — `ResolveWall` sucht per Form nach **einem** Collider, der höchstens
+`maxWallThickness` dick und mindestens 4.70 × 2.40 m groß ist. Ein Wandmodul des Pakets ist
+schmaler, und drei nebeneinander addieren sich nicht zu einem. Kein Fehler im Portal: eine Folge
+des Umbaus von der erzeugten Hülle auf gekaufte Module.
+
+## Der Handgriff
+
+**`Catch If You Can > 3. PORTAL > Portalwand setzen [UNDO]`**
+
+Das Werkzeug findet die Renderer, die die Öffnung überlappen — dieselbe Prüfung, mit der das
+Kollisionswerkzeug sie übersprungen hat, damit beide dieselben Teile meinen —, misst ihre
+gemeinsame Ausdehnung **in den Achsen des Portals** und baut daraus ein einziges
+`Lobby_PortalWall_Solid`: ein BoxCollider ohne Renderer, als Geschwister des Portals, damit es
+mit der Lobby ein- und ausgeschaltet wird. Dann trägt es sich als `wallCollider` am Portal ein.
+
+Vorher laufen die drei Tests, die `ResolveWall` anwendet. Ist die Wand zu schmal, zu niedrig oder
+zu dick — letzteres heißt: die Module stehen nicht in einer Ebene —, wird **nichts** gesetzt und
+die Zahl genannt. Eine Wand, die das Portal ohnehin ablehnen würde, entsteht gar nicht erst.
+
+`LobbyPortal.EditorAssignWallCollider` ist eine öffentliche `#if UNITY_EDITOR`-Methode, keine
+Reflection in das private Feld. Sie ändert nichts an Lage, Öffnung, Kameras oder Material des
+Portals — sie füllt genau das Feld, das das Portal in seiner eigenen Fehlermeldung verlangt.
+
+## Reihenfolge
+
+1. `1. LOBBY > Kollision setzen` — erledigt.
+2. `3. PORTAL > Portalwand messen [NUR LESEN]` — was steht wirklich an der Öffnung.
+3. `3. PORTAL > Portalwand setzen [UNDO]`.
+4. `1. LOBBY > Spiegel und Brett an die Wand [UNDO]` — braucht die Wandcollider aus Schritt 1.
+5. `1. LOBBY > Sofa-Lampe beleuchten [UNDO]`.
+
+Nach Schritt 3 sollte `check_ui_and_portal` von 233/2 auf 234/1 gehen — der verbleibende Fehler
+ist die gelöschte Ost-Fensterwand. **NICHT GETESTET**, das ist eine Vorhersage aus dem
+Guard-Text, keine Messung.
