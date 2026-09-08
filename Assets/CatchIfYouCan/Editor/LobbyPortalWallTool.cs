@@ -38,7 +38,131 @@ namespace CatchIfYouCan.EditorTools
     {
         private const string MenuPath = "Catch If You Can/3. PORTAL/Portalwand setzen [UNDO]";
 
+        private const string MovePath =
+            "Catch If You Can/3. PORTAL/Portal an ausgewaehlte Wand setzen [UNDO]";
+
         private const string WallName = "Lobby_PortalWall_Solid";
+
+        /// <summary>
+        /// Setzt das Portal mittig vor die AUSGEWÄHLTEN Wandteile und baut danach seine Wand.
+        ///
+        /// <para>
+        /// <b>Die Wand wählt der Mensch, die Zahlen misst das Werkzeug.</b> Welche Wand ein
+        /// Portal bekommt, ist eine Entscheidung über den Raum — vor welchem Fenster man stehen
+        /// soll, wohin man blickt, wo genug Platz davor ist. Das steht in keiner Datei. Wo genau
+        /// diese Wand steht, wie dick sie ist und in welche Richtung sie schaut, steht dagegen
+        /// in der Geometrie und wird deshalb gemessen und nicht getippt.
+        /// </para>
+        ///
+        /// <para>
+        /// Die Innenrichtung kommt aus <c>Lobby_PlayerSpawn</c>: die Seite der Wand, auf der der
+        /// Spieler steht, ist innen. Eine Wandnormale allein hat zwei Richtungen, und die falsche
+        /// dreht das Portal nach draußen — genau das, was gerade passiert ist.
+        /// </para>
+        /// </summary>
+        [MenuItem(MovePath, false, 302)]
+        public static void MoveToSelection()
+        {
+            var portal = Object.FindFirstObjectByType<LobbyPortal>(FindObjectsInactive.Include);
+            if (portal == null)
+            {
+                EditorUtility.DisplayDialog("Portal versetzen",
+                    "Kein LobbyPortal in den offenen Szenen.", "OK");
+                return;
+            }
+
+            List<Renderer> picked = SelectedRenderers();
+            if (picked.Count == 0)
+            {
+                EditorUtility.DisplayDialog("Portal versetzen",
+                    "Nichts ausgewaehlt.\n\nDie Wandteile im Hierarchie-Fenster auswaehlen, in " +
+                    "die das Portal schneiden soll - zum Beispiel '4  (12)' und '4  (13)' -, " +
+                    "und dann diesen Punkt erneut aufrufen.", "OK");
+                return;
+            }
+
+            Bounds world = WorldBounds(picked);
+
+            // Die duennste Achse ist die Normale der Wand. Gemessen, weil eine Wand, die entlang
+            // X laeuft, und eine, die entlang Z laeuft, sich in nichts anderem unterscheiden.
+            Vector3 size = world.size;
+            int thin = size.x <= size.y && size.x <= size.z ? 0 : (size.z <= size.y ? 2 : 1);
+
+            if (thin == 1)
+            {
+                EditorUtility.DisplayDialog("Portal versetzen",
+                    "Die duennste Achse der Auswahl ist die HOEHE (" + size.ToString("F2") + ").\n\n" +
+                    "Das ist ein Boden oder eine Decke, keine Wand. Bitte Wandteile auswaehlen.",
+                    "OK");
+                return;
+            }
+
+            Vector3 normal = thin == 0 ? Vector3.right : Vector3.forward;
+
+            // Welche der beiden Richtungen INNEN ist, sagt der Spawnpunkt des Spielers. Eine
+            // Normale allein hat zwei Seiten, und die falsche dreht das Portal nach draussen.
+            Transform spawn = FindInScene("Lobby_PlayerSpawn");
+            if (spawn == null)
+            {
+                EditorUtility.DisplayDialog("Portal versetzen",
+                    "Kein 'Lobby_PlayerSpawn' in der Szene.\n\nOhne ihn ist nicht zu " +
+                    "entscheiden, welche Seite der Wand innen ist - und die falsche dreht das " +
+                    "Portal nach draussen.", "OK");
+                return;
+            }
+
+            if (Vector3.Dot(spawn.position - world.center, normal) < 0f)
+                normal = -normal;
+
+            // Mitte der Wand, auf Bodenhoehe: der Ursprung des Portals liegt auf dem Boden und
+            // seine Oeffnung steigt von dort auf.
+            float floorY = Mathf.Min(world.min.y, spawn.position.y);
+            var position = new Vector3(world.center.x, floorY, world.center.z);
+
+            // Knapp vor die Wandflaeche, in den Raum hinein.
+            float halfThickness = thin == 0 ? size.x * 0.5f : size.z * 0.5f;
+            position += normal * (halfThickness + 0.02f);
+
+            Transform t = portal.transform;
+            Vector3 before = t.position;
+            Undo.RecordObject(t, "Portal an ausgewaehlte Wand setzen");
+            t.SetPositionAndRotation(position, Quaternion.LookRotation(normal, Vector3.up));
+
+            Debug.Log("[CIYC][PortalWall] Portal versetzt: " + before.ToString("F2") + " -> " +
+                      position.ToString("F2") + ", Blickrichtung " + normal.ToString("F0") +
+                      ", aus " + picked.Count + " ausgewaehlten Teilen gemessen (" +
+                      world.size.ToString("F2") + ").");
+
+            // Und direkt die Wand dazu, damit die Oeffnung nicht ohne Loch dasteht.
+            Build();
+        }
+
+        private static List<Renderer> SelectedRenderers()
+        {
+            var result = new List<Renderer>();
+
+            foreach (GameObject go in Selection.gameObjects)
+            {
+                if (go == null)
+                    continue;
+
+                foreach (Renderer r in go.GetComponentsInChildren<Renderer>(true))
+                {
+                    if (r != null && !(r is ParticleSystemRenderer) && !result.Contains(r))
+                        result.Add(r);
+                }
+            }
+
+            return result;
+        }
+
+        private static Bounds WorldBounds(List<Renderer> renderers)
+        {
+            Bounds b = renderers[0].bounds;
+            for (int i = 1; i < renderers.Count; i++)
+                b.Encapsulate(renderers[i].bounds);
+            return b;
+        }
 
         [MenuItem(MenuPath, false, 301)]
         public static void Build()

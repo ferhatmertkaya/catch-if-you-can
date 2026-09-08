@@ -513,3 +513,86 @@ zur Lobby, zurückgenommene Absicht, kein Magenta).
 
 Das Haus ist nicht weg: `worldKind` auf `House` stellen, und aus demselben Seed entsteht exakt
 dasselbe Haus wie vorher.
+
+---
+
+# Nachtrag 4: das Portal an die richtige Wand, und ein Brett statt zweier
+
+## Warum die Portalwand abgelehnt wurde — die Messung war richtig
+
+```
+Wandteile an der Oeffnung: 2      4 (15)   4 (8)
+Breite 2.56 m   (Oeffnung 4.70 m)
+Hoehe  3.04 m   (Oeffnung 2.40 m)
+Dicke  2.56 m   (erlaubt bis 1.00 m)
+```
+
+Beides stimmt und beides hat dieselbe Ursache. Aus dem Audit:
+
+| Teil | Position |
+|---|---|
+| `4 (8)` | (18.89, −0.05, **5.03**) |
+| `4 (15)` | (18.65, −0.04, **5.48**) |
+| `4 (12)` | (11.20, −0.05, **5.47**) |
+| `4 (13)` | (13.68, −0.04, **5.48**) |
+
+`4 (8)` steht **45 cm vor** der Wandebene — daher „Dicke 2.56". Und zwei Teile, von denen eines
+quer steht, sind zusammen nur 2.56 m breit statt der nötigen 4.70.
+
+`4 (12)` und `4 (13)` liegen dagegen **beide** auf z ≈ 5.47, 2.48 m auseinander, und decken
+zusammen rund 9.9 bis 15.0 m — knapp 5 m, genug für die Öffnung. Das ist die Wand.
+
+Das Portal steht auf x = 20; die Mitte zwischen `4 (12)` und `4 (13)` liegt bei x ≈ 12.4. Es
+stand also rund 7.5 m zu weit außen.
+
+## `3. PORTAL > Portal an ausgewaehlte Wand setzen [UNDO]`
+
+**Die Wand wählt der Mensch, die Zahlen misst das Werkzeug.** Welche Wand ein Portal bekommt, ist
+eine Entscheidung über den Raum — vor welchem Fenster man stehen soll, wohin man blickt. Das steht
+in keiner Datei. Wo diese Wand steht, wie dick sie ist und wohin sie schaut, steht in der
+Geometrie.
+
+Ablauf: `4  (12)` und `4  (13)` im Hierarchie-Fenster auswählen, Menüpunkt aufrufen. Das Werkzeug
+
+* misst die gemeinsamen Bounds und nimmt die **dünnste Achse** als Wandnormale,
+* lehnt ab, wenn die dünnste Achse die **Höhe** ist — das wäre ein Boden, und ein Portal im Boden
+  ist ein Loch,
+* bestimmt die **Innenseite am `Lobby_PlayerSpawn`**: eine Normale hat zwei Richtungen, und die
+  falsche dreht das Portal nach außen — genau das, was passiert ist,
+* setzt das Portal mittig auf Bodenhöhe, 2 cm vor die Wandfläche,
+* und ruft direkt `Portalwand setzen` auf, damit die Öffnung nicht ohne Loch dasteht.
+
+## Das Ermittlungsbrett ist die Funktion, nicht das Modell
+
+`LobbyInvestigationBoard` baute bisher **beides**: eine Platzhalter-Tafel aus drei Quadern *und*
+den Zugang zu `LobbyBoardUI` — Einzelspieler, Mehrspieler, Missionswahl. Das Modell ist ersetzbar
+und ersetzt; der Zugang ist es nicht.
+
+Neu: `useExistingModel`. Ist es an, wird **weder** Platzhaltergeometrie gebaut **noch** ein
+Prefab instanziiert — die Komponente macht nur noch das, was sie wirklich beiträgt. Der
+Unterschied zu `boardPrefab` ist wichtig: dort wird ein Prefab *als Kind* erzeugt, hier **ist**
+das Objekt schon das Brett. Beides zu verwechseln ergibt zwei Bretter am selben Fleck, und das
+zweite verdeckt das erste gerade so weit, dass es wie ein Materialfehler aussieht.
+
+**`1. LOBBY > Ermittlungsbrett auf das Korkbrett [UNDO]`** setzt die Komponente auf das
+ausgewählte Objekt (sonst auf das mit `Meshy_AI_cork_bulletin_board` im Namen), schaltet
+`useExistingModel` ein und **löscht das alte Objekt** — es ist ein leerer Halter, der seine Tafel
+erst in `Start()` baut; ohne die Komponente stünde dort ein unsichtbares Objekt mitten im Raum.
+Ein zweites Brett wird abgelehnt: zwei Komponenten wären zwei Zugänge zum selben Panel.
+
+Der Interaktionskörper entsteht um die **gemessenen** Renderer und wird in deren eigenen Raum
+zurückgerechnet — `BoxCollider.center` und `.size` sind lokal, eine Weltgröße dort wäre durch die
+Objektskalierung ein zweites Mal skaliert (CLAUDE.md Fehler 12). Bringt das Modell schon einen
+Collider mit, wird keiner dazugebaut.
+
+## Sechs neue Prüfungen
+
+`check_ui_and_portal.sh` 245 → **251**, drei Zahnproben bestanden.
+
+## Reihenfolge zum Testen — NICHT GETESTET
+
+1. `4  (12)` und `4  (13)` auswählen → `3. PORTAL > Portal an ausgewaehlte Wand setzen [UNDO]`.
+   Der Dialog nennt die gemessene Breite, Höhe und Dicke; erwartet: Breite ≈ 5 m, Dicke < 1 m.
+2. `1. LOBBY > Ermittlungsbrett auf das Korkbrett [UNDO]`.
+3. Play → START INVESTIGATION → Portal an der richtigen Wand, Testraum dahinter.
+4. Vor das Korkbrett stellen, **E** → Lobby-Panel öffnet.

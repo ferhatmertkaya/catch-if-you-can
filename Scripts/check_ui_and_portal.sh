@@ -1397,6 +1397,70 @@ else
       "CreatePrimitive bringt Unitys Built-in-Material mit, und das ist unter URP magenta"
 fi
 
+# ---- welche Wand das Portal bekommt, waehlt der Mensch; die Zahlen misst das Werkzeug --------
+PWT="$ROOT/Assets/CatchIfYouCan/Editor/LobbyPortalWallTool.cs"
+
+# Eine Wandnormale hat ZWEI Richtungen, und die falsche dreht das Portal nach draussen. Welche
+# Seite innen ist, sagt der Spawnpunkt des Spielers - gemessen, nicht angenommen.
+if code "$PWT" | grep -qE 'FindInScene\("Lobby_PlayerSpawn"\)' &&
+   code "$PWT" | grep -qE 'Vector3\.Dot\(spawn\.position - world\.center, normal\) < 0f'; then
+  ok "die Innenseite der Portalwand wird am Spawnpunkt gemessen"
+else
+  bad "die Innenseite der Portalwand wird am Spawnpunkt gemessen" \
+      "eine Normale hat zwei Richtungen, und die falsche dreht das Portal nach draussen"
+fi
+
+# Und ein Boden ist keine Wand. Die duennste Achse einer Bodenplatte ist die HOEHE.
+if code "$PWT" | grep -qE 'if \(thin == 1\)'; then
+  ok "ein Boden oder eine Decke wird als Portalwand abgelehnt"
+else
+  bad "ein Boden oder eine Decke wird als Portalwand abgelehnt" \
+      "die duennste Achse einer Bodenplatte ist die Hoehe, und ein Portal im Boden ist ein Loch"
+fi
+
+# ---- das Ermittlungsbrett ist die FUNKTION, nicht das Modell ---------------------------------
+LIB="$ROOT/Assets/CatchIfYouCan/Scripts/Interaction/LobbyInvestigationBoard.cs"
+BUILD="$(code "$LIB" | sed -n '/private void Build()/,/^        }$/p')"
+
+# useExistingModel baut nichts und instanziiert nichts - sonst stuenden zwei Bretter am selben
+# Fleck, und das zweite verdeckt das erste gerade so weit, dass es wie ein Materialfehler aussieht.
+if printf '%s' "$BUILD" | grep -qE 'if \(useExistingModel\)' &&
+   printf '%s' "$BUILD" | grep -qE 'EnsureTriggerAroundModel\(\);'; then
+  ok "ein vorhandenes Brettmodell bekommt weder Platzhalter noch ein zweites Prefab"
+else
+  bad "ein vorhandenes Brettmodell bekommt weder Platzhalter noch ein zweites Prefab" \
+      "zwei Bretter am selben Fleck sehen aus wie ein Materialfehler"
+fi
+
+# Der Interaktionskoerper wird um das GEMESSENE Modell gelegt und in dessen eigenen Raum
+# zurueckgerechnet: BoxCollider.center und .size sind lokal, eine Weltgroesse dort waere durch
+# die Skalierung des Objekts ein zweites Mal skaliert (CLAUDE.md Fehler 12).
+TRIG="$(code "$LIB" | sed -n '/private void EnsureTriggerAroundModel/,/^        }$/p')"
+if printf '%s' "$TRIG" | grep -qE 'transform\.InverseTransformPoint\(world\.center\)' &&
+   printf '%s' "$TRIG" | grep -qE 'lossyScale'; then
+  ok "der Interaktionskoerper des Bretts wird in dessen eigenen Raum zurueckgerechnet"
+else
+  bad "der Interaktionskoerper des Bretts wird in dessen eigenen Raum zurueckgerechnet" \
+      "eine Weltgroesse in einem BoxCollider wird durch die Objektskalierung zweimal skaliert"
+fi
+
+# Bringt das Modell schon einen Collider mit, wird keiner dazugebaut.
+if printf '%s' "$TRIG" | grep -qE 'if \(GetComponentInChildren<Collider>\(\) != null\)'; then
+  ok "ein Modell mit eigenem Collider bekommt keinen zweiten"
+else
+  bad "ein Modell mit eigenem Collider bekommt keinen zweiten" \
+      "zwei Collider auf derselben Flaeche sind zwei Treffer fuer denselben Strahl"
+fi
+
+# Und das Werkzeug legt keine zweite Komponente an: zwei waeren zwei Zugaenge zu demselben Panel.
+BMT="$ROOT/Assets/CatchIfYouCan/Editor/LobbyBoardMoveTool.cs"
+if code "$BMT" | grep -qE 'target\.GetComponent<LobbyInvestigationBoard>\(\) != null'; then
+  ok "das Umzugswerkzeug legt kein zweites Ermittlungsbrett an"
+else
+  bad "das Umzugswerkzeug legt kein zweites Ermittlungsbrett an" \
+      "zwei Komponenten waeren zwei Zugaenge zu demselben Panel"
+fi
+
 # ---------------------------------------------------------------- the portal camera maths
 #
 # A portal view is the destination scene rendered from the player's eye carried through the

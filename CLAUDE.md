@@ -218,7 +218,17 @@ place that number lives; everything else derives it.
   layout hash, and its way back is the route that already exists — `PendingEntryMode =
   DirectLobby` plus `LoadMainMenu`, on E rather than on a trigger, once rather than per press,
   with the intent withdrawn when there is no loader so it cannot skip an intro nobody asked to
-  skip. 247 checks.
+  skip. And it keeps the doorway's WALL a decision and its numbers a measurement: which wall a
+  portal is cut into is a choice about the room and is made by selecting the pieces, while
+  where that wall stands, how thick it is and which way it faces is measured — the inside is
+  found from the player's spawn, because a normal has two directions and the wrong one turns
+  the portal outward, and a slab whose thinnest axis is its height is refused as the floor it
+  is. And it keeps the investigation board a FUNCTION rather than a model: a board that
+  already hangs on the wall gets neither placeholder timber nor a second prefab, its
+  interaction body is measured around what is actually there and converted back into its own
+  space (a world size in a BoxCollider is scaled twice), a model that brings its own collider
+  gets no second one, and nothing can end up carrying two boards — two would be two ways into
+  the same panel. 251 checks.
 
 - `Scripts/check_editor_menu.sh` — the editor menu stays legible, and the purchased architecture has ONE scale. The game scale is the measured ratio 2.95 / 3.92 in one place, with no tool carrying its own copy; the decision is made on effective world scale rather than `localScale`, because a vendor piece at localScale 1 inside a corrected wrapper IS already corrected and its own field says otherwise; an already-corrected ancestor is recognised and a second application is a named verdict rather than a silent pass; architecture is told from props by FOLDER, since a filename classifier caught 3 of 105 in a pack that numbers its prefabs and calls its glass Steklo; an undecidable piece is reported ambiguous rather than guessed, because a chair may already be at real-world size and shrinking one that was right is invisible; the portal is excluded, its opening being a gameplay dimension; the migration audits before it can apply and converts only original-size pieces; and the correction goes on a CIYC wrapper with nothing applied back to the purchased package. Also the menu itself: Fifty-one commands sit in
   seven named groups with none hiding in another root menu, every one carries a risk tag saying

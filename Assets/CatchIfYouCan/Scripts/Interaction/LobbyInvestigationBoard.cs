@@ -1,3 +1,4 @@
+using CatchIfYouCan.Core;
 using CatchIfYouCan.Art;
 using CatchIfYouCan.UI;
 using UnityEngine;
@@ -45,6 +46,12 @@ namespace CatchIfYouCan.Interaction
                  "built and the prefab is used as-is. This is the swap the art pipeline makes; " +
                  "gameplay does not change with it.")]
         [SerializeField] private GameObject boardPrefab;
+
+        [Tooltip("Das Modell steht bereits AN DIESEM Objekt - dann wird weder Platzhalter-" +
+                 "Geometrie gebaut noch ein Prefab instanziiert, und die Komponente macht nur " +
+                 "noch das, was sie wirklich beitraegt: das Brett benutzbar. Fuer ein von Hand " +
+                 "gesetztes Brett, das schon an der Wand haengt.")]
+        [SerializeField] private bool useExistingModel;
 
         [Tooltip("Board size in metres. Large enough to read across the lobby.")]
         [SerializeField] private Vector2 boardSize = new Vector2(2.2f, 1.5f);
@@ -129,6 +136,30 @@ namespace CatchIfYouCan.Interaction
             if (_built)
                 return;
             _built = true;
+
+            // Das Modell haengt schon hier. Nichts bauen, nichts instanziieren - nur den
+            // Interaktionskoerper um das legen, was da ist.
+            //
+            // Der Unterschied zu boardPrefab ist wichtig: dort wird ein Prefab ALS KIND erzeugt,
+            // hier ist das Objekt selbst schon das Brett. Beides zu verwechseln ergibt zwei
+            // Bretter am selben Fleck, und das zweite verdeckt das erste genau so weit, dass es
+            // wie ein Materialfehler aussieht.
+            if (useExistingModel)
+            {
+                _surfaceRenderer = GetComponentInChildren<Renderer>();
+
+                if (_surfaceRenderer == null)
+                {
+                    CIYCLog.Error("[CIYC][LobbyBoard] useExistingModel ist an, aber an '" +
+                                  name + "' haengt kein Renderer. Dann gibt es nichts zu " +
+                                  "benutzen - entweder das Modell fehlt, oder der Schalter " +
+                                  "gehoert aus.");
+                    return;
+                }
+
+                EnsureTriggerAroundModel();
+                return;
+            }
 
             if (boardPrefab != null)
             {
@@ -221,6 +252,69 @@ namespace CatchIfYouCan.Interaction
         /// One collider, on this object, sized to the board. The interaction controller
         /// raycasts for it, so without a collider the board is scenery.
         /// </summary>
+        /// <summary>
+        /// Ein Interaktionskoerper um das, was wirklich da ist.
+        ///
+        /// <para>
+        /// Nicht <see cref="EnsureTrigger"/>: das legt eine Box nach <c>boardSize</c> und
+        /// <c>boardHeight</c>, und die beschreiben die Platzhalter-Geometrie. Auf ein von Hand
+        /// gesetztes Modell angewandt waere das eine Box, die irgendwo neben dem Brett steht -
+        /// der Strahl trifft sie, das Brett sieht aus, als reagiere es aus zwei Metern
+        /// Entfernung, und beim Danebenstehen gar nicht.
+        /// </para>
+        /// <para>
+        /// Bringt das Modell schon einen Collider mit, wird KEINER dazugebaut. Zwei Collider auf
+        /// derselben Flaeche sind zwei Treffer fuer denselben Strahl.
+        /// </para>
+        /// </summary>
+        private void EnsureTriggerAroundModel()
+        {
+            if (GetComponentInChildren<Collider>() != null)
+                return;
+
+            var renderers = GetComponentsInChildren<Renderer>(true);
+            bool any = false;
+            Bounds world = default;
+
+            for (int i = 0; i < renderers.Length; i++)
+            {
+                if (renderers[i] == null)
+                    continue;
+
+                if (!any) { world = renderers[i].bounds; any = true; }
+                else world.Encapsulate(renderers[i].bounds);
+            }
+
+            if (!any)
+                return;
+
+            var box = gameObject.AddComponent<BoxCollider>();
+            box.isTrigger = false;
+
+            // In den EIGENEN Raum zurueckgerechnet, denn BoxCollider.center und .size sind
+            // lokal - eine Weltgroesse hier eingetragen waere durch die Skalierung des Objekts
+            // ein zweites Mal skaliert (CLAUDE.md Fehler 12).
+            box.center = transform.InverseTransformPoint(world.center);
+            Vector3 ls = transform.lossyScale;
+            box.size = new Vector3(
+                world.size.x / Mathf.Max(0.0001f, Mathf.Abs(ls.x)),
+                world.size.y / Mathf.Max(0.0001f, Mathf.Abs(ls.y)),
+                world.size.z / Mathf.Max(0.0001f, Mathf.Abs(ls.z)));
+        }
+
+#if UNITY_EDITOR
+        /// <summary>
+        /// Sagt dieser Komponente, dass das Modell schon da ist. Nur aus dem Editor, und eine
+        /// oeffentliche Methode statt Reflection in das private Feld (CLAUDE.md Fehler 4).
+        /// </summary>
+        public void EditorUseExistingModel()
+        {
+            useExistingModel = true;
+            boardPrefab = null;
+            UnityEditor.EditorUtility.SetDirty(this);
+        }
+#endif
+
         private void EnsureTrigger()
         {
             var box = GetComponent<BoxCollider>();
