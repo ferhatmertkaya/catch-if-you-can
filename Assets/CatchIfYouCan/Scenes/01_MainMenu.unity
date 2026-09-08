@@ -26,7 +26,7 @@ RenderSettings:
   m_AmbientIntensity: 0.6
   m_AmbientMode: 0
   m_SubtractiveShadowColor: {r: 0.1, g: 0.12, b: 0.1, a: 1}
-  m_SkyboxMaterial: {fileID: 0}
+  m_SkyboxMaterial: {fileID: 2100000, guid: 018380ecde48a416aa034115625044b7, type: 2}
   m_HaloStrength: 0.5
   m_FlareStrength: 1
   m_FlareFadeSpeed: 3
@@ -52232,8 +52232,8 @@ Light:
   m_Enabled: 1
   serializedVersion: 13
   m_Type: 1
-  m_Color: {r: 0.66, g: 0.64, b: 0.615, a: 1}
-  m_Intensity: 0.5
+  m_Color: {r: 0.55, g: 0.4, b: 0.24, a: 1}
+  m_Intensity: 0.18
   m_Range: 10
   m_SpotAngle: 30
   m_InnerSpotAngle: 21.802082
@@ -52359,8 +52359,8 @@ Light:
   m_Enabled: 1
   serializedVersion: 13
   m_Type: 0
-  m_Color: {r: 1, g: 1, b: 1, a: 1}
-  m_Intensity: 17.4
+  m_Color: {r: 1, g: 0.78, b: 0.52, a: 1}
+  m_Intensity: 12
   m_Range: 9
   m_SpotAngle: 179
   m_InnerSpotAngle: 170.80208
@@ -52486,9 +52486,9 @@ Light:
   m_Enabled: 1
   serializedVersion: 13
   m_Type: 2
-  m_Color: {r: 0.477, g: 0.603827, b: 1, a: 1}
-  m_Intensity: 1.5
-  m_Range: 10.5
+  m_Color: {r: 0.3, g: 0.38, b: 0.62, a: 1}
+  m_Intensity: 0.45
+  m_Range: 8
   m_SpotAngle: 30
   m_InnerSpotAngle: 21.802082
   m_CookieSize2D: {x: 0.5, y: 0.5}
@@ -54544,7 +54544,7 @@ MonoBehaviour:
   frameBorder: 0.06
   frameDepth: 0.05
   frameColor: {r: 0.16, g: 0.12, b: 0.09, a: 1}
-  buildLamp: 1
+  buildLamp: 0
   lampLocalPosition: {x: 0.85, y: 0, z: 0.35}
   lampHeight: 1.55
   lampColor: {r: 1, g: 0.87, b: 0.7, a: 1}

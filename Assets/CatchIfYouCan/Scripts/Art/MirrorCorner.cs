@@ -169,7 +169,13 @@ namespace CatchIfYouCan.Art
         [SerializeField] private Color frameColor = new Color(0.16f, 0.12f, 0.09f);
 
         [Header("Standing lamp")]
-        [SerializeField] private bool buildLamp = true;
+        [Tooltip("AUS. Diese Lampe war der Ersatz, solange die Lobby keine eigene hatte - drei " +
+                 "Zylinder und eine Punktleuchte, zur Laufzeit gebaut, also in keiner Szene zu " +
+                 "finden und nur durch Abschalten dieses Feldes zu entfernen. Seit im Hauptmenue " +
+                 "eine echte Stehlampe neben dem Sofa steht, waeren es zwei. Das Fuellicht " +
+                 "darunter bleibt an: das ist nicht die Lampe, sondern das, was ein Gesicht im " +
+                 "Glas ueberhaupt lesbar macht.")]
+        [SerializeField] private bool buildLamp = false;
 
         [Tooltip("Where the lamp stands, relative to this transform.")]
         [SerializeField] private Vector3 lampLocalPosition = new Vector3(0.85f, 0f, 0.35f);
