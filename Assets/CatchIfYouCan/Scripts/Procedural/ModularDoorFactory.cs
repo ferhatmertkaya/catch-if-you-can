@@ -97,6 +97,15 @@ namespace CatchIfYouCan.Procedural
             var door = root.AddComponent<InteractiveDoor>();
             door.Configure(hinge.transform, OpenAngle);
 
+            // Und dieselbe Tuer laesst sich ZIEHEN. Beide sitzen auf demselben Scharnier und
+            // streiten sich nicht: die schwingende Tuer schreibt es nur, solange sie animiert,
+            // und das Ziehen meldet ihr beim Loslassen, wo das Blatt stehen geblieben ist. Was
+            // sie NICHT bekommt, ist ein zweiter Scharnierbegriff - beide bekommen denselben
+            // Transform und denselben Grenzwinkel, weil zwei Antworten auf "wie weit geht die
+            // Tuer auf" genau dann auseinandergehen, wenn jemand einen davon aendert.
+            var drag = root.AddComponent<Interaction.DraggableDoor>();
+            drag.Configure(hinge.transform, 1, OpenAngle);
+
             // MEASURED, not claimed. The two things a door can get wrong without anybody being
             // able to say which - standing off the floor and cutting the ceiling - are the two
             // numbers printed here, in the room's own space.

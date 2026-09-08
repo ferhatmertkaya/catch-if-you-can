@@ -81,7 +81,7 @@ namespace CatchIfYouCan.Equipment
                     continue;
                 }
 
-                EquipmentBase item = Build(definition);
+                EquipmentBase item = BuildItem(definition);
                 if (item == null)
                 {
                     skipped.Add(definition.Id + " (factory produced nothing)");
@@ -137,8 +137,13 @@ namespace CatchIfYouCan.Equipment
         /// put it in a code-built project - and a live template is an extra torch lying at the
         /// world origin that the player can walk up to and take.
         /// </para>
+        /// <para>
+        /// Public, because the lobby's equipment table needs exactly this and the alternative is
+        /// a second copy of it (CLAUDE.md mistake 1). The two differ only in where the object
+        /// goes afterwards - into a hand, or onto a table.
+        /// </para>
         /// </summary>
-        private static EquipmentBase Build(EquipmentDefinition definition)
+        public static EquipmentBase BuildItem(EquipmentDefinition definition)
         {
             EquipmentRuntimeFactory.EnsureRuntimePrefab(definition);
 

@@ -122,10 +122,13 @@ namespace CatchIfYouCan.Environment
                  "the hole is a second opening size that can disagree with the first.")]
         [SerializeField, Min(0.05f)] private float entryTriggerDepth = 0.8f;
 
-        [Tooltip("Show a lit magenta room through the opening until the mission world is ready. " +
-                 "It cannot be walked into - entry still needs a prepared world - and it is the " +
-                 "one thing that tells a broken render path apart from a dark destination.")]
-        [SerializeField] private bool showProbeRoomUntilWorldReady = true;
+        [Tooltip("DIAGNOSTIC, off by default. Shows a lit magenta room through the opening " +
+                 "until the mission world is ready. It cannot be walked into - entry still " +
+                 "needs a prepared world - and it is the one thing that tells a broken render " +
+                 "path apart from a dark destination. It is off because the player sees it as " +
+                 "a purple room that is then REPLACED by the real one, which is exactly the " +
+                 "swap this doorway exists to avoid.")]
+        [SerializeField] private bool showProbeRoomUntilWorldReady;
 
         [Tooltip("How far up the player's own origin the crossing is measured, in metres. " +
                  "Chest height: a capsule's origin is on the floor, and the floor crosses the " +
@@ -1018,11 +1021,18 @@ namespace CatchIfYouCan.Environment
             _prepareFinished = false;
             StartCoroutine(PrepareWorldRoutine());
 
-            // Something to look at while the world is built, and a diagnostic in its own right.
-            // A dark portal centre has two causes that look identical from a screenshot - the
-            // render path is broken, or it works and the far side is black - and this separates
-            // them: magenta means the path is fine. It is never enterable; CanBeEntered still
-            // demands MissionWorldLoader.WorldReady, which this is not.
+            // A DIAGNOSTIC, and off by default - because as a default it was a bug.
+            //
+            // A dark portal centre has two causes that look identical from a screenshot: the
+            // render path is broken, or it works and the far side is black. A magenta room
+            // separates them, which is what this is for and why it stays available.
+            //
+            // What it must not be is the first thing the player sees through the doorway. Shown
+            // while the world is prepared, it is a purple room that is then REPLACED by a
+            // different room the moment preparation finishes - a visible swap, at the one moment
+            // this whole class exists to make continuous, and the only "purple transition" in
+            // the game. Off, the opening is black behind a burning rim until the real world
+            // arrives, and the real world is the only room ever seen through it.
             if (showProbeRoomUntilWorldReady)
             {
                 var probe = PortalProbeRoom.Ensure();

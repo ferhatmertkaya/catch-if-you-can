@@ -114,6 +114,34 @@ namespace CatchIfYouCan.Interaction
             ApplyAngle(_currentAngle);
         }
 
+        /// <summary>
+        /// Tells this door where its leaf actually IS, after somebody moved it by hand.
+        ///
+        /// <para>
+        /// <see cref="DraggableDoor"/> writes the hinge directly while it is held. This one only
+        /// writes the hinge while <c>_currentAngle</c> differs from <c>_targetAngle</c>, so it
+        /// leaves a dragged leaf alone - and then believes the angle it last computed. The next
+        /// press of the interact key would snap the leaf from that stale angle to the target,
+        /// which is a jump nobody asked for and no animation would explain.
+        /// </para>
+        /// <para>
+        /// A public method rather than reflection into these three fields (CLAUDE.md mistake 4).
+        /// It moves nothing: it records where the leaf already stands, and whether that counts
+        /// as open, so the next press starts from the truth.
+        /// </para>
+        /// </summary>
+        public void SyncToAngle(float degrees)
+        {
+            _currentAngle = Mathf.Clamp(degrees, Mathf.Min(minAngle, maxAngle),
+                                        Mathf.Max(minAngle, maxAngle));
+            _targetAngle = _currentAngle;
+            _moving = false;
+
+            // Half way counts as open. The prompt has to say the thing the press will do, and a
+            // door left at 40 degrees is one somebody opened.
+            _isOpen = Mathf.Abs(_currentAngle - minAngle) > Mathf.Abs(maxAngle - minAngle) * 0.5f;
+        }
+
         public void ForceOpenByGhost()
         {
             if (!ghostControllable || locked)

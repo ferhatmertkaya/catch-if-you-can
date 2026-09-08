@@ -2821,6 +2821,243 @@ else
       "'no floor' covers both an empty ray and a house in the wrong scene, and they need different fixes"
 fi
 
+# ---- V11: die Lobby, das Restlicht und der Staub --------------------------------------------
+#
+# Und der eine Grund, warum sich das Portal beim Durchgehen "getauscht" anfuehlte.
+
+ATM="$ENV/LobbyAtmosphere.cs"
+TBL="$ENV/LobbyEquipmentTable.cs"
+DOOR="$ROOT/Assets/CatchIfYouCan/Scripts/Interaction/DraggableDoor.cs"
+DBG="$ROOT/Assets/CatchIfYouCan/Scripts/Development/DebugItemTools.cs"
+MOBILE="$ROOT/Assets/CatchIfYouCan/Scripts/Input/MobileInputController.cs"
+
+# ---- der magentafarbene Probe-Raum ist eine DIAGNOSE, keine Voreinstellung -------------------
+#
+# Er war eingeschaltet, und damit war er der Fehler, den er diagnostizieren sollte. Waehrend die
+# Missionswelt vorbereitet wird, zeigte das Portal einen hellmagentafarbenen Kasten - und in dem
+# Moment, in dem die Vorbereitung fertig war, wurde der durch einen ANDEREN Raum ersetzt. Das ist
+# der "lila Uebergang" und der "getauschte Raum" in einem: ein sichtbarer Wechsel zweier Welten,
+# an genau der Stelle, an der diese Klasse Kontinuitaet verspricht.
+if code "$LP" | grep -qE 'private bool showProbeRoomUntilWorldReady;' &&
+   ! code "$LP" | grep -qE 'showProbeRoomUntilWorldReady = true'; then
+  ok "der Probe-Raum ist standardmaessig AUS"
+else
+  bad "der Probe-Raum ist standardmaessig AUS" \
+      "eingeschaltet ist er ein magentafarbener Raum, der beim Fertigwerden der Welt durch " \
+"einen anderen ersetzt wird - der lila Uebergang, den er nicht verursachen soll"
+fi
+
+if grep -qE '^  showProbeRoomUntilWorldReady: 0$' "$SCENE"; then
+  ok "und in der Szene ist er es auch"
+else
+  bad "und in der Szene ist er es auch" \
+      "ein serialisierter Wert schlaegt jede Voreinstellung im Code"
+fi
+
+# ---- die Lobby hat waermendes Licht, und es ist gebaut statt geschrieben ---------------------
+#
+# Der Lobbyboden ist 25,8 x 41,9 m. Die Lichter der Szene stehen zwischen x = 17 und x = 27, also
+# hat etwa ein Fuenftel dieser Flaeche eine Lampe in der Naehe und der Rest den Umgebungsterm -
+# und der ist (0.015, 0.03, 0.025). Ein Raum, der nur davon lebt, ist in jeder Ecke gleich hell:
+# kein Abfall, keine Seite, kein Schatten. Genau wie die generierten Raeume, nur von Hand gebaut.
+if [ ! -f "$ATM" ]; then
+  bad "die Lobby bekommt warme Praktikale" "erwartet $ATM"
+  bad "kein Praktikal wirft ueberfluessige Schatten" "Datei fehlt"
+  bad "es gibt Staub in der Lobby" "Datei fehlt"
+  bad "das Staubmaterial ist konfiguriert, nicht auf den Shader-Voreinstellungen" "Datei fehlt"
+  bad "der Staub ist begrenzt" "Datei fehlt"
+  bad "ein fehlender Partikelshader gibt keinen Ersatz" "Datei fehlt"
+else
+  if code "$ATM" | grep -qE 'light\.type = LightType\.Point' &&
+     code "$ATM" | grep -qE 'private void BuildPractical\(Transform anchor\)'; then
+    ok "die Lobby bekommt warme Praktikale"
+  else
+    bad "die Lobby bekommt warme Praktikale" \
+        "ohne sie ist der 25 x 42 m Boden der Umgebungsterm und sonst nichts"
+  fi
+
+  # Genau EINES wirft Schatten. Sechs schattenwerfende Punktlichter in einem Raum sind sechs
+  # Schattenkarten je Bild auf einem Telefon, fuer einen Unterschied, den niemand ansieht.
+  if code "$ATM" | grep -qE '_built\.Count == 0 \? LightShadows\.Soft : LightShadows\.None'; then
+    ok "kein Praktikal wirft ueberfluessige Schatten"
+  else
+    bad "kein Praktikal wirft ueberfluessige Schatten" \
+        "jedes weitere schattenwerfende Punktlicht ist eine Schattenkarte je Bild"
+  fi
+
+  if code "$ATM" | grep -qE '"Lobby_DustParticles"'; then
+    ok "es gibt Staub in der Lobby"
+  else
+    bad "es gibt Staub in der Lobby" "erwartet ein Partikelsystem namens Lobby_DustParticles"
+  fi
+
+  # Dieselbe Lehre wie bei den Portalfunken: ein frisch gebautes URP-Partikelmaterial ist OPAK
+  # auf der weissen Standardtextur, also ein weisses QUADRAT. Bei Staub faellt das am wenigsten
+  # als Materialfehler auf - hunderte kleine weisse Quadrate liest man als Renderfehler.
+  if code "$ATM" | grep -qE 'material\.SetFloat\("_Surface", 1f\)' &&
+     code "$ATM" | grep -qE 'material\.SetTexture\("_BaseMap", DustSprite\(\)\)'; then
+    ok "das Staubmaterial ist konfiguriert, nicht auf den Shader-Voreinstellungen"
+  else
+    bad "das Staubmaterial ist konfiguriert, nicht auf den Shader-Voreinstellungen" \
+        "ohne _Surface UND eine Textur sind das weisse Quadrate"
+  fi
+
+  DUST="$(code "$ATM" | sed -n '/private void BuildDust/,/^        }$/p')"
+  if printf '%s' "$DUST" | grep -qE 'main\.maxParticles = dustMaxParticles;' &&
+     printf '%s' "$DUST" | grep -qE 'collision\.enabled = false;' &&
+     printf '%s' "$DUST" | grep -qE 'trails\.enabled = false;'; then
+    ok "der Staub ist begrenzt"
+  else
+    bad "der Staub ist begrenzt" \
+        "Kollision, Trails und eine offene Partikelzahl sind auf dem Telefon je Bild bezahlt"
+  fi
+
+  # CLAUDE.md Fehler 2: Shader.Find("Standard") loest ueberall auf und zeichnet unter URP
+  # magenta. Ein Raum voller magentafarbener Quadrate ist schlimmer als ein Raum ohne Staub.
+  if printf '%s' "$DUST" | grep -qE 'if \(shader == null\)' &&
+     ! printf '%s' "$DUST" | grep -qE 'Shader\.Find\('; then
+    ok "ein fehlender Partikelshader gibt keinen Ersatz"
+  else
+    bad "ein fehlender Partikelshader gibt keinen Ersatz" \
+        "ein eingebauter Ersatzshader ist magenta unter URP"
+  fi
+fi
+
+# ---- die Ausruestung auf dem Tisch kommt aus den vorhandenen Definitionen --------------------
+#
+# Eine zweite Liste hier waere eine zweite Antwort auf "welche Ausruestung gibt es", und die
+# beiden gehen beim zwoelften Gegenstand auseinander.
+if [ ! -f "$TBL" ]; then
+  bad "der Ausruestungstisch liest die vorhandenen Definitionen" "erwartet $TBL"
+  bad "die Gegenstaende werden ueber den vorhandenen Bauweg gebaut" "Datei fehlt"
+  bad "der Tisch wird gemessen, nicht angenommen" "Datei fehlt"
+else
+  if code "$TBL" | grep -qE 'EquipmentDefinitionFactory\.All\(\)' &&
+     ! code "$TBL" | grep -qE 'EquipmentIds\.(Flashlight|EmfDetector|UvLight)'; then
+    ok "der Ausruestungstisch liest die vorhandenen Definitionen"
+  else
+    bad "der Ausruestungstisch liest die vorhandenen Definitionen" \
+        "eine eigene Liste von Ids ist eine zweite Antwort auf dieselbe Frage"
+  fi
+
+  if code "$TBL" | grep -qE 'MissionEquipmentInstaller\.BuildItem\('; then
+    ok "die Gegenstaende werden ueber den vorhandenen Bauweg gebaut"
+  else
+    bad "die Gegenstaende werden ueber den vorhandenen Bauweg gebaut" \
+        "eine zweite Bauroutine ist CLAUDE.md Fehler 1"
+  fi
+
+  # Der Lobbytisch wird zur Laufzeit von seiner Prop-Komponente gebaut. Jede hier
+  # hingeschriebene Hoehe waere eine Annahme ueber ein Objekt, das es noch nicht gibt - und
+  # elf Gegenstaende auf einer geratenen Hoehe sind elf Gegenstaende im Boden.
+  if code "$TBL" | grep -qE 'private static bool TryMeasureTop\(Transform root, out Bounds bounds\)' &&
+     code "$TBL" | grep -qE 'top\.max\.y \+ surfaceClearance'; then
+    ok "der Tisch wird gemessen, nicht angenommen"
+  else
+    bad "der Tisch wird gemessen, nicht angenommen" \
+        "eine geschriebene Tischhoehe ist eine Annahme ueber ein Objekt, das Start erst baut"
+  fi
+fi
+
+# ---- die Tuer wird gezogen, und sie bleibt in ihrem Rahmen ------------------------------------
+if [ ! -f "$DOOR" ]; then
+  bad "die Tuer klemmt ihren Winkel, statt ihn aufzusummieren" "erwartet $DOOR"
+  bad "die Tuer dreht um ihr Scharnier, nicht um ihre Mitte" "Datei fehlt"
+else
+  # Ein aufaddierter Euler-Winkel laeuft bei einem langen Zug ueber seine Grenze hinaus, und
+  # dann steht das Blatt in der Wand: ein Loch zum Durchlaufen in einem Objekt, das genau das
+  # verhindern soll.
+  if code "$DOOR" | grep -qE 'Mathf\.Clamp\(.*, 0f, maxAngle\)' &&
+     code "$DOOR" | grep -qE 'hinge\.localRotation = _restLocal \* Quaternion\.AngleAxis'; then
+    ok "die Tuer klemmt ihren Winkel, statt ihn aufzusummieren"
+  else
+    bad "die Tuer klemmt ihren Winkel, statt ihn aufzusummieren" \
+        "aufaddiert laeuft das Blatt bei einem langen Zug in die Wand"
+  fi
+
+  if code "$DOOR" | grep -qE '\[SerializeField\] private Transform hinge;'; then
+    ok "die Tuer dreht um ihr Scharnier, nicht um ihre Mitte"
+  else
+    bad "die Tuer dreht um ihr Scharnier, nicht um ihre Mitte" \
+        "um die Mitte gedreht schwingt das Blatt durch den Rahmen"
+  fi
+
+  # Zwei Komponenten auf EINEM Scharnier. Die schwingende Tuer schreibt es nur, solange sie
+  # animiert, laesst also ein gezogenes Blatt in Ruhe - und glaubt danach weiter an den Winkel,
+  # den sie zuletzt gerechnet hat. Ohne Abgleich springt das Blatt beim naechsten Tastendruck
+  # von diesem veralteten Winkel zum Ziel, und auf dem Bildschirm hat das keine Ursache.
+  if code "$DOOR" | grep -qE 'swing\.SyncToAngle\(' &&
+     code "$ROOT/Assets/CatchIfYouCan/Scripts/Interaction/InteractiveDoor.cs" \
+       | grep -qE 'public void SyncToAngle\(float degrees\)'; then
+    ok "die schwingende Tuer erfaehrt, wo das gezogene Blatt stehen geblieben ist"
+  else
+    bad "die schwingende Tuer erfaehrt, wo das gezogene Blatt stehen geblieben ist" \
+        "sonst springt das Blatt beim naechsten Tastendruck von einem veralteten Winkel"
+  fi
+
+  # Und beide bekommen DENSELBEN Grenzwinkel aus derselben Konstante. Zwei Antworten auf "wie
+  # weit geht die Tuer auf" gehen genau dann auseinander, wenn jemand eine davon aendert.
+  DF="$ROOT/Assets/CatchIfYouCan/Scripts/Procedural/ModularDoorFactory.cs"
+  if code "$DF" | grep -qE 'door\.Configure\(hinge\.transform, OpenAngle\);' &&
+     code "$DF" | grep -qE 'drag\.Configure\(hinge\.transform, 1, OpenAngle\);'; then
+    ok "gezogen und geschwungen teilen sich Scharnier und Grenzwinkel"
+  else
+    bad "gezogen und geschwungen teilen sich Scharnier und Grenzwinkel" \
+        "zwei Grenzwinkel fuer dieselbe Tuer gehen bei der ersten Aenderung auseinander"
+  fi
+fi
+
+# ---- die mobile Steuerung ist unangetastet ----------------------------------------------------
+#
+# Die eine Zusage, die der Benutzer ausdruecklich verlangt hat. Geprueft wird sie als
+# ABHAENGIGKEIT, nicht als Absicht: nichts von dem, was in dieser Runde dazugekommen ist, darf
+# den Controller anfassen, der Bewegung, Blick, Joystick und HUD besitzt.
+touched=""
+for f in "$DOOR" "$DBG" "$ATM" "$TBL"; do
+  [ -f "$f" ] || continue
+  code "$f" | grep -qE 'MobileInputController' && touched="$touched $(basename "$f")"
+done
+if [ -z "$touched" ]; then
+  ok "nichts Neues greift in die mobile Steuerung"
+else
+  bad "nichts Neues greift in die mobile Steuerung" "fasst MobileInputController an:$touched"
+fi
+
+# Und die Debug-Bequemlichkeiten stehen nicht in einem ausgelieferten Build. Ein Debug-Text im
+# Bild und eine zweite Aufnehmen-Taste sind Werkzeuge, keine Steuerung.
+if [ -f "$DBG" ]; then
+  if head -1 "$DBG" | grep -qE '^#if UNITY_EDITOR \|\| DEVELOPMENT_BUILD$'; then
+    ok "die Debug-Werkzeuge sind aus einem Auslieferungsbuild gezaeunt"
+  else
+    bad "die Debug-Werkzeuge sind aus einem Auslieferungsbuild gezaeunt" \
+        "erwartet #if UNITY_EDITOR || DEVELOPMENT_BUILD in der ersten Zeile"
+  fi
+else
+  bad "die Debug-Werkzeuge sind aus einem Auslieferungsbuild gezaeunt" "erwartet $DBG"
+fi
+
+# ---- die drei Waende, durch die man laufen konnte ---------------------------------------------
+#
+# Sie waren als einzige der ueber hundert Wandteile ohne Collider: das Werkzeug, das die anderen
+# gesetzt hat, hat sie uebersprungen, weil sie in die Portaloeffnung ragen. Seit das Portal JEDES
+# Collider in seiner Oeffnung abschaltet, ist das Ueberspringen nicht mehr noetig - und ohne
+# Collider ist eine Wand keine.
+missing=""
+for pi in 2070585590 308749705 1921571759; do
+  python3 - "$SCENE" "$pi" <<'PYEOF' || missing="$missing $pi"
+import re, sys
+txt = open(sys.argv[1], encoding="utf-8").read()
+m = re.search(r"--- !u!1001 &%s\n(.*?)(?=\n--- !u!)" % sys.argv[2], txt, re.S)
+sys.exit(0 if m and "addedObject" in m.group(1) else 1)
+PYEOF
+done
+if [ -z "$missing" ]; then
+  ok "die drei uebersprungenen Waende haben jetzt Kollision"
+else
+  bad "die drei uebersprungenen Waende haben jetzt Kollision" \
+      "ohne Collider laeuft der Spieler hindurch; PrefabInstance ohne addedObject:$missing"
+fi
+
 echo
 echo "  $PASS passed, $FAIL failed"
 if [ "$FAIL" -ne 0 ]; then
