@@ -208,7 +208,17 @@ place that number lives; everything else derives it.
   one of them, and the others stayed solid, so the door was open to the eye and shut to the
   body. Collected once when the aperture is built rather than per frame, and a floor under
   the threshold is left alone, because switching that off drops the player through the world
-  on the way in. 238 checks.
+  on the way in. And it holds the small room BEHIND the doorway to being one room of a house
+  rather than a special case: the test room is a `GeneratedHouse` with a single room, so the
+  entry anchor, the lighting, the NavMesh, the content report and the seamless handover all
+  run unchanged — a second path past that chain is the one that breaks, because it is the one
+  that runs less often. It is parented into the MISSION's scene rather than left in the active
+  one (mistake 17), stands far from the lobby because both scenes are loaded during a
+  preparation and physics is global across them, touches neither a generation stream nor the
+  layout hash, and its way back is the route that already exists — `PendingEntryMode =
+  DirectLobby` plus `LoadMainMenu`, on E rather than on a trigger, once rather than per press,
+  with the intent withdrawn when there is no loader so it cannot skip an intro nobody asked to
+  skip. 247 checks.
 
 - `Scripts/check_editor_menu.sh` — the editor menu stays legible, and the purchased architecture has ONE scale. The game scale is the measured ratio 2.95 / 3.92 in one place, with no tool carrying its own copy; the decision is made on effective world scale rather than `localScale`, because a vendor piece at localScale 1 inside a corrected wrapper IS already corrected and its own field says otherwise; an already-corrected ancestor is recognised and a second application is a named verdict rather than a silent pass; architecture is told from props by FOLDER, since a filename classifier caught 3 of 105 in a pack that numbers its prefabs and calls its glass Steklo; an undecidable piece is reported ambiguous rather than guessed, because a chair may already be at real-world size and shrinking one that was right is invisible; the portal is excluded, its opening being a gameplay dimension; the migration audits before it can apply and converts only original-size pieces; and the correction goes on a CIYC wrapper with nothing applied back to the purchased package. Also the menu itself: Fifty-one commands sit in
   seven named groups with none hiding in another root menu, every one carries a risk tag saying

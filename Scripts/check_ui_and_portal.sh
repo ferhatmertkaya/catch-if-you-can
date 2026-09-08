@@ -1304,6 +1304,99 @@ else
       "ihn abzuschalten laesst den Spieler beim Durchgehen durch die Welt fallen"
 fi
 
+# ---- der kleine Testraum hinter dem Portal ----------------------------------------------------
+#
+# Statt des ganzen Hauses steht hinter dem Portal ein einzelner Raum. Er ist ein GeneratedHouse
+# mit genau einem Raum, und das ist der ganze Trick: Einstiegsanker, Hauslicht, NavMesh,
+# Inhaltsbericht und die nahtlose Uebergabe arbeiten unveraendert weiter. Ein Sonderfall waere ein
+# zweiter Weg durch dieselbe Kette, und der eine, der seltener laeuft, ist der, der kaputt geht.
+TR="$(code "$BOOT" | sed -n '/private void BuildTestRoom/,/^        }$/p')"
+
+if printf '%s' "$TR" | grep -qE 'new GeneratedHouse' &&
+   printf '%s' "$TR" | grep -qE '_generatedHouse\.Entrance = instance;'; then
+  ok "der Testraum ist ein Haus mit einem Raum, kein Sonderfall in der Kette"
+else
+  bad "der Testraum ist ein Haus mit einem Raum, kein Sonderfall in der Kette" \
+      "ein eigener Pfad an Anker, Licht, NavMesh und Uebergabe vorbei bricht als erster"
+fi
+
+# In der Szene der MISSION. `new GameObject` landet in der AKTIVEN Szene, und waehrend das Portal
+# vorbereitet, ist das die Lobby - der Raum haette an einem Lobby-Objekt gehangen und waere mit
+# ihr entladen worden (CLAUDE.md Fehler 17).
+if printf '%s' "$TR" | grep -qE 'root\.transform\.SetParent\(parent, false\)' &&
+   printf '%s' "$TR" | grep -qE 'worldRoot != null \? worldRoot : transform'; then
+  ok "der Testraum wird in die Szene der Mission gehaengt, nicht in die aktive"
+else
+  bad "der Testraum wird in die Szene der Mission gehaengt, nicht in die aktive" \
+      "waehrend einer Vorbereitung ist die aktive Szene die Lobby, und die wird entladen"
+fi
+
+# Er ist Stage B von Anfang bis Ende: kein Generierungsstrom, kein Layout, kein Hash.
+if ! printf '%s' "$TR" | grep -qE 'CiycRandom|LayoutHash|GenerateHouse'; then
+  ok "der Testraum beruehrt weder Generierungsstrom noch Layout-Hash"
+else
+  bad "der Testraum beruehrt weder Generierungsstrom noch Layout-Hash" \
+      "ein Testraum, der in den Hash faellt, aendert die Golden Seeds"
+fi
+
+# Und er steht WEIT weg von der Lobby. Beide Szenen sind waehrend der Vorbereitung geladen, und
+# eine Physikabfrage ist global ueber alle geladenen Szenen: zwei Raeume, die sich ueberlappen,
+# sind zwei Boeden untereinander.
+if code "$BOOT" | grep -qE 'testRoomPosition = new Vector3\(0f, 0f, -1[0-9][0-9]f\)'; then
+  ok "der Testraum steht weit ab von der Lobby"
+else
+  bad "der Testraum steht weit ab von der Lobby" \
+      "waehrend der Vorbereitung sind beide Szenen geladen und Physik ist global"
+fi
+
+# ---- der Rueckweg ist die Route, die es schon gibt --------------------------------------------
+RET="$ROOT/Assets/CatchIfYouCan/Scripts/Interaction/LobbyReturnPoint.cs"
+
+if code "$RET" | grep -qE 'PendingEntryMode = MainMenuEntryMode\.DirectLobby' &&
+   code "$RET" | grep -qE 'SceneLoader\.Instance\.LoadMainMenu\(\)'; then
+  ok "der Rueckweg benutzt die vorhandene Route in die Lobby"
+else
+  bad "der Rueckweg benutzt die vorhandene Route in die Lobby" \
+      "eine zweite Rueckkehr in dieselbe Szene geht beim ersten Umbau auseinander"
+fi
+
+# E, kein Trigger. Ein Trigger vor einem Rueckweg heisst, dass jeder Schritt rueckwaerts die
+# Szene wechselt - und die Nordwand ist genau die, vor der man nach dem Durchgang steht.
+if code "$RET" | grep -qE 'IInteractable' && ! code "$RET" | grep -qE 'OnTriggerEnter'; then
+  ok "der Rueckweg ist eine Interaktion, kein Trigger"
+else
+  bad "der Rueckweg ist eine Interaktion, kein Trigger" \
+      "ein Schritt rueckwaerts darf nicht die Szene wechseln"
+fi
+
+# Einmal. Zweimal druecken waehrend des Ladens ist ein zweiter Ladevorgang auf eine Szene, die
+# es schon nicht mehr gibt.
+if code "$RET" | grep -qE 'if \(_leaving\)' && code "$RET" | grep -qE '_leaving = true;'; then
+  ok "der Rueckweg feuert genau einmal"
+else
+  bad "der Rueckweg feuert genau einmal" \
+      "ein zweiter Ladevorgang trifft eine Szene, die gerade verschwindet"
+fi
+
+# Und ohne SceneLoader wird die Absicht ZURUECKGENOMMEN, statt bei irgendeinem spaeteren
+# Ladevorgang ein Intro zu ueberspringen, das niemand ueberspringen wollte.
+if code "$RET" | grep -qE 'PendingEntryMode = MainMenuEntryMode\.Cinematic;'; then
+  ok "ein gescheiterter Rueckweg nimmt seine Absicht zurueck"
+else
+  bad "ein gescheiterter Rueckweg nimmt seine Absicht zurueck" \
+      "eine liegengebliebene Absicht ueberspringt spaeter ein Intro, das gewollt war"
+fi
+
+# Das leuchtende Panel geht durch die eine gemeinsame Regel: ohne Shader wird der Renderer
+# abgeschaltet statt Unitys eingebautes Standardmaterial zu zeichnen, das unter URP magenta ist.
+RP="$(code "$BOOT" | sed -n '/private void BuildReturnPortal/,/^        }$/p')"
+if printf '%s' "$RP" | grep -qE 'Art\.PrimitiveSurface\.Apply\('; then
+  ok "das Rueckweg-Panel kann nicht magenta werden"
+else
+  bad "das Rueckweg-Panel kann nicht magenta werden" \
+      "CreatePrimitive bringt Unitys Built-in-Material mit, und das ist unter URP magenta"
+fi
+
 # ---------------------------------------------------------------- the portal camera maths
 #
 # A portal view is the destination scene rendered from the player's eye carried through the

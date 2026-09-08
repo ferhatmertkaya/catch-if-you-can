@@ -8,6 +8,7 @@ using CatchIfYouCan.Ghost;
 using CatchIfYouCan.Missions;
 using CatchIfYouCan.Objectives;
 using CatchIfYouCan.Player;
+using CatchIfYouCan.Procedural.Deterministic;
 using CatchIfYouCan.UI;
 using CatchIfYouCan.Weather;
 using UnityEngine;
@@ -98,6 +99,21 @@ namespace CatchIfYouCan.Procedural
         // InvestigationSceneInstaller haengt diese Komponente per AddComponent an, es gibt sie
         // in keiner Szene - dieser Anfangswert IST der wirksame Wert.
         [SerializeField] private bool generateWorld = true;
+
+        [Tooltip("WAS gebaut wird, wenn oben ueberhaupt gebaut wird. TestRoom ist ein einzelner " +
+                 "kleiner Raum weit ab von der Lobby, durch den man das Portal ausprobieren " +
+                 "kann; House ist die vollstaendige prozedurale Generierung. Die zwei Felder " +
+                 "beantworten zwei verschiedene Fragen - ob, und was.")]
+        [SerializeField] private MissionWorldKind worldKind = MissionWorldKind.TestRoom;
+
+        [Tooltip("Wo der Testraum steht, im Weltraum der Missionsszene. WEIT weg von der Lobby: " +
+                 "waehrend das Portal vorbereitet, sind beide Szenen gleichzeitig geladen, und " +
+                 "eine Physikabfrage ist global ueber alle geladenen Szenen. Zwei Raeume, die " +
+                 "sich ueberlappen, sind zwei Boeden untereinander.")]
+        [SerializeField] private Vector3 testRoomPosition = new Vector3(0f, 0f, -150f);
+
+        [Tooltip("Innenmasse des Testraums in Metern.")]
+        [SerializeField] private Vector3 testRoomSize = new Vector3(8f, 3f, 8f);
 
         [Tooltip("Groesse der leeren Ebene in Metern, wenn oben nichts generiert wird. Sie wird " +
                  "erst beim Betreten gebaut, nicht schon beim Vorbereiten - sonst haengt sie als " +
@@ -340,8 +356,15 @@ namespace CatchIfYouCan.Procedural
                 return true;
             }
 
-            BuildVan();
-            GenerateHouse(_mission.Seed);
+            if (worldKind == MissionWorldKind.TestRoom)
+            {
+                BuildTestRoom();
+            }
+            else
+            {
+                BuildVan();
+                GenerateHouse(_mission.Seed);
+            }
 
             if (_generatedHouse == null)
             {
@@ -768,6 +791,145 @@ namespace CatchIfYouCan.Procedural
                 1001,
                 SeedManager.KnownGoodSeed,
                 fallbackGhost);
+        }
+
+        /// <summary>
+        /// Ein einzelner kleiner Raum statt des ganzen Hauses.
+        ///
+        /// <para>
+        /// <b>Er ist ein GeneratedHouse mit genau einem Raum</b>, und das ist der ganze Trick.
+        /// Alles, was danach kommt, arbeitet unveraendert weiter: der Einstiegsanker misst sich
+        /// gegen echte Bodenkollision in diesem Raum, das Hauslicht findet ihn, das NavMesh
+        /// backt ihn, der Inhaltsbericht laeuft ueber ihn, und die nahtlose Uebergabe traegt den
+        /// Spieler hinein wie in jeden anderen Raum. Ein Sonderfall waere ein zweiter Weg durch
+        /// dieselbe Kette - und der eine, der seltener laeuft, ist der, der kaputt geht.
+        /// </para>
+        ///
+        /// <para>
+        /// Gebaut wird mit demselben <see cref="ModularRoomBuilder"/>, den auch das Haus und die
+        /// Handautorenschaft benutzen, aus einem <see cref="LayoutRoom"/>, der hier direkt
+        /// erzeugt statt aus dem Layout gelesen wird. Er geht in KEINEN Hash ein: dieser Raum ist
+        /// Stage B von Anfang bis Ende und beruehrt die deterministische Erzeugung nicht.
+        /// </para>
+        /// </summary>
+        private void BuildTestRoom()
+        {
+            Transform parent = worldRoot != null ? worldRoot : transform;
+
+            // Unter worldRoot, also in der Szene der Mission. `new GameObject` landet in der
+            // AKTIVEN Szene, und waehrend das Portal vorbereitet, ist das die Lobby - der Raum
+            // haette an einem Lobby-Objekt gehangen und waere mit ihr entladen worden
+            // (CLAUDE.md Fehler 17).
+            var root = new GameObject("MissionTestRoom");
+            root.transform.SetParent(parent, false);
+            root.transform.position = testRoomPosition;
+
+            var size = new Vector3(
+                Mathf.Max(2f, testRoomSize.x),
+                Mathf.Max(2.6f, testRoomSize.y),
+                Mathf.Max(2f, testRoomSize.z));
+
+            var layoutRoom = new LayoutRoom(
+                roomId: 0,
+                archetypeId: "TEST_ROOM",
+                category: RoomCategory.LivingRoom,
+                cell: new GridCell(0, 0),
+                rotationIndex: 0,
+                positionMm: new Vec3i(0, 0, 0),
+                sizeMm: new Vec3i(Mm(size.x), Mm(size.y), Mm(size.z)),
+                variantIndex: 0,
+                doorMask: 0,
+                openMask: 0);
+
+            Content.ModularInteriorCatalog catalog =
+                houseGenerator != null ? houseGenerator.ModularInterior : null;
+
+            GameObject built = ModularRoomBuilder.Build(layoutRoom, testRoomPosition,
+                                                        root.transform, catalog, 0, out string error);
+
+            if (built == null)
+            {
+                CIYCLog.Error("[CIYC][TestRoom] Der Testraum konnte nicht gebaut werden: " + error +
+                              ". Ohne Raum gibt es keinen Einstiegsanker, und das Portal faellt " +
+                              "in sich zusammen statt auf ein Nichts zu oeffnen.");
+                return;
+            }
+
+            var instance = new GeneratedRoomInstance
+            {
+                NodeId = 0,
+                Category = layoutRoom.Category,
+                Cell = layoutRoom.Cell,
+                Root = built,
+                Module = built.GetComponent<RoomModule>(),
+            };
+
+            _generatedHouse = new GeneratedHouse
+            {
+                Seed = _mission != null ? _mission.Seed : 0,
+                Root = root.transform,
+            };
+            _generatedHouse.Rooms.Add(instance);
+            _generatedHouse.Entrance = instance;
+            _generatedHouse.GhostRoom = instance;
+
+            BuildReturnPortal(built.transform, size);
+
+            CIYCLog.Info("[CIYC][TestRoom] " + size.ToString("F1") + " m Raum auf " +
+                         testRoomPosition.ToString("F1") + " in Szene '" +
+                         built.scene.name + "'. Kein Haus, kein Van, kein Layout-Hash - der " +
+                         "Raum ist Stage B von Anfang bis Ende.");
+        }
+
+        private static int Mm(float metres) => Mathf.RoundToInt(metres * 1000f);
+
+        /// <summary>
+        /// Der Weg zurueck: ein sichtbarer Rahmen an der Nordwand, den man mit E benutzt.
+        ///
+        /// <para>
+        /// Kein Trigger. Ein Trigger vor einem Rueckweg heisst, dass jeder Schritt rueckwaerts
+        /// die Szene wechselt - und die Nordwand ist genau die, vor der man steht, wenn man
+        /// gerade durch das Portal hereingekommen ist.
+        /// </para>
+        /// </summary>
+        private void BuildReturnPortal(Transform roomRoot, Vector3 size)
+        {
+            var go = new GameObject("TestRoom_ReturnToLobby");
+            go.transform.SetParent(roomRoot, false);
+
+            // An der Nordwand, knapp davor, auf halber Tuerhoehe.
+            go.transform.localPosition =
+                new Vector3(0f, ModularRoomBuilder.DoorHeight * 0.5f,
+                            size.z * 0.5f - ModularRoomBuilder.WallThickness - 0.12f);
+
+            var panel = GameObject.CreatePrimitive(PrimitiveType.Cube);
+            panel.name = "ReturnPanel";
+            panel.transform.SetParent(go.transform, false);
+            panel.transform.localScale = new Vector3(ModularRoomBuilder.DoorWidth,
+                                                     ModularRoomBuilder.DoorHeight, 0.08f);
+
+            // Der Collider des Primitivs ist der Interaktionstreffer, nicht ein Hindernis:
+            // als Trigger, damit man nicht dagegenlaeuft, und der Interaktionsstrahl trifft
+            // Trigger (QueryTriggerInteraction.Collide).
+            var box = panel.GetComponent<BoxCollider>();
+            if (box != null)
+                box.isTrigger = true;
+
+            // Ein eigenes Material, sichtbar leuchtend - und durch die eine gemeinsame Regel,
+            // damit ein fehlender Shader den Renderer abschaltet statt magenta zu zeichnen.
+            Shader lit = Art.CiycShaders.FindLit();
+            Material glow = null;
+            if (lit != null)
+            {
+                glow = new Material(lit) { name = "TestRoom_Return_Runtime" };
+                glow.color = new Color(0.10f, 0.32f, 0.26f);
+                glow.EnableKeyword("_EMISSION");
+                glow.SetColor("_EmissionColor", new Color(0.15f, 0.85f, 0.62f) * 1.8f);
+            }
+
+            Art.PrimitiveSurface.Apply(panel, glow, "Rueckweg-Panel im Testraum");
+
+            go.AddComponent<Interaction.LobbyReturnPoint>();
         }
 
         private void BuildVan()

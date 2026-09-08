@@ -406,3 +406,110 @@ Verbindung bricht still.
 **NICHT GETESTET** — kein Unity hier. Ohne `_wallSolid` gibt es keine Apertur und
 `CollectExtraWallColliders` kehrt sofort zurück; die Portalwand ist also weiterhin der Schritt,
 ohne den die Tür geschlossen bleibt.
+
+---
+
+# Nachtrag 3: ein kleiner Raum statt des Hauses, mit Rückweg
+
+Auftrag: kein generiertes Haus, stattdessen ein kleiner Raum weit weg von der Lobby, durch den
+das Portal führt — und wieder zurück.
+
+## Zwei Fragen, zwei Felder
+
+`generateWorld` hatte angefangen, zwei Dinge zu bedeuten. Jetzt beantwortet es nur noch eine:
+
+| Feld | Frage |
+|---|---|
+| `generateWorld` | Wird überhaupt eine Welt gebaut? |
+| `worldKind` | Welche — `TestRoom` (neu, Standard) oder `House`? |
+
+„Nichts bauen, um den Charakter anzusehen" und „einen kleinen Raum statt des Hauses" sind
+verschiedene Absichten; ein einzelner Schalter für beide hätte je nach Stellung zwei Bedeutungen.
+
+## Der Raum ist ein Haus mit einem Raum
+
+Das ist der ganze Trick und der Grund, warum kaum Code dazukam:
+
+```csharp
+_generatedHouse = new GeneratedHouse { Seed = …, Root = root.transform };
+_generatedHouse.Rooms.Add(instance);
+_generatedHouse.Entrance = instance;
+```
+
+Danach arbeitet **alles Bestehende unverändert weiter**: `EnsureMissionEntryAnchor` misst sich
+gegen echte Bodenkollision in diesem Raum, `HouseLightingDirector` findet ihn,
+`BuildNavigation` backt ihn, `HouseContentReport` läuft über ihn, und `EnterSeamlessAsync` trägt
+den Spieler hinein wie in jeden anderen Raum. Ein Sonderfall wäre ein zweiter Weg durch dieselbe
+Kette — und der eine, der seltener läuft, ist der, der kaputtgeht.
+
+Gebaut wird mit demselben `ModularRoomBuilder`, den auch das Haus und `HQRoomAuthoring` benutzen,
+aus einem `LayoutRoom` mit `archetypeId: "TEST_ROOM"`.
+
+| | |
+|---|---|
+| Größe | 8 × 3 × 8 m (`testRoomSize`) |
+| Position | **(0, 0, −150)** (`testRoomPosition`) |
+| Kategorie | `LivingRoom` — damit die Einrichtung ein Profil findet |
+| Layout-Hash | **unberührt.** Stage B von Anfang bis Ende |
+
+**Warum so weit weg:** Während das Portal vorbereitet, sind Lobby und Mission *gleichzeitig*
+geladen, und eine Physikabfrage ist global über alle geladenen Szenen. Zwei Räume, die sich
+überlappen, sind zwei Böden untereinander — und die Lobby bringt einen 40 × 40 m
+`Lobby_SafetyFloor` mit, der unter fast allem liegt. 132 m Abstand zur Lobby-Ausdehnung.
+
+**Und in der richtigen Szene:** Der Raum hängt unter `worldRoot`, also in der Missionsszene.
+`new GameObject` landet in der *aktiven* Szene, und die ist während einer Vorbereitung die Lobby —
+der Raum hätte an einem Lobby-Objekt gehangen und wäre mit ihr entladen worden (CLAUDE.md
+Fehler 17).
+
+## Der Rückweg ist die Route, die es schon gibt
+
+An der Nordwand steht ein leuchtendes Panel mit `LobbyReturnPoint`. **E** darauf löst genau die
+zwei Zeilen aus, mit denen auch eine abgeschlossene Untersuchung zurückkehrt:
+
+```csharp
+MainMenuModeController.PendingEntryMode = MainMenuEntryMode.DirectLobby;
+SceneLoader.Instance.LoadMainMenu();
+```
+
+Der Menü-Controller kommt dann **direkt im Raum** hoch — kein Kino, kein „tap to start". Eine
+eigene Rückkehr zu bauen wäre ein zweiter Weg in dieselbe Szene, und die beiden gingen beim
+ersten Umbau auseinander.
+
+Drei Feinheiten:
+
+* **E, kein Trigger.** Ein Trigger vor einem Rückweg heißt, dass jeder Schritt rückwärts die
+  Szene wechselt — und die Nordwand ist genau die, vor der man nach dem Durchgang steht.
+* **Einmal.** Zweimal drücken während des Ladens wäre ein zweiter Ladevorgang auf eine Szene, die
+  gerade verschwindet.
+* **Ohne `SceneLoader` wird die Absicht zurückgenommen**, sonst überspränge sie bei irgendeinem
+  späteren Ladevorgang ein Intro, das jemand sehen wollte.
+
+Das Panel geht durch `Art.PrimitiveSurface`: fehlt der Shader, wird der Renderer abgeschaltet
+statt Unitys Built-in-Material zu zeichnen, das unter URP magenta ist.
+
+## Neun neue Prüfungen
+
+`check_ui_and_portal.sh` 238 → **247**, vier Zahnproben bestanden (Szenenzugehörigkeit, Abstand
+zur Lobby, zurückgenommene Absicht, kein Magenta).
+
+## Status
+
+| | |
+|---|---|
+| **Umgesetzt** | `worldKind`, Testraum, Rückweg-Panel, neun Guards |
+| **Automatisiert geprüft** | Typecheck 19 = Baseline; alle Guards grün außer den zwei vorbestehenden `check_ui_and_portal`-Fehlern |
+| **In Unity geprüft** | **nichts** |
+
+### Testablauf — NICHT GETESTET
+
+1. `3. PORTAL > Portalwand setzen [UNDO]` — **weiterhin nötig**, sonst gibt es keine Apertur und
+   die Tür bleibt zu.
+2. Play, START INVESTIGATION. Erwartet: Portal öffnet und zeigt einen kleinen Raum.
+3. Durchgehen. Erwartet: du stehst in einem 8 × 8 m Raum bei z ≈ −150.
+4. Vor das leuchtende Panel an der Nordwand, **E**. Erwartet: zurück in der Lobby, direkt im
+   Raum, ohne Kino.
+5. Konsole nach `[CIYC][TestRoom]` filtern — Größe, Position und Szenenname stehen dort.
+
+Das Haus ist nicht weg: `worldKind` auf `House` stellen, und aus demselben Seed entsteht exakt
+dasselbe Haus wie vorher.

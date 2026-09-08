@@ -52,6 +52,16 @@ namespace CatchIfYouCan.Procedural
 
         [SerializeField] private Content.RoomFurnishingCatalog roomFurnishingCatalog;
 
+        /// <summary>
+        /// Der Modulkatalog, mit dem dieser Generator baut.
+        ///
+        /// Oeffentlich lesbar, damit der Testraum aus demselben Katalog gebaut wird wie das Haus
+        /// - eine eigene Aufloesung dort waere eine zweite Stelle, an der entschieden wird,
+        /// welche Oberflaechen ein Raum bekommt (CLAUDE.md Fehler 1). Ein Getter, keine
+        /// Reflection (Fehler 4).
+        /// </summary>
+        public Content.ModularInteriorCatalog ModularInterior => modularInteriorCatalog;
+
         [SerializeField] private RoomDefinition[] roomDefinitions;
         [SerializeField] private PropDefinition[] propDefinitions;
 
