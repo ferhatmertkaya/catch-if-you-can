@@ -74,18 +74,30 @@ namespace CatchIfYouCan.Procedural
                  "Nichts an der Generierung ist geloescht: der Schalter fuehrt sie nur nicht " +
                  "aus. Wieder anschalten stellt genau denselben Ablauf wieder her, und der " +
                  "Seed bestimmt weiterhin dasselbe Haus wie vorher.")]
-        // AUS, auf ausdrueckliche Anweisung: das prozedural erzeugte Haus wird vorerst nicht
-        // gebaut, weil die Umgebung stattdessen in einer neuen, von Hand gebauten Szene
-        // entstehen soll.
+        // AN - und einmal AUS gewesen, was das Portal gekostet hat.
         //
-        // Geloescht ist nichts. Der Schalter fuehrt die Generierung nur nicht aus - Aufrufe,
-        // Layout, Hash, Einrichtung und Kataloge stehen unveraendert, und ein Umlegen auf true
-        // stellt aus demselben Seed exakt dasselbe Haus wieder her wie vorher. Genau dafuer
-        // gibt es diesen Schalter, und check_vertical_slice.sh haelt ihn frei.
+        // Die Kette ist lueckenlos und lohnt sich zu kennen, weil ihr Ende nach einem
+        // Portalfehler aussieht und ihr Anfang dieser Schalter ist:
+        //
+        //   generateWorld = false
+        //     -> PrepareWorld baut kein Haus, _generatedHouse bleibt null
+        //     -> EnsureMissionEntryAnchor gibt sofort auf ("No generated house")
+        //     -> MissionEntryAnchor bleibt null
+        //     -> LobbyPortal.OpenRoutine setzt 'bound' nie
+        //     -> "_prepareFinished && !bound" bricht die Oeffnung ab
+        //     -> DestabiliseRoutine, State = Failed
+        //
+        // Auf dem Bildschirm: START INVESTIGATION gedrueckt, und es erscheint kein Portal. Kein
+        // Fehler am Portal, sondern eine Welt, die es nicht gibt - ein Portal ist eine Tuer, und
+        // eine Tuer ohne Raum dahinter ist ein Bild.
+        //
+        // Geloescht ist nichts, und der Schalter bleibt: er ist der Weg, Charakter, Ausruestung
+        // und Menue ohne Welt anzusehen. Nur ist er mit einem Portal in der Lobby nicht
+        // vereinbar. check_vertical_slice.sh haelt ihn frei.
         //
         // InvestigationSceneInstaller haengt diese Komponente per AddComponent an, es gibt sie
         // in keiner Szene - dieser Anfangswert IST der wirksame Wert.
-        [SerializeField] private bool generateWorld = false;
+        [SerializeField] private bool generateWorld = true;
 
         [Tooltip("Groesse der leeren Ebene in Metern, wenn oben nichts generiert wird. Sie wird " +
                  "erst beim Betreten gebaut, nicht schon beim Vorbereiten - sonst haengt sie als " +

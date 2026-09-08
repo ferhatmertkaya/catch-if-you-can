@@ -202,7 +202,13 @@ place that number lives; everything else derives it.
   `AddComponent`, one line above the `SetParent` that decides the scene — every runtime manager
   is parented before its component is added, and a rejected floor is named together with the
   scene that owns it, because "no floor" covered both an empty ray and a house in the wrong
-  scene and those need different fixes. 235 checks.
+  scene and those need different fixes. And it keeps the doorway PASSABLE now that the wall
+  is made of modules: the portal switches off EVERY collider standing in its opening rather
+  than the one it picked as "the wall" — three modules stand there, `_wallSolid` can only be
+  one of them, and the others stayed solid, so the door was open to the eye and shut to the
+  body. Collected once when the aperture is built rather than per frame, and a floor under
+  the threshold is left alone, because switching that off drops the player through the world
+  on the way in. 238 checks.
 
 - `Scripts/check_editor_menu.sh` — the editor menu stays legible, and the purchased architecture has ONE scale. The game scale is the measured ratio 2.95 / 3.92 in one place, with no tool carrying its own copy; the decision is made on effective world scale rather than `localScale`, because a vendor piece at localScale 1 inside a corrected wrapper IS already corrected and its own field says otherwise; an already-corrected ancestor is recognised and a second application is a named verdict rather than a silent pass; architecture is told from props by FOLDER, since a filename classifier caught 3 of 105 in a pack that numbers its prefabs and calls its glass Steklo; an undecidable piece is reported ambiguous rather than guessed, because a chair may already be at real-world size and shrinking one that was right is invisible; the portal is excluded, its opening being a gameplay dimension; the migration audits before it can apply and converts only original-size pieces; and the correction goes on a CIYC wrapper with nothing applied back to the purchased package. Also the menu itself: Fifty-one commands sit in
   seven named groups with none hiding in another root menu, every one carries a risk tag saying

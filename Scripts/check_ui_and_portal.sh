@@ -1266,6 +1266,44 @@ else
   ok "kein Laufzeit-Flicken mehr in der Wand"
 fi
 
+# ---- jedes Collider in der Oeffnung wird abgeschaltet, nicht nur die "Wand" -------------------
+#
+# Frueher war die Lobbywand EIN Kasten, und ein Kasten laesst sich abschalten. Seit sie aus
+# Modulen des gekauften Pakets besteht, stehen drei davon in der Oeffnung, jedes mit eigenem
+# Collider. _wallSolid kann nur eines davon sein; die anderen blieben stehen, und der Spieler
+# lief in eine unsichtbare Wand, obwohl die Tuer sichtbar offen war - genau das, was das Loch in
+# der Kollision seit jeher verhindern soll.
+if code "$ENV/LobbyPortal.cs" | grep -qE 'private void CollectExtraWallColliders\(\)' &&
+   code "$ENV/LobbyPortal.cs" | grep -qE '_wallExtra\[i\]\.enabled = !open'; then
+  ok "das Portal schaltet JEDES Collider in seiner Oeffnung ab, nicht nur eines"
+else
+  bad "das Portal schaltet JEDES Collider in seiner Oeffnung ab, nicht nur eines" \
+      "eine Wand aus Modulen hat mehrere; eines uebersehen ist die unsichtbare Wand in der Tuer"
+fi
+
+# Gesammelt wird beim BAUEN der Apertur, nicht pro Frame. Ein OverlapBox in Update ist eine
+# Physikabfrage je Bild fuer eine Lobby, die sich zwischen zwei Oeffnungen nicht umbaut.
+APER="$(code "$ENV/LobbyPortal.cs" | sed -n '/private void EnsureWallAperture/,/^        }$/p')"
+UPD="$(code "$ENV/LobbyPortal.cs" | sed -n '/private void Update()/,/^        }$/p')"
+if printf '%s' "$APER" | grep -qE 'CollectExtraWallColliders\(\)' &&
+   ! printf '%s' "$UPD" | grep -qE 'OverlapBox'; then
+  ok "die Nebencollider werden einmal gesammelt, nicht pro Frame"
+else
+  bad "die Nebencollider werden einmal gesammelt, nicht pro Frame" \
+      "ein OverlapBox in Update ist eine Physikabfrage je Bild fuer eine Wand, die stillsteht"
+fi
+
+# Und ein BODEN wird nicht mitgenommen. Einen Boden abzuschalten, weil er die Schwelle streift,
+# laesst den Spieler beim Durchgehen durch die Welt fallen - dieselbe Klasse Fehler wie die
+# unsichtbare Wand, nur nach unten.
+COLL="$(code "$ENV/LobbyPortal.cs" | sed -n '/private void CollectExtraWallColliders/,/^        }$/p')"
+if printf '%s' "$COLL" | grep -qE 'c\.bounds\.center\.y < transform\.position\.y'; then
+  ok "ein Boden unter der Schwelle wird nicht mit abgeschaltet"
+else
+  bad "ein Boden unter der Schwelle wird nicht mit abgeschaltet" \
+      "ihn abzuschalten laesst den Spieler beim Durchgehen durch die Welt fallen"
+fi
+
 # ---------------------------------------------------------------- the portal camera maths
 #
 # A portal view is the destination scene rendered from the player's eye carried through the

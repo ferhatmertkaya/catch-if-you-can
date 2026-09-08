@@ -329,3 +329,80 @@ Portals — sie füllt genau das Feld, das das Portal in seiner eigenen Fehlerme
 Nach Schritt 3 sollte `check_ui_and_portal` von 233/2 auf 234/1 gehen — der verbleibende Fehler
 ist die gelöschte Ost-Fensterwand. **NICHT GETESTET**, das ist eine Vorhersage aus dem
 Guard-Text, keine Messung.
+
+
+---
+
+# Nachtrag 2: alle Wände bekommen Kollision — und das Portal wird wieder sichtbar
+
+Zwei Anweisungen, zwei getrennte Ursachen.
+
+## „aktuell sieht man kein Portal" — das war meine letzte Änderung
+
+Die Kette ist lückenlos, und ihr Ende sieht nach einem Portalfehler aus, während ihr Anfang ein
+Schalter in einer ganz anderen Datei ist:
+
+```
+generateWorld = false                          (InvestigationBootstrap, von mir gesetzt)
+  -> PrepareWorld baut kein Haus, _generatedHouse bleibt null
+  -> EnsureMissionEntryAnchor gibt sofort auf: "No generated house"
+  -> MissionEntryAnchor bleibt null
+  -> LobbyPortal.OpenRoutine setzt 'bound' nie
+  -> "if (_prepareFinished && !bound && t >= openDuration) break;"
+  -> "if (!bound) DestabiliseRoutine()"   -> State = Failed
+```
+
+Auf dem Bildschirm: START INVESTIGATION gedrückt, und es erscheint kein Portal. Kein Fehler am
+Portal — **ein Portal ist eine Tür, und eine Tür ohne Raum dahinter ist ein Bild.**
+
+`generateWorld` steht wieder auf `true`. Der Schalter bleibt, er ist der Weg, Charakter,
+Ausrüstung und Menü ohne Welt anzusehen — er ist nur mit einem Portal in der Lobby nicht
+vereinbar. Der Zusammenhang steht jetzt als Kommentar am Feld, damit er beim nächsten Umlegen
+nicht wieder gesucht werden muss.
+
+## „die Wände brauchen alle eine Kollision ohne wenn und aber"
+
+Umgesetzt — und der Grund, aus dem ich die drei zunächst übersprungen habe, ist mit behoben,
+statt übergangen zu werden.
+
+**Vorher:** `LobbyPortal` hielt seine Wand in *einem* Feld. Bekommen die drei Module in der
+Öffnung je ein eigenes Collider, kann das Portal nur eines abschalten. Die anderen bleiben
+massiv → unsichtbare Wand vor der offenen Tür.
+
+**Jetzt:** `LobbyPortal.CollectExtraWallColliders()` sammelt beim Bauen der Apertur **jedes
+weitere** Collider, das in der Öffnung steht, und `SetWallOpen` schaltet sie mit:
+
+```csharp
+if (_wallSolid != null) _wallSolid.enabled = !open;
+for (int i = 0; i < _wallExtra.Count; i++)
+    if (_wallExtra[i] != null) _wallExtra[i].enabled = !open;
+if (_aperture != null) _aperture.SetActive(open);
+```
+
+Drei Feinheiten, jede aus einem Fehler, den sie verhindert:
+
+* **Einmal beim Bauen der Apertur, nicht pro Frame.** Ein `OverlapBox` in `Update` wäre eine
+  Physikabfrage je Bild für eine Lobby, die zwischen zwei Portalöffnungen stillsteht.
+* **Ein Boden unter der Schwelle wird nicht mitgenommen.** Ihn abzuschalten, weil er die Schwelle
+  streift, lässt den Spieler beim Durchgehen durch die Welt fallen — dieselbe Fehlerklasse wie
+  die unsichtbare Wand, nur nach unten.
+* **Die Nebencollider bekommen kein eigenes Loch.** Das schneidet die Apertur aus `_wallSolid`;
+  zwei Löcher an derselben Stelle wären zwei Antworten auf dieselbe Frage.
+
+Das Kollisionswerkzeug überspringt die drei deshalb nicht mehr. Es **nennt** sie weiterhin, weil
+ihre Durchlässigkeit an einer Zusage hängt, die eine andere Datei einhält — und genau die Art
+Verbindung bricht still.
+
+**Drei neue Prüfungen** in `check_ui_and_portal.sh` (235 → 238), zwei Zahnproben bestanden.
+
+## Erwartete Lage nach dem nächsten Lauf
+
+| | |
+|---|---|
+| `1. LOBBY > Kollision setzen` erneut | die drei Wandteile bekommen jetzt auch Kollision |
+| `3. PORTAL > Portalwand setzen` | nötig, damit `_wallSolid` überhaupt existiert und die Apertur entsteht |
+| START INVESTIGATION | Portal sollte wieder erscheinen, da `generateWorld` wieder an ist |
+
+**NICHT GETESTET** — kein Unity hier. Ohne `_wallSolid` gibt es keine Apertur und
+`CollectExtraWallColliders` kehrt sofort zurück; die Portalwand ist also weiterhin der Schritt,
+ohne den die Tür geschlossen bleibt.

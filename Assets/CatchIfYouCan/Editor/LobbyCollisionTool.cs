@@ -134,13 +134,22 @@ namespace CatchIfYouCan.EditorTools
 
             foreach (Candidate c in candidates)
             {
-                // Kein Collider in die Portalöffnung. Gemeldet statt gesetzt.
+                // ---- die Wandteile in der Portalöffnung bekommen jetzt AUCH Kollision -------
+                //
+                // Sie wurden übersprungen, solange das Portal nur EIN Collider abschalten
+                // konnte: dann wäre ihre Kollision die unsichtbare Wand vor der offenen Tür.
+                // <c>LobbyPortal.CollectExtraWallColliders</c> sammelt jetzt jedes weitere
+                // Collider in der Öffnung und schaltet es mit der Wand mit ab, also darf und
+                // soll eine Wand hier eine Kollision haben - eine Wand ohne ist eine Wand, durch
+                // die man läuft.
+                //
+                // Gezählt und genannt bleiben sie trotzdem: sie hängen an einer Zusage, die eine
+                // andere Datei einhält, und das ist genau die Art Verbindung, die still bricht.
                 if (IntersectsPortal(c.Renderer, portal, keepOutHalf))
                 {
                     portalBlocked++;
                     if (portalNames.Count < 8)
                         portalNames.Add(c.Renderer.gameObject.name);
-                    continue;
                 }
 
                 if (c.Architecture) mesh++; else box++;
@@ -156,11 +165,13 @@ namespace CatchIfYouCan.EditorTools
 
             if (portalBlocked > 0)
             {
-                sb.Append("\nUEBERSPRUNGEN, weil sie in die Portaloeffnung ragen (")
-                  .Append(portalBlocked).Append("):\n  ")
+                sb.Append("\nDavon stehen ").Append(portalBlocked)
+                  .Append(" in der Portaloeffnung:\n  ")
                   .Append(string.Join("\n  ", portalNames))
-                  .Append("\nDiese bitte von Hand entscheiden - ein Collider dort ist die " +
-                          "unsichtbare Wand vor der Tuer.\n");
+                  .Append("\nDie bekommen Kollision wie jede andere Wand. Das Portal schaltet " +
+                          "sie beim Oeffnen mit ab (LobbyPortal.CollectExtraWallColliders) und " +
+                          "setzt seine vier Streifen um das Loch - sonst waeren sie die " +
+                          "unsichtbare Wand vor der offenen Tuer.\n");
             }
 
             if (skipped.Count > 0)

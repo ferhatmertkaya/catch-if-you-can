@@ -1,4 +1,5 @@
 using System.Collections;
+using System.Collections.Generic;
 using CatchIfYouCan.Art;
 using CatchIfYouCan.Core;
 using CatchIfYouCan.Missions;
@@ -182,6 +183,25 @@ namespace CatchIfYouCan.Environment
 
         /// <summary>The wall's own collider, switched off while the tear is open.</summary>
         private Collider _wallSolid;
+
+        /// <summary>
+        /// Jedes WEITERE Collider, das in der Oeffnung steht - und der Grund, warum es das gibt.
+        ///
+        /// <para>
+        /// Frueher war die Lobbywand EIN Kasten, und ein Kasten laesst sich abschalten. Seit sie
+        /// aus Modulen des gekauften Pakets besteht, stehen drei davon in der Oeffnung, jedes mit
+        /// eigenem Collider. <see cref="_wallSolid"/> kann nur eines davon sein; die anderen
+        /// blieben stehen, und der Spieler lief in eine unsichtbare Wand, obwohl die Tuer
+        /// sichtbar offen war. Genau das, was diese Klasse mit dem Loch in der Kollision seit
+        /// jeher verhindern will.
+        /// </para>
+        /// <para>
+        /// Also werden sie gesammelt und mitgeschaltet. Sie bekommen KEIN eigenes Loch - das
+        /// schneidet die Apertur aus <see cref="_wallSolid"/>, und zwei Loecher an derselben
+        /// Stelle waeren zwei Antworten auf dieselbe Frage.
+        /// </para>
+        /// </summary>
+        private readonly List<Collider> _wallExtra = new List<Collider>();
 
         /// <summary>The replacement collision: the same wall with a hole in it.</summary>
         private GameObject _aperture;
@@ -484,6 +504,8 @@ namespace CatchIfYouCan.Environment
                 return;
             }
 
+            CollectExtraWallColliders();
+
             Bounds b = _wallSolid.bounds;
             Vector3 right = transform.right, up = transform.up, forward = transform.forward;
 
@@ -555,8 +577,80 @@ namespace CatchIfYouCan.Environment
             if (_wallSolid != null)
                 _wallSolid.enabled = !open;
 
+            // Und jedes weitere Collider in der Oeffnung. Eines uebersehen heisst: die Tuer ist
+            // offen und der Spieler kommt trotzdem nicht durch.
+            for (int i = 0; i < _wallExtra.Count; i++)
+            {
+                if (_wallExtra[i] != null)
+                    _wallExtra[i].enabled = !open;
+            }
+
             if (_aperture != null)
                 _aperture.SetActive(open);
+        }
+
+        /// <summary>
+        /// Sammelt jedes Collider, das in der Oeffnung steht und NICHT die Wand selbst ist.
+        ///
+        /// <para>
+        /// Dieselbe Box, die <see cref="ResolveWall"/> benutzt, aber ohne die drei Formtests: es
+        /// geht hier nicht darum, ob etwas eine Wand IST, sondern nur darum, ob es dem Spieler in
+        /// der Tuer im Weg steht. Ein Wandmodul, eine Zierleiste, ein Moebelstueck davor - alles
+        /// dasselbe Problem und dieselbe Antwort.
+        /// </para>
+        /// <para>
+        /// Einmal beim Bauen der Apertur, nicht pro Frame. Die Lobby wird zwischen zwei
+        /// Portaloeffnungen nicht umgebaut, und eine Abfrage pro Frame waere ein OverlapBox in
+        /// Update.
+        /// </para>
+        /// </summary>
+        private void CollectExtraWallColliders()
+        {
+            _wallExtra.Clear();
+
+            if (_wallSolid == null)
+                return;
+
+            Vector3 centre = transform.position + transform.up * (style.openingSize.y * 0.5f);
+            var half = new Vector3(style.openingSize.x * 0.5f,
+                                   style.openingSize.y * 0.5f,
+                                   Mathf.Max(0.1f, maxWallThickness));
+
+            Physics.SyncTransforms();
+
+            Collider[] hits = Physics.OverlapBox(centre, half, transform.rotation, ~0,
+                                                 QueryTriggerInteraction.Ignore);
+
+            var names = new System.Text.StringBuilder();
+
+            for (int i = 0; i < hits.Length; i++)
+            {
+                Collider c = hits[i];
+                if (c == null || c == _wallSolid || c.isTrigger)
+                    continue;
+
+                // Nichts, was zum Portal selbst gehoert - die Apertur baut sich unten selbst.
+                if (c.transform.IsChildOf(transform))
+                    continue;
+
+                // Und nichts, worauf der Spieler steht. Einen Boden abzuschalten, weil er die
+                // Schwelle streift, laesst ihn beim Durchgehen durch die Welt fallen.
+                if (Support(c.bounds.extents, transform.up) * 2f < style.openingSize.y * 0.5f &&
+                    c.bounds.center.y < transform.position.y)
+                    continue;
+
+                _wallExtra.Add(c);
+                if (names.Length < 200)
+                    names.Append(' ').Append(c.name);
+            }
+
+            if (_wallExtra.Count > 0)
+            {
+                CIYCLog.Info(LogTag + "the opening also contains " + _wallExtra.Count +
+                             " other collider(s), which are switched off with the wall:" + names +
+                             ". Without this they stay solid and the doorway is open to the eye " +
+                             "and shut to the body.");
+            }
         }
 
         /// <summary>
