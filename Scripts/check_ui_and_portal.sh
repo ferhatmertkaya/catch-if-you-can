@@ -898,24 +898,55 @@ fi
 # Die Nordwand ist EIN Quader ueber die volle Breite. Sie war einmal in Segmente mit einer
 # Tuerluecke zerlegt, dazu ein Rahmen und ein Laufzeit-Flicken; nichts davon darf zurueck.
 #
-# Geprueft wird die INVARIANTE, nicht der Name: das Portal braucht EINE Wand, in die es sein
-# Loch schneiden kann. Das ist entweder die gebaute Lobby_Wall_North oder ein ausdruecklich
-# eingetragenes wallCollider auf der Portal-Komponente. Auf den Namen allein zu pruefen war zu
-# eng - eine von Hand gebaute Wand aus gekauften Teilen erfuellt die Invariante genauso - und
-# zugleich zu weit: ein umbenanntes Objekt haette die Pruefung bestanden, waehrend das Portal
-# nichts mehr findet. ResolveWall sucht sonst per FORM, und ein Wandmodul, das schmaler ist
-# als die Oeffnung, faellt dort durch, ohne dass irgendetwas anderes es sagt.
-wall_named=$(grep -cE '^  m_Name: Lobby_Wall_North$' "$SCENE")
-wall_wired=$(grep -E '^  wallCollider: \{fileID: [0-9]+' "$SCENE" \
-             | grep -cvE '^  wallCollider: \{fileID: 0\}')
-if [ "$wall_named" -gt 0 ] || [ "$wall_wired" -gt 0 ]; then
-  ok "das Portal hat eine Wand, in die es schneiden kann"
+# Geprueft wird die INVARIANTE, nicht der Name. Sie stand einmal in der SZENE - 'entweder heisst
+# ein Objekt Lobby_Wall_North oder wallCollider ist gesetzt' - und das war zugleich zu eng und zu
+# weit: eine von Hand aus gekauften Modulen gebaute Wand erfuellt keines von beiden und ist doch
+# eine Wand, waehrend ein umbenanntes Objekt die Pruefung bestanden haette, ohne dass das Portal
+# noch irgendetwas findet. Die Invariante gehoert dorthin, wo sie entschieden wird: in den Code,
+# der die Wand aufloest.
+# Und die Wand darf aus TEILEN bestehen. Der Breitentest stand einmal je Collider: EIN Stueck
+# musste die Oeffnung allein tragen. Solange die Nordwand ein Quader von 10,6 m war, stimmte das;
+# aus Modulen des gekauften Pakets gebaut ist jedes 2,5 bis 4 m breit gegen 4,70 m Oeffnung und
+# faellt einzeln durch - und mit ihm die ganze Wand, obwohl sie da steht. Der Test gehoert auf die
+# SUMME der Teile, sonst ist eine gebaute Wand von einer fehlenden nicht zu unterscheiden.
+LPW="$(code "$ENV/LobbyPortal.cs")"
+if printf '%s' "$LPW" | grep -qE 'private void CollectWallParts\(\)' &&
+   printf '%s' "$LPW" | grep -qE 'private float MeasureCoveredWidth\(' &&
+   ! printf '%s' "$LPW" | sed -n '/private void CollectWallParts/,/^        }$/p' \
+       | grep -qE 'width[[:space:]]*<[[:space:]]*style\.openingSize\.x'; then
+  ok "eine Wand aus mehreren Modulen zaehlt zusammen"
 else
-  bad "das Portal hat eine Wand, in die es schneiden kann" \
-      "weder Lobby_Wall_North in der Szene noch wallCollider am Portal gesetzt; ResolveWall \
-sucht dann per Form und braucht EINEN Collider von mindestens der Oeffnungsbreite - ein \
-Wandmodul des gekauften Pakets ist schmaler und faellt durch. Messen mit \
-'Catch If You Can/Lobby/Portalwand messen'."
+  bad "eine Wand aus mehreren Modulen zaehlt zusammen" \
+      "der Breitentest je Collider laesst jedes Modul einzeln durchfallen; gemessen wird die \
+vereinigte Spanne der Teile gegen die Oeffnung"
+fi
+
+# Und die Apertur wird nach der VEREINIGUNG der Teile bemessen. Nach nur einem Collider bemessen
+# stuende links und rechts der Tuer Ersatzwand in der Breite EINES Moduls, und der Rest der Wand
+# waere abgeschaltet und offen.
+if printf '%s' "$LPW" | sed -n '/private void EnsureWallAperture/,/^        }$/p' \
+     | grep -qE 'for \(int i = 0; i < _wallParts\.Count; i\+\+\)'; then
+  ok "die Apertur wird nach allen Wandteilen bemessen, nicht nach einem"
+else
+  bad "die Apertur wird nach allen Wandteilen bemessen, nicht nach einem" \
+      "sonst bleibt neben der Tuer ein Stueck Wand ohne Kollision stehen"
+fi
+
+# Der eigentliche Fehler, und er sass in der REIHENFOLGE: die Absage 'keine Wand gefunden' stand
+# UEBER dem Einsammeln der Nebencollider. Fand die Formsuche nichts, wurde also auch nichts
+# eingesammelt - und dann blieb jedes Collider in der Oeffnung stehen. Die Tuer war sichtbar
+# offen und der Spieler lief in eine unsichtbare Wand. Genau das, was diese Klasse verhindern
+# soll, ausgeloest von ihrer eigenen Fehlerbehandlung.
+APER_ORDER="$(printf '%s' "$LPW" | sed -n '/private void EnsureWallAperture/,/^        }$/p')"
+collect_line=$(printf '%s' "$APER_ORDER" | grep -nE 'CollectExtraWallColliders\(\)' \
+               | head -1 | cut -d: -f1)
+refuse_line=$(printf '%s' "$APER_ORDER" | grep -nE '_wallSolid == null' | head -1 | cut -d: -f1)
+if [ -n "$collect_line" ] && [ -n "$refuse_line" ] && [ "$collect_line" -lt "$refuse_line" ]; then
+  ok "die Oeffnung wird freigeraeumt, auch wenn keine Wand gefunden wird"
+else
+  bad "die Oeffnung wird freigeraeumt, auch wenn keine Wand gefunden wird" \
+      "steht die Absage vor dem Einsammeln, bleibt bei einer nicht erkannten Wand ALLES stehen \
+- die unsichtbare Wand in der offenen Tuer"
 fi
 
 # ---- die Portalwand wird GEMESSEN, nicht behauptet ------------------------------------------
@@ -976,12 +1007,13 @@ else
   # Dieselben drei Tests, nicht ungefaehr dieselben. Ein Werkzeug, das grosszuegiger misst
   # als ResolveWall, meldet eine Wand, die das Portal dann ablehnt.
   if code "$PROBE" | grep -qE 'thickness[[:space:]]*<=[[:space:]]*maxThickness' \
-     && code "$PROBE" | grep -qE 'width[[:space:]]*>=[[:space:]]*opening\.x' \
-     && code "$PROBE" | grep -qE 'height[[:space:]]*>=[[:space:]]*opening\.y'; then
-    ok "das Messwerkzeug wendet dieselben drei Tests an wie ResolveWall"
+     && code "$PROBE" | grep -qE 'height[[:space:]]*>=[[:space:]]*opening\.y' \
+     && code "$PROBE" | grep -qE 'spanned[[:space:]]*>=[[:space:]]*opening\.x'; then
+    ok "das Messwerkzeug misst wie das Portal: je Teil, Breite zusammen"
   else
-    bad "das Messwerkzeug wendet dieselben drei Tests an wie ResolveWall" \
-        "Dicke gegen maxWallThickness, Breite und Hoehe gegen openingSize"
+    bad "das Messwerkzeug misst wie das Portal: je Teil, Breite zusammen" \
+        "Dicke und Hoehe je Collider, die Breite als vereinigte Spanne gegen openingSize.x - \
+je Collider gemessen meldet es eine fehlende Wand, die in Wahrheit aus Modulen besteht"
   fi
 
   # Auf einem inaktiven Objekt kann Collider.bounds eine leere Box liefern, und eine leere Box
@@ -1250,13 +1282,27 @@ else
   ok "an keiner Wand haengt eine Sockelleiste"
 fi
 
-# Die Ostwand bleibt zerlegt - da ist ein Fenster drin.
-if grep -qE '^  m_Name: Lobby_Wall_East_North$' "$SCENE" \
-   && grep -qE '^  m_Name: Lobby_Window_Glass$' "$SCENE"; then
-  ok "die Fensterwand im Osten ist unangetastet"
+# Das FENSTER bleibt, auch wenn die Wand darum eine andere ist.
+#
+# Diese Pruefung hiess einmal "die Fensterwand im Osten ist unangetastet" und suchte nach
+# Lobby_Wall_East_North und Lobby_Window_Glass - den Teilen der gebauten Schale, in die das
+# Fenster geschnitten war. Die Schale gibt es nicht mehr: der Raum ist von Hand aus Modulen des
+# gekauften Pakets aufgebaut, und keiner dieser beiden Namen steht noch in der Szene. Eine
+# Pruefung auf Objekte, die absichtlich ersetzt wurden, ist ab da dauerhaft rot und sagt nichts.
+#
+# Was sie WOLLTE, gilt weiter: aus dem Fenster faellt Mondlicht in den Raum, und dahinter steht
+# etwas, damit man nicht in die Aussenkulisse laeuft. Beides ist unabhaengig davon, aus welchen
+# Teilen die Wand besteht - und beides ist genau das, was beim naechsten Aufraeumen mitgehen
+# koennte.
+window_keeps=""
+for obj in Lobby_WindowMoonlight Lobby_Window_Blocker Lobby_Exterior; do
+  grep -qE "^  m_Name: $obj\$" "$SCENE" || window_keeps="$window_keeps $obj"
+done
+if [ -z "$window_keeps" ]; then
+  ok "das Fenster der Lobby ist unangetastet"
 else
-  bad "die Fensterwand im Osten ist unangetastet" \
-      "beim Aufraeumen darf das Fenster nicht mitgehen"
+  bad "das Fenster der Lobby ist unangetastet" \
+      "beim Aufraeumen darf das Fenster nicht mitgehen; fehlt:$window_keeps"
 fi
 
 if code "$ENV/LobbyPortal.cs" | grep -qE 'EnsureWallPlug|_wallPlug|wallPlugDepth'; then
@@ -2230,7 +2276,7 @@ else
 fi
 
 if code "$LP" | sed -n '/private void Start/,/^        }$/p' | grep -qE 'EnsureWallAperture\(\)' &&
-   code "$LP" | sed -n '/private Collider ResolveWall/,/^        }$/p' \
+   code "$LP" | sed -n '/private void CollectWallParts/,/^        }$/p' \
      | grep -qE 'Physics\.SyncTransforms\(\)'; then
   ok "the wall query syncs the physics scene first"
 else
@@ -2238,15 +2284,26 @@ else
       "without the sync the answer depends on which frame it is asked in"
 fi
 
-# A wall is recognised by SHAPE - thin across the opening, wide and tall across it - so a floor
-# and a prop are excluded without either being named.
-RW="$(code "$LP" | sed -n '/private Collider ResolveWall/,/^        }$/p')"
+# A wall part is recognised by SHAPE - thin across the opening, and at least as tall as it - so a
+# floor and a prop are excluded without either being named. The WIDTH is deliberately not here:
+# it is measured across the parts together, because a wall built from modules never passes it one
+# module at a time.
+RW="$(code "$LP" | sed -n '/private void CollectWallParts/,/^        }$/p')"
 if printf '%s' "$RW" | grep -qE 'thickness > maxWallThickness' &&
-   printf '%s' "$RW" | grep -qE 'width < style\.openingSize\.x \|\| height < style\.openingSize\.y'; then
+   printf '%s' "$RW" | grep -qE 'height < style\.openingSize\.y'; then
   ok "the wall is recognised by shape, not by size alone"
 else
   bad "the wall is recognised by shape, not by size alone" \
       "without the thickness test a floor overlapping the opening wins"
+fi
+
+# ...and the width IS still demanded, only of the assembled wall. Dropping it entirely would let
+# a single strip of trim count as the wall the opening is cut into.
+if printf '%s' "$RW" | grep -qE 'covered \+ WallSpanTolerance < style\.openingSize\.x'; then
+  ok "the assembled wall still has to span the opening"
+else
+  bad "the assembled wall still has to span the opening" \
+      "without it one strip of trim in the doorway counts as the wall"
 fi
 
 # A failed resolve has to say what it DID see, or the next report is "it says there is no wall"

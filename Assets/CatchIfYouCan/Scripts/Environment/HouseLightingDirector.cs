@@ -91,7 +91,7 @@ namespace CatchIfYouCan.Environment
             ApplyEnvironment();
             ApplyMoon(house);
 
-            int lit = 0, total = 0;
+            int lit = 0, total = 0, ambient = 0;
             foreach (GeneratedRoomInstance room in house.Rooms)
             {
                 if (room?.Root == null)
@@ -101,6 +101,18 @@ namespace CatchIfYouCan.Environment
                 {
                     if (light == null || light.type == LightType.Directional)
                         continue;
+
+                    // Und nicht das Restlicht des Raums. Es ist kein Praktikal: es hat keinen
+                    // Schalter, es wird nicht ausgewuerfelt, und wer es baut, hat seine Farbe,
+                    // seine Reichweite und sein Flackern schon entschieden. Es hier mitzunehmen
+                    // hiesse, ihm eine Helligkeit zu geben, die sein Flackern nicht kennt, und es
+                    // in der Haelfte der Faelle auszuschalten - womit der Raum wieder nur den
+                    // Umgebungsterm haette, also ueberall denselben Wert.
+                    if (AmbientRoomLight.Is(light))
+                    {
+                        ambient++;
+                        continue;
+                    }
 
                     total++;
                     DressPractical(light, room.Category);
@@ -113,7 +125,10 @@ namespace CatchIfYouCan.Environment
             }
 
             CIYCLog.Info(LogTag + "Lit the house: " + lit + " of " + total +
-                         " practical(s) start on (seed " + seed + ").");
+                         " practical(s) start on (seed " + seed + "), plus " + ambient +
+                         " ambient light(s) left as built. A room with neither is lit by the " +
+                         "ambient term alone, which is the same value in every corner - that " +
+                         "reads as an unlit blockout, not as a dark room.");
         }
 
         // ---- the scene ---------------------------------------------------------------------

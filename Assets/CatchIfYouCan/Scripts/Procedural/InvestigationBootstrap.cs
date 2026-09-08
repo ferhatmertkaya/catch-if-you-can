@@ -844,8 +844,24 @@ namespace CatchIfYouCan.Procedural
             Content.ModularInteriorCatalog catalog =
                 houseGenerator != null ? houseGenerator.ModularInterior : null;
 
+            // Ein Fenster in der Suedwand - der Wand hinter dem Spieler, wenn er hereinkommt.
+            //
+            // Nicht Deko. Der Lichtregisseur setzt einen Mond als gerichtetes Licht ueber das
+            // Haus; ohne eine Oeffnung erreicht davon nichts das Innere, und was bleibt, ist eine
+            // Deckenlampe in einem sonst gleichmaessig ausgeleuchteten Kasten. Durch das Fenster
+            // faellt kaltes Licht schraeg auf die gegenueberliegende Wand, und erst der
+            // Unterschied zwischen dem kalten Streifen und dem warmen Rest laesst den Raum wie
+            // einen Raum aussehen statt wie eine Box. Ausserdem ist dahinter das Panorama zu
+            // sehen, das die Szene als Himmel bekommt, statt einer geschlossenen Wand.
+            //
+            // Ausdruecklich gesetzt, nicht abgeleitet: dieser Raum steht allein, hat also keine
+            // Aussenseite, aus der sich etwas ableiten liesse - und eine von Hand getroffene
+            // Wahl gehoert in keinen Hash (die Ueberladung mit der Maske ist genau dafuer da).
+            int windowMask = LayoutRoom.DirectionMask(SocketDirection.South);
+
             GameObject built = ModularRoomBuilder.Build(layoutRoom, testRoomPosition,
-                                                        root.transform, catalog, 0, out string error);
+                                                        root.transform, catalog, windowMask,
+                                                        out string error);
 
             if (built == null)
             {

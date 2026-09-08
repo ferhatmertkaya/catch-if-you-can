@@ -145,6 +145,9 @@ namespace CatchIfYouCan.Procedural
                 module = roomRoot.AddComponent<RoomModule>();
 
             module.Configure(room.Category, new Bounds(Vector3.up * (size.y * 0.5f), size), room.RoomId);
+
+            BuildLighting(roomRoot.transform, size, catalog);
+
             module.CollectSockets();
 
             // Was diese Huelle geworden ist, schreibt sie auf - Groesse, Tueren, Fenster.
@@ -168,6 +171,114 @@ namespace CatchIfYouCan.Procedural
             shell.Configure(size, doorMask, windowMask, room.Category, room.RoomId);
 
             return roomRoot;
+        }
+
+        // ------------------------------------------------------------------ light
+
+        /// <summary>Wie weit die Gluehbirne unter der Decke haengt.</summary>
+        public const float CeilingLampDrop = 0.34f;
+
+        /// <summary>Die Farbe einer alten Gluehbirne. Warm, und mit sichtbar wenig Blau.</summary>
+        private static readonly Color BulbWarm = new Color(1f, 0.78f, 0.52f);
+
+        /// <summary>Das Restlicht. Waermer und viel schwaecher als die Birne.</summary>
+        private static readonly Color GlowWarm = new Color(1f, 0.60f, 0.34f);
+
+        /// <summary>
+        /// Zwei Lichter je Raum, und sie beantworten verschiedene Fragen.
+        ///
+        /// <para>
+        /// <b>Warum es das ueberhaupt gibt.</b> Raeume kamen aus diesem Bauer ganz ohne Licht.
+        /// <c>PrimitiveRoomFactory</c> setzte an der Licht-Steckdose eines Raums eine Leuchte,
+        /// dieser Bauer nie - und seit die Raeume von hier kommen, hat der Lichtregisseur nichts
+        /// mehr zu regieren: sein eigener Bericht sagt "0 of 0 practicals". Was blieb, war der
+        /// Umgebungsterm und ein Mond, also in jeder Ecke jedes Raums genau derselbe Wert. Ein
+        /// Raum, der ueberall gleich hell ist, sieht nicht dunkel aus, sondern tot: keine
+        /// Richtung, kein Abfall, kein Schatten. Genau das ist gemeldet worden.
+        /// </para>
+        ///
+        /// <para>
+        /// <b>Die Deckenleuchte</b> ist das Praktikal des Raums. Sie wird hier nur GESETZT;
+        /// Farbtemperatur, Reichweite, Schatten und vor allem, ob sie ueberhaupt brennt, bestimmt
+        /// <c>HouseLightingDirector</c> aus dem Missions-Seed, und der Lichtschalter an der Wand
+        /// gehoert zu ihr. Die Rosette darueber ist der Koerper, an dem sie haengt, und sie
+        /// leuchtet NICHT von selbst: eine Fassung, die glueht, waehrend ihr Licht aus ist, ist
+        /// eine Lampe, die luegt.
+        /// </para>
+        ///
+        /// <para>
+        /// <b>Das Restlicht</b> ist kein Praktikal (<see cref="Environment.AmbientRoomLight"/>).
+        /// Es hat keinen Schalter, wird nicht ausgewuerfelt und bleibt an, wenn die Deckenleuchte
+        /// aus ist - schwach, warm, knapp ueber dem Boden und ohne Schatten. Es ersetzt die
+        /// Taschenlampe nicht; es ersetzt den Unterschied zwischen einem dunklen und einem toten
+        /// Raum. Ein <c>CandleFlicker</c> laesst es leise atmen, damit ein Standbild des Raums
+        /// nicht dasselbe Bild ist wie eine Sekunde spaeter.
+        /// </para>
+        ///
+        /// <para>
+        /// Nichts hiervon zieht einen Zufallsstrom und nichts geht in den Layout-Hash ein. Alle
+        /// Zahlen kommen aus der Raumgroesse, die schon feststeht - Stage B von Anfang bis Ende.
+        /// </para>
+        /// </summary>
+        private static void BuildLighting(Transform parent, Vector3 size,
+                                          ModularInteriorCatalog catalog)
+        {
+            // ---- das Praktikal --------------------------------------------------------------
+
+            var lamp = new GameObject("RoomLight");
+            lamp.transform.SetParent(parent, false);
+            lamp.transform.localPosition = new Vector3(0f, size.y - CeilingLampDrop, 0f);
+
+            var bulb = lamp.AddComponent<Light>();
+            bulb.type = LightType.Point;
+            bulb.color = BulbWarm;
+            bulb.intensity = 1.8f;
+            bulb.range = Mathf.Max(6f, (size.x + size.z) * 0.75f);
+            bulb.shadows = LightShadows.Soft;
+            bulb.shadowStrength = 0.9f;
+
+            // Die Rosette: an der Decke, nicht an der Birne, damit sie das Licht nicht nach unten
+            // abschattet. Aus dem Zierleistenmaterial des Katalogs - kein eigenes, denn ein
+            // zweites Material fuer dieselbe Rolle ist eine zweite Stelle, die falsch sein kann.
+            var rose = Piece(parent, "RoomLight_Rose",
+                             StructuralMeshFactory.Floor(0.42f, 0.42f, 0.05f),
+                             TrimMaterial(catalog));
+            rose.transform.localPosition = new Vector3(0f, size.y, 0f);
+
+            // ---- das Restlicht --------------------------------------------------------------
+
+            var glow = new GameObject("RoomGlow");
+            glow.transform.SetParent(parent, false);
+
+            // In eine Ecke, knapp ueber dem Boden: mittig gesetzt waere es ein zweites
+            // Deckenlicht ohne Decke und der Raum saehe wieder gleichmaessig aus. Aus der Ecke
+            // heraus bekommt jede Wand eine andere Helligkeit, und genau das ist der
+            // Unterschied, den man sieht.
+            glow.transform.localPosition = new Vector3(size.x * 0.34f, 0.45f, -size.z * 0.34f);
+
+            var ember = glow.AddComponent<Light>();
+            ember.type = LightType.Point;
+            ember.color = GlowWarm;
+
+            // Bewusst schwach. Es soll die Formen im Raum von der Wand abheben und sonst nichts;
+            // ein Restlicht, nach dem man sich orientieren kann, waere die Taschenlampe.
+            ember.intensity = 0.55f;
+            ember.range = Mathf.Max(3.5f, Mathf.Min(size.x, size.z) * 0.7f);
+
+            // Keine Echtzeitschatten. Es ist eine schwache Quelle unter Moebelhoehe; was sie an
+            // Schatten wirft, sieht man kaum, und bezahlt wird es trotzdem - auf dem Telefon in
+            // jedem Bild.
+            ember.shadows = LightShadows.None;
+
+            // Erst die Helligkeit, dann das Flackern: CandleFlicker merkt sich in Awake, was es
+            // modulieren soll, und Awake laeuft in AddComponent. Danach gesetzt haette es eine
+            // Zahl gemerkt, die es nie gab.
+            glow.AddComponent<Art.CandleFlicker>();
+
+            // Und die Auszeichnung, die den Unterschied traegt: kein Praktikal. Der Regisseur
+            // laesst es in Ruhe, der Lichtschalter an der Wand gehoert ihm nicht, und es bleibt
+            // an, wenn die Deckenleuchte aus ist.
+            glow.AddComponent<Environment.AmbientRoomLight>();
         }
 
         // ------------------------------------------------------------------ surfaces

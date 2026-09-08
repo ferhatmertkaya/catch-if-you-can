@@ -92,6 +92,14 @@ namespace CatchIfYouCan.Environment
     {
         private const string LogTag = "[CIYC][Portal] ";
 
+        /// <summary>
+        /// Wie viel die Wandteile an der Oeffnung fehlen duerfen, bevor es gemeldet wird.
+        /// Module stossen mit Fugen aneinander und ein Collider endet selten auf den
+        /// Millimeter dort, wo das naechste beginnt; 2 cm sind eine Fuge, 40 cm sind ein
+        /// fehlendes Modul.
+        /// </summary>
+        private const float WallSpanTolerance = 0.02f;
+
         /// <summary>The lobby's portal, if the lobby is loaded and active.</summary>
         public static LobbyPortal Instance { get; private set; }
 
@@ -202,6 +210,19 @@ namespace CatchIfYouCan.Environment
         /// </para>
         /// </summary>
         private readonly List<Collider> _wallExtra = new List<Collider>();
+
+        /// <summary>
+        /// Die Teile, die zusammen DIE WAND sind - das, woraus das Loch geschnitten wird.
+        ///
+        /// <para>
+        /// Unterschieden von <see cref="_wallExtra"/>, weil die beiden verschiedene Fragen
+        /// beantworten. Hier steht, was die Oeffnung TRAEGT und damit ihre Ausdehnung bestimmt;
+        /// dort steht, was ihr im WEG ist. Ein Modul gehoert in beide Rollen, ein Sessel vor der
+        /// Wand nur in die zweite - und die Apertur nach dem Sessel zu bemessen waere eine Wand
+        /// in der Groesse eines Sessels.
+        /// </para>
+        /// </summary>
+        private readonly List<Collider> _wallParts = new List<Collider>();
 
         /// <summary>The replacement collision: the same wall with a hole in it.</summary>
         private GameObject _aperture;
@@ -495,34 +516,77 @@ namespace CatchIfYouCan.Environment
             if (_aperture != null)
                 Destroy(_aperture);
 
+            _wallParts.Clear();
+            _wallExtra.Clear();
+
+            CollectWallParts();
             _wallSolid = ResolveWall();
+
+            // Eine ausdruecklich eingetragene Wand gehoert zur Wand, auch wenn die Formsuche sie
+            // nicht selbst gefunden haette. Sonst bemisst sich die Apertur nach Teilen, von denen
+            // das eigentliche Wandstueck keines ist.
+            if (_wallSolid != null && !_wallParts.Contains(_wallSolid))
+                _wallParts.Add(_wallSolid);
+
+            // VOR der Absage unten, nicht danach. Genau diese Reihenfolge war die unsichtbare
+            // Wand: fand die Formsuche keine Wand, kehrte diese Methode um, und dann wurde NICHTS
+            // eingesammelt - also blieb jedes Collider in der Oeffnung stehen und der Spieler lief
+            // in eine Tuer, die er offen sah. Die Oeffnung wird jetzt in jedem Fall freigeraeumt;
+            // was danach fehlt, ist nur noch das Ersatzstueck Wand daneben.
+            CollectExtraWallColliders();
+
             if (_wallSolid == null)
             {
-                CIYCLog.Error(LogTag + "No wall collider found around the opening, so the tear " +
-                              "is a picture: the player will walk into a wall they can see " +
-                              "through. Assign 'wallCollider' on this component.");
+                CIYCLog.Error(LogTag + "no wall to cut the opening out of, so nothing is put " +
+                              "back beside it. The doorway is cleared either way - " +
+                              _wallExtra.Count + " collider(s) in it are switched with the " +
+                              "portal - but the wall around it has no hole and no edges. " +
+                              "Assign 'wallCollider' on this component, or run " +
+                              "'Catch If You Can/3. PORTAL/Portalwand setzen'.");
                 return;
             }
 
-            CollectExtraWallColliders();
-
-            Bounds b = _wallSolid.bounds;
             Vector3 right = transform.right, up = transform.up, forward = transform.forward;
 
-            // Extent of the wall's box along each of the portal's axes. The support function of
-            // an axis-aligned box, so this is right for a wall of any orientation rather than
-            // only for one lined up with the world.
-            float halfWide = Support(b.extents, right);
-            float halfTall = Support(b.extents, up);
-            float thickness = Support(b.extents, forward) * 2f;
+            // Die Ausdehnung der Wand in den Achsen des Portals, als VEREINIGUNG ihrer Teile.
+            // Frueher war das die Box eines einzigen Colliders, und solange die Lobbywand ein
+            // Quader von 10,6 m war, beschrieb das die Wand richtig. Aus Modulen des gekauften
+            // Pakets zusammengesetzt ist jedes einzelne schmaler als die Oeffnung; erst zusammen
+            // tragen sie sie, und erst zusammen sagen sie, wo links und rechts von der Tuer noch
+            // Wand stehen bleiben muss.
+            float left = float.PositiveInfinity, rightEdge = float.NegativeInfinity;
+            float bottom = float.PositiveInfinity, top = float.NegativeInfinity;
+            float thickness = 0f;
+            float depthSum = 0f;
+            int counted = 0;
 
-            Vector3 offset = b.center - transform.position;
-            float cx = Vector3.Dot(offset, right);
-            float cy = Vector3.Dot(offset, up);
-            float cz = Vector3.Dot(offset, forward);
+            for (int i = 0; i < _wallParts.Count; i++)
+            {
+                Collider part = _wallParts[i];
+                if (part == null)
+                    continue;
 
-            float left = cx - halfWide, rightEdge = cx + halfWide;
-            float bottom = cy - halfTall, top = cy + halfTall;
+                Bounds pb = part.bounds;
+                Vector3 d = pb.center - transform.position;
+
+                float halfWide = Support(pb.extents, right);
+                float halfTall = Support(pb.extents, up);
+                float px = Vector3.Dot(d, right);
+                float py = Vector3.Dot(d, up);
+
+                left = Mathf.Min(left, px - halfWide);
+                rightEdge = Mathf.Max(rightEdge, px + halfWide);
+                bottom = Mathf.Min(bottom, py - halfTall);
+                top = Mathf.Max(top, py + halfTall);
+                thickness = Mathf.Max(thickness, Support(pb.extents, forward) * 2f);
+                depthSum += Vector3.Dot(d, forward);
+                counted++;
+            }
+
+            if (counted == 0)
+                return;
+
+            float cz = depthSum / counted;
 
             // The hole. The portal's origin sits on the floor and the opening rises from it.
             float ow = style.openingSize.x * 0.5f;
@@ -606,10 +670,16 @@ namespace CatchIfYouCan.Environment
         /// </summary>
         private void CollectExtraWallColliders()
         {
-            _wallExtra.Clear();
-
-            if (_wallSolid == null)
-                return;
+            // Die uebrigen Wandteile zuerst. Sie sind Wand, tragen die Oeffnung mit und werden
+            // deshalb mitgeschaltet - ein eigenes Loch bekommen sie nicht, das schneidet die
+            // Apertur aus ihrer Vereinigung, und zwei Loecher an derselben Stelle waeren zwei
+            // Antworten auf dieselbe Frage.
+            for (int i = 0; i < _wallParts.Count; i++)
+            {
+                Collider part = _wallParts[i];
+                if (part != null && part != _wallSolid && !_wallExtra.Contains(part))
+                    _wallExtra.Add(part);
+            }
 
             Vector3 centre = transform.position + transform.up * (style.openingSize.y * 0.5f);
             var half = new Vector3(style.openingSize.x * 0.5f,
@@ -627,6 +697,8 @@ namespace CatchIfYouCan.Environment
             {
                 Collider c = hits[i];
                 if (c == null || c == _wallSolid || c.isTrigger)
+                    continue;
+                if (_wallExtra.Contains(c))
                     continue;
 
                 // Nichts, was zum Portal selbst gehoert - die Apertur baut sich unten selbst.
@@ -654,19 +726,32 @@ namespace CatchIfYouCan.Environment
         }
 
         /// <summary>
-        /// The wall the opening is standing in.
+        /// Die Teile, die zusammen DIE WAND sind, in die diese Oeffnung geschnitten wird.
         ///
         /// <para>
-        /// The serialized reference wins. Without one, the collider whose bounds CONTAIN the
-        /// middle of the opening is the wall it is cut into - found by looking rather than by
-        /// name, because a hard-coded object name that stops resolving fails silently and
-        /// forever, which this repository has now done three times.
+        /// Frueher musste EIN Collider die Oeffnung allein tragen: quer dazu duenn, und
+        /// mindestens so breit und so hoch wie das Loch. Solange die Lobbywand ein Quader von
+        /// 10,6 m war, beschrieb das die Wand richtig. Seit sie aus Modulen des gekauften Pakets
+        /// besteht, ist jedes Modul 2,5 bis 4 m breit gegen eine Oeffnung von 4,70 m und faellt
+        /// EINZELN durch den Breitentest - und mit ihm die ganze Wand, obwohl sie da steht. Drei
+        /// nebeneinander addieren sich nicht zu einem.
+        /// </para>
+        /// <para>
+        /// Die beiden Tests, die eine Wand von einem Boden und von einem Moebelstueck
+        /// unterscheiden, bleiben je Teil: duenn quer zur Oeffnung (ein Boden ist quer dazu tief
+        /// und faellt durch), und mindestens so hoch wie die Oeffnung (ein Sessel davor ist es
+        /// nicht). Der BREITENTEST wandert auf die Summe - die vereinigten Spannen muessen die
+        /// Oeffnung ueberdecken. Ein Modul zu wenig ist damit weiterhin ein Fehler, nur ist es
+        /// jetzt der richtige Fehler und er sagt, wie viel fehlt.
+        /// </para>
+        /// <para>
+        /// Gefunden wird per FORM, nie per Name: ein fest verdrahteter Objektname, der nicht mehr
+        /// aufloest, faellt still und fuer immer um - CLAUDE.md Fehler 3 und 10.
         /// </para>
         /// </summary>
-        private Collider ResolveWall()
+        private void CollectWallParts()
         {
-            if (wallCollider != null)
-                return wallCollider;
+            _wallParts.Clear();
 
             // The physics scene is only synced at the fixed step unless asked. Asked here, so
             // this works from Start as well as from an inspector edit mid-frame.
@@ -680,9 +765,8 @@ namespace CatchIfYouCan.Environment
             Collider[] hits = Physics.OverlapBox(centre, half, transform.rotation, ~0,
                                                  QueryTriggerInteraction.Ignore);
 
-            Collider best = null;
-            float widest = 0f;
             var seen = new System.Text.StringBuilder();
+            var spans = new List<Vector2>();
 
             foreach (Collider candidate in hits)
             {
@@ -698,31 +782,107 @@ namespace CatchIfYouCan.Environment
                     .Append(width.ToString("F1")).Append("x").Append(height.ToString("F1"))
                     .Append("x").Append(thickness.ToString("F2")).Append(")");
 
-                // A wall, tested by SHAPE rather than by name or by size alone: thin across the
-                // portal's normal, and at least as wide and tall as the hole it has to contain.
-                // A floor is wide along the portal's forward axis and fails the first test; a
-                // prop standing against the wall fails the second.
                 if (thickness > maxWallThickness)
                     continue;
-                if (width < style.openingSize.x || height < style.openingSize.y)
+                if (height < style.openingSize.y)
                     continue;
 
+                _wallParts.Add(candidate);
+
+                float cx = Vector3.Dot(b.center - transform.position, transform.right);
+                float halfWide = Support(b.extents, transform.right);
+                spans.Add(new Vector2(cx - halfWide, cx + halfWide));
+            }
+
+            if (_wallParts.Count == 0)
+            {
+                CIYCLog.Error(LogTag + "no wall around the opening. Colliders overlapping it:" +
+                              (seen.Length > 0 ? seen.ToString() : " <none>") +
+                              ". A wall part must be at most " + maxWallThickness.ToString("F2") +
+                              " m thick across the opening and at least " +
+                              style.openingSize.y.ToString("F2") +
+                              " m tall; together the parts must span " +
+                              style.openingSize.x.ToString("F2") +
+                              " m. Assign 'wallCollider' to override this.");
+                return;
+            }
+
+            float covered = MeasureCoveredWidth(spans);
+            if (covered + WallSpanTolerance < style.openingSize.x)
+            {
+                CIYCLog.Warn(LogTag + "the wall parts at the opening span only " +
+                             covered.ToString("F2") + " m of the " +
+                             style.openingSize.x.ToString("F2") + " m it is wide, so " +
+                             (style.openingSize.x - covered).ToString("F2") +
+                             " m of the tear has no wall behind it. Found:" + seen +
+                             ". The hole is cut over what is there.");
+            }
+            else
+            {
+                CIYCLog.Info(LogTag + _wallParts.Count + " wall part(s) carry the opening, " +
+                             "spanning " + covered.ToString("F2") + " m of " +
+                             style.openingSize.x.ToString("F2") + " m.");
+            }
+        }
+
+        /// <summary>How much of the opening's width the parts actually cover, gaps removed.</summary>
+        private float MeasureCoveredWidth(List<Vector2> spans)
+        {
+            float ow = style.openingSize.x * 0.5f;
+
+            spans.Sort((a, b) => a.x.CompareTo(b.x));
+
+            float covered = 0f;
+            float reached = -ow;
+
+            for (int i = 0; i < spans.Count; i++)
+            {
+                float lo = Mathf.Max(spans[i].x, -ow);
+                float hi = Mathf.Min(spans[i].y, ow);
+                if (hi <= lo)
+                    continue;
+
+                lo = Mathf.Max(lo, reached);
+                if (hi <= lo)
+                    continue;
+
+                covered += hi - lo;
+                reached = hi;
+            }
+
+            return covered;
+        }
+
+        /// <summary>
+        /// Which of the wall's parts stands in for the wall itself.
+        ///
+        /// <para>
+        /// The serialized reference wins. Without one it is the widest of the parts - not because
+        /// that one is the wall, but because something has to be named in the log and switched
+        /// first. The hole is cut out of their UNION, so which one this is changes nothing about
+        /// the doorway.
+        /// </para>
+        /// </summary>
+        private Collider ResolveWall()
+        {
+            if (wallCollider != null)
+                return wallCollider;
+
+            Collider best = null;
+            float widest = 0f;
+
+            for (int i = 0; i < _wallParts.Count; i++)
+            {
+                Collider candidate = _wallParts[i];
+                if (candidate == null)
+                    continue;
+
+                float width = Support(candidate.bounds.extents, transform.right) * 2f;
                 if (width > widest)
                 {
                     widest = width;
                     best = candidate;
                 }
-            }
-
-            if (best == null)
-            {
-                CIYCLog.Error(LogTag + "no wall around the opening. Colliders overlapping it:" +
-                              (seen.Length > 0 ? seen.ToString() : " <none>") +
-                              ". A wall must be at most " + maxWallThickness.ToString("F2") +
-                              " m thick across the opening and at least " +
-                              style.openingSize.x.ToString("F2") + " x " +
-                              style.openingSize.y.ToString("F2") +
-                              " m across it. Assign 'wallCollider' to override this.");
             }
 
             return best;

@@ -166,29 +166,40 @@ namespace CatchIfYouCan.EditorTools
             }
             else
             {
-                int accepted = 0;
+                var parts = new List<Collider>();
                 for (int i = 0; i < overlapping.Count; i++)
                 {
                     if (Describe(overlapping[i], t, opening, maxThickness, sb, "  "))
-                        accepted++;
+                        parts.Add(overlapping[i]);
                 }
 
+                float spanned = SpannedWidth(parts, t, opening);
+
                 sb.AppendLine();
-                sb.AppendLine("  ERGEBNIS: " + accepted + " von " + overlapping.Count +
-                              " Collidern wuerde ResolveWall annehmen.");
-                if (accepted == 0)
+                sb.AppendLine("  ERGEBNIS: " + parts.Count + " von " + overlapping.Count +
+                              " Collidern gelten als Wandteil.");
+                sb.AppendLine("  Sie ueberdecken zusammen " + spanned.ToString("F2") + " m der " +
+                              opening.x.ToString("F2") + " m breiten Oeffnung.");
+
+                if (parts.Count == 0)
                 {
                     sb.AppendLine("  Bei null nimmt das Portal KEINE Wand und schneidet KEIN " +
-                                  "Loch. Zwei Wandmodule");
-                    sb.AppendLine("  nebeneinander helfen nicht: jedes ist ein eigenes Collider " +
-                                  "und wird einzeln gemessen.");
+                                  "Loch. Die Oeffnung wird trotzdem");
+                    sb.AppendLine("  freigeraeumt - was drin steht, wird mitgeschaltet - aber " +
+                                  "neben der Tuer bleibt");
+                    sb.AppendLine("  dann kein Ersatzstueck Wand stehen.");
                 }
-                else if (accepted > 1)
+                else if (spanned >= opening.x)
                 {
-                    sb.AppendLine("  Bei mehr als einem gewinnt das BREITESTE. Das ist definiert, " +
-                                  "aber nicht unbedingt");
-                    sb.AppendLine("  das gemeinte - hier lohnt sich ein ausdrueckliches " +
-                                  "wallCollider.");
+                    sb.AppendLine("  Das reicht: die Teile tragen die Oeffnung ganz.");
+                }
+                else
+                {
+                    sb.AppendLine("  ES FEHLEN " + (opening.x - spanned).ToString("F2") +
+                                  " m. Da ist ein Stueck Riss ohne Wand dahinter - entweder " +
+                                  "fehlt ein Modul,");
+                    sb.AppendLine("  oder ihm fehlt die Kollision (siehe unten), oder das Portal " +
+                                  "steht nicht mittig.");
                 }
             }
 
@@ -253,8 +264,17 @@ namespace CatchIfYouCan.EditorTools
         }
 
         /// <summary>
-        /// Measures one collider the way <c>ResolveWall</c> does - along the PORTAL's axes, not
-        /// the world's - and says which of the three tests it passes.
+        /// Measures one collider the way <c>CollectWallParts</c> does - along the PORTAL's axes,
+        /// not the world's - and says which tests it passes.
+        ///
+        /// <para>
+        /// Zwei Tests je Teil, nicht drei. Duenn quer zur Oeffnung und mindestens so hoch wie sie:
+        /// das unterscheidet eine Wand von einem Boden und von einem Moebelstueck. Die BREITE wird
+        /// nicht mehr einzeln verlangt, weil eine Wand aus Modulen sie einzeln nie erfuellt - sie
+        /// wird ueber alle angenommenen Teile aufaddiert und am Ende gegen die Oeffnung gehalten.
+        /// Genau so entscheidet auch das Portal, und ein Werkzeug, das strenger misst als die
+        /// Laufzeit, meldet eine fehlende Wand, die in Wahrheit steht.
+        /// </para>
         /// </summary>
         private static bool Describe(Collider c, Transform portal, Vector2 opening,
                                      float maxThickness, StringBuilder sb, string indent)
@@ -265,9 +285,8 @@ namespace CatchIfYouCan.EditorTools
             float height = Support(b.extents, portal.up) * 2f;
 
             bool thinEnough = thickness <= maxThickness;
-            bool wideEnough = width >= opening.x;
             bool tallEnough = height >= opening.y;
-            bool accepted = thinEnough && wideEnough && tallEnough;
+            bool accepted = thinEnough && tallEnough;
 
             sb.AppendLine();
             sb.AppendLine(indent + (accepted ? "[ANGENOMMEN] " : "[abgelehnt]  ") +
@@ -277,8 +296,7 @@ namespace CatchIfYouCan.EditorTools
                           (c.enabled ? "" : "   (Collider deaktiviert)"));
             sb.AppendLine(indent + "  Typ     : " + c.GetType().Name);
             sb.AppendLine(indent + "  Breite  : " + width.ToString("F2") + " m   " +
-                          (wideEnough ? "ok" : "ZU SCHMAL, gebraucht " +
-                                               opening.x.ToString("F2")));
+                          "(zaehlt zur Summe, wird nicht einzeln verlangt)");
             sb.AppendLine(indent + "  Hoehe   : " + height.ToString("F2") + " m   " +
                           (tallEnough ? "ok" : "ZU NIEDRIG, gebraucht " +
                                                opening.y.ToString("F2")));
@@ -286,6 +304,48 @@ namespace CatchIfYouCan.EditorTools
                           (thinEnough ? "ok" : "ZU DICK, erlaubt " +
                                                maxThickness.ToString("F2")));
             return accepted;
+        }
+
+        /// <summary>
+        /// Wie viel der Oeffnungsbreite die angenommenen Teile ZUSAMMEN ueberdecken, Fugen und
+        /// Ueberlappungen herausgerechnet. Dieselbe Rechnung wie <c>MeasureCoveredWidth</c> im
+        /// Portal: die Spannen werden auf die Oeffnung beschnitten, sortiert und aneinander
+        /// gehaengt, damit zwei Module, die sich ueberlappen, nicht doppelt zaehlen.
+        /// </summary>
+        private static float SpannedWidth(List<Collider> parts, Transform portal, Vector2 opening)
+        {
+            float ow = opening.x * 0.5f;
+            var spans = new List<Vector2>();
+
+            for (int i = 0; i < parts.Count; i++)
+            {
+                Bounds b = MeasuredBounds(parts[i]);
+                float cx = Vector3.Dot(b.center - portal.position, portal.right);
+                float halfWide = Support(b.extents, portal.right);
+                spans.Add(new Vector2(cx - halfWide, cx + halfWide));
+            }
+
+            spans.Sort((a, b) => a.x.CompareTo(b.x));
+
+            float spanned = 0f;
+            float reached = -ow;
+
+            for (int i = 0; i < spans.Count; i++)
+            {
+                float lo = Mathf.Max(spans[i].x, -ow);
+                float hi = Mathf.Min(spans[i].y, ow);
+                if (hi <= lo)
+                    continue;
+
+                lo = Mathf.Max(lo, reached);
+                if (hi <= lo)
+                    continue;
+
+                spanned += hi - lo;
+                reached = hi;
+            }
+
+            return spanned;
         }
 
         /// <summary>

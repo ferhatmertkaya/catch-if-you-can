@@ -1633,6 +1633,64 @@ else:
     bad("room structure is exempt by name, so the one line that matters is not buried",
         "flagging every wall hides the one object that should not be that big")
 
+# ---- jeder gebaute Raum hat Licht ------------------------------------------------------------
+#
+# Er hatte keins. PrimitiveRoomFactory setzte an der Licht-Steckdose eines Raums eine Leuchte;
+# dieser Bauer nie - und seit die Raeume von hier kommen, hatte der Lichtregisseur nichts mehr zu
+# regieren. Sein eigener Bericht sagte "0 of 0 practicals", jede Sitzung, und niemand las ihn.
+# Was auf dem Bildschirm blieb, war der Umgebungsterm: in jeder Ecke jedes Raums derselbe Wert,
+# also kein Abfall, keine Richtung, kein Schatten. Ein Raum, der ueberall gleich hell ist, sieht
+# nicht dunkel aus, sondern TOT - und genau so ist er gemeldet worden.
+mrb_light = re.search(r"private static void BuildLighting.*?\n        \}", mrb_code, re.S)
+mlb = mrb_light.group(0) if mrb_light else ""
+
+if "BuildLighting(roomRoot.transform" in mrb_code and "AddComponent<Light>()" in mlb:
+    ok("jeder gebaute Raum bekommt Licht")
+else:
+    bad("jeder gebaute Raum bekommt Licht",
+        "ohne eine Leuchte im Raum regiert der Lichtregisseur nichts und der Raum ist ueberall "
+        "gleich hell - das sieht nicht dunkel aus, sondern tot")
+
+# Das Restlicht ist KEIN Praktikal. Ohne die Auszeichnung wuerde der Regisseur es anziehen und in
+# der Haelfte der Faelle mit der Deckenlampe ausschalten - und dann ist der Raum wieder nur der
+# Umgebungsterm, also genau der Zustand, gegen den es gebaut wurde.
+if "AddComponent<Environment.AmbientRoomLight>()" in mlb:
+    ok("das Restlicht ist als Nicht-Praktikal ausgezeichnet")
+else:
+    bad("das Restlicht ist als Nicht-Praktikal ausgezeichnet",
+        "sonst wuerfelt der Lichtregisseur es mit der Deckenlampe aus und der Raum faellt auf "
+        "den Umgebungsterm zurueck")
+
+# Und es wirft keine Echtzeitschatten. Es ist eine schwache Quelle unter Moebelhoehe: was sie an
+# Schatten wirft, sieht man kaum, und bezahlt wird es auf dem Telefon in jedem Bild.
+if re.search(r"ember\.shadows = LightShadows\.None", mlb):
+    ok("das Restlicht wirft keine Echtzeitschatten")
+else:
+    bad("das Restlicht wirft keine Echtzeitschatten",
+        "eine schwache Quelle unter Moebelhoehe zahlt Schattenkosten fuer etwas, das man nicht "
+        "sieht")
+
+# Die Helligkeit steht VOR dem Flackern. CandleFlicker merkt sich in Awake, was es modulieren
+# soll, und Awake laeuft mitten in AddComponent - eine Zeile darunter gesetzt, moduliert es eine
+# Helligkeit, die es nie gab. Dieselbe Form wie CLAUDE.md Fehler 17: Awake laeuft frueher, als
+# die Zeilenreihenfolge suggeriert.
+i_int = mlb.find("ember.intensity")
+i_fli = mlb.find("AddComponent<Art.CandleFlicker>()")
+if i_int >= 0 and i_fli > i_int:
+    ok("das Flackern wird erst angehaengt, wenn die Helligkeit steht")
+else:
+    bad("das Flackern wird erst angehaengt, wenn die Helligkeit steht",
+        "CandleFlicker liest die Helligkeit in Awake, und Awake laeuft in AddComponent")
+
+# Die Fassung leuchtet nicht von selbst. Eine Rosette, die glueht, waehrend ihr Licht aus ist,
+# ist eine Lampe, die luegt - und im Testraum gibt es keinen LightController, der die Emission
+# mit abschalten wuerde.
+if "_EmissionColor" not in mlb:
+    ok("die Deckenfassung leuchtet nicht von selbst")
+else:
+    bad("die Deckenfassung leuchtet nicht von selbst",
+        "eine glimmende Fassung ueber einer ausgeschalteten Lampe ist eine Lampe, die luegt")
+
 print()
 print("  %d passed, %d failed" % (passed, failed))
 sys.exit(1 if failed else 0)

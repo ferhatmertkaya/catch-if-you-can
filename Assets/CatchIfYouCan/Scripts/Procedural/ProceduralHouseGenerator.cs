@@ -665,7 +665,22 @@ namespace CatchIfYouCan.Procedural
                 if (room?.Root == null)
                     continue;
 
-                var roomLight = room.Root.GetComponentInChildren<Light>();
+                // Das PRAKTIKAL des Raums, nicht irgendein Licht darin. GetComponentInChildren
+                // liefert das erste in der Hierarchie, und seit ein Raum auch ein Restlicht hat,
+                // ist das erste nicht mehr zwangslaeufig das mit dem Schalter. Ein Schalter, der
+                // das Restlicht schaltet, laesst die Deckenleuchte brennen und meldet "aus".
+                Light roomLight = null;
+                foreach (Light candidate in room.Root.GetComponentsInChildren<Light>(true))
+                {
+                    if (candidate == null || candidate.type == LightType.Directional)
+                        continue;
+                    if (Environment.AmbientRoomLight.Is(candidate))
+                        continue;
+
+                    roomLight = candidate;
+                    break;
+                }
+
                 if (roomLight == null)
                     continue;
 

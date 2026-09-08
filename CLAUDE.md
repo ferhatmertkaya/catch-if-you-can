@@ -228,7 +228,14 @@ place that number lives; everything else derives it.
   interaction body is measured around what is actually there and converted back into its own
   space (a world size in a BoxCollider is scaled twice), a model that brings its own collider
   gets no second one, and nothing can end up carrying two boards — two would be two ways into
-  the same panel. 251 checks.
+  the same panel. And it lets a wall made of MODULES be a wall: the width test moved from each
+  collider to their union, because every module of the purchased pack is 2.5 to 4 m wide against
+  a 4.70 m opening and three side by side do not add up to one - so the shape search found
+  nothing, and the refusal it wrote sat ABOVE the line that collects what stands in the doorway,
+  so nothing was collected either and every wall collider stayed solid while the tear was
+  visibly open. The doorway is cleared first and refused after, the aperture is measured across
+  all the parts rather than one, the assembled wall must still span the opening, and the probe
+  tool measures the same way the portal decides. 256 checks.
 
 - `Scripts/check_editor_menu.sh` — the editor menu stays legible, and the purchased architecture has ONE scale. The game scale is the measured ratio 2.95 / 3.92 in one place, with no tool carrying its own copy; the decision is made on effective world scale rather than `localScale`, because a vendor piece at localScale 1 inside a corrected wrapper IS already corrected and its own field says otherwise; an already-corrected ancestor is recognised and a second application is a named verdict rather than a silent pass; architecture is told from props by FOLDER, since a filename classifier caught 3 of 105 in a pack that numbers its prefabs and calls its glass Steklo; an undecidable piece is reported ambiguous rather than guessed, because a chair may already be at real-world size and shrinking one that was right is invisible; the portal is excluded, its opening being a gameplay dimension; the migration audits before it can apply and converts only original-size pieces; and the correction goes on a CIYC wrapper with nothing applied back to the purchased package. Also the menu itself: Fifty-one commands sit in
   seven named groups with none hiding in another root menu, every one carries a risk tag saying
@@ -284,7 +291,11 @@ place that number lives; everything else derives it.
   instead of standing in a T-pose. It also stops a visual being built before the thing it is a
   visual OF: an item told what it is after `AddComponent` rebuilds, the doorway starts opening
   before its far world is ready, and Nathan's bound textures import at a size the material can
-  actually use, and every model a visual profile names really exists under `Resources` with a non-zero forward axis. 54 checks.
+  actually use, and every model a visual profile names really exists under `Resources` with a non-zero forward axis.
+  It also tells a room's PRACTICAL from its residual glow: the director dresses and rolls the
+  switchable lamp and leaves an `AmbientRoomLight` exactly as it was built, the wall switch owns
+  the practical rather than whichever light the hierarchy returns first, and which of the two a
+  light is gets decided in one place. 57 checks.
 
 - `Scripts/check_project_tags.sh` — every tag and layer the code names really exists.
   Assigning an undefined tag throws and takes the rest of that build down with it; an
@@ -435,7 +446,17 @@ place that number lives; everything else derives it.
   with `wallpaper3` and `white` on them — so that is named before any single slot is blamed, and a
   slot name with fewer than three letters proposes nothing, because this pack has wall slots 1-6
   and window materials 1-4 named after a different FBX and matching those to each other offered
-  window glass for a door wall. 136 checks.
+  window glass for a door wall. And every room it builds has LIGHT in it: `PrimitiveRoomFactory`
+  put a lamp at each room's light socket and this builder never did, so once the rooms came from
+  here the lighting director had nothing to direct - its own report said "0 of 0 practicals"
+  every session and nobody read it. What was left on screen was the ambient term, which is the
+  same value in every corner of every room, so there was no falloff, no side and no shadow: a
+  room lit like that does not look dark, it looks dead. It gets a ceiling practical for the
+  director to dress and roll, plus a weak warm residual light that is marked as scenery - no
+  switch, never rolled off, no real-time shadows, and its flicker attached only after its
+  brightness is set, because `CandleFlicker` reads that in `Awake` and `Awake` runs inside
+  `AddComponent`. The ceiling rose does not glow on its own: a socket that glows while its lamp
+  is off is a lamp that lies. 165 checks.
 
 All twelve run in CI (`.github/workflows/determinism.yml`). Run them locally before
 pushing; they need nothing but a shell (and `python3` for the roster checks).
@@ -599,6 +620,32 @@ Repeating one of these is the most likely way to break something.
    Sicherheitsnetz gedacht und war in Wahrheit eine Quelle, die Inhalt *behauptete*, den es
    nicht gab. Ein Größenfilter hätte ihn nie gefangen — ein Kleiderschrank ist größer. Was ihn
    verrät, ist das Unity-Primitivmesh, und genau darauf schaut der Bericht jetzt.
+
+21. **Eine Absage, die den Fehler erst gemacht hat.** Das Portal fand seine Wand nicht mehr und
+   schrieb ordentlich "no wall collider found" - und genau diese Zeile war der Schaden. Sie stand
+   in `EnsureWallAperture` UEBER dem Aufruf, der einsammelt, was sonst noch in der Oeffnung steht;
+   das `return` daneben hiess also nicht nur "kein Loch", sondern "auch nichts abschalten". Der
+   Riss war sichtbar offen und jedes Wandcollider blieb fest: eine unsichtbare Wand in einer
+   offenen Tuer, also genau das, was diese Klasse seit jeher verhindern soll. Die Ursache dahinter
+   war harmlos und alt: `ResolveWall` verlangte EIN Collider von mindestens der Oeffnungsbreite,
+   und solange die Lobbywand ein Quader von 10,6 m war, stimmte das. Von Hand aus Modulen des
+   gekauften Pakets gebaut ist jedes 2,5 bis 4 m breit gegen eine Oeffnung von 4,70 m, und drei
+   nebeneinander addieren sich nicht zu einem. Zwei Lehren, und die zweite ist die teurere: ein
+   Test, der ein Ganzes an einem Teil misst, faellt durch, sobald das Ganze aus Teilen besteht -
+   und ein Fehlerpfad ist Code, der laeuft, also gehoert er in dieselbe Reihenfolge-Ueberlegung
+   wie der Erfolgspfad. Was NICHT mehr passiert, wenn er zu frueh abbricht, sieht niemand.
+
+22. **Ein Regisseur ohne Ensemble, der genau das meldete.** `PrimitiveRoomFactory` setzte an der
+   Licht-Steckdose jedes Raums eine Leuchte; `ModularRoomBuilder`, der die Raeume seit der
+   Migration baut, nie. `HouseLightingDirector` lief also weiter, fand nichts und schrieb es auch
+   hin - "Lit the house: 0 of 0 practicals" - jede Sitzung, ohne Fehler, ohne Warnung, in einer
+   Info-Zeile zwischen hundert anderen. Auf dem Bildschirm blieb der Umgebungsterm uebrig, und der
+   ist in jeder Ecke jedes Raums derselbe Wert: kein Abfall, keine Richtung, kein Schatten. Ein
+   Raum, der ueberall gleich hell ist, sieht nicht dunkel aus, sondern TOT, und so ist er auch
+   gemeldet worden - nicht als "es ist zu hell" oder "es fehlt Licht", sondern als "der Raum sieht
+   tot aus", was nach einem Materialproblem klingt. Zwei Dinge daran: eine Null in einem Bericht
+   ist ein Ergebnis, kein leerer Bericht, und ein Nachfolger, der eine Sache seines Vorgaengers
+   nicht uebernimmt, faellt nirgends auf, weil beide fuer sich richtig aussehen.
 
 ## Unity Editor availability
 

@@ -204,6 +204,50 @@ if re.search(r"private bool PrepareWorld\(\)(.|\n)*?HouseLightingDirector", boot
 else:
     ok("lighting is applied on entry, not on preview")
 
+# ---- ein Raum hat Praktikale UND Restlicht, und die sind nicht dasselbe ----------------------
+#
+# Der Regisseur behandelte jedes nicht gerichtete Licht als Praktikal: anziehen, aus dem Seed
+# auswuerfeln, und der Lichtschalter an der Wand gehoert dazu. Fuer eine Deckenlampe stimmt das.
+# Fuer alles andere, womit ein Raum glimmen kann, stimmt es nicht - und ein Raum, dessen einziges
+# Licht ausgewuerfelt wird, ist entweder beleuchtet oder voellig flach: uebrig bleibt der
+# Umgebungsterm, und der ist in jeder Ecke jedes Raums derselbe Wert.
+
+apply_body = re.search(r"public static void Apply\(GeneratedHouse house, int seed\).*?\n        \}",
+                       lighting, re.S)
+ab = apply_body.group(0) if apply_body else ""
+
+i_skip = ab.find("AmbientRoomLight.Is(light)")
+i_total = ab.find("total++")
+if i_skip >= 0 and i_total > i_skip:
+    ok("der Lichtregisseur laesst das Restlicht in Ruhe")
+else:
+    bad("der Lichtregisseur laesst das Restlicht in Ruhe",
+        "sonst bekommt es eine Helligkeit, die sein Flackern nicht kennt, und wird in der "
+        "Haelfte der Faelle mit der Deckenlampe ausgeschaltet")
+
+# Und der Lichtschalter an der Wand gehoert dem PRAKTIKAL. GetComponentInChildren<Light>()
+# liefert das erste in der Hierarchie; seit ein Raum auch ein Restlicht hat, ist das erste nicht
+# mehr zwangslaeufig das mit dem Schalter - und ein Schalter, der das Restlicht schaltet, laesst
+# die Deckenlampe brennen und meldet "aus".
+gen_slice = code("/Assets/CatchIfYouCan/Scripts/Procedural/ProceduralHouseGenerator.cs")
+install = re.search(r"private void InstallRoomInteractables\(GeneratedHouse house\).*?\n        \}",
+                    gen_slice, re.S)
+ib = install.group(0) if install else ""
+if "AmbientRoomLight.Is(candidate)" in ib and "GetComponentInChildren<Light>()" not in ib:
+    ok("der Lichtschalter gehoert dem Praktikal, nicht dem ersten Licht im Raum")
+else:
+    bad("der Lichtschalter gehoert dem Praktikal, nicht dem ersten Licht im Raum",
+        "das erste Licht in der Hierarchie ist nicht mehr zwangslaeufig das schaltbare")
+
+# Und die Auszeichnung wird EINMAL entschieden. Zwei GetComponent-Aufrufe mit zwei Vorgaben sind
+# zwei Antworten auf dieselbe Frage, und genau eine davon wird beim naechsten Umbau vergessen.
+marker = code("/Assets/CatchIfYouCan/Scripts/Environment/AmbientRoomLight.cs")
+if re.search(r"public static bool Is\(Light light\)", marker):
+    ok("ob ein Licht Restlicht ist, entscheidet eine Stelle")
+else:
+    bad("ob ein Licht Restlicht ist, entscheidet eine Stelle",
+        "zwei GetComponent-Aufrufe mit zwei Vorgaben gehen beim naechsten Umbau auseinander")
+
 
 # ---- the ghost prefab writer and reader agree -----------------------------------------------
 #
