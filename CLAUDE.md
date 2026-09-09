@@ -338,7 +338,16 @@ place that number lives; everything else derives it.
   exactly like mistake 14. `Scripts/write_vendor_manifest.sh`, run on the machine that has
   the packs, writes down which guids are theirs; the guard then passes an absence the
   manifest names while the pack is missing, and still fails a guid the manifest does not
-  name, or one it does name while the pack IS installed. 12 checks.
+  name, or one it does name while the pack IS installed. And it asks the OPPOSITE question too:
+  a big binary with no LFS rule at all. `.gitattributes` lists its rules one file at a time
+  rather than by pattern, so every new model and texture starts outside LFS and stays there
+  unless somebody remembers - six props arrived that way in one commit, three FBX files of 87 to
+  92 MiB, and the push carried 542 MB. GitHub warns over 50 MiB and REFUSES over 100 MiB, so the
+  largest was eight megabytes from being rejected outright, and a pack object is in every clone
+  of that history forever. What is already in cannot come out without a rewrite, so it is
+  WRITTEN DOWN in `Scripts/lfs_debt.txt` and the check fails on the NEXT one - a baseline rather
+  than a silent pass, because a number nobody recorded is a number nobody can tell has moved.
+  13 checks.
 
 - `Scripts/check_hq_environment.sh` — the house interior comes from a modular catalog, and
   nothing can quietly put the old one back. No production file names a Kenney content path

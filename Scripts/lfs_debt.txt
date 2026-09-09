@@ -1,0 +1,39 @@
+# Binaerdateien ueber 10 MiB, die schon im gewoehnlichen git-Pack liegen statt in git-lfs.
+#
+# .gitattributes fuehrt seine LFS-Regeln einzeln je Datei statt als Muster, also faengt
+# jedes neue Modell und jede neue Textur AUSSERHALB von LFS an und bleibt dort, wenn es
+# niemand merkt. So sind diese hier hereingekommen.
+#
+# Sie stehen hier, weil sie in der Historie stehen und ohne Rewrite nicht mehr herausgehen -
+# und dieses Projekt macht keinen Force-Push. Der Waechter faellt deshalb ueber die NAECHSTE
+# Datei, nicht ueber diese. Diese Liste IST die sichtbare Groesse des Problems: wird sie
+# kuerzer, ist etwas besser geworden, und das hat dann einen Diff.
+#
+# Was das kostet: GitHub warnt ueber 50 MiB und VERWEIGERT ueber 100 MiB. Die groesste hier
+# ist 92 MiB. Ausserdem laedt jeder Klon diese Bytes mit, fuer immer.
+#
+# Eine Datei verschwindet aus dieser Liste, wenn sie kleiner exportiert wird als 10 MiB -
+# ein 92-MiB-FBX fuer eine Zimmerpflanze ist ein Rohscan, kein Spiel-Asset.
+
+Assets/CatchIfYouCan/Art/Environment/Doors/CIYC_VictorianHauntedDoor/Textures/CIYC_VictorianHauntedDoor_BaseColor.png
+Assets/CatchIfYouCan/Art/Environment/Doors/CIYC_VictorianHauntedDoor/Textures/CIYC_VictorianHauntedDoor_Normal.png
+Assets/CatchIfYouCan/Art/Environment/Props/CorkBulletinBoard/Models/Meshy_AI_cork_bulletin_board_0908012435_image-to-3d-texture.fbx
+Assets/CatchIfYouCan/Art/Environment/Props/CorkBulletinBoard/Textures/Meshy_AI_cork_bulletin_board_0908012435_image-to-3d-texture.png
+Assets/CatchIfYouCan/Art/Environment/Props/CorkBulletinBoard/Textures/Meshy_AI_cork_bulletin_board_0908012435_image-to-3d-texture_normal.png
+Assets/CatchIfYouCan/Art/Environment/Props/EMFLevel2/Models/CIYC_EMFLevel2.fbx
+Assets/CatchIfYouCan/Art/Environment/Props/EMFLevel2/Textures/T_EMFLevel2_BaseColor.png
+Assets/CatchIfYouCan/Art/Environment/Props/EMFLevel2/Textures/T_EMFLevel2_Normal.png
+Assets/CatchIfYouCan/Art/Environment/Props/HauntedCandleHolder/Textures/CIYC_HauntedCandleHolder_Normal.png
+Assets/CatchIfYouCan/Art/Environment/Props/MonsteraPlant/Models/CIYC_MonsteraPlant.fbx
+Assets/CatchIfYouCan/Art/Environment/Props/MonsteraPlant/Textures/T_MonsteraPlant_BaseColor.png
+Assets/CatchIfYouCan/Art/Environment/Props/MonsteraPlant/Textures/T_MonsteraPlant_Normal.png
+Assets/CatchIfYouCan/Art/Environment/Props/PizzaBox/Models/CIYC_PizzaBox.fbx
+Assets/CatchIfYouCan/Art/Environment/Props/PizzaBox/Textures/T_PizzaBox_BaseColor.png
+Assets/CatchIfYouCan/Art/Environment/Props/PizzaBox/Textures/T_PizzaBox_Normal.png
+Assets/CatchIfYouCan/Art/Environment/Props/VintageCoffeeTable/Models/CIYC_VintageCoffeeTable.fbx
+Assets/CatchIfYouCan/Art/Environment/Props/VintageCoffeeTable/Textures/T_VintageCoffeeTable_BaseColor.png
+Assets/CatchIfYouCan/Art/Environment/Props/VintageCoffeeTable/Textures/T_VintageCoffeeTable_Normal.png
+Assets/CatchIfYouCan/Art/Environment/Props/WallLamp/Models/CIYC_WallLamp.fbx
+Assets/CatchIfYouCan/Art/Environment/Props/WallLamp/Textures/T_WallLamp_BaseColor.png
+Assets/CatchIfYouCan/Art/Environment/Props/WallLamp/Textures/T_WallLamp_Normal.png
+Assets/CatchIfYouCan/Resources/Props/CIYC_Armchair.fbx

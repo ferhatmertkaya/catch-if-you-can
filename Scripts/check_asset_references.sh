@@ -209,6 +209,90 @@ if pointers:
     for path, (_, size) in biggest:
         note("  %9s  %s" % (human(size), path))
 
+# ---------------------------------- 3b. a big binary with no LFS rule at all -----------------
+#
+# The check above asks whether every LFS RULE matches a file. It cannot see the opposite and
+# more expensive mistake: a big binary with no rule, which goes into the ordinary git pack as
+# raw content.
+#
+# .gitattributes here lists paths one by one rather than by pattern, so every new model and
+# texture starts outside LFS and stays there unless somebody remembers. Six props arrived that
+# way in one commit - three FBX files of 87 to 92 MB and eleven textures over 15 MB - and the
+# push carried 542 MB. GitHub warns over 50 MB and REFUSES over 100 MB, so the largest was
+# eight megabytes from being rejected outright, and a rejected push after the commit exists is
+# a history rewrite rather than a retry.
+#
+# The permanence is the point: an LFS object can be pruned, a pack object is in every clone of
+# that history forever. So this is checked where it is still cheap to fix - before the next
+# one goes in.
+BIG = 10 * 1024 * 1024
+
+tracked = git("ls-files", "-z").decode("utf-8", "replace").split("\0")
+tracked = [t for t in tracked if t]
+
+unmanaged = []
+raw_total = 0
+for rel in tracked:
+    full = os.path.join(root, rel)
+    if not os.path.isfile(full):
+        continue
+    if rel in pointers:
+        continue
+    try:
+        size = os.path.getsize(full)
+    except OSError:
+        continue
+    raw_total += size
+    if size >= BIG:
+        unmanaged.append((size, rel))
+
+# What is already in the history cannot be un-pushed without rewriting it, and this project
+# does not force-push. So the debt is WRITTEN DOWN instead of hidden: the files that are
+# already in the pack are listed in Scripts/lfs_debt.txt, and the check fails on the NEXT one.
+#
+# A baseline rather than a silent pass, for the same reason the typecheck harness keeps one:
+# a number nobody recorded is a number nobody can tell has moved. The list is the visible
+# size of the problem, and shrinking it is a deliberate act with a diff.
+debt_path = os.path.join(root, "Scripts", "lfs_debt.txt")
+debt = set()
+if os.path.isfile(debt_path):
+    with io.open(debt_path, encoding="utf-8") as fh:
+        debt = {ln.strip() for ln in fh
+                if ln.strip() and not ln.startswith("#")}
+
+fresh = [(sz, rel) for sz, rel in unmanaged if rel not in debt]
+known = [(sz, rel) for sz, rel in unmanaged if rel in debt]
+
+if not fresh:
+    if known:
+        ok("no NEW binary over %s sits outside git-lfs (%d known, %s - see Scripts/lfs_debt.txt)"
+           % (human(BIG), len(known), human(sum(sz for sz, _ in known))))
+    else:
+        ok("no binary over %s sits outside git-lfs" % human(BIG))
+else:
+    fresh.sort(reverse=True)
+    over_limit = [u for u in fresh if u[0] >= 100 * 1024 * 1024]
+    detail = ["%s %s" % (human(sz), rel) for sz, rel in fresh[:6]]
+    if len(fresh) > 6:
+        detail.append("... and %d more" % (len(fresh) - 6))
+    bad("no NEW binary over %s sits outside git-lfs" % human(BIG),
+        "%d file(s), %s of raw pack content that no .gitattributes rule covers; GitHub warns "
+        "over 50 MiB and REFUSES over 100 MiB, and a pack object is in every clone of this "
+        "history forever, so this is cheap now and a history rewrite later: %s%s"
+        % (len(fresh), human(sum(sz for sz, _ in fresh)), "; ".join(detail),
+           "  ALREADY OVER THE 100 MiB HARD LIMIT: " + ", ".join(r for _, r in over_limit)
+           if over_limit else ""))
+
+# The stale entries matter too: a path listed as debt that no longer exists means the list is
+# drifting away from the repository, and a list nobody trusts is a list nobody reads.
+stale = sorted(d for d in debt if not os.path.isfile(os.path.join(root, d)))
+if stale:
+    note("Scripts/lfs_debt.txt names %d file(s) that no longer exist: %s"
+         % (len(stale), ", ".join(stale[:4])))
+
+note("raw (non-lfs) tracked content: %s; git-lfs payload: %s"
+     % (human(raw_total), human(sum(size for _, size in pointers.values()))))
+
 # ------------------------------------------------------------- 4. the GUID namespace
 
 declared = {}                 # guid -> asset path (the .meta without its suffix)
