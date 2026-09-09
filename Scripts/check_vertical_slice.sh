@@ -362,6 +362,58 @@ else:
     bad("the camera returns to exactly standing height",
         "the drop must be a multiple of CrouchAmount01 so zero crouch is zero drop")
 
+# ...and the whole expression has to be REACHED. It sat behind `if (!_hasCameraRoot) return;`,
+# a flag captured in Awake - and Awake runs INSIDE AddComponent, one line above the
+# SetPrivateField in PlayerRigBuilder that assigns the field it reads. It cached false for the
+# life of the player, so the capsule shrank, the character folded, and the view never moved:
+# crouching did nothing you could see, which is the exact symptom the method exists to prevent.
+# CLAUDE.md mistake 17, in a rig rather than in a scene.
+awake = re.search(r"private void Awake\(\).*?\n        \}", controller, re.S)
+awake_body = awake.group(0) if awake else ""
+crouch_fn = re.search(r"private void UpdateCrouch\(\).*?\n        \}", controller, re.S)
+crouch_body = crouch_fn.group(0) if crouch_fn else ""
+
+if "cameraRoot" not in awake_body:
+    ok("the crouch camera is not gated by anything Awake decided")
+else:
+    bad("the crouch camera is not gated by anything Awake decided",
+        "Awake runs inside AddComponent, before PlayerRigBuilder assigns cameraRoot - "
+        "anything it caches about that field is false forever")
+
+if "if (cameraRoot == null)" in crouch_body:
+    ok("the crouch camera tests the reference it is about to use")
+else:
+    bad("the crouch camera tests the reference it is about to use",
+        "a cached flag can be stale; the reference cannot")
+
+# ---- the head follows the eyes DOWNWARD ------------------------------------------------------
+#
+# ApplyHeadPitch negated its own angle. SignedAngle(horizontal, forward, right) is already
+# POSITIVE when the player looks down, which is what the asymmetric clamp (-maxPitchUp,
+# maxPitchDown) and RotateWorld both assume - so the minus made all three agree with each other
+# and disagree with the number, and the head pitched the opposite way to the eyes. Invisible in
+# first person, because nobody can see their own head: it surfaced in the mirror, the one place
+# in this game that renders the player's own face.
+body_motion = code("/Assets/CatchIfYouCan/Scripts/Player/PlayerBodyMotion.cs")
+head_fn = re.search(r"private void ApplyHeadPitch\(Vector3 right\).*?\n        \}",
+                    body_motion, re.S)
+head_body = head_fn.group(0) if head_fn else ""
+
+if head_body and not re.search(r"pitch = -\s*Vector3\.SignedAngle", head_body) \
+        and re.search(r"pitch = Vector3\.SignedAngle", head_body):
+    ok("the head pitches the same way the eyes do")
+else:
+    bad("the head pitches the same way the eyes do",
+        "negated, looking down turns the neck up - which only the mirror can show")
+
+# And the limits stay asymmetric, because that asymmetry is the thing that says which sign is
+# down. Symmetric limits would hide the next sign error completely.
+if re.search(r"Mathf\.Clamp\(pitch \* headPitchFollow, -maxPitchUp, maxPitchDown\)", head_body):
+    ok("the neck's limits still say which way is down")
+else:
+    bad("the neck's limits still say which way is down",
+        "a symmetric clamp hides a sign error in the pitch it clamps")
+
 animator_src = code("/Assets/CatchIfYouCan/Scripts/Player/PlayerVisualAnimator.cs")
 if "ReportRigHealth()" in animator_src and "runtimeAnimatorController == null" in animator_src:
     ok("a rig that cannot animate says so")

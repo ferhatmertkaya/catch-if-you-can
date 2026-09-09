@@ -77,7 +77,6 @@ namespace CatchIfYouCan.Player
         private float _blendedSpeed;
         private float _speedBlendVelocity;
         private float _standingCameraHeight;
-        private bool _hasCameraRoot;
         private bool _standingHeightCaptured;
         private PlayerBodyMotion _bodyMotion;
 
@@ -123,15 +122,21 @@ namespace CatchIfYouCan.Player
 
             if (noiseEmitter == null)
                 noiseEmitter = GetComponent<PlayerNoiseEmitter>();
-            if (playerLook == null && cameraRoot != null)
-                playerLook = cameraRoot.GetComponent<PlayerLook>();
-
-            // Read rather than assumed. PlayerFactory owns where the eyes are and has already
-            // placed them by now; hard-coding the standing height here would mean two files that
-            // have to be changed together and one that nobody remembers.
-            _hasCameraRoot = cameraRoot != null;
-            if (_hasCameraRoot)
-                _standingCameraHeight = cameraRoot.localPosition.y;
+            // NOTHING about the camera root is decided here, and that is the fix rather than an
+            // omission. Awake runs INSIDE AddComponent, and PlayerRigBuilder wires this field on
+            // the line AFTER the AddComponent that brought this component into being:
+            //
+            //     var playerController = player.AddComponent<PlayerController>();   // Awake, here
+            //     SetPrivateField(playerController, "cameraRoot", cameraRoot);      // one line late
+            //
+            // So a `_hasCameraRoot = cameraRoot != null` here read null, cached FALSE for the
+            // life of the player, and UpdateCrouch returned at its first line every frame: the
+            // capsule shrank, the character folded, and the view stayed at standing eye height.
+            // Crouching did nothing you could see - the exact symptom this method's own comment
+            // says it exists to prevent. CLAUDE.md mistake 17, in a rig rather than a scene.
+            //
+            // The reference is tested where it is USED instead. One null check per frame against
+            // a flag that cannot go stale is not a cost worth a bug of this shape.
         }
 
         private void Start()
@@ -140,6 +145,14 @@ namespace CatchIfYouCan.Player
             // Looked up here rather than in Awake: PlayerFactory adds this component before it
             // adds the body motion, so in Awake there is nothing to find yet. Once, and cached.
             _bodyMotion = GetComponent<PlayerBodyMotion>();
+
+            // Same reason, one field further along. This fallback lived in Awake, where
+            // cameraRoot is still null for a rig PlayerRigBuilder is in the middle of wiring -
+            // so it never once resolved anything and only looked like it did. Here the wiring is
+            // finished. A player authored by hand in a scene has both fields serialized and
+            // reaches neither line.
+            if (playerLook == null && cameraRoot != null)
+                playerLook = cameraRoot.GetComponent<PlayerLook>();
         }
 
         /// <summary>
@@ -261,7 +274,7 @@ namespace CatchIfYouCan.Player
                 ? Mathf.Clamp01((standingHeight - _currentHeight) / (standingHeight - crouchHeight))
                 : 0f;
 
-            if (!_hasCameraRoot)
+            if (cameraRoot == null)
                 return;
 
             // Only Y. The forward offset that puts the camera in front of the character's own
@@ -290,11 +303,9 @@ namespace CatchIfYouCan.Player
             // LateUpdate and read here in Update, so it was always a frame stale.
             //
             // Nothing in PlayerBodyMotion changes. This reads the number it already publishes.
-            // Captured on the first frame the player is genuinely standing, not once in Awake.
-            // PlayerFactory adds this component and positions the camera root, and the order
-            // between those two is not guaranteed - a standing height read before the eyes were
-            // placed leaves this whole expression working from the wrong origin, or from zero,
-            // which is a camera that never appears to follow the crouch at all.
+            // Captured on the first frame the player is genuinely standing, not once in Awake -
+            // in Awake the field this reads is not even assigned yet, because Awake runs inside
+            // the AddComponent that PlayerRigBuilder wires the field on the next line of.
             if (!_standingHeightCaptured && CrouchAmount01 <= 0.001f)
             {
                 _standingCameraHeight = cameraRoot.localPosition.y;

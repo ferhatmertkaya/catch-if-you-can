@@ -309,7 +309,12 @@ place that number lives; everything else derives it.
   It also tells a room's PRACTICAL from its residual glow: the director dresses and rolls the
   switchable lamp and leaves an `AmbientRoomLight` exactly as it was built, the wall switch owns
   the practical rather than whichever light the hierarchy returns first, and which of the two a
-  light is gets decided in one place. 57 checks.
+  light is gets decided in one place. And the player's own body follows their own eyes: the head
+  and neck pitch the SAME way the camera does (a negated angle turned the neck up when the eyes
+  looked down, which only the mirror can show, because nobody can see their own head), the neck's
+  asymmetric limits stay asymmetric so the next sign error cannot hide behind them, and the crouch
+  camera is gated by the reference it is about to use rather than by a flag Awake cached before
+  `PlayerRigBuilder` had assigned it. 61 checks.
 
 - `Scripts/check_project_tags.sh` — every tag and layer the code names really exists.
   Assigning an undefined tag throws and takes the rest of that build down with it; an
@@ -671,6 +676,31 @@ Repeating one of these is the most likely way to break something.
    erscheint, mit lila Wolken" - also als Ladeuebergang, als Szenenwechsel, als Partikeleffekt.
    Es war keines davon. Es war ein Diagnosewerkzeug, das lief, waehrend jemand zusah. Ein
    Werkzeug, das den Normalfall veraendert, diagnostiziert nicht mehr, sondern erzeugt.
+
+24. **Zwei Vorzeichen, die sich gegenseitig recht gaben.** `ApplyHeadPitch` berechnete
+   `-SignedAngle(waagerecht, blickrichtung, rechts)`. `SignedAngle` ist bei dieser Achse schon
+   POSITIV, wenn nach unten geschaut wird - genau das, was die zwei Zeilen darunter annehmen: der
+   Kommentar ("Positive pitch is looking down"), die unsymmetrische Klammer (`-maxPitchUp,
+   maxPitchDown`, weil ein Hals weiter nach unten geht als nach oben) und `RotateWorld`. Das Minus
+   liess also alle drei miteinander uebereinstimmen und mit der Zahl nicht: schaute der Spieler
+   nach unten, hob der Kopf sich. Zwei Jahre unsichtbar, weil niemand seinen eigenen Kopf sieht -
+   in der Ego-Perspektive gibt es keine Ansicht, in der das auffaellt. Aufgefallen ist es beim
+   ersten Mal vor dem Spiegel, der einzigen Stelle im Spiel, die das eigene Gesicht rendert. Und
+   `PlayerLook.Pitch` behauptete in seiner Zusammenfassung das Gegenteil des eigenen Codes
+   ("negative looking down", waehrend `Quaternion.Euler(_pitch, 0, 0)` bei positivem Wert nach
+   unten kippt) - die eine Zeile, die man bei einem Winkel ueberhaupt liest.
+
+25. **Ein Awake, das ein Feld las, das eine Zeile spaeter zugewiesen wird.** `PlayerRigBuilder`
+   schreibt `AddComponent<PlayerController>()` und in der naechsten Zeile
+   `SetPrivateField(playerController, "cameraRoot", ...)`. `Awake` laeuft INNERHALB von
+   `AddComponent`, also war `cameraRoot` dort null, und `_hasCameraRoot = cameraRoot != null`
+   speicherte fuer die Lebensdauer des Spielers **false**. `UpdateCrouch` kehrte an seiner ersten
+   Zeile um: die Kapsel schrumpfte, die Figur ging in die Hocke, der Blick blieb auf Stehhoehe.
+   Also genau "Ducken sieht man nicht", das der Kommentar derselben Methode als den Fehler
+   beschreibt, gegen den sie geschrieben wurde. Dieselbe Datei kannte die Falle schon - ihr
+   `Start` sucht `PlayerBodyMotion` ausdruecklich deshalb dort statt in `Awake` - nur nicht fuer
+   ihr eigenes serialisiertes Feld. Ein gecachtes Flag kann veralten, eine Referenz nicht: die
+   Pruefung gehoert dorthin, wo sie benutzt wird.
 
 ## Unity Editor availability
 

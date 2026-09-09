@@ -1378,12 +1378,25 @@ namespace CatchIfYouCan.Player
             // so the idle breathing and the scan's own tilt are in it as well as the player's
             // deliberate look.
             Transform view = _view != null ? _view : cameraRoot;
-            float pitch = -Vector3.SignedAngle(
+
+            // NOT negated. SignedAngle(from, to, axis) is positive when the turn from `from` to
+            // `to` follows the right-hand rule about `axis`, and tilting the horizontal forward
+            // down about the body's RIGHT is exactly that - so this is already positive when the
+            // player looks down, which is what the clamp below and RotateWorld both assume.
+            //
+            // It carried a leading minus, so every one of those three agreed with each other and
+            // disagreed with the number: looking down produced a negative angle, the clamp let it
+            // through against maxPitchUp, and RotateWorld turned the neck and head UP. The head
+            // did the opposite of the eyes, always, and in first person that is invisible - you
+            // cannot see your own head. It showed up the first time somebody stood in front of
+            // the mirror, which is the only place in this game that renders the player's own face.
+            float pitch = Vector3.SignedAngle(
                 Vector3.ProjectOnPlane(view.forward, playerBody.up),
                 view.forward,
                 playerBody.right);
 
-            // Positive pitch is looking down, which is the way a neck bends furthest.
+            // Positive pitch is looking down, which is the way a neck bends furthest - hence the
+            // asymmetric limits, which are themselves the tell that positive was meant to be down.
             float applied = Mathf.Clamp(pitch * headPitchFollow, -maxPitchUp, maxPitchDown);
             RotateWorld(_neck, right, applied * neckPitchWeight);
             RotateWorld(_head, right, applied * headPitchWeight);

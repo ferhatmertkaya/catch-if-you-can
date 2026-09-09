@@ -100,7 +100,15 @@ namespace CatchIfYouCan.Player
             set => invertY = value;
         }
 
-        /// <summary>Current pitch in degrees, negative looking down.</summary>
+        /// <summary>
+        /// Current pitch in degrees, POSITIVE looking down.
+        ///
+        /// <para>
+        /// It is applied as <c>Quaternion.Euler(_pitch, 0, 0)</c>, and a positive Euler X in Unity
+        /// tips the nose down. This line said "negative looking down" for the life of the project
+        /// and the sign is the one thing about a pitch anybody reads a summary for.
+        /// </para>
+        /// </summary>
         public float Pitch => _pitch;
 
         private void Start()
