@@ -2981,6 +2981,60 @@ else
     bad "der Tisch wird gemessen, nicht angenommen" \
         "eine geschriebene Tischhoehe ist eine Annahme ueber ein Objekt, das Start erst baut"
   fi
+
+  # Und die Hoehenpruefung fragt nach der OBERSEITE, nicht nach der Mitte. Sie fragte nach der
+  # Mitte: ein 0,30 m hoher Tisch hat eine Mitte bei 0,15 und fiel unter eine Untergrenze von
+  # 0,25 - ein Tisch, abgelehnt dafuer, dass er ein Tisch ist. Worauf man etwas STELLT, ist die
+  # Oberseite; das ist die Zahl, die zaehlt.
+  RES="$(code "$TBL" | sed -n '/private Transform ResolveTable/,/^        }$/p')"
+  if printf '%s' "$RES" | grep -qE 'b\.max\.y > MaximumTopHeight' &&
+     printf '%s' "$RES" | grep -qE 'b\.max\.y < MinimumTopHeight' &&
+     ! printf '%s' "$RES" | grep -qE 'b\.center\.y'; then
+    ok "der Tisch wird an seiner Oberseite gemessen, nicht an seiner Mitte"
+  else
+    bad "der Tisch wird an seiner Oberseite gemessen, nicht an seiner Mitte" \
+        "die Mitte eines flachen Tisches liegt unter jeder sinnvollen Untergrenze"
+  fi
+
+  # Und eine Absage nennt, was sie angesehen hat. "Kein Tisch im Raum" und "der Tisch war da und
+  # der Test hat ihn verworfen" sind ein Symptom und zwei entgegengesetzte Reparaturen - genau
+  # die Verwechslung, die in diesem Projekt schon eine Sitzung gekostet hat (Fehler 17).
+  if printf '%s' "$RES" | grep -qE 'Considered:'; then
+    ok "eine abgelehnte Tischsuche nennt die Kandidaten"
+  else
+    bad "eine abgelehnte Tischsuche nennt die Kandidaten" \
+        "eine Absage ohne Kandidaten deckt zwei Ursachen mit einem Symptom"
+  fi
+fi
+
+# ---- die Zahlenreihe waehlt einen Ausruestungsplatz -------------------------------------------
+#
+# Sie liegt beim HUD-Element, das die Plaetze ohnehin besitzt - es haelt die Inventarreferenz und
+# ruft Select() schon vom Tippen. Ueber den Eingabecontroller geroutet waere es ein zweiter Weg zu
+# demselben Aufruf, und die zwei gehen auseinander, sobald einer davon eine Regel bekommt.
+SEL="$ROOT/Assets/CatchIfYouCan/Scripts/UI/InventorySlotSelector.cs"
+if [ -f "$SEL" ] && code "$SEL" | grep -qE 'KeyCode\.Alpha1 \+ i' &&
+   code "$SEL" | grep -qE 'i < PlayerInventory\.SelectableSlotCount'; then
+  ok "die Zahlenreihe waehlt einen Platz, die Fackel eingeschlossen"
+else
+  bad "die Zahlenreihe waehlt einen Platz, die Fackel eingeschlossen" \
+      "ueber SlotCount statt SelectableSlotCount gezaehlt laesst die Fackel ohne Taste"
+fi
+
+# Und sie greift nicht durch ein offenes Menue hindurch.
+if [ -f "$SEL" ] && code "$SEL" | grep -qE 'MenuInputGate\.IsMenuOpen'; then
+  ok "die Zahlenreihe ruht, solange ein Menue offen ist"
+else
+  bad "die Zahlenreihe ruht, solange ein Menue offen ist" \
+      "sonst waehlt eine 1 im Missionsmenue einen Ausruestungsplatz darunter"
+fi
+
+# Und sie fasst die mobile Steuerung nicht an.
+if [ -f "$SEL" ] && ! code "$SEL" | grep -qE 'MobileInputController'; then
+  ok "die Zahlenreihe laesst die mobile Steuerung in Ruhe"
+else
+  bad "die Zahlenreihe laesst die mobile Steuerung in Ruhe" \
+      "ein Telefon hat keine Zahlenreihe; der Controller besitzt Bewegung, Blick und HUD"
 fi
 
 # ---- die Tuer wird gezogen, und sie bleibt in ihrem Rahmen ------------------------------------

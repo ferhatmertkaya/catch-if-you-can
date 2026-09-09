@@ -125,21 +125,46 @@ namespace CatchIfYouCan.Environment
             // By SHAPE and role, never by name: a hard-coded object name that stops resolving
             // fails silently and forever (CLAUDE.md mistakes 3 and 10). A table is the prop in
             // this room with the largest flat top the player can reach.
+            //
+            // The height test asks where the TOP is, not where the middle is. That was the bug:
+            // it tested the centre of the union box, so a low table measuring 0.30 m tall sat at
+            // a centre of 0.15 and fell under a 0.25 floor - a table rejected for being a table.
+            // What you put an object ON is the top surface, so that is the number to test.
             Transform best = null;
             float bestArea = 0f;
+            var seen = new System.Text.StringBuilder();
 
             foreach (Art.RoomProp prop in FindObjectsByType<Art.RoomProp>(
                          FindObjectsInactive.Exclude, FindObjectsSortMode.None))
             {
-                if (prop == null || !TryMeasureTop(prop.transform, out Bounds b))
+                if (prop == null)
                     continue;
 
-                // Waist height and below. A bookcase has a top too, and it is over the player's
-                // head.
-                if (b.center.y > 1.30f || b.center.y < 0.25f)
+                if (!TryMeasureTop(prop.transform, out Bounds b))
+                {
+                    Append(seen, prop.name, "no collider and no renderer");
                     continue;
+                }
 
                 float area = b.size.x * b.size.z;
+
+                // Reachable. Above this a bookcase's top is over the player's head, and below it
+                // the object is the floor or a rug.
+                if (b.max.y > MaximumTopHeight)
+                {
+                    Append(seen, prop.name, "top at " + b.max.y.ToString("F2") + " m, too high");
+                    continue;
+                }
+
+                if (b.max.y < MinimumTopHeight)
+                {
+                    Append(seen, prop.name, "top at " + b.max.y.ToString("F2") + " m, too low");
+                    continue;
+                }
+
+                Append(seen, prop.name, "top " + b.max.y.ToString("F2") + " m, " +
+                                        area.ToString("F2") + " m2");
+
                 if (area > bestArea)
                 {
                     bestArea = area;
@@ -147,7 +172,38 @@ namespace CatchIfYouCan.Environment
                 }
             }
 
+            // Said out loud either way. A rejection that is silent about WHY covers two different
+            // problems with one symptom - "there is no table in this room" and "the table was
+            // there and the test threw it out" need opposite fixes, and the second one cost a
+            // session in this project already.
+            if (best != null)
+            {
+                CIYCLog.Info(LogTag + "table = '" + best.name + "' (" + bestArea.ToString("F2") +
+                             " m2). Considered:" + seen);
+            }
+            else
+            {
+                CIYCLog.Error(LogTag + "no prop in this room measures as a table between " +
+                              MinimumTopHeight.ToString("F2") + " and " +
+                              MaximumTopHeight.ToString("F2") + " m. Considered:" +
+                              (seen.Length > 0 ? seen.ToString() : " <no RoomProp at all>") +
+                              ". Assign 'table' on this component to settle it.");
+            }
+
             return best;
+        }
+
+        /// <summary>Lowest surface still worth putting the kit on, in metres.</summary>
+        private const float MinimumTopHeight = 0.20f;
+
+        /// <summary>Highest surface the player can still reach over, in metres.</summary>
+        private const float MaximumTopHeight = 1.40f;
+
+        private static void Append(System.Text.StringBuilder sb, string name, string verdict)
+        {
+            if (sb.Length > 400)
+                return;
+            sb.Append(" ").Append(name).Append("(").Append(verdict).Append(")");
         }
 
         /// <summary>

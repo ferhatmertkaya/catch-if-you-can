@@ -97,6 +97,39 @@ namespace CatchIfYouCan.UI
             _wired = true;
         }
 
+        /// <summary>
+        /// The number row picks a slot on a keyboard, the way every game with a hotbar does.
+        ///
+        /// <para>
+        /// It lives HERE rather than in <c>MobileInputController</c> on purpose. That controller
+        /// owns movement, look, the joystick and the HUD buttons, and slot selection is already
+        /// this component's job - it holds the inventory reference and it already calls
+        /// <see cref="Select"/> from a tap. Routing a key through the input controller and back
+        /// would be a second path to the same call, and the two would diverge the first time one
+        /// of them grew a rule. Nothing about the touch layout changes: a phone has no number row.
+        /// </para>
+        /// <para>
+        /// 1-3 are the three investigation slots. 4 is the torch, which has a place of its own
+        /// outside them - see <see cref="PlayerInventory.TorchSlotIndex"/> - so binding it to a
+        /// fourth key is what makes the number row match what the player actually carries.
+        /// </para>
+        /// </summary>
+        private void Update()
+        {
+            // A menu is up: the number row belongs to it, not to the bag underneath.
+            if (MenuInputGate.IsMenuOpen)
+                return;
+
+            for (int i = 0; i < PlayerInventory.SelectableSlotCount; i++)
+            {
+                if (UnityEngine.Input.GetKeyDown(KeyCode.Alpha1 + i))
+                {
+                    Select(i);
+                    return;
+                }
+            }
+        }
+
         private void Select(int index)
         {
             var inventory = LocalPlayerService.GetPlayerComponent<PlayerInventory>();
