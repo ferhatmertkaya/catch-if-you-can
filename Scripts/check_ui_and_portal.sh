@@ -3039,6 +3039,35 @@ unterscheiden"
         "vor dem Spawn allein ist die Tuer; elf feste Objekte darin sind eine Wand"
   fi
 
+  # Ein Fehlschlag kostet EIN Stueck, nicht die zehn dahinter. Das ist die Schadenshaelfte von
+  # Fehler 27: die Ursache wurde behoben, die FORM nicht - eine ungesicherte Schleife ueber elf
+  # unabhaengige Objekte macht aus jedem einzelnen Fehler weiterhin einen totalen, und was sie
+  # meldet ("nur die Taschenlampe ist da"), zeigt auf das Letzte, was ging, statt auf das Erste,
+  # was brach. Gefangen wird je Stueck, und laut: mit Id und Ausnahme, sonst steht in der
+  # Konsole eine Zahl statt eines Namens.
+  LOOP="$(code "$TBL" | sed -n '/for (int i = 0; i < definitions.Count; i++)/,/^            }$/p')"
+  if printf '%s' "$LOOP" | grep -qE 'catch \(System\.Exception' &&
+     printf '%s' "$LOOP" | grep -qE 'continue;' &&
+     printf '%s' "$LOOP" | grep -qE 'CIYCLog\.Error'; then
+    ok "ein Stueck, das wirft, kostet nur sich selbst"
+  else
+    bad "ein Stueck, das wirft, kostet nur sich selbst" \
+        "eine ungesicherte Schleife macht aus einem Fehler einen totalen (Fehler 27)"
+  fi
+
+  # Und das Testgeraet liegt VOR dem Raster. Als Letztes kann es genau seine Aufgabe nicht
+  # erfuellen: es beantwortet "wurde das Ding gebaut?", und alles, was vorher wirft, nimmt es
+  # mit - das eine Stueck, dessen Fehlen die Frage ist, fehlt dann aus fremdem Grund.
+  BODY="$(code "$TBL" | sed -n '/private void PlaceAll(/,/^        }$/p')"
+  CALL_LINE="$(printf '%s' "$BODY" | grep -n 'PlaceTestItemAtSpawn(' | head -1 | cut -d: -f1)"
+  LOOP_LINE="$(printf '%s' "$BODY" | grep -n 'for (int i = 0; i < definitions.Count' | head -1 | cut -d: -f1)"
+  if [ -n "$CALL_LINE" ] && [ -n "$LOOP_LINE" ] && [ "$CALL_LINE" -lt "$LOOP_LINE" ]; then
+    ok "das Testgeraet wird vor dem Raster gelegt, nicht danach"
+  else
+    bad "das Testgeraet wird vor dem Raster gelegt, nicht danach" \
+        "als Letztes nimmt jeder fruehere Fehler genau das Stueck mit, dessen Fehlen die Frage ist"
+  fi
+
   # Das Testgeraet am Spawn wird UEBER DENSELBEN Aufruf gebaut wie alles andere. Ein zweiter
   # Bauweg waere Fehler 1, und schlimmer als sonst: er existiert, um ein Geraet zu PRUEFEN,
   # also pruefte er dann einen Sonderfall statt das Geraet. In dieser Datei baut genau eine

@@ -471,7 +471,16 @@ namespace CatchIfYouCan.Environment
             }
 
             var placeholders = new List<string>();
+            var failed = new List<string>();
             float topY = top.max.y + surfaceClearance;
+
+            // The test item goes down FIRST, before the grid.
+            //
+            // It was last, and last is the one position where it cannot do its job: it exists
+            // to answer "was this thing built?", and anything that throws earlier in this
+            // method takes it with it - so the one item whose absence is the question is also
+            // the one most likely to be missing for an unrelated reason.
+            PlaceTestItemAtSpawn(testItem);
 
             for (int i = 0; i < definitions.Count; i++)
             {
@@ -488,9 +497,37 @@ namespace CatchIfYouCan.Environment
                     topY,
                     top.center.z + (xIsLong ? d : a));
 
-                EquipmentBase item = Place(definition, position);
-                if (item == null)
+                // One item's failure costs THAT item, not the ten behind it.
+                //
+                // This is the damage half of CLAUDE.md mistake 27, which was recorded and then
+                // not fixed: the projector's Awake threw, the exception left this loop, and
+                // what was on the floor afterwards was nothing at all. The cause was fixed and
+                // the SHAPE was not - an unguarded loop over eleven independent objects still
+                // turns any one fault into a total one, and the report it leaves ("only the
+                // torch spawned") points at the last thing that worked rather than the first
+                // thing that broke.
+                //
+                // Caught per item and logged LOUDLY with the id and the exception, so the next
+                // run names the culprit instead of leaving a console full of anonymous errors.
+                EquipmentBase item;
+                try
+                {
+                    item = Place(definition, position);
+                }
+                catch (System.Exception ex)
+                {
+                    failed.Add(definition.Id);
+                    CIYCLog.Error(LogTag + "'" + definition.Id + "' threw while being placed, " +
+                                  "so it is not on the floor. The items after it are unaffected. " +
+                                  ex.GetType().Name + ": " + ex.Message + "\n" + ex.StackTrace);
                     continue;
+                }
+
+                if (item == null)
+                {
+                    failed.Add(definition.Id);
+                    continue;
+                }
 
                 if (!EquipmentRuntimeFactory.HasRuntimePath(definition.Id))
                     placeholders.Add(definition.Id);
@@ -503,9 +540,10 @@ namespace CatchIfYouCan.Environment
                          pitchAcross.ToString("F2") + " x " + pitchDeep.ToString("F2") + " m" +
                          (placeholders.Count > 0
                              ? "; DEBUG PLACEHOLDER for: " + string.Join(", ", placeholders)
-                             : "; every item has a real runtime object") + ".");
-
-            PlaceTestItemAtSpawn(testItem);
+                             : "; every item has a real runtime object") +
+                         (failed.Count > 0
+                             ? ". FAILED, and named above: " + string.Join(", ", failed.ToArray())
+                             : ". Nothing failed."));
         }
 
         /// <summary>
@@ -564,7 +602,20 @@ namespace CatchIfYouCan.Environment
 
             probe.y = y;
 
-            EquipmentBase item = Place(testItem, probe);
+            EquipmentBase item;
+            try
+            {
+                item = Place(testItem, probe);
+            }
+            catch (System.Exception ex)
+            {
+                CIYCLog.Error(LogTag + "'" + testItem.Id + "' threw while being laid at the " +
+                              "spawn, so there is nothing there to pick up. The kit is " +
+                              "unaffected. " + ex.GetType().Name + ": " + ex.Message + "\n" +
+                              ex.StackTrace);
+                return;
+            }
+
             if (item == null)
             {
                 CIYCLog.Error(LogTag + "'" + testItem.Id + "' produced no object, so there is " +
