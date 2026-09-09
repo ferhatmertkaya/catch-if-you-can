@@ -1850,8 +1850,26 @@ def strip_comments(text):
     text = re.sub(r'/\*.*?\*/', '', text, flags=re.S)
     return '\n'.join(re.sub(r'//.*$', '', ln) for ln in text.split('\n'))
 
+# OUR shaders, not every shader on the machine.
+#
+# This walked all of Assets/, which on a machine that HAS the purchased packs includes
+# theirs - and a vendor shader is not ours to fix. Reported as a failure it is worse than
+# useless: it is a red line naming a file the reader is not allowed to edit, in a guard whose
+# whole job is to say "this one compiles to magenta and it is yours". It fired on
+# Triplanar.shader out of a gitignored pack, and the file does not even exist in the
+# repository - so CI, which has no packs, was green while the one machine that can open the
+# project was red. Exactly the split of mistake 19, in a different guard.
+#
+# Skipped ones are COUNTED rather than passed over silently: "0 vendor shaders skipped" and
+# "40 vendor shaders skipped" are different worlds, and the difference should be readable.
+OURS = pathlib.Path(sys.argv[1], 'Assets', 'CatchIfYouCan')
+
 findings = []
+skipped = 0
 for path in sorted(pathlib.Path(sys.argv[1], 'Assets').rglob('*.shader')):
+    if OURS not in path.parents:
+        skipped += 1
+        continue
     raw = path.read_text(errors='replace')
     for m in re.finditer(r'(HLSLPROGRAM|CGPROGRAM)(.*?)(ENDHLSL|ENDCG)', raw, re.S):
         base = raw[:m.start(2)].count('\n') + 1
@@ -1882,15 +1900,21 @@ for path in sorted(pathlib.Path(sys.argv[1], 'Assets').rglob('*.shader')):
                 i = j + 1
             else:
                 i += 1
-print("; ".join(findings))
+print("; ".join(findings) + ("" if findings else "|" + str(skipped)))
 PYEOF
 )"
-if [ -z "$ORDER" ]; then
-  ok "every shader local is declared before it is used"
-else
-  bad "every shader local is declared before it is used" \
-      "HLSL does not hoist; this does not compile and Unity draws it magenta: $ORDER"
-fi
+case "$ORDER" in
+  \|*)
+    ok "every shader of OURS declares its locals before use (${ORDER#|} vendor shader(s) skipped)"
+    ;;
+  "")
+    ok "every shader of ours declares its locals before use"
+    ;;
+  *)
+    bad "every shader of ours declares its locals before use" \
+        "HLSL does not hoist; this does not compile and Unity draws it magenta: $ORDER"
+    ;;
+esac
 
 # ---- V10: a purchased pack may lend the portal its LOOK, never its SHAPE ----------------------
 #
@@ -3042,20 +3066,47 @@ fi
 # gesetzt hat, hat sie uebersprungen, weil sie in die Portaloeffnung ragen. Seit das Portal JEDES
 # Collider in seiner Oeffnung abschaltet, ist das Ueberspringen nicht mehr noetig - und ohne
 # Collider ist eine Wand keine.
-missing=""
-for pi in 2070585590 308749705 1921571759; do
-  python3 - "$SCENE" "$pi" <<'PYEOF' || missing="$missing $pi"
+# Gesucht wird per NAMEN, nicht per fileID - und das ist der zweite Anlauf.
+#
+# Zuerst standen hier die drei fileIDs, die die PrefabInstances zum Zeitpunkt des Schreibens
+# hatten. Unity vergibt die beim Neuserialisieren einer Szene neu: nach einer ganz normalen
+# Bearbeitungssitzung hiess `4 (8)` statt 2070585590 auf einmal 593429620, und der Waechter
+# meldete "ohne Collider laeuft der Spieler hindurch" ueber drei Waende, die einen Collider
+# hatten. Ein falsches ROT ist schlimmer als gar keine Pruefung: es schickt den Leser hinter
+# einem Fehler her, den es nicht gibt, und beim naechsten Mal glaubt er der Zeile nicht mehr.
+# CLAUDE.md Fehler 3 und 10, diesmal im Waechter statt im Spielcode - eine Kennung, die nach
+# einer erwarteten Operation nirgends mehr aufloest.
+#
+# Der Name ist das, woran der Mensch diese Waende ohnehin erkennt, er steht in
+# m_Modifications, und er ueberlebt das Neuserialisieren.
+missing="$(python3 - "$SCENE" <<'PYEOF'
 import re, sys
-txt = open(sys.argv[1], encoding="utf-8").read()
-m = re.search(r"--- !u!1001 &%s\n(.*?)(?=\n--- !u!)" % sys.argv[2], txt, re.S)
-sys.exit(0 if m and "addedObject" in m.group(1) else 1)
+
+txt = open(sys.argv[1], encoding="utf-8", errors="replace").read()
+wanted = {"4  (8)", "4  (14)", "4  (15)"}
+found = {}
+
+for m in re.finditer(r"--- !u!1001 &\d+\n(.*?)(?=\n--- !u!|\Z)", txt, re.S):
+    body = m.group(1)
+    name = re.search(r"propertyPath: m_Name\s*\n\s*value: (.*)", body)
+    if not name:
+        continue
+    name = name.group(1).strip()
+    if name in wanted:
+        found[name] = "addedObject" in body
+
+# Ein Name, der gar nicht mehr vorkommt, ist genauso ein Befund wie einer ohne Collider -
+# und ein anderer: das eine ist eine durchlaessige Wand, das andere eine geloeschte.
+print(" ".join(sorted(
+    (n + "(fehlt)" if n not in found else n) for n in wanted
+    if not found.get(n, False))))
 PYEOF
-done
+)"
 if [ -z "$missing" ]; then
-  ok "die drei uebersprungenen Waende haben jetzt Kollision"
+  ok "die drei uebersprungenen Waende haben Kollision"
 else
-  bad "die drei uebersprungenen Waende haben jetzt Kollision" \
-      "ohne Collider laeuft der Spieler hindurch; PrefabInstance ohne addedObject:$missing"
+  bad "die drei uebersprungenen Waende haben Kollision" \
+      "ohne Collider laeuft der Spieler hindurch; ohne addedObject:$missing"
 fi
 
 echo

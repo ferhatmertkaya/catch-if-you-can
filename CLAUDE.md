@@ -702,6 +702,26 @@ Repeating one of these is the most likely way to break something.
    ihr eigenes serialisiertes Feld. Ein gecachtes Flag kann veralten, eine Referenz nicht: die
    Pruefung gehoert dorthin, wo sie benutzt wird.
 
+26. **Zwei Waechter, die ROT meldeten, ohne dass etwas kaputt war.** Beide pruefen eine echte
+   Invariante und beide hingen an etwas, das sich aendern darf.
+
+   Der eine suchte die drei Waende an der Portaloeffnung ueber ihre `fileID` in der Szene. Unity
+   vergibt die beim Neuserialisieren einer Szene neu - nach einer gewoehnlichen Bearbeitungssitzung
+   hiess `4 (8)` statt 2070585590 auf einmal 593429620 - und der Waechter meldete "ohne Collider
+   laeuft der Spieler hindurch" ueber drei Waende, die einen Collider hatten. Fehler 3 und 10,
+   diesmal im Waechter statt im Spielcode. Der andere las JEDEN Shader unter `Assets/`, also auf
+   der einen Maschine, die die gekauften Pakete hat, auch deren: `Triplanar.shader` aus einem
+   gitignorierten Paket, das im Repository gar nicht existiert. CI war gruen, die Arbeitsmaschine
+   rot, und die genannte Datei durfte der Leser nicht einmal anfassen - dieselbe Spaltung wie
+   Fehler 19, in einem Waechter.
+
+   Ein falsches ROT ist schlimmer als eine fehlende Pruefung. Es schickt den Leser hinter einem
+   Fehler her, den es nicht gibt, es kostet die Sitzung, in der er ihn sucht, und beim naechsten
+   Mal glaubt er der Zeile nicht mehr - womit die Pruefung genau dann nichts mehr wert ist, wenn
+   sie recht hat. Also: gesucht wird ueber den NAMEN, an dem ein Mensch das Objekt ohnehin
+   erkennt, geprueft wird nur, was uns gehoert, und was uebersprungen wurde, wird GEZAEHLT
+   ("18 vendor shader(s) skipped") statt stillschweigend ausgelassen.
+
 ## Unity Editor availability
 
 Most work on this project happens where Unity cannot run. When it cannot:
