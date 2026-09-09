@@ -104,6 +104,22 @@ namespace CatchIfYouCan.Equipment
 
             var equipment = root.AddComponent<T>();
             equipment.BindDefinition(definition);
+
+            // Interactable by CONSTRUCTION.
+            //
+            // This used to be added by whichever code laid the item down - on the last line of
+            // a long method - so an item whose placement threw halfway through arrived visible,
+            // correctly sized, and carrying nothing the interaction ray could resolve. Looking
+            // at it did nothing, and no screenshot can tell that apart from an item that works.
+            // Built here, every runtime item is a pickup from the moment it exists, whatever
+            // spawns it.
+            var pickup = root.AddComponent<Interaction.InteractivePickup>();
+            pickup.Configure(equipment,
+                             string.IsNullOrEmpty(definition.DisplayName)
+                                 ? "Pick Up"
+                                 : definition.DisplayName,
+                             false);
+
             return root;
         }
 

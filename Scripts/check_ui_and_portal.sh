@@ -3039,50 +3039,59 @@ unterscheiden"
         "vor dem Spawn allein ist die Tuer; elf feste Objekte darin sind eine Wand"
   fi
 
-  # Ein hingelegtes Stueck hat etwas, das der Interakt-Strahl TREFFEN kann.
+  # Der Koerper, auf den der Strahl zielt, entsteht dort, wo das Visual entsteht - nicht in der
+  # letzten Zeile dessen, der das Stueck hinlegt.
   #
-  # Es hatte nichts. Ein frisch gebautes Stueck traegt genau einen Collider - die Kapsel aus
-  # HeldEquipmentBase.BuildDropCollider -, und die wird AUSGESCHALTET erzeugt, weil sie zum
-  # Wurfpfad gehoert. Deren eigene Zusammenfassung sagt "the trigger the pickup ray uses is a
-  # separate collider and stays on", und diesen Collider baut nirgends jemand: ein Satz, der ein
-  # Objekt beschreibt, das es nicht gibt (Fehler 8, andersherum). Der Strahl ging also durch
-  # jedes Stueck auf dem Boden hindurch, und die Aufforderung erschien nie - bei jedem Stueck,
-  # nicht nur beim Projektor. Gemessen wird um das, was wirklich da ist, und in den EIGENEN Raum
-  # zurueckgerechnet: eine Weltgroesse in einem BoxCollider wird ein zweites Mal skaliert
-  # (Fehler 12).
-  PB="$(code "$TBL" | sed -n '/private static void EnsurePickupBody/,/^        }$/p')"
-  if code "$TBL" | grep -qE 'EnsurePickupBody\(item\);' &&
-     printf '%s' "$PB" | grep -qE 'isTrigger = true' &&
-     printf '%s' "$PB" | grep -qE 'lossyScale' &&
-     printf '%s' "$PB" | grep -qE 'InverseTransformPoint'; then
-    ok "ein hingelegtes Stueck kann der Interakt-Strahl treffen"
+  # Vorher hing er hier, am Ende von Place(): alles, was davor warf, hinterliess ein
+  # positioniertes, sichtbares Objekt ohne Collider und ohne Aufhebekomponente. Genau das war
+  # "das Modell ist da und hinschauen tut nichts" - der Strahl ging vorbei und traf den Boden
+  # zwei Meter dahinter. Ein Gegenstand muss durch KONSTRUKTION aufhebbar sein.
+  HEB2="$ROOT/Assets/CatchIfYouCan/Scripts/Equipment/HeldEquipmentBase.cs"
+  ERF2="$ROOT/Assets/CatchIfYouCan/Scripts/Equipment/EquipmentRuntimeFactory.cs"
+  PT="$(code "$HEB2" | sed -n '/protected void BuildPickupTrigger/,/^        }$/p')"
+
+  if [ -f "$HEB2" ] && code "$HEB2" | grep -qE 'BuildDropCollider\(measured\);' &&
+     code "$HEB2" | grep -qE 'BuildPickupTrigger\(\);' &&
+     printf '%s' "$PT" | grep -qE 'isTrigger = true'; then
+    ok "der Aufhebekoerper entsteht, wo das Visual entsteht"
   else
-    bad "ein hingelegtes Stueck kann der Interakt-Strahl treffen" \
-        "die Wurfkapsel entsteht ausgeschaltet; ohne eigenen Koerper geht der Strahl hindurch"
+    bad "der Aufhebekoerper entsteht, wo das Visual entsteht" \
+        "in der letzten Zeile eines langen Verfahrens fehlt er, sobald davor etwas wirft"
   fi
 
-  # Der Aufhebekoerper wird an den RENDERERN gemessen, nicht an den Collidern. TryMeasureTop
-  # nimmt Collider zuerst, und der einzige, den ein frisches Stueck traegt, ist die Wurfkapsel -
-  # ausgeschaltet erzeugt, und Unity haelt deren bounds waehrenddessen nicht nach. Was der
-  # Spieler ZIELEN muss, kann nicht an einer Form gemessen werden, die mit dem Bild nichts zu
-  # tun hat: sichtbar und treffbar muessen dasselbe sein.
-  if printf '%s' "$PB" | grep -qE 'TryMeasureRenderers\(' &&
-     ! printf '%s' "$PB" | grep -qE 'TryMeasureTop\('; then
-    ok "der Aufhebekoerper wird am Gezeichneten gemessen, nicht an der Wurfkapsel"
+  # Gemessen am GEZEICHNETEN und in den eigenen Raum zurueckgerechnet: eine Weltgroesse in
+  # einem BoxCollider wird ein zweites Mal skaliert (Fehler 12). Die Wurfkapsel taugt als Mass
+  # nicht - sie ist ausgeschaltet, und Unity haelt deren bounds dann nicht nach.
+  if printf '%s' "$PT" | grep -qE 'GetComponentsInChildren<Renderer>\(true\)' &&
+     printf '%s' "$PT" | grep -qE 'lossyScale' &&
+     printf '%s' "$PT" | grep -qE 'InverseTransformPoint'; then
+    ok "der Aufhebekoerper wird am Gezeichneten gemessen, in eigenem Raum"
   else
-    bad "der Aufhebekoerper wird am Gezeichneten gemessen, nicht an der Wurfkapsel" \
-        "die Wurfkapsel ist ausgeschaltet und ihre bounds veraltet; sichtbar und treffbar muessen dasselbe sein"
+    bad "der Aufhebekoerper wird am Gezeichneten gemessen, in eigenem Raum" \
+        "sichtbar und treffbar muessen derselbe Kasten sein"
   fi
 
-  # Und es bekommt keinen ZWEITEN. Zwei Koerper sind zwei Wege in dasselbe Stueck, und zwei
-  # Aufforderungen auf einem Objekt sind schlimmer als keine.
-  if printf '%s' "$PB" | grep -qE 'GetComponents<Collider>\(\)' &&
-     printf '%s' "$PB" | grep -qE 'existing\.enabled' &&
-     printf '%s' "$PB" | grep -qE 'return;'; then
-    ok "ein Stueck, das schon einen Koerper hat, bekommt keinen zweiten"
+  # Und es gibt genau einen: kein zweiter beim erneuten Bauen, und der Lobbytisch legt keinen
+  # eigenen mehr an - zwei Quellen fuer eine Sache sind Fehler 1.
+  if printf '%s' "$PT" | grep -qE 'if \(_pickupTrigger != null\)' &&
+     code "$HEB2" | grep -qE 'Object\.Destroy\(_pickupTrigger\)' &&
+     ! code "$TBL" | grep -qE 'AddComponent<BoxCollider>\(\)'; then
+    ok "es gibt genau einen Aufhebekoerper, aus einer Quelle"
   else
-    bad "ein Stueck, das schon einen Koerper hat, bekommt keinen zweiten" \
-        "zwei Aufforderungen auf einem Objekt sind schlimmer als keine"
+    bad "es gibt genau einen Aufhebekoerper, aus einer Quelle" \
+        "zwei Koerper sind zwei Wege in dasselbe Stueck"
+  fi
+
+  # Und jedes Laufzeitstueck ist von Anfang an eine Aufhebbarkeit, nicht erst wenn es jemand
+  # hinlegt. Ohne InteractivePickup loest GetComponentInParent<IInteractable> nichts auf, und
+  # der Spieler sieht keinen Namen und keine Aufforderung.
+  if [ -f "$ERF2" ] &&
+     code "$ERF2" | grep -qE 'AddComponent<Interaction\.InteractivePickup>\(\)' &&
+     code "$ERF2" | grep -qE 'pickup\.Configure\('; then
+    ok "jedes Laufzeitstueck ist durch Konstruktion aufhebbar"
+  else
+    bad "jedes Laufzeitstueck ist durch Konstruktion aufhebbar" \
+        "ohne InteractivePickup loest der Strahl nichts auf: kein Name, keine Aufforderung"
   fi
 
   # Ein Fehlschlag kostet EIN Stueck, nicht die zehn dahinter. Das ist die Schadenshaelfte von

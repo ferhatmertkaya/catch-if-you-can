@@ -278,7 +278,12 @@ place that number lives; everything else derives it.
   disabled: what can be seen and what can be hit have to be the same box. And a refused
   pickup NAMES its reason, because the controller drops a refused target, so no prompt,
   no outline and no name is what all three refusals and an empty ray look like alike - a
-  diagnostic that describes and never decides. 294 checks.
+  diagnostic that describes and never decides - and the body it aims at is built where
+  the VISUAL is built rather than on the last line of whoever places the item, because
+  anything that threw in front of that line left a positioned, visible object carrying
+  no collider and no pickup component at all, which is what "the model is there and
+  looking at it does nothing" was; every runtime item is a pickup by construction now.
+  295 checks.
 
 - `Scripts/check_editor_menu.sh` — the editor menu stays legible, and the purchased architecture has ONE scale. The game scale is the measured ratio 2.95 / 3.92 in one place, with no tool carrying its own copy; the decision is made on effective world scale rather than `localScale`, because a vendor piece at localScale 1 inside a corrected wrapper IS already corrected and its own field says otherwise; an already-corrected ancestor is recognised and a second application is a named verdict rather than a silent pass; architecture is told from props by FOLDER, since a filename classifier caught 3 of 105 in a pack that numbers its prefabs and calls its glass Steklo; an undecidable piece is reported ambiguous rather than guessed, because a chair may already be at real-world size and shrinking one that was right is invisible; the portal is excluded, its opening being a gameplay dimension; the migration audits before it can apply and converts only original-size pieces; and the correction goes on a CIYC wrapper with nothing applied back to the purchased package. Also the menu itself: Fifty-one commands sit in
   seven named groups with none hiding in another root menu, every one carries a risk tag saying

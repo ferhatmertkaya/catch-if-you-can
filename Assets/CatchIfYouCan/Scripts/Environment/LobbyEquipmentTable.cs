@@ -701,13 +701,17 @@ namespace CatchIfYouCan.Environment
                 body.useGravity = false;
             }
 
-            var pickup = item.GetComponent<InteractivePickup>();
-            if (pickup == null)
-                pickup = item.gameObject.AddComponent<InteractivePickup>();
-
-            pickup.Configure(item, "Take " + definition.DisplayName, false);
-
-            EnsurePickupBody(item);
+            // The pickup and the body it is aimed at come from EquipmentRuntimeFactory now, so
+            // an item is interactable before this method ever sees it. Nothing is added here:
+            // two sources for one thing is mistake 1, and the reason it moved is that the last
+            // line of a long method is a bad place for something the item cannot function
+            // without - anything that threw in front of it left a visible object with no way in.
+            if (item.GetComponent<InteractivePickup>() == null)
+            {
+                CIYCLog.Error(LogTag + "'" + definition.Id + "' arrived without an " +
+                              "InteractivePickup. EquipmentRuntimeFactory gives one to every " +
+                              "runtime item, so this item did not come from there.");
+            }
 
 #if UNITY_EDITOR || DEVELOPMENT_BUILD
             // Walks the whole chain and says which link is missing. An item that is visible and
@@ -717,72 +721,6 @@ namespace CatchIfYouCan.Environment
 #endif
 
             return item;
-        }
-
-        /// <summary>
-        /// Gives a placed item something for the interact ray to hit.
-        ///
-        /// <para>
-        /// <b>Without this nothing on the lobby floor can be picked up.</b>
-        /// <see cref="InteractionController"/> finds an item by raycasting against colliders,
-        /// and a freshly built item has exactly one: the capsule
-        /// <c>HeldEquipmentBase.BuildDropCollider</c> makes, which is created <i>disabled</i>
-        /// because it belongs to the thrown-object path. Its own summary says "the trigger the
-        /// pickup ray uses is a separate collider and stays on" - and no such collider is built
-        /// anywhere. The sentence describes an object that does not exist, so the ray passed
-        /// through every item on the floor and the prompt never appeared.
-        /// </para>
-        ///
-        /// <para>
-        /// Measured around what is actually there and converted back into the item's own space:
-        /// a world size written into a BoxCollider is scaled a second time by the transform
-        /// (CLAUDE.md mistake 12). A trigger, so it is something to look at and not something
-        /// to walk into, and left to <c>SetPresentationVisible</c> afterwards, which switches
-        /// every root collider except the drop capsule with the item's visibility - that is the
-        /// "not pickable while stowed" behaviour this slots into rather than works around.
-        /// </para>
-        /// </summary>
-        private static void EnsurePickupBody(EquipmentBase item)
-        {
-            Transform t = item.transform;
-
-            // Something already hittable? Then leave it alone - a second body is a second way
-            // into the same item, and two prompts on one object is worse than none.
-            foreach (Collider existing in t.GetComponents<Collider>())
-            {
-                if (existing != null && existing.enabled)
-                    return;
-            }
-
-            // Measured off what is DRAWN, not off what happens to have a collider.
-            //
-            // TryMeasureTop takes colliders first and only falls back to renderers, and the one
-            // collider a fresh item carries is the drop capsule - a shape that belongs to the
-            // thrown-object path, is created disabled, and whose bounds Unity does not keep
-            // updated while it is off. Sizing the thing the player has to AIM AT off that gives
-            // a box that has nothing to do with the object on screen. What can be seen is what
-            // has to be hittable, so this measures renderers and nothing else.
-            if (!TryMeasureRenderers(t, out Bounds world) || world.size.sqrMagnitude < 1e-8f)
-            {
-                CIYCLog.Warn(LogTag + "'" + item.name + "' draws nothing that can be measured, " +
-                             "so it gets no pickup body and the interact ray will pass through " +
-                             "it.");
-                return;
-            }
-
-            var box = item.gameObject.AddComponent<BoxCollider>();
-            box.isTrigger = true;
-
-            Vector3 lossy = t.lossyScale;
-            box.size = new Vector3(
-                world.size.x / Mathf.Max(1e-4f, Mathf.Abs(lossy.x)),
-                world.size.y / Mathf.Max(1e-4f, Mathf.Abs(lossy.y)),
-                world.size.z / Mathf.Max(1e-4f, Mathf.Abs(lossy.z)));
-            box.center = t.InverseTransformPoint(world.center);
-
-            CIYCLog.Info(LogTag + "'" + item.name + "' got a pickup body of " +
-                         world.size.ToString("F3") + " m (world), " + box.size.ToString("F3") +
-                         " in its own space.");
         }
 
         // ---- the torch --------------------------------------------------------------------------

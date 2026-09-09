@@ -93,6 +93,13 @@ namespace CatchIfYouCan.Equipment
         private Transform _view;
         private PlayerBodyMotion _bodyMotion;
         protected CapsuleCollider _dropCollider;
+
+        /// <summary>
+        /// The shape the interaction ray hits. Separate from the drop capsule on purpose: that
+        /// one belongs to the thrown-object path and is off while the item is not flying, so it
+        /// cannot be the thing a player aims at.
+        /// </summary>
+        private BoxCollider _pickupTrigger;
         private Rigidbody _dropBody;
         private int _placedFrame = -1;
         private Vector3 _aim = Vector3.forward;
@@ -304,6 +311,7 @@ namespace CatchIfYouCan.Equipment
 
             _measuredLength = measured;
             BuildDropCollider(measured);
+            BuildPickupTrigger();
         }
 
         /// <summary>
@@ -332,6 +340,11 @@ namespace CatchIfYouCan.Equipment
 
             if (_dropCollider == null)
                 BuildDropCollider(_measuredLength);
+
+            if (_pickupTrigger == null)
+                _pickupTrigger = GetComponent<BoxCollider>();
+
+            BuildPickupTrigger();
 
             return true;
         }
@@ -411,6 +424,12 @@ namespace CatchIfYouCan.Equipment
             {
                 Object.Destroy(_dropCollider);
                 _dropCollider = null;
+            }
+
+            if (_pickupTrigger != null)
+            {
+                Object.Destroy(_pickupTrigger);
+                _pickupTrigger = null;
             }
 
             BuildCarried();
@@ -872,6 +891,76 @@ namespace CatchIfYouCan.Equipment
         /// carried so a thing in the player's hand is not also a thing in the player's way. The
         /// trigger the pickup ray uses is a separate collider and stays on.
         /// </summary>
+        /// <summary>
+        /// Gives the item the shape the interaction ray aims at, at the moment its visual
+        /// exists.
+        ///
+        /// <para>
+        /// <b>An item has to be interactable by CONSTRUCTION, not by whoever places it.</b> The
+        /// pickup body used to be added by the code that laid the item on the lobby floor, on
+        /// the last line of a method with a dozen statements in front of it - so anything that
+        /// threw in between left a positioned, visible object carrying no collider and no
+        /// pickup component at all. That is exactly what "the model is there and looking at it
+        /// does nothing" was: the ray went past it and hit the floor two metres behind.
+        /// </para>
+        ///
+        /// <para>
+        /// Built here instead, beside the drop capsule, because this is where the visual is
+        /// finished and therefore where its size is known. Every item gets one, whatever spawns
+        /// it and whatever happens afterwards.
+        /// </para>
+        ///
+        /// <para>
+        /// A trigger, so it is something to look at rather than something to walk into, and
+        /// measured off the renderers and converted into this object's own space - a world size
+        /// written into a BoxCollider is scaled a second time by the transform (mistake 12).
+        /// </para>
+        /// </summary>
+        protected void BuildPickupTrigger()
+        {
+            if (_pickupTrigger != null)
+                return;
+
+            Transform carried = CarriedRoot;
+            if (carried == null)
+                return;
+
+            var renderers = carried.GetComponentsInChildren<Renderer>(true);
+            bool any = false;
+            Bounds world = default;
+            for (int i = 0; i < renderers.Length; i++)
+            {
+                Renderer r = renderers[i];
+                if (r == null)
+                    continue;
+                Bounds b = r.bounds;
+                if (b.size == Vector3.zero)
+                    continue;
+                if (!any) { world = b; any = true; } else world.Encapsulate(b);
+            }
+
+            if (!any || world.size.sqrMagnitude < 1e-8f)
+            {
+                // No art yet is a real state - the honest placeholder path - but a body still
+                // has to exist or the item is unreachable. Fall back to the measured length.
+                float side = Mathf.Max(0.08f, _measuredLength);
+                _pickupTrigger = gameObject.AddComponent<BoxCollider>();
+                _pickupTrigger.isTrigger = true;
+                _pickupTrigger.size = new Vector3(side, side, side);
+                _pickupTrigger.center = Vector3.zero;
+                return;
+            }
+
+            Vector3 lossy = transform.lossyScale;
+            _pickupTrigger = gameObject.AddComponent<BoxCollider>();
+            _pickupTrigger.isTrigger = true;
+            _pickupTrigger.size = new Vector3(
+                world.size.x / Mathf.Max(1e-4f, Mathf.Abs(lossy.x)),
+                world.size.y / Mathf.Max(1e-4f, Mathf.Abs(lossy.y)),
+                world.size.z / Mathf.Max(1e-4f, Mathf.Abs(lossy.z)));
+            _pickupTrigger.center = transform.InverseTransformPoint(world.center);
+        }
+
         protected void BuildDropCollider(float length)
         {
             _dropCollider = gameObject.AddComponent<CapsuleCollider>();

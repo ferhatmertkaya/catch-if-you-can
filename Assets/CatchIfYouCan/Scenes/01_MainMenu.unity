@@ -25601,9 +25601,9 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::CatchIfYouCan.Environment.LobbyEquipmentTable
   table: {fileID: 0}
   spawnAnchor: {fileID: 0}
-  floorDistance: 1.6
+  floorDistance: 2.2
   floorSideOffset: 1.9
-  floorArea: {x: 2.6, y: 1.1}
+  floorArea: {x: 1.8, y: 1.35}
   layoutAnchor: {fileID: 0}
   clearanceHeight: 0.5
   minimumGap: 0.06
