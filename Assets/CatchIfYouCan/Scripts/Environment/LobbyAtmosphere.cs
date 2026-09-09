@@ -92,6 +92,14 @@ namespace CatchIfYouCan.Environment
         private Material _dustMaterial;
         private Texture2D _dustSprite;
 
+        /// <summary>
+        /// Where the player arrives, as wired in the scene. Public because the equipment table
+        /// lays the kit out in front of it and the two are on the same object - asking the
+        /// sibling is better than looking the spawn up by name a second time (CLAUDE.md
+        /// mistakes 3 and 10).
+        /// </summary>
+        public Transform PlayerSpawn => playerSpawn;
+
         /// <summary>The lights this component made. Public so a diagnostic can count them.</summary>
         public int BuiltLightCount => _built.Count;
 

@@ -2982,28 +2982,50 @@ else
         "eine geschriebene Tischhoehe ist eine Annahme ueber ein Objekt, das Start erst baut"
   fi
 
-  # Und die Hoehenpruefung fragt nach der OBERSEITE, nicht nach der Mitte. Sie fragte nach der
-  # Mitte: ein 0,30 m hoher Tisch hat eine Mitte bei 0,15 und fiel unter eine Untergrenze von
-  # 0,25 - ein Tisch, abgelehnt dafuer, dass er ein Tisch ist. Worauf man etwas STELLT, ist die
-  # Oberseite; das ist die Zahl, die zaehlt.
-  RES="$(code "$TBL" | sed -n '/private Transform ResolveTable/,/^        }$/p')"
-  if printf '%s' "$RES" | grep -qE 'b\.max\.y > MaximumTopHeight' &&
-     printf '%s' "$RES" | grep -qE 'b\.max\.y < MinimumTopHeight' &&
-     ! printf '%s' "$RES" | grep -qE 'b\.center\.y'; then
-    ok "der Tisch wird an seiner Oberseite gemessen, nicht an seiner Mitte"
+  # Und die Kiste liegt IRGENDWO, auch ohne Tisch.
+  #
+  # Vorher suchte sie sich einen Tisch per Form und prueft dabei die MITTE der gemessenen Box
+  # gegen ein Hoehenfenster - ein 0,30 m hoher Tisch hat eine Mitte bei 0,15 und fiel unter eine
+  # Untergrenze von 0,25 durch. Ein Tisch, abgelehnt dafuer, dass er ein Tisch ist; nichts wurde
+  # platziert; und elf unsichtbare Gegenstaende sehen genauso aus wie elf, die nie gebaut wurden.
+  # Eine ratende Suche, die still "nichts" antwortet, ist schlimmer als gar keine Suche.
+  SURF="$(code "$TBL" | sed -n '/private bool TryResolveSurface/,/^        }$/p')"
+  if printf '%s' "$SURF" | grep -qE 'return TryResolveFloor\(out top\);' &&
+     code "$TBL" | grep -qE 'private bool TryResolveFloor\(out Bounds top\)'; then
+    ok "ohne Tisch liegt die Kiste auf dem Boden, statt nirgends"
   else
-    bad "der Tisch wird an seiner Oberseite gemessen, nicht an seiner Mitte" \
-        "die Mitte eines flachen Tisches liegt unter jeder sinnvollen Untergrenze"
+    bad "ohne Tisch liegt die Kiste auf dem Boden, statt nirgends" \
+        "eine Suche, die nichts findet und nichts platziert, ist von 'nie gebaut' nicht zu \
+unterscheiden"
   fi
 
-  # Und eine Absage nennt, was sie angesehen hat. "Kein Tisch im Raum" und "der Tisch war da und
-  # der Test hat ihn verworfen" sind ein Symptom und zwei entgegengesetzte Reparaturen - genau
-  # die Verwechslung, die in diesem Projekt schon eine Sitzung gekostet hat (Fehler 17).
-  if printf '%s' "$RES" | grep -qE 'Considered:'; then
-    ok "eine abgelehnte Tischsuche nennt die Kandidaten"
+  # Und die Bodenhoehe wird GEMESSEN. Der Lobbyboden ist ein Objekt auf seiner eigenen Hoehe;
+  # auf y = 0 gelegt liegt die Kiste im Boden oder schwebt darueber.
+  FLOOR="$(code "$TBL" | sed -n '/private bool TryResolveFloor/,/^        }$/p')"
+  if printf '%s' "$FLOOR" | grep -qE 'Physics\.Raycast\(' &&
+     printf '%s' "$FLOOR" | grep -qE 'Physics\.SyncTransforms\(\)'; then
+    ok "die Bodenhoehe wird gemessen, nicht auf null gesetzt"
   else
-    bad "eine abgelehnte Tischsuche nennt die Kandidaten" \
-        "eine Absage ohne Kandidaten deckt zwei Ursachen mit einem Symptom"
+    bad "die Bodenhoehe wird gemessen, nicht auf null gesetzt" \
+        "eine geratene Hoehe legt die Kiste in den Boden oder darueber"
+  fi
+
+  # Und sie liegt VOR dem Spawn, nicht darauf: der Spieler erscheint in seiner eigenen Kapsel.
+  if printf '%s' "$FLOOR" | grep -qE 'spawn\.forward \* floorDistance'; then
+    ok "die Kiste liegt vor dem Spawn, nicht darin"
+  else
+    bad "die Kiste liegt vor dem Spawn, nicht darin" \
+        "auf dem Spawnpunkt abgelegt stecken elf Gegenstaende im Spieler"
+  fi
+
+  # Der Spawnpunkt wird beim Geschwister erfragt, das ihn schon verdrahtet hat - nicht ueber
+  # einen Objektnamen, der still nicht mehr aufloest (CLAUDE.md Fehler 3 und 10).
+  if code "$TBL" | grep -qE 'atmosphere\.PlayerSpawn' &&
+     ! code "$TBL" | grep -qE 'GameObject\.Find|"Lobby_PlayerSpawn"'; then
+    ok "der Spawnpunkt wird erfragt, nicht per Namen gesucht"
+  else
+    bad "der Spawnpunkt wird erfragt, nicht per Namen gesucht" \
+        "ein fest verdrahteter Objektname faellt still und fuer immer um"
   fi
 fi
 

@@ -49,10 +49,22 @@ namespace CatchIfYouCan.Environment
     {
         private const string LogTag = "[CIYC][LobbyTable] ";
 
-        [Header("The table")]
-        [Tooltip("The surface to lay the kit out on. Left empty, the nearest prop with a " +
-                 "collider is measured instead.")]
+        [Header("Where the kit goes")]
+        [Tooltip("A surface to lay the kit out on. LEFT EMPTY the kit lies on the floor in " +
+                 "front of the player's arrival point, which is what you want while the room " +
+                 "is still being built.")]
         [SerializeField] private Transform table;
+
+        [Tooltip("Where the player arrives. Left empty, it is taken from the LobbyAtmosphere " +
+                 "on this same object, which already has it wired.")]
+        [SerializeField] private Transform spawnAnchor;
+
+        [Tooltip("How far in front of the spawn the kit lies, in metres. Far enough that it is " +
+                 "not inside the player's own capsule, near enough to see on the first frame.")]
+        [SerializeField, Min(0.5f)] private float floorDistance = 1.6f;
+
+        [Tooltip("How much floor the kit is spread over, in metres.")]
+        [SerializeField] private Vector2 floorArea = new Vector2(2.6f, 1.1f);
 
         [Header("Layout")]
         [Tooltip("Minimum gap between two items, edge to edge. Below this they read as a pile.")]
@@ -74,22 +86,8 @@ namespace CatchIfYouCan.Environment
 
         private void Start()
         {
-            Transform surface = ResolveTable();
-            if (surface == null)
-            {
-                CIYCLog.Error(LogTag + "No table to lay the kit out on, so none of it exists. " +
-                              "Assign 'table' on this component.");
+            if (!TryResolveSurface(out Bounds top))
                 return;
-            }
-
-            if (!TryMeasureTop(surface, out Bounds top))
-            {
-                CIYCLog.Error(LogTag + "'" + surface.name + "' has neither a collider nor a " +
-                              "renderer, so its top cannot be measured. Nothing is placed: " +
-                              "eleven items dropped at a guessed height is eleven items in the " +
-                              "floor.");
-                return;
-            }
 
             StartCoroutine(BuildRoutine(top));
         }
@@ -104,10 +102,7 @@ namespace CatchIfYouCan.Environment
         {
             yield return null;
 
-            Transform surface = ResolveTable();
-            Bounds top = fallbackTop;
-            if (surface != null && TryMeasureTop(surface, out Bounds measured))
-                top = measured;
+            Bounds top = TryResolveSurface(out Bounds measured) ? measured : fallbackTop;
 
             PlaceAll(top);
 
@@ -117,93 +112,101 @@ namespace CatchIfYouCan.Environment
 
         // ---- the table ------------------------------------------------------------------------
 
-        private Transform ResolveTable()
+        /// <summary>
+        /// Where the kit goes: an assigned surface if there is one, otherwise the FLOOR in front
+        /// of where the player arrives.
+        ///
+        /// <para>
+        /// It used to hunt the room for a table by shape, and that hunt is gone. It tested the
+        /// centre of a prop's measured box against a height window, so a 0.30 m table - centre at
+        /// 0.15 - fell under a 0.25 m floor and was rejected for being a table. Nothing was
+        /// placed, and eleven invisible items look exactly like eleven items that were never
+        /// built. A guessing search that silently answers "nothing" is worse than no search.
+        /// </para>
+        /// <para>
+        /// So: assign <c>table</c> and the kit goes on it. Assign nothing and it lies on the
+        /// floor where the player can see it on the first frame, which is what the room needs
+        /// while it is being built.
+        /// </para>
+        /// </summary>
+        private bool TryResolveSurface(out Bounds top)
         {
+            top = default;
+
             if (table != null)
-                return table;
-
-            // By SHAPE and role, never by name: a hard-coded object name that stops resolving
-            // fails silently and forever (CLAUDE.md mistakes 3 and 10). A table is the prop in
-            // this room with the largest flat top the player can reach.
-            //
-            // The height test asks where the TOP is, not where the middle is. That was the bug:
-            // it tested the centre of the union box, so a low table measuring 0.30 m tall sat at
-            // a centre of 0.15 and fell under a 0.25 floor - a table rejected for being a table.
-            // What you put an object ON is the top surface, so that is the number to test.
-            Transform best = null;
-            float bestArea = 0f;
-            var seen = new System.Text.StringBuilder();
-
-            foreach (Art.RoomProp prop in FindObjectsByType<Art.RoomProp>(
-                         FindObjectsInactive.Exclude, FindObjectsSortMode.None))
             {
-                if (prop == null)
-                    continue;
-
-                if (!TryMeasureTop(prop.transform, out Bounds b))
+                if (TryMeasureTop(table, out top))
                 {
-                    Append(seen, prop.name, "no collider and no renderer");
-                    continue;
+                    CIYCLog.Info(LogTag + "laying the kit out on '" + table.name + "', top at " +
+                                 top.max.y.ToString("F2") + " m.");
+                    return true;
                 }
 
-                float area = b.size.x * b.size.z;
-
-                // Reachable. Above this a bookcase's top is over the player's head, and below it
-                // the object is the floor or a rug.
-                if (b.max.y > MaximumTopHeight)
-                {
-                    Append(seen, prop.name, "top at " + b.max.y.ToString("F2") + " m, too high");
-                    continue;
-                }
-
-                if (b.max.y < MinimumTopHeight)
-                {
-                    Append(seen, prop.name, "top at " + b.max.y.ToString("F2") + " m, too low");
-                    continue;
-                }
-
-                Append(seen, prop.name, "top " + b.max.y.ToString("F2") + " m, " +
-                                        area.ToString("F2") + " m2");
-
-                if (area > bestArea)
-                {
-                    bestArea = area;
-                    best = prop.transform;
-                }
+                CIYCLog.Warn(LogTag + "'" + table.name + "' has neither a collider nor a " +
+                             "renderer, so its top cannot be measured. Falling back to the floor.");
             }
 
-            // Said out loud either way. A rejection that is silent about WHY covers two different
-            // problems with one symptom - "there is no table in this room" and "the table was
-            // there and the test threw it out" need opposite fixes, and the second one cost a
-            // session in this project already.
-            if (best != null)
+            return TryResolveFloor(out top);
+        }
+
+        /// <summary>
+        /// A patch of floor in front of the player's arrival point, found by looking DOWN with
+        /// real physics rather than by assuming y = 0. The lobby floor is an authored object at
+        /// its own height, and an item laid at a guessed height is an item in the floor or
+        /// hovering over it.
+        /// </summary>
+        private bool TryResolveFloor(out Bounds top)
+        {
+            top = default;
+
+            Transform spawn = ResolveSpawn();
+            if (spawn == null)
             {
-                CIYCLog.Info(LogTag + "table = '" + best.name + "' (" + bestArea.ToString("F2") +
-                             " m2). Considered:" + seen);
+                CIYCLog.Error(LogTag + "no player spawn to lay the kit out in front of, and no " +
+                              "'table' assigned either, so there is nowhere to put it. Wire " +
+                              "'playerSpawn' on the LobbyAtmosphere beside this component.");
+                return false;
+            }
+
+            // In FRONT of the spawn, not on it: the player arrives inside their own capsule, and
+            // eleven items at the spawn point are eleven items inside the player.
+            Vector3 centre = spawn.position + spawn.forward * floorDistance;
+
+            Physics.SyncTransforms();
+
+            float y;
+            if (Physics.Raycast(centre + Vector3.up * 1.5f, Vector3.down, out RaycastHit hit,
+                                4f, ~0, QueryTriggerInteraction.Ignore))
+            {
+                y = hit.point.y;
             }
             else
             {
-                CIYCLog.Error(LogTag + "no prop in this room measures as a table between " +
-                              MinimumTopHeight.ToString("F2") + " and " +
-                              MaximumTopHeight.ToString("F2") + " m. Considered:" +
-                              (seen.Length > 0 ? seen.ToString() : " <no RoomProp at all>") +
-                              ". Assign 'table' on this component to settle it.");
+                y = spawn.position.y;
+                CIYCLog.Warn(LogTag + "no floor under " + centre.ToString("F1") +
+                             ", so the kit is laid at the spawn's own height instead.");
             }
 
-            return best;
+            centre.y = y;
+            top = new Bounds(centre, new Vector3(floorArea.x, 0f, floorArea.y));
+
+            CIYCLog.Info(LogTag + "no table assigned, so the kit lies on the floor at " +
+                         centre.ToString("F1") + " over " + floorArea.x.ToString("F1") + " x " +
+                         floorArea.y.ToString("F1") + " m.");
+            return true;
         }
 
-        /// <summary>Lowest surface still worth putting the kit on, in metres.</summary>
-        private const float MinimumTopHeight = 0.20f;
-
-        /// <summary>Highest surface the player can still reach over, in metres.</summary>
-        private const float MaximumTopHeight = 1.40f;
-
-        private static void Append(System.Text.StringBuilder sb, string name, string verdict)
+        /// <summary>
+        /// The arrival point, asked of the sibling that already has it wired rather than looked
+        /// up by name - a hard-coded object name that stops resolving fails silently and forever.
+        /// </summary>
+        private Transform ResolveSpawn()
         {
-            if (sb.Length > 400)
-                return;
-            sb.Append(" ").Append(name).Append("(").Append(verdict).Append(")");
+            if (spawnAnchor != null)
+                return spawnAnchor;
+
+            var atmosphere = GetComponent<LobbyAtmosphere>();
+            return atmosphere != null ? atmosphere.PlayerSpawn : null;
         }
 
         /// <summary>
