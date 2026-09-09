@@ -732,6 +732,24 @@ Repeating one of these is the most likely way to break something.
    erkennt, geprueft wird nur, was uns gehoert, und was uebersprungen wurde, wird GEZAEHLT
    ("18 vendor shader(s) skipped") statt stillschweigend ausgelassen.
 
+27. **Ein Awake, das annahm, es sei noch nie gelaufen.** `SpectralGridProjection.Awake` schrieb
+   `_renderer = gameObject.AddComponent<MeshRenderer>()` und griff in der naechsten Zeile darauf
+   zu. `EquipmentRuntimeFactory` baut jedes Ausruestungsstueck EINMAL als lebende Vorlage - dabei
+   laeuft dieses Awake und hinterlaesst MeshFilter und MeshRenderer - und was der Spieler
+   bekommt, ist ein `Instantiate` dieser Vorlage. Der Klon traegt beide also schon, `Renderer` ist
+   `[DisallowMultipleComponent]`, und `AddComponent` gibt dann **null** zurueck statt eines
+   zweiten. Die naechste Zeile dereferenzierte das.
+   Der Stacktrace zeigte auf `SetActive(true)` in `MissionEquipmentInstaller`, darunter der
+   Ausruestungstisch, darunter eine Coroutine - drei Stellen, die alle wie die Ursache aussahen
+   und keine davon war es. Und der Schaden war groesser als das eine Item: die Ausnahme flog
+   mitten aus der Platzierungsschleife, also lag danach gar nichts mehr auf dem Boden. Ein Awake,
+   das voraussetzt, noch nie gelaufen zu sein, ist fuer alles falsch, was jemals geklont wird -
+   und geklont wird in diesem Projekt jedes einzelne Ausruestungsstueck. `GetComponent` zuerst.
+   Dieselbe Form steht noch in fuenf Lichtbauern (`HeldFlashlight`, `UVLight`, `WardingRelic`,
+   und beiden Kameras): sie erzeugen je ein `new GameObject`, stuerzen also nicht ab, sondern
+   haengen dem Klon ein ZWEITES Licht an. Nicht angefasst, weil sie funktionieren und Hotspots
+   sind - aber aufgeschrieben, damit die naechste doppelte Helligkeit nicht neu gesucht wird.
+
 ## Unity Editor availability
 
 Most work on this project happens where Unity cannot run. When it cannot:

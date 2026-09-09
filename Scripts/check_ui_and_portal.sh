@@ -3010,12 +3010,16 @@ unterscheiden"
         "eine geratene Hoehe legt die Kiste in den Boden oder darueber"
   fi
 
-  # Und sie liegt VOR dem Spawn, nicht darauf: der Spieler erscheint in seiner eigenen Kapsel.
-  if printf '%s' "$FLOOR" | grep -qE 'spawn\.forward \* floorDistance'; then
-    ok "die Kiste liegt vor dem Spawn, nicht darin"
+  # Und sie liegt VOR dem Spawn und DANEBEN. Vor dem Spawn allein war falsch aus dem Grund, den
+  # man erst merkt, wenn man dagegenlaeuft: der Spawn schaut in die Richtung, in die der Spieler
+  # gehen soll, "vor dem Spawn" IST also die Tuer. Elf feste Objekte quer durch eine Tuer sind
+  # eine Wand, und das Erste, was der Spieler tat, war nicht aus dem Raum zu kommen.
+  if printf '%s' "$FLOOR" | grep -qE 'spawn\.forward \* floorDistance' &&
+     printf '%s' "$FLOOR" | grep -qE 'spawn\.right \* floorSideOffset'; then
+    ok "die Kiste liegt neben dem Weg, nicht in der Tuer"
   else
-    bad "die Kiste liegt vor dem Spawn, nicht darin" \
-        "auf dem Spawnpunkt abgelegt stecken elf Gegenstaende im Spieler"
+    bad "die Kiste liegt neben dem Weg, nicht in der Tuer" \
+        "vor dem Spawn allein ist die Tuer; elf feste Objekte darin sind eine Wand"
   fi
 
   # Der Spawnpunkt wird beim Geschwister erfragt, das ihn schon verdrahtet hat - nicht ueber
@@ -3121,6 +3125,40 @@ if [ -z "$touched" ]; then
   ok "nichts Neues greift in die mobile Steuerung"
 else
   bad "nichts Neues greift in die mobile Steuerung" "fasst MobileInputController an:$touched"
+fi
+
+# Ablegen probiert JEDEN Platz, nicht nur den gewaehlten. Die Lobby nimmt dem Spieler die
+# Fackel aus der Hand, also kann die Auswahl auf einem leeren Platz stehen, waehrend drei
+# Werkzeuge in der Tasche sind - X tat dann gar nichts, und "nichts passiert" liest sich als
+# kaputte Taste statt als leerer Platz.
+if [ -f "$DBG" ] && code "$DBG" | grep -qE 'i < PlayerInventory\.SelectableSlotCount' &&
+   code "$DBG" | grep -qE 'TryDropFromSlot\(index\)'; then
+  ok "Ablegen probiert jeden Platz, nicht nur den gewaehlten"
+else
+  bad "Ablegen probiert jeden Platz, nicht nur den gewaehlten" \
+      "steht die Auswahl auf einem leeren Platz, tut die Taste nichts und niemand weiss warum"
+fi
+
+# Und eine Absage nennt ihren Grund. Ein blankes false macht aus "darf nicht abgelegt werden",
+# "Platz ist leer" und "gehoert jemand anderem" dasselbe Achselzucken.
+if [ -f "$DBG" ] && code "$DBG" | grep -qE 'result\.Status'; then
+  ok "eine verweigerte Ablage nennt ihren Grund"
+else
+  bad "eine verweigerte Ablage nennt ihren Grund" \
+      "ein bool macht aus drei verschiedenen Ursachen ein Achselzucken"
+fi
+
+# Und ein Awake, das ein zweites Mal laeuft, faellt nicht um. Jedes Ausruestungsstueck wird
+# einmal als lebende Vorlage gebaut und danach geklont; Renderer ist [DisallowMultipleComponent],
+# also gibt AddComponent auf dem Klon NULL zurueck statt eines zweiten. Die Ausnahme kam aus
+# SetActive(true) im Installer und las sich wie ein Fehler des Installers - sie war keiner.
+PROJ="$ROOT/Assets/CatchIfYouCan/Scripts/Equipment/SpectralGridProjection.cs"
+if [ -f "$PROJ" ] && code "$PROJ" | grep -qE 'gameObject\.GetComponent<MeshRenderer>\(\)' &&
+   code "$PROJ" | grep -qE 'gameObject\.GetComponent<MeshFilter>\(\)'; then
+  ok "die Projektion uebersteht das Klonen ihrer Vorlage"
+else
+  bad "die Projektion uebersteht das Klonen ihrer Vorlage" \
+      "AddComponent<MeshRenderer> auf einem Klon, der schon einen hat, gibt null zurueck"
 fi
 
 # Und die Debug-Bequemlichkeiten stehen nicht in einem ausgelieferten Build. Ein Debug-Text im

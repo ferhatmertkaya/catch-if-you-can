@@ -61,10 +61,15 @@ namespace CatchIfYouCan.Environment
 
         [Tooltip("How far in front of the spawn the kit lies, in metres. Far enough that it is " +
                  "not inside the player's own capsule, near enough to see on the first frame.")]
-        [SerializeField, Min(0.5f)] private float floorDistance = 1.6f;
+        [SerializeField, Min(0.5f)] private float floorDistance = 1.2f;
+
+        [Tooltip("How far TO THE SIDE, in metres. The spawn faces the way out, so a kit laid " +
+                 "straight ahead is a kit laid in the doorway - and eleven solid objects across " +
+                 "a doorway is a wall. Off to one side it is visible and out of the way.")]
+        [SerializeField] private float floorSideOffset = 1.9f;
 
         [Tooltip("How much floor the kit is spread over, in metres.")]
-        [SerializeField] private Vector2 floorArea = new Vector2(2.6f, 1.1f);
+        [SerializeField] private Vector2 floorArea = new Vector2(1.8f, 0.9f);
 
         [Header("Layout")]
         [Tooltip("Minimum gap between two items, edge to edge. Below this they read as a pile.")]
@@ -168,9 +173,15 @@ namespace CatchIfYouCan.Environment
                 return false;
             }
 
-            // In FRONT of the spawn, not on it: the player arrives inside their own capsule, and
-            // eleven items at the spawn point are eleven items inside the player.
-            Vector3 centre = spawn.position + spawn.forward * floorDistance;
+            // In front of the spawn AND off to one side.
+            //
+            // In front alone was wrong for the obvious reason nobody thinks of until they walk
+            // into it: the spawn faces the way the player is meant to go, so "in front of the
+            // spawn" IS the doorway. Eleven solid objects across a doorway is a wall, and the
+            // first thing the player did was fail to get out of the room.
+            Vector3 centre = spawn.position
+                           + spawn.forward * floorDistance
+                           + spawn.right * floorSideOffset;
 
             Physics.SyncTransforms();
 

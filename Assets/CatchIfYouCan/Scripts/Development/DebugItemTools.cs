@@ -140,14 +140,37 @@ namespace CatchIfYouCan.Development
                 return;
             }
 
-            if (_inventory != null && _inventory.GetSelectedItem() != null)
+            if (_inventory == null)
+                return;
+
+            // The SELECTED slot first, then any other slot that has something in it.
+            //
+            // Selected-only was wrong in the one case that happens constantly: the lobby takes
+            // the torch out of the player's hands, so the selection can sit on an empty slot
+            // while three tools are in the bag. X then did nothing at all, repeatedly, and
+            // "nothing happens" reads as a broken key rather than as an empty slot.
+            for (int i = 0; i < PlayerInventory.SelectableSlotCount; i++)
             {
-                bool dropped = _inventory.DropSelected();
-                CIYCLog.Info(LogTag + (dropped ? "dropped the held item." : "the held item refused to drop."));
+                int index = i == 0
+                    ? _inventory.SelectedIndex
+                    : (i - 1 == _inventory.SelectedIndex ? PlayerInventory.SelectableSlotCount - 1 : i - 1);
+
+                if (index < 0 || index >= PlayerInventory.SelectableSlotCount)
+                    continue;
+                if (_inventory.GetSlot(index) == null)
+                    continue;
+
+                // The typed result, not the bool. A refusal has a REASON - the definition says
+                // it cannot be dropped, the slot is empty, something else owns it - and a bare
+                // "false" turns all of those into the same shrug.
+                EquipmentActionResult result = _inventory.TryDropFromSlot(index);
+                CIYCLog.Info(LogTag + (result.Ok
+                    ? "dropped slot " + index + "."
+                    : "slot " + index + " refused to drop: " + result.Status + "."));
                 return;
             }
 
-            CIYCLog.Info(LogTag + "nothing to take and nothing to put down.");
+            CIYCLog.Info(LogTag + "nothing to take and nothing to put down (bag is empty).");
         }
 
         private void OnGUI()

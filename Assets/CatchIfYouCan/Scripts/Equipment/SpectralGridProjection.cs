@@ -84,8 +84,25 @@ namespace CatchIfYouCan.Equipment
 
         private void Awake()
         {
-            _filter = gameObject.AddComponent<MeshFilter>();
-            _renderer = gameObject.AddComponent<MeshRenderer>();
+            // GetComponent FIRST, and this is not defensive tidiness - it is the whole bug.
+            //
+            // EquipmentRuntimeFactory builds each item once as a live template, which runs this
+            // Awake and leaves a MeshFilter and a MeshRenderer on the object. Every item the
+            // player gets is an Instantiate of that template, so the copy ALREADY carries both -
+            // and Renderer is [DisallowMultipleComponent], so AddComponent<MeshRenderer> on the
+            // copy returns NULL rather than a second one. The next line then dereferenced it.
+            //
+            // The exception came out of SetActive(true) inside MissionEquipmentInstaller, which
+            // reads as a problem with the installer or the table; it is neither. An Awake that
+            // assumes it has never run before is wrong for anything that is ever cloned, and
+            // every piece of equipment in this project is cloned.
+            _filter = gameObject.GetComponent<MeshFilter>();
+            if (_filter == null)
+                _filter = gameObject.AddComponent<MeshFilter>();
+
+            _renderer = gameObject.GetComponent<MeshRenderer>();
+            if (_renderer == null)
+                _renderer = gameObject.AddComponent<MeshRenderer>();
 
             _renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
             _renderer.receiveShadows = false;
