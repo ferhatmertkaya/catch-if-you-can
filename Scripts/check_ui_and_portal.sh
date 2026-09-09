@@ -3039,6 +3039,39 @@ unterscheiden"
         "vor dem Spawn allein ist die Tuer; elf feste Objekte darin sind eine Wand"
   fi
 
+  # Ein hingelegtes Stueck hat etwas, das der Interakt-Strahl TREFFEN kann.
+  #
+  # Es hatte nichts. Ein frisch gebautes Stueck traegt genau einen Collider - die Kapsel aus
+  # HeldEquipmentBase.BuildDropCollider -, und die wird AUSGESCHALTET erzeugt, weil sie zum
+  # Wurfpfad gehoert. Deren eigene Zusammenfassung sagt "the trigger the pickup ray uses is a
+  # separate collider and stays on", und diesen Collider baut nirgends jemand: ein Satz, der ein
+  # Objekt beschreibt, das es nicht gibt (Fehler 8, andersherum). Der Strahl ging also durch
+  # jedes Stueck auf dem Boden hindurch, und die Aufforderung erschien nie - bei jedem Stueck,
+  # nicht nur beim Projektor. Gemessen wird um das, was wirklich da ist, und in den EIGENEN Raum
+  # zurueckgerechnet: eine Weltgroesse in einem BoxCollider wird ein zweites Mal skaliert
+  # (Fehler 12).
+  PB="$(code "$TBL" | sed -n '/private static void EnsurePickupBody/,/^        }$/p')"
+  if code "$TBL" | grep -qE 'EnsurePickupBody\(item\);' &&
+     printf '%s' "$PB" | grep -qE 'isTrigger = true' &&
+     printf '%s' "$PB" | grep -qE 'lossyScale' &&
+     printf '%s' "$PB" | grep -qE 'InverseTransformPoint'; then
+    ok "ein hingelegtes Stueck kann der Interakt-Strahl treffen"
+  else
+    bad "ein hingelegtes Stueck kann der Interakt-Strahl treffen" \
+        "die Wurfkapsel entsteht ausgeschaltet; ohne eigenen Koerper geht der Strahl hindurch"
+  fi
+
+  # Und es bekommt keinen ZWEITEN. Zwei Koerper sind zwei Wege in dasselbe Stueck, und zwei
+  # Aufforderungen auf einem Objekt sind schlimmer als keine.
+  if printf '%s' "$PB" | grep -qE 'GetComponents<Collider>\(\)' &&
+     printf '%s' "$PB" | grep -qE 'existing\.enabled' &&
+     printf '%s' "$PB" | grep -qE 'return;'; then
+    ok "ein Stueck, das schon einen Koerper hat, bekommt keinen zweiten"
+  else
+    bad "ein Stueck, das schon einen Koerper hat, bekommt keinen zweiten" \
+        "zwei Aufforderungen auf einem Objekt sind schlimmer als keine"
+  fi
+
   # Ein Fehlschlag kostet EIN Stueck, nicht die zehn dahinter. Das ist die Schadenshaelfte von
   # Fehler 27: die Ursache wurde behoben, die FORM nicht - eine ungesicherte Schleife ueber elf
   # unabhaengige Objekte macht aus jedem einzelnen Fehler weiterhin einen totalen, und was sie

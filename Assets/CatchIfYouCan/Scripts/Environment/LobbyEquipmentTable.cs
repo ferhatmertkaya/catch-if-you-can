@@ -94,9 +94,15 @@ namespace CatchIfYouCan.Environment
                  "is laid at the spawn and every item goes on the kit grid as before.")]
         [SerializeField] private string spawnTestItemId = EquipmentIds.SpectralGrid;
 
-        [Tooltip("How far in front of the spawn the test item lies, in metres. Far enough to " +
-                 "be outside the player's own capsule, near enough to be underfoot.")]
+        [Tooltip("How far in front of the spawn the test item is, in metres. Far enough to " +
+                 "be outside the player's own capsule, near enough to reach.")]
         [SerializeField, Min(0f)] private float spawnTestDistance = 0.8f;
+
+        [Tooltip("How high above the floor the test item hangs, in metres. Chest height so it " +
+                 "is in the middle of the view instead of underfoot - looking down to find a " +
+                 "24 cm object is the search this exists to remove. It has no support and " +
+                 "does not fall: the placement makes it kinematic.")]
+        [SerializeField, Min(0f)] private float spawnTestHeight = 1.3f;
 
         [Header("The torch")]
         [Tooltip("Take the torch out of the lobby player's hands, so the one on the table is " +
@@ -600,7 +606,7 @@ namespace CatchIfYouCan.Environment
                              ", so '" + testItem.Id + "' is laid at the spawn's own height.");
             }
 
-            probe.y = y;
+            probe.y = y + spawnTestHeight;
 
             EquipmentBase item;
             try
@@ -678,7 +684,66 @@ namespace CatchIfYouCan.Environment
 
             pickup.Configure(item, "Take " + definition.DisplayName, false);
 
+            EnsurePickupBody(item);
+
             return item;
+        }
+
+        /// <summary>
+        /// Gives a placed item something for the interact ray to hit.
+        ///
+        /// <para>
+        /// <b>Without this nothing on the lobby floor can be picked up.</b>
+        /// <see cref="InteractionController"/> finds an item by raycasting against colliders,
+        /// and a freshly built item has exactly one: the capsule
+        /// <c>HeldEquipmentBase.BuildDropCollider</c> makes, which is created <i>disabled</i>
+        /// because it belongs to the thrown-object path. Its own summary says "the trigger the
+        /// pickup ray uses is a separate collider and stays on" - and no such collider is built
+        /// anywhere. The sentence describes an object that does not exist, so the ray passed
+        /// through every item on the floor and the prompt never appeared.
+        /// </para>
+        ///
+        /// <para>
+        /// Measured around what is actually there and converted back into the item's own space:
+        /// a world size written into a BoxCollider is scaled a second time by the transform
+        /// (CLAUDE.md mistake 12). A trigger, so it is something to look at and not something
+        /// to walk into, and left to <c>SetPresentationVisible</c> afterwards, which switches
+        /// every root collider except the drop capsule with the item's visibility - that is the
+        /// "not pickable while stowed" behaviour this slots into rather than works around.
+        /// </para>
+        /// </summary>
+        private static void EnsurePickupBody(EquipmentBase item)
+        {
+            Transform t = item.transform;
+
+            // Something already hittable? Then leave it alone - a second body is a second way
+            // into the same item, and two prompts on one object is worse than none.
+            foreach (Collider existing in t.GetComponents<Collider>())
+            {
+                if (existing != null && existing.enabled)
+                    return;
+            }
+
+            if (!TryMeasureTop(t, out Bounds world) || world.size.sqrMagnitude < 1e-8f)
+            {
+                CIYCLog.Warn(LogTag + "'" + item.name + "' has nothing to measure, so it gets " +
+                             "no pickup body and the interact ray will pass through it.");
+                return;
+            }
+
+            var box = item.gameObject.AddComponent<BoxCollider>();
+            box.isTrigger = true;
+
+            Vector3 lossy = t.lossyScale;
+            box.size = new Vector3(
+                world.size.x / Mathf.Max(1e-4f, Mathf.Abs(lossy.x)),
+                world.size.y / Mathf.Max(1e-4f, Mathf.Abs(lossy.y)),
+                world.size.z / Mathf.Max(1e-4f, Mathf.Abs(lossy.z)));
+            box.center = t.InverseTransformPoint(world.center);
+
+            CIYCLog.Info(LogTag + "'" + item.name + "' got a pickup body of " +
+                         world.size.ToString("F3") + " m (world), " + box.size.ToString("F3") +
+                         " in its own space.");
         }
 
         // ---- the torch --------------------------------------------------------------------------

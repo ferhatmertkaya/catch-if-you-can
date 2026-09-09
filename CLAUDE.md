@@ -265,7 +265,12 @@ place that number lives; everything else derives it.
   because last is the one position where the item whose absence is the question can be
   missing for an unrelated reason — and one item that throws costs that item rather than
   the ten behind it, which is the damage half of mistake 27, recorded once and then not
-  fixed. 289 checks.
+  fixed. And a placed item has something the interact ray can HIT: the only collider a
+  fresh item carries is the drop capsule, which is created switched off, while the
+  summary beside it says the pickup trigger "is a separate collider and stays on" - a
+  sentence describing an object nobody builds, so the ray went through every item on the
+  floor. Measured around what is there and converted back into the item's own space, a
+  trigger rather than a wall, and never a second one. 291 checks.
 
 - `Scripts/check_editor_menu.sh` — the editor menu stays legible, and the purchased architecture has ONE scale. The game scale is the measured ratio 2.95 / 3.92 in one place, with no tool carrying its own copy; the decision is made on effective world scale rather than `localScale`, because a vendor piece at localScale 1 inside a corrected wrapper IS already corrected and its own field says otherwise; an already-corrected ancestor is recognised and a second application is a named verdict rather than a silent pass; architecture is told from props by FOLDER, since a filename classifier caught 3 of 105 in a pack that numbers its prefabs and calls its glass Steklo; an undecidable piece is reported ambiguous rather than guessed, because a chair may already be at real-world size and shrinking one that was right is invisible; the portal is excluded, its opening being a gameplay dimension; the migration audits before it can apply and converts only original-size pieces; and the correction goes on a CIYC wrapper with nothing applied back to the purchased package. Also the menu itself: Fifty-one commands sit in
   seven named groups with none hiding in another root menu, every one carries a risk tag saying
@@ -779,6 +784,20 @@ Repeating one of these is the most likely way to break something.
    Kasten, der auf dem Boden STEHT statt darin, sieht den Unterschied; ein Strahl nie. Und ein
    Platz, der aus einer festen Zahl im Code kommt, ist eine Behauptung ueber einen Raum - der
    verdrahtete `layoutAnchor` ist die Entscheidung, die keine Suche ueberstimmen darf.
+
+29. **Eine Zahl, die mit der Geometrie mitgewandert ist, ohne je zu ihr gepasst zu haben.** Der
+   Projektor lag als Streichholzschachtel von 5,5 x 2,7 x 1,3 cm auf dem Boden - zu klein, um
+   ihn zu sehen, und zu klein, als dass der Interakt-Strahl ihn gefunden haette. `length` stand
+   auf 0,055 m, und der Kommentar daneben nannte Z die TIEFE des Geraets und versprach 0,225 x
+   0,111 m in der Hand. Aus der Datei gelesen ist das Mesh X 0,9400, Y 0,4647, Z 1,9025: Z ist
+   die LAENGSTE Achse, um den Faktor zwei. Die laengste Achse auf 5,5 cm zu setzen schrumpft
+   alles andere mit. Die gewuenschte GROESSE stimmte, die Zahl war von ihr aus nie erreichbar.
+   Und beim Modellwechsel wurde geprueft, dass die Geometrie identisch ist - Vertices, Normalen,
+   UVs und Indizes hashen gleich - und daraus geschlossen, die Zahlen duerften unveraendert mit.
+   Der Schluss ist richtig und die Folgerung falsch: identische Geometrie liefert ein
+   identisches Ergebnis, ein identisch FALSCHES eingeschlossen. "Hat sich nichts geaendert"
+   beweist nicht "war vorher richtig", und der Kommentar, der die Zahl erklaerte, war genau die
+   Quelle, die niemand gegen die Datei geprueft hatte.
 
 ## Unity Editor availability
 

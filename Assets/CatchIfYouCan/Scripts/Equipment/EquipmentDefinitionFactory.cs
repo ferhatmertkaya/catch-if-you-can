@@ -200,23 +200,30 @@ namespace CatchIfYouCan.Equipment
 
             if (string.Equals(id, EquipmentIds.SpectralGrid, System.StringComparison.Ordinal))
             {
-                // Not a torch: a brick with the lens in the middle of one large face rather
-                // than on an end. The emissive patch in the base map sits on the face that
-                // imports as -Z, so THAT is the direction the grid has to leave the device -
-                // SpectralGridProjection builds its cone along the head's +Y and the head
-                // inherits the carried root. Length is therefore the device's DEPTH, not its
-                // long side: 0.055 m deep puts it in the hand at 0.225 x 0.111 m, which is a
-                // projector you could hold. Using the long side instead would have aimed the
-                // lens sideways out of the player's palm.
-                // Level 1 art. The mesh is the SAME mesh as the model this replaced -
-                // vertices, normals, UVs and polygon indices all hash identical - so the two
-                // numbers below were measured against this exact geometry and are carried
-                // across rather than re-guessed. What changed is the texturing: a 4K base
-                // colour, a real normal map, and metallic/roughness packed the way URP Lit
-                // reads them (metallic in RGB, SMOOTHNESS - not roughness - in alpha).
+                // -Z, and 0.2473 m along it. Both MEASURED off this FBX rather than reasoned
+                // about, because the number that was here before was reasoned about and wrong.
+                //
+                // The old comment called Z the device's DEPTH and said 0.055 m along it put the
+                // item in the hand at 0.225 x 0.111 m. Z is not the depth: read out of the
+                // file, the mesh is X 0.9400, Y 0.4647, Z 1.9025, so Z is the LONGEST axis by
+                // a factor of two. Setting the longest axis to 0.055 m makes the whole device
+                // 5.5 x 2.7 x 1.3 cm - a matchbox on the floor, too small to see and too small
+                // for the interact ray to find. The 0.225 x 0.111 the comment wanted was right
+                // as a SIZE and unreachable from that number.
+                //
+                // The file carries UnitScaleFactor 1.0, which Unity applies as /100, so the
+                // imported Z extent is 0.019025 m. EquipmentVisualFactory scales by
+                // length / extent, so 0.2473 / 0.019025 = 13.0 - the same 13 the projector
+                // standing in the lobby was set to by hand, expressed in the metres this
+                // pipeline actually works in. The device comes out 24.7 x 12.2 x 6.0 cm.
+                //
+                // The art is Level 1. Its mesh hashes identical to the model it replaced -
+                // vertices, normals, UVs and indices - which is why the AXIS carried across
+                // unchanged and only the length had to be corrected: identical geometry
+                // reproduces an identical result, including an identically wrong one.
                 profile.ApplyModel("Props/CIYC_DOTSProjectorLevel1",
                                    "Props/MAT_DOTSProjectorLevel1",
-                                   0.055f, new Vector3(0f, 0f, -1f));
+                                   0.2473f, new Vector3(0f, 0f, -1f));
                 return profile;
             }
 
