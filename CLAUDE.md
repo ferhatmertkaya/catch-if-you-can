@@ -90,7 +90,10 @@ place that number lives; everything else derives it.
   and material path an item names — in the factory AND in the authored profile —
   resolves to a file that exists, because a path that resolves nowhere is silent: the
   load returns null, the honest capsule stands in, and a typo is indistinguishable from
-  art nobody has made yet. 44 checks.
+  art nobody has made yet, and a CLONE adopts the visual it already carries instead of
+  building a second on top of it - every item reaches the world as a clone, and
+  Instantiate copies the GameObject while dropping the auto-property that pointed at it,
+  which is the one state the build guard reads as "nothing built yet". 47 checks.
 - `Scripts/check_multiplayer_architecture.sh` — the deterministic assembly stays
   engine-free, gameplay never reaches a Relay API, remote players never read
   local input, ghost decisions stay host-only, online capacity has exactly one
@@ -803,6 +806,28 @@ Repeating one of these is the most likely way to break something.
    identisches Ergebnis, ein identisch FALSCHES eingeschlossen. "Hat sich nichts geaendert"
    beweist nicht "war vorher richtig", und der Kommentar, der die Zahl erklaerte, war genau die
    Quelle, die niemand gegen die Datei geprueft hatte.
+
+30. **Eine Referenz, die den Klon nicht ueberlebt, waehrend das Objekt es tut.** Der
+   DOTS-Projektor stand sichtbar und richtig gross im Raum und war kein Gegenstand: hinschauen
+   tat nichts, kein Name, kein Prompt, kein Aufheben. Das Debug-Schild sagte es dann in einer
+   Zeile - `hit "FLOOR_Lobby_01" at 2.52 m` -, waehrend das Fadenkreuz mitten auf dem Geraet lag.
+   Der Strahl ging hindurch.
+   `HeldEquipmentBase.CarriedRoot` ist eine Auto-Property, `_dropCollider` ein nicht
+   oeffentliches Feld; Unity serialisiert beide nicht. `Instantiate` kopiert dagegen jedes
+   GameObject und jede Komponente. Jedes Ausruestungsstueck erreicht die Welt als Klon - die
+   Laufzeitfabrik haelt je Id eine lebende Vorlage -, der Klon kam also mit Visual und
+   Wurfkapsel VORHANDEN und beiden Referenzen NULL an. Genau das liest
+   `if (CarriedRoot != null) return;` als "es wurde noch nichts gebaut", und `Start` baute ein
+   zweites Visual exakt auf das erste. Zwei deckungsgleiche Kopien desselben Meshes sehen aus
+   wie ein Objekt: die Doppelung war unsichtbar, und was man stattdessen sah, war ein
+   Gegenstand ohne Funktion, weil die Komponente auf etwas anderes zeigte als das, was da stand.
+   Vier Runden lang wurde am Symptom gesucht - Groesse, Collider, Tasche, Prompt -, und jede
+   dieser Erklaerungen war fuer sich plausibel. Was fehlte, war nicht Genauigkeit, sondern die
+   Frage, ob das Ding ueberhaupt noch dasselbe Objekt ist, das die Komponente zu besitzen
+   glaubt. Ein Name taugt als Identitaet nicht, das Visual heisst wie der Gegenstand - eine
+   KOMPONENTE ueberlebt die Kopie. Und ein sichtbares, totes Objekt meldet sich nie von selbst:
+   `EquipmentSpawnDiagnostic` laeuft jetzt bei jedem Spawn die ganze Kette ab und nennt das
+   fehlende Glied.
 
 ## Unity Editor availability
 

@@ -32,6 +32,11 @@ namespace CatchIfYouCan.Equipment
             profile = profile != null ? profile : EquipmentVisualProfile.Fallback;
 
             var pivot = new GameObject(string.IsNullOrEmpty(itemName) ? "Visual" : itemName);
+
+            // The identity that survives Instantiate. See EquipmentVisualRoot: the reference to
+            // this object does not survive a clone, and this object does.
+            pivot.AddComponent<EquipmentVisualRoot>();
+
             var carried = pivot.transform;
             carried.SetParent(parent, false);
 

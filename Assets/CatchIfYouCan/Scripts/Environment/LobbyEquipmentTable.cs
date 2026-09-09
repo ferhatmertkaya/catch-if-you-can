@@ -709,6 +709,13 @@ namespace CatchIfYouCan.Environment
 
             EnsurePickupBody(item);
 
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+            // Walks the whole chain and says which link is missing. An item that is visible and
+            // does nothing is the failure this exists for, and it is the one no screenshot can
+            // tell apart from an item that works.
+            EquipmentSpawnDiagnostic.Report(item, "placed in the lobby");
+#endif
+
             return item;
         }
 

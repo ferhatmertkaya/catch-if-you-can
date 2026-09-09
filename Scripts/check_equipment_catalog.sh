@@ -493,6 +493,49 @@ done
   || fail "every ApplyModel call names a model and a material that exist" \
        "found only $checked_paths call(s); the three finished items are the flashlight, the UV light and the projector"
 
+# ---- ein Klon baut nicht ein zweites Mal --------------------------------------------------
+#
+# Jedes Ausruestungsstueck erreicht die Welt als KLON: EquipmentRuntimeFactory haelt je Id eine
+# lebende Vorlage und instanziiert sie. Instantiate kopiert GameObjects und Komponenten und
+# traegt KEINE Referenz mit, die in einer Auto-Property (CarriedRoot) oder einem nicht
+# oeffentlichen Feld (_dropCollider) steht - Unity serialisiert beide nicht. Der Klon kommt also
+# mit Visual und Wurfkapsel VORHANDEN und beiden Referenzen NULL an, und genau das liest
+# "if (CarriedRoot != null) return;" als "es wurde noch nichts gebaut".
+#
+# Gebaut wurde dann ein zweites Visual exakt auf dem ersten. Zwei deckungsgleiche Kopien
+# desselben Meshes sehen aus wie ein Objekt - es war nie als Doppelung zu sehen, sondern als
+# Gegenstand, den der Interakt-Strahl nicht aufloesen konnte. Ein Name reicht als Identitaet
+# nicht: das Visual heisst wie der Gegenstand. Eine KOMPONENTE ueberlebt die Kopie.
+HEB="Assets/CatchIfYouCan/Scripts/Equipment/HeldEquipmentBase.cs"
+VF="Assets/CatchIfYouCan/Scripts/Equipment/EquipmentVisualFactory.cs"
+MARK="Assets/CatchIfYouCan/Scripts/Equipment/EquipmentVisualRoot.cs"
+
+if [ -f "$MARK" ] && [ -f "$VF" ] &&
+   sed 's://.*::' "$VF" | grep -qE 'AddComponent<EquipmentVisualRoot>\(\)'; then
+  ok "das gebaute Visual traegt eine Marke, die Instantiate ueberlebt"
+else
+  fail "das gebaute Visual traegt eine Marke, die Instantiate ueberlebt"
+  printf '        eine Referenz ueberlebt den Klon nicht, ein GameObject schon\n'
+fi
+
+if [ -f "$HEB" ] &&
+   sed 's://.*::' "$HEB" | grep -qE 'if \(AdoptClonedVisual\(\)\)' &&
+   sed 's://.*::' "$HEB" | grep -qE 'GetComponentInChildren<EquipmentVisualRoot>\(true\)'; then
+  ok "ein Klon uebernimmt sein Visual, statt ein zweites zu bauen"
+else
+  fail "ein Klon uebernimmt sein Visual, statt ein zweites zu bauen"
+  printf '        zwei deckungsgleiche Meshes sehen aus wie eines und sind es nicht\n'
+fi
+
+# Und die Uebernahme greift VOR dem Bau. Danach ist sie wirkungslos.
+ADOPT_LINE="$(sed 's://.*::' "$HEB" | grep -n 'AdoptClonedVisual()' | head -1 | cut -d: -f1)"
+BUILD_LINE="$(sed 's://.*::' "$HEB" | grep -n 'CarriedRoot = EquipmentVisualFactory.Build(' | head -1 | cut -d: -f1)"
+if [ -n "$ADOPT_LINE" ] && [ -n "$BUILD_LINE" ] && [ "$ADOPT_LINE" -lt "$BUILD_LINE" ]; then
+  ok "die Uebernahme steht vor dem Bau, nicht dahinter"
+else
+  fail "die Uebernahme steht vor dem Bau, nicht dahinter"
+fi
+
 # The authored profiles carry the same two paths and are read in the editor, so a profile that
 # drifts from the factory is a difference between what a build does and what the inspector
 # shows - the worst kind, because the inspector is where somebody would go to check.

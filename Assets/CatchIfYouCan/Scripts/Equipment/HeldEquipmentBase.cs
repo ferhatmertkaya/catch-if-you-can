@@ -280,6 +280,23 @@ namespace CatchIfYouCan.Equipment
             if (CarriedRoot != null)
                 return;
 
+            // Adopt before building.
+            //
+            // Every item in this project reaches the world as a CLONE: EquipmentRuntimeFactory
+            // keeps one live template per id and Instantiates it. Instantiate copies GameObjects
+            // and components, and it does NOT carry a reference held in an auto-property
+            // (CarriedRoot) or a non-public field (_dropCollider), because Unity serializes
+            // neither. So the clone arrives with the visual and the drop capsule PRESENT and
+            // both references NULL - the one state the guard above reads as "nothing built yet".
+            //
+            // The result was a second visual built exactly on top of the first and a second
+            // drop capsule beside it. Two coincident copies of one mesh look like one object,
+            // so it never read as doubling; what it read as was an item the interaction ray
+            // could not resolve, because what the ray found was not what the component thought
+            // it owned. Same family as mistake 27: a build step that assumes it has never run.
+            if (AdoptClonedVisual())
+                return;
+
             CarriedRoot = EquipmentVisualFactory.Build(
                 VisualProfile, transform,
                 definition != null ? definition.DisplayName : name,
@@ -287,6 +304,36 @@ namespace CatchIfYouCan.Equipment
 
             _measuredLength = measured;
             BuildDropCollider(measured);
+        }
+
+        /// <summary>
+        /// Takes ownership of the visual and drop capsule a clone already carries.
+        /// </summary>
+        /// <returns>True when this item was a clone and its parts have been adopted.</returns>
+        private bool AdoptClonedVisual()
+        {
+            var marker = GetComponentInChildren<EquipmentVisualRoot>(true);
+            if (marker == null || marker.transform.parent != transform)
+                return false;
+
+            CarriedRoot = marker.transform;
+
+            // The capsule came across too. Re-found rather than rebuilt, so the item does not
+            // end up wearing two - and if the clone somehow has none, one is made at the length
+            // the profile asks for, which is the same number the template measured.
+            if (_dropCollider == null)
+            {
+                _dropCollider = GetComponent<CapsuleCollider>();
+                if (_dropCollider != null)
+                    _dropCollider.enabled = false;
+            }
+
+            _measuredLength = VisualProfile != null ? VisualProfile.Length : _measuredLength;
+
+            if (_dropCollider == null)
+                BuildDropCollider(_measuredLength);
+
+            return true;
         }
 
         /// <summary>
