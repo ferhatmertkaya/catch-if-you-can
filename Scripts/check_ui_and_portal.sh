@@ -3001,7 +3001,12 @@ unterscheiden"
 
   # Und die Bodenhoehe wird GEMESSEN. Der Lobbyboden ist ein Objekt auf seiner eigenen Hoehe;
   # auf y = 0 gelegt liegt die Kiste im Boden oder schwebt darueber.
-  FLOOR="$(code "$TBL" | sed -n '/private bool TryResolveFloor/,/^        }$/p')"
+  # Der Platz wird ueber ZWEI Methoden entschieden - TryResolveFloor waehlt den Kandidaten,
+  # TryFloorAt misst ihn nach - also wird auch ueber beide geprueft. An EINEN Methodennamen
+  # geheftet meldet diese Pruefung rot, sobald der Strahl in einen Helfer wandert, und die
+  # Invariante haelt dabei unveraendert: das ist genau das falsche ROT aus Fehler 26, und ein
+  # falsches ROT ist teurer als eine fehlende Pruefung.
+  FLOOR="$(code "$TBL" | sed -n '/private bool TryResolveFloor/,/private Transform ResolveSpawn/p')"
   if printf '%s' "$FLOOR" | grep -qE 'Physics\.Raycast\(' &&
      printf '%s' "$FLOOR" | grep -qE 'Physics\.SyncTransforms\(\)'; then
     ok "die Bodenhoehe wird gemessen, nicht auf null gesetzt"
@@ -3010,12 +3015,24 @@ unterscheiden"
         "eine geratene Hoehe legt die Kiste in den Boden oder darueber"
   fi
 
+  # Und der Platz wird als FREI nachgewiesen, nicht angenommen. Ein Strahl nach unten allein
+  # findet auch INNERHALB einer Wand den Boden darunter tadellos - der feste Seitenversatz lag
+  # deshalb in der Wand, sichtbar von einer Seite und nicht erreichbar. Ein Kasten, der auf dem
+  # Boden steht statt darin, ist das Einzige, was den Unterschied sieht.
+  if printf '%s' "$FLOOR" | grep -qE 'Physics\.OverlapBox\('; then
+    ok "der Platz wird als frei nachgemessen, nicht angenommen"
+  else
+    bad "der Platz wird als frei nachgemessen, nicht angenommen" \
+        "ein Strahl nach unten findet auch in einer Wand den Boden; die Kiste lag darin"
+  fi
+
   # Und sie liegt VOR dem Spawn und DANEBEN. Vor dem Spawn allein war falsch aus dem Grund, den
   # man erst merkt, wenn man dagegenlaeuft: der Spawn schaut in die Richtung, in die der Spieler
   # gehen soll, "vor dem Spawn" IST also die Tuer. Elf feste Objekte quer durch eine Tuer sind
   # eine Wand, und das Erste, was der Spieler tat, war nicht aus dem Raum zu kommen.
-  if printf '%s' "$FLOOR" | grep -qE 'spawn\.forward \* floorDistance' &&
-     printf '%s' "$FLOOR" | grep -qE 'spawn\.right \* floorSideOffset'; then
+  if printf '%s' "$FLOOR" | grep -qE 'spawn\.forward \*' &&
+     printf '%s' "$FLOOR" | grep -qE 'spawn\.right \*' &&
+     printf '%s' "$FLOOR" | grep -qE 'floorSideOffset'; then
     ok "die Kiste liegt neben dem Weg, nicht in der Tuer"
   else
     bad "die Kiste liegt neben dem Weg, nicht in der Tuer" \

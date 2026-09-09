@@ -208,14 +208,86 @@ namespace CatchIfYouCan.Equipment
                 // long side: 0.055 m deep puts it in the hand at 0.225 x 0.111 m, which is a
                 // projector you could hold. Using the long side instead would have aimed the
                 // lens sideways out of the player's palm.
-                profile.ApplyModel("Props/CIYC_DotsProjector", "Props/MAT_DotsProjector",
+                // Level 1 art. The mesh is the SAME mesh as the model this replaced -
+                // vertices, normals, UVs and polygon indices all hash identical - so the two
+                // numbers below were measured against this exact geometry and are carried
+                // across rather than re-guessed. What changed is the texturing: a 4K base
+                // colour, a real normal map, and metallic/roughness packed the way URP Lit
+                // reads them (metallic in RGB, SMOOTHNESS - not roughness - in alpha).
+                profile.ApplyModel("Props/CIYC_DOTSProjectorLevel1",
+                                   "Props/MAT_DOTSProjectorLevel1",
                                    0.055f, new Vector3(0f, 0f, -1f));
                 return profile;
             }
 
             profile.ApplyDevPlaceholder(new Vector3(0.06f, 0.18f, 0.06f),
-                                        new Color(0.55f, 0.2f, 0.5f));
+                                        PlaceholderColorFor(id));
             return profile;
+        }
+
+        /// <summary>
+        /// A distinct colour per item, so a floor of stand-ins is readable.
+        ///
+        /// <para>
+        /// Every placeholder used to be the same purple. That is fine for ONE unfinished item
+        /// and useless for eight: laid out together they are eight identical capsules, so the
+        /// only way to find out which one is the thermometer is to pick each up and read the
+        /// HUD. The colour is the label until the art arrives.
+        /// </para>
+        ///
+        /// <para>
+        /// Deliberately bright and deliberately not realistic - these still have to SAY they
+        /// are placeholders, and the lobby is dim, so a muted palette would read as finished
+        /// art in the dark. The hues are spread rather than picked one at a time, and no two
+        /// of the eleven are adjacent.
+        /// </para>
+        ///
+        /// <para>
+        /// An id with no entry gets a colour derived from the id itself rather than a shared
+        /// default: a twelfth item added later should look like a twelfth item, not like
+        /// whichever one it was accidentally sharing with.
+        /// </para>
+        /// </summary>
+        private static Color PlaceholderColorFor(string id)
+        {
+            if (string.Equals(id, EquipmentIds.EmfDetector, System.StringComparison.Ordinal))
+                return new Color(1f, 0.82f, 0.10f);        // amber
+            if (string.Equals(id, EquipmentIds.Thermometer, System.StringComparison.Ordinal))
+                return new Color(0.25f, 0.85f, 1f);        // ice blue
+            if (string.Equals(id, EquipmentIds.EvpRecorder, System.StringComparison.Ordinal))
+                return new Color(1f, 0.45f, 0.10f);        // orange
+            if (string.Equals(id, EquipmentIds.ParabolicMicrophone, System.StringComparison.Ordinal))
+                return new Color(0.25f, 0.45f, 1f);        // deep blue
+            if (string.Equals(id, EquipmentIds.PhotoCamera, System.StringComparison.Ordinal))
+                return new Color(0.92f, 0.92f, 0.95f);     // near white
+            if (string.Equals(id, EquipmentIds.VideoCamera, System.StringComparison.Ordinal))
+                return new Color(0.95f, 0.15f, 0.20f);     // red
+            if (string.Equals(id, EquipmentIds.WardingRelic, System.StringComparison.Ordinal))
+                return new Color(0.70f, 0.30f, 1f);        // violet
+            if (string.Equals(id, EquipmentIds.Salt, System.StringComparison.Ordinal))
+                return new Color(0.55f, 1f, 0.55f);        // pale green
+
+            // The three with finished art never reach here; they are listed so that a model
+            // that fails to load still comes out as ITSELF rather than as the unknown colour.
+            if (string.Equals(id, EquipmentIds.Flashlight, System.StringComparison.Ordinal))
+                return new Color(1f, 0.95f, 0.70f);        // warm white
+            if (string.Equals(id, EquipmentIds.UvLight, System.StringComparison.Ordinal))
+                return new Color(0.45f, 0.20f, 0.95f);     // uv purple
+            if (string.Equals(id, EquipmentIds.SpectralGrid, System.StringComparison.Ordinal))
+                return new Color(0.20f, 1f, 0.35f);        // grid green
+
+            // Unknown id: a stable hue from the id's own characters. Stable so the same item
+            // is the same colour every run - a placeholder that changes colour between
+            // sessions is one nobody can describe in a bug report.
+            int h = 17;
+            if (!string.IsNullOrEmpty(id))
+            {
+                for (int i = 0; i < id.Length; i++)
+                    h = unchecked(h * 31 + id[i]);
+            }
+
+            float hue = Mathf.Repeat(Mathf.Abs(h) * 0.6180339887f, 1f);
+            return Color.HSVToRGB(hue, 0.75f, 1f);
         }
 
         private static EquipmentDefinition Create(

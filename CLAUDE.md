@@ -86,7 +86,11 @@ place that number lives; everything else derives it.
   paths resolve to real files, an item is not given its visual before it knows what it is,
   a failed model load never becomes a silent placeholder, and the flashlight's diagnostic
   pose ships switched off, a model's size is measured in its own space rather than as a
-  world AABB, and the achieved size is checked against the wanted one. 42 checks.
+  world AABB, and the achieved size is checked against the wanted one, and every model
+  and material path an item names — in the factory AND in the authored profile —
+  resolves to a file that exists, because a path that resolves nowhere is silent: the
+  load returns null, the honest capsule stands in, and a typo is indistinguishable from
+  art nobody has made yet. 44 checks.
 - `Scripts/check_multiplayer_architecture.sh` — the deterministic assembly stays
   engine-free, gameplay never reaches a Relay API, remote players never read
   local input, ghost decisions stay host-only, online capacity has exactly one
@@ -250,7 +254,11 @@ place that number lives; everything else derives it.
   accumulated Euler, turns about its hinge, and tells the swinging door where the leaf ended up
   so the next keypress does not snap from a stale angle. And nothing added for any of it
   references `MobileInputController`, while the debug conveniences are fenced out of a shipping
-  build entirely. 274 checks.
+  build entirely. And it holds the lobby kit to a MEASURED spot: a fixed step to the
+  side put eleven items inside a wall, because a downward ray finds the floor perfectly
+  well from inside one — so a spot is now tried, proven clear with a box that stands ON
+  the floor rather than in it, and a wired anchor overrides the search outright. 285
+  checks.
 
 - `Scripts/check_editor_menu.sh` — the editor menu stays legible, and the purchased architecture has ONE scale. The game scale is the measured ratio 2.95 / 3.92 in one place, with no tool carrying its own copy; the decision is made on effective world scale rather than `localScale`, because a vendor piece at localScale 1 inside a corrected wrapper IS already corrected and its own field says otherwise; an already-corrected ancestor is recognised and a second application is a named verdict rather than a silent pass; architecture is told from props by FOLDER, since a filename classifier caught 3 of 105 in a pack that numbers its prefabs and calls its glass Steklo; an undecidable piece is reported ambiguous rather than guessed, because a chair may already be at real-world size and shrinking one that was right is invisible; the portal is excluded, its opening being a gameplay dimension; the migration audits before it can apply and converts only original-size pieces; and the correction goes on a CIYC wrapper with nothing applied back to the purchased package. Also the menu itself: Fifty-one commands sit in
   seven named groups with none hiding in another root menu, every one carries a risk tag saying
@@ -749,6 +757,21 @@ Repeating one of these is the most likely way to break something.
    und beiden Kameras): sie erzeugen je ein `new GameObject`, stuerzen also nicht ab, sondern
    haengen dem Klon ein ZWEITES Licht an. Nicht angefasst, weil sie funktionieren und Hotspots
    sind - aber aufgeschrieben, damit die naechste doppelte Helligkeit nicht neu gesucht wird.
+
+28. **Ein Strahl nach unten, der auch in einer Wand den Boden findet.** Die Ausruestung wurde
+   "einen festen Schritt nach vorn und 1,9 m nach rechts" vom Spawn abgelegt, und die Hoehe
+   dabei sauber per `Physics.Raycast` GEMESSEN - die Zahl stimmte also, und trotzdem lagen alle
+   elf Gegenstaende in der Wand. Ein Strahl nach unten beantwortet nur "wie hoch ist hier der
+   Boden", und diese Frage hat auch mitten in einer Wand eine richtige Antwort. Was nie gefragt
+   wurde, war "ist hier ueberhaupt Platz". Der Seitenversatz war einmal richtig, fuer einen Raum,
+   den es nicht mehr gibt: seit die Lobby aus Modulen des gekauften Pakets steht, ist rechts vom
+   Spawn eine Wand. Gemeldet wurde es als "die sind aktuell alle in der Wand", und von aussen
+   sieht das genauso aus wie elf Gegenstaende, die gar nicht erst gebaut wurden - dieselbe
+   Ununterscheidbarkeit wie in Fehler 20 und 27. Die Lehre ist nicht "mehr messen", sondern
+   WELCHE Frage gemessen wird: eine gemessene Zahl beweist nur das, wonach gefragt wurde. Ein
+   Kasten, der auf dem Boden STEHT statt darin, sieht den Unterschied; ein Strahl nie. Und ein
+   Platz, der aus einer festen Zahl im Code kommt, ist eine Behauptung ueber einen Raum - der
+   verdrahtete `layoutAnchor` ist die Entscheidung, die keine Suche ueberstimmen darf.
 
 ## Unity Editor availability
 

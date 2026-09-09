@@ -461,6 +461,59 @@ else
   printf '        looked for %s/%s.mat\n' "$RES" "${fl_mat:-<unparsed>}"
 fi
 
+# And EVERY other one, because the flashlight was never the only one.
+#
+# Three items have finished art now, not one, and the check above names exactly one of them.
+# A path that resolves nowhere is CLAUDE.md mistake 3, and its whole character is that it is
+# silent: Resources.Load returns null, the visual factory substitutes its honest capsule, and
+# the item looks like one nobody has modelled yet rather than one whose path has a typo in it.
+# That is indistinguishable by looking, which is why it survived the life of the project once
+# already. Checked by resolving every path that exists rather than by naming them one at a
+# time - a list of names has to be remembered, and the next item added will not be.
+bad_paths=0
+checked_paths=0
+for call in $(sed 's://.*::' "$FACTORY_DEF" | tr -d '\n' | tr -s ' ' \
+              | grep -oE 'ApplyModel\("[^"]+" *, *"[^"]+"' | tr -d ' '); do
+  m=$(printf '%s' "$call" | sed 's/ApplyModel("//; s/",".*//')
+  t=$(printf '%s' "$call" | sed 's/.*,"//; s/"//')
+  checked_paths=$((checked_paths + 1))
+  if ! ls "$RES/$m".* >/dev/null 2>&1; then
+    fail "ApplyModel model path resolves: $m"
+    printf '        looked for %s/%s.*\n' "$RES" "$m"
+    bad_paths=$((bad_paths + 1))
+  fi
+  if [ -n "$t" ] && [ ! -f "$RES/$t.mat" ]; then
+    fail "ApplyModel material path resolves: $t"
+    printf '        looked for %s/%s.mat\n' "$RES" "$t"
+    bad_paths=$((bad_paths + 1))
+  fi
+done
+[ "$checked_paths" -ge 3 ] \
+  && ok "every ApplyModel call names a model and a material that exist ($checked_paths call(s))" \
+  || fail "every ApplyModel call names a model and a material that exist" \
+       "found only $checked_paths call(s); the three finished items are the flashlight, the UV light and the projector"
+
+# The authored profiles carry the same two paths and are read in the editor, so a profile that
+# drifts from the factory is a difference between what a build does and what the inspector
+# shows - the worst kind, because the inspector is where somebody would go to check.
+bad_prof=0
+for prof in "$VIS"/VisualProfile_*.asset; do
+  [ -f "$prof" ] || continue
+  pm=$(grep '^  modelResourcePath:' "$prof" | sed 's/^  modelResourcePath: *//')
+  pt=$(grep '^  modelMaterialPath:' "$prof" | sed 's/^  modelMaterialPath: *//')
+  if [ -n "$pm" ] && ! ls "$RES/$pm".* >/dev/null 2>&1; then
+    fail "$(basename "$prof") names a model that does not exist: $pm"
+    bad_prof=$((bad_prof + 1))
+  fi
+  if [ -n "$pt" ] && [ ! -f "$RES/$pt.mat" ]; then
+    fail "$(basename "$prof") names a material that does not exist: $pt"
+    bad_prof=$((bad_prof + 1))
+  fi
+done
+[ "$bad_prof" -eq 0 ] \
+  && ok "every authored visual profile resolves the art it names" \
+  || fail "$bad_prof authored visual profile path(s) resolve to nothing"
+
 # A Resources path is relative to a Resources folder and carries no extension. All three of
 # these wrong shapes have shipped in this repository before.
 if [ -n "$fl_model" ] && ! printf '%s' "$fl_model" \

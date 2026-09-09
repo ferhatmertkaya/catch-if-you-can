@@ -13,8 +13,8 @@ MonoBehaviour:
   m_Name: VisualProfile_SpectralGrid
   m_EditorClassIdentifier: 
   visualPrefab: {fileID: 0}
-  modelResourcePath: Props/CIYC_DotsProjector
-  modelMaterialPath: Props/MAT_DotsProjector
+  modelResourcePath: Props/CIYC_DOTSProjectorLevel1
+  modelMaterialPath: Props/MAT_DOTSProjectorLevel1
   length: 0.055
   modelForwardAxis: {x: 0, y: 0, z: -1}
   fallbackSize: {x: 0.16, y: 0.22, z: 0.16}

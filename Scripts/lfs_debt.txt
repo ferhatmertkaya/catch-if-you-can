@@ -37,3 +37,6 @@ Assets/CatchIfYouCan/Art/Environment/Props/WallLamp/Models/CIYC_WallLamp.fbx
 Assets/CatchIfYouCan/Art/Environment/Props/WallLamp/Textures/T_WallLamp_BaseColor.png
 Assets/CatchIfYouCan/Art/Environment/Props/WallLamp/Textures/T_WallLamp_Normal.png
 Assets/CatchIfYouCan/Resources/Props/CIYC_Armchair.fbx
+Assets/CatchIfYouCan/Resources/Props/CIYC_DOTSProjectorLevel1.fbx
+Assets/CatchIfYouCan/Art/Environment/Props/DOTSProjectorLevel1/Textures/T_DOTSProjectorLevel1_BaseColor.png
+Assets/CatchIfYouCan/Art/Environment/Props/DOTSProjectorLevel1/Textures/T_DOTSProjectorLevel1_Normal.png

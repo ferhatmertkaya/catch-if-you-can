@@ -71,6 +71,16 @@ namespace CatchIfYouCan.Environment
         [Tooltip("How much floor the kit is spread over, in metres.")]
         [SerializeField] private Vector2 floorArea = new Vector2(1.8f, 0.9f);
 
+        [Tooltip("EXACT spot for the kit. Drop an empty where you want the items to lie and " +
+                 "wire it here, and the search below is not used at all - the floor is still " +
+                 "measured under it, so the items rest on the floor rather than at the " +
+                 "empty's own height. Left empty, the spot is searched for.")]
+        [SerializeField] private Transform layoutAnchor;
+
+        [Tooltip("How much headroom the kit needs for a spot to count as clear, in metres. " +
+                 "The search rejects a spot whose box is already occupied by anything solid.")]
+        [SerializeField, Min(0.1f)] private float clearanceHeight = 0.5f;
+
         [Header("Layout")]
         [Tooltip("Minimum gap between two items, edge to edge. Below this they read as a pile.")]
         [SerializeField, Min(0.01f)] private float minimumGap = 0.06f;
@@ -164,46 +174,170 @@ namespace CatchIfYouCan.Environment
         {
             top = default;
 
+            Physics.SyncTransforms();
+
+            // An explicit anchor wins outright. The search below is a guess that measures
+            // itself; a wired anchor is a decision, and a decision beats a good guess.
+            if (layoutAnchor != null)
+            {
+                if (TryFloorAt(layoutAnchor.position, out Bounds anchored, out string why))
+                {
+                    top = anchored;
+                    CIYCLog.Info(LogTag + "kit laid at the wired layoutAnchor, " +
+                                 top.center.ToString("F2") + ".");
+                    return true;
+                }
+
+                CIYCLog.Warn(LogTag + "layoutAnchor is wired at " +
+                             layoutAnchor.position.ToString("F2") + " but " + why +
+                             ". Laying the kit there anyway, because a wired anchor is a " +
+                             "decision and overriding it silently would be worse than an " +
+                             "item in an awkward spot.");
+                top = new Bounds(layoutAnchor.position,
+                                 new Vector3(floorArea.x, 0f, floorArea.y));
+                return true;
+            }
+
             Transform spawn = ResolveSpawn();
             if (spawn == null)
             {
                 CIYCLog.Error(LogTag + "no player spawn to lay the kit out in front of, and no " +
-                              "'table' assigned either, so there is nowhere to put it. Wire " +
-                              "'playerSpawn' on the LobbyAtmosphere beside this component.");
+                              "'table' or 'layoutAnchor' assigned either, so there is nowhere " +
+                              "to put it. Wire 'playerSpawn' on the LobbyAtmosphere beside " +
+                              "this component, or drop an empty and wire 'layoutAnchor'.");
                 return false;
             }
 
-            // In front of the spawn AND off to one side.
+            // MEASURED, not assumed.
             //
-            // In front alone was wrong for the obvious reason nobody thinks of until they walk
-            // into it: the spawn faces the way the player is meant to go, so "in front of the
-            // spawn" IS the doorway. Eleven solid objects across a doorway is a wall, and the
-            // first thing the player did was fail to get out of the room.
-            Vector3 centre = spawn.position
-                           + spawn.forward * floorDistance
-                           + spawn.right * floorSideOffset;
+            // This used to be one hard-coded step forward and one fixed step to the right, and
+            // that is exactly how the kit ended up inside a wall: "to the right of the spawn"
+            // is only clear floor in the room somebody had in mind while typing it. The room
+            // has since been rebuilt out of modules and the right-hand side of the spawn is a
+            // wall, so eleven items were laid inside it - visible from one side, unreachable,
+            // and indistinguishable from items that failed to spawn at all.
+            //
+            // Straight ahead is not the answer either: the spawn faces the way out, so the
+            // kit would be in the doorway. So candidates are TRIED, in preference order, and
+            // each one has to prove it is standing on floor with nothing solid already in it.
+            var candidates = new List<Vector3>();
+            var labels = new List<string>();
 
-            Physics.SyncTransforms();
+            float[] sides = { floorSideOffset, -floorSideOffset,
+                              floorSideOffset * 1.5f, -floorSideOffset * 1.5f,
+                              floorSideOffset * 0.6f, -floorSideOffset * 0.6f };
+            float[] aheads = { floorDistance, floorDistance * 1.7f, floorDistance * 0.6f };
 
-            float y;
-            if (Physics.Raycast(centre + Vector3.up * 1.5f, Vector3.down, out RaycastHit hit,
-                                4f, ~0, QueryTriggerInteraction.Ignore))
+            for (int a = 0; a < aheads.Length; a++)
             {
-                y = hit.point.y;
-            }
-            else
-            {
-                y = spawn.position.y;
-                CIYCLog.Warn(LogTag + "no floor under " + centre.ToString("F1") +
-                             ", so the kit is laid at the spawn's own height instead.");
+                for (int i = 0; i < sides.Length; i++)
+                {
+                    candidates.Add(spawn.position + spawn.forward * aheads[a] +
+                                   spawn.right * sides[i]);
+                    labels.Add(aheads[a].ToString("F1") + " m ahead, " +
+                               sides[i].ToString("F1") + " m to the side");
+                }
             }
 
-            centre.y = y;
+            // Last resorts: behind the player, where there is no doorway to block.
+            candidates.Add(spawn.position - spawn.forward * floorDistance);
+            labels.Add(floorDistance.ToString("F1") + " m behind");
+            candidates.Add(spawn.position - spawn.forward * floorDistance * 1.8f);
+            labels.Add((floorDistance * 1.8f).ToString("F1") + " m behind");
+
+            var rejected = new List<string>();
+            for (int i = 0; i < candidates.Count; i++)
+            {
+                if (TryFloorAt(candidates[i], out Bounds found, out string why))
+                {
+                    top = found;
+                    CIYCLog.Info(LogTag + "kit lies on clear floor " + labels[i] + ", at " +
+                                 top.center.ToString("F2") + " over " +
+                                 floorArea.x.ToString("F1") + " x " +
+                                 floorArea.y.ToString("F1") + " m" +
+                                 (rejected.Count > 0
+                                      ? " (" + rejected.Count + " nearer spot(s) rejected: " +
+                                        string.Join("; ", rejected.ToArray()) + ")"
+                                      : " (first spot tried)") + ".");
+                    return true;
+                }
+
+                if (rejected.Count < 4)
+                    rejected.Add(labels[i] + " - " + why);
+            }
+
+            // Nothing passed. Say so with what was tried, and lay the kit at the spawn's own
+            // feet rather than nowhere: an item in an awkward place can be picked up, and an
+            // item that was never placed cannot.
+            CIYCLog.Warn(LogTag + "no clear floor found in " + candidates.Count +
+                         " spot(s) around the spawn, so the kit is laid at the spawn itself. " +
+                         "Tried, and rejected: " + string.Join("; ", rejected.ToArray()) +
+                         ". Drop an empty where the kit should lie and wire it to " +
+                         "'layoutAnchor' to settle this.");
+
+            top = new Bounds(spawn.position, new Vector3(floorArea.x, 0f, floorArea.y));
+            return true;
+        }
+
+        /// <summary>
+        /// Whether the kit fits at <paramref name="probe"/>: real floor under it, and nothing
+        /// solid already standing in the space it would occupy.
+        ///
+        /// <para>
+        /// Both halves matter and they fail differently. No floor is an item that falls; an
+        /// occupied box is an item inside a wall. The second is the one that actually happened,
+        /// and it is the one a downward ray on its own cannot see - a ray cast inside a wall
+        /// still finds the floor underneath perfectly well.
+        /// </para>
+        /// </summary>
+        private bool TryFloorAt(Vector3 probe, out Bounds top, out string why)
+        {
+            top = default;
+
+            if (!Physics.Raycast(probe + Vector3.up * 1.5f, Vector3.down, out RaycastHit hit,
+                                 4f, ~0, QueryTriggerInteraction.Ignore))
+            {
+                why = "no floor under it";
+                return false;
+            }
+
+            if (hit.normal.y < 0.7f)
+            {
+                why = "the surface under it is a slope, not a floor";
+                return false;
+            }
+
+            Vector3 centre = probe;
+            centre.y = hit.point.y;
+
+            // A box standing ON the floor, not in it: lifted clear so the floor itself is not
+            // what the overlap finds.
+            var halfExtents = new Vector3(floorArea.x * 0.5f, clearanceHeight * 0.5f,
+                                          floorArea.y * 0.5f);
+            Vector3 boxCentre = centre + Vector3.up * (clearanceHeight * 0.5f + 0.05f);
+
+            Collider[] hits = Physics.OverlapBox(boxCentre, halfExtents, Quaternion.identity,
+                                                 ~0, QueryTriggerInteraction.Ignore);
+            for (int i = 0; i < hits.Length; i++)
+            {
+                Collider c = hits[i];
+                if (c == null || c == hit.collider)
+                    continue;
+
+                // The player stands at the spawn and is not an obstruction to lay a kit near.
+                if (c.GetComponentInParent<CharacterController>() != null)
+                    continue;
+
+                // Nor is anything this component has already put down.
+                if (c.GetComponentInParent<EquipmentBase>() != null)
+                    continue;
+
+                why = "\"" + c.name + "\" is already standing in it";
+                return false;
+            }
+
             top = new Bounds(centre, new Vector3(floorArea.x, 0f, floorArea.y));
-
-            CIYCLog.Info(LogTag + "no table assigned, so the kit lies on the floor at " +
-                         centre.ToString("F1") + " over " + floorArea.x.ToString("F1") + " x " +
-                         floorArea.y.ToString("F1") + " m.");
+            why = null;
             return true;
         }
 
