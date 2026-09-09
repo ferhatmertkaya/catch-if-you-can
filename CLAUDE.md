@@ -38,6 +38,7 @@ domains stop rather than guess. Every other domain continues.
 
 | Document | When it applies |
 |---|---|
+| `Docs/PROJECT_OVERVIEW.md` | **First, if you are new to this repository or handing it to somebody who is.** What the game is, how the code is arranged, which systems exist, what is deliberately not built yet, and how to get it running. Written to be read by somebody with no history here. |
 | `Docs/AGENT_OWNERSHIP.md` | Always, if anyone else is working in this repo at the same time. Who owns what, and the files no two agents may touch at once. |
 | `Docs/DETERMINISM.md` | **Normative.** Any change under `Scripts/Procedural/**` or to the deterministic set. A violation is a bug even if it looks right in the editor. |
 | `Docs/DEVELOPMENT_LABS.md` | Working on, or in, one of the nine `DEV_` lab scenes. |

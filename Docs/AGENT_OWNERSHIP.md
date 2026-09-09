@@ -1,5 +1,9 @@
 # Agent ownership
 
+**New to the repository? Read `PROJECT_OVERVIEW.md` first** - what the game is, how the
+code is arranged, which systems exist and which are deliberately not built yet. This
+document is the next one: it says who may write what.
+
 Status: normative for parallel work. Applies to every agent, human or
 otherwise, working on this repository at the same time as another one.
 
@@ -33,32 +37,32 @@ between folders would otherwise change owner silently.
 ## 2. The teams
 
 Twenty-one teams, mapped to the folders they own. The counts are the number of
-`.cs` files in the folder at the time of writing, and are here only to say how
-big a surface each team is holding.
+`.cs` files in the folder, and are here only to say how big a surface each team is
+holding. 368 runtime scripts, 47 editor scripts and 8 shaders in total.
 
 | # | Team | Owns | Files | What it is responsible for |
 |---|------|------|-------|----------------------------|
-| 1 | **Core** | `Scripts/Core/**` | 18 | Service location, scene identity, scene installers, the local-player service, logging. The spine everything else hangs off. |
-| 2 | **Player** | `Scripts/Player/**` | 14 | The player rig, spawner, factory, controller, look, inventory, body motion, fear. |
+| 1 | **Core** | `Scripts/Core/**` | 20 | Service location, scene identity, scene installers, the local-player service, logging. The spine everything else hangs off. |
+| 2 | **Player** | `Scripts/Player/**` | 17 | The player rig, spawner, factory, controller, look, inventory, body motion, fear. |
 | 3 | **Character** | `Scripts/Character/**` | 4 | Character definitions, rig profiles, the catalog and the local selection. |
-| 4 | **Equipment** | `Scripts/Equipment/**` | 24 | Held equipment, the loadout, definitions, the catalog, presentation and the runtime factory. |
-| 5 | **Interaction** | `Scripts/Interaction/**` | 11 | `IInteractable` and every implementation of it, plus the interaction controller. |
-| 6 | **Ghost** | `Scripts/Ghost/**` | 17 | Ghost definitions, behaviour, perception, hunts, rig control, visuals. |
+| 4 | **Equipment** | `Scripts/Equipment/**` | 38 | Held equipment, the loadout, definitions, the catalog, presentation and the runtime factory. |
+| 5 | **Interaction** | `Scripts/Interaction/**` | 14 | `IInteractable` and every implementation of it, plus the interaction controller. |
+| 6 | **Ghost** | `Scripts/Ghost/**` | 23 | Ghost definitions, behaviour, perception, hunts, rig control, visuals. |
 | 7 | **AI** | `Scripts/AI/**` | 2 | Navigation and pursuit shared by ghosts and anything else that moves itself. |
-| 8 | **Procedural** | `Scripts/Procedural/**` | 45 | House generation, the deterministic core, layout hashing, bootstrap. **See §4.** |
+| 8 | **Procedural** | `Scripts/Procedural/**` | 61 | House generation, the deterministic core, layout hashing, bootstrap. **See §4.** |
 | 9 | **Audio** | `Scripts/Audio/**` | 53 | Ambience, zones, occlusion, reverb, footsteps, the hunt mix. |
-| 10 | **UI** | `Scripts/UI/**` | 28 | Every screen, the touch HUD, the runtime UI factory, the theme. |
+| 10 | **UI** | `Scripts/UI/**` | 32 | Every screen, the touch HUD, the runtime UI factory, the theme. |
 | 11 | **Input** | `Scripts/Input/**` | 9 | Touch, joystick, look, the HUD's input side and the input controller. |
-| 12 | **Art / Rendering** | `Scripts/Art/**`, `Scripts/Graphics/**`, `Shaders/**` | 15 | Shader resolution, runtime materials, the mirror, post-processing. |
-| 13 | **Environment** | `Art/Environment/**`, `Art/Particles/**`, `Scripts/Environment/**` | — | Authored rooms, props, doors, materials and textures, and the hand-built reference apartment shell. |
-| 14 | **Evidence** | `Scripts/Evidence/**` | 4 | Evidence types, the evidence manager and what counts as proof. |
-| 15 | **Missions** | `Scripts/Missions/**`, `Scripts/Objectives/**` | 16 | Mission definitions, runtime, objectives and their completion. |
-| 16 | **Electronics** | `Scripts/Electronics/**` | 1 | `IElectronicDevice`, interference and the breaker. |
+| 12 | **Art / Rendering** | `Scripts/Art/**`, `Scripts/Graphics/**`, `Shaders/**` | 23 | Shader resolution, runtime materials, the mirror, post-processing. |
+| 13 | **Environment** | `Art/Environment/**`, `Art/Particles/**`, `Scripts/Environment/**` | 9 | Authored rooms, props, doors, materials and textures; the lobby portal and its crossing; the lobby's own atmosphere and equipment table. The hand-built `ReferenceApartment` shell that used to stand in for the mission world is GONE - the portal opens onto the real generated house, and a guard fails if a stand-in comes back. |
+| 14 | **Evidence** | `Scripts/Evidence/**` | 7 | Evidence types, the evidence manager and what counts as proof. |
+| 15 | **Missions** | `Scripts/Missions/**`, `Scripts/Objectives/**` | 17 | Mission definitions, runtime, objectives and their completion. |
+| 16 | **Electronics** | `Scripts/Electronics/**` | 2 | `IElectronicDevice`, interference and the breaker. |
 | 17 | **Weather** | `Scripts/Weather/**` | 1 | Weather state and its particle systems. |
-| 18 | **Save / Content** | `Scripts/Save/**`, `Scripts/Content/**` | 8 | Save data, the content registry, and what ships. |
-| 19 | **Development** | `Scripts/Development/**`, `Scenes/Development/**` | 11 | The nine labs and the lab framework. See `DEVELOPMENT_LABS.md`. |
-| 20 | **Tooling** | `Editor/**`, `Scripts/Utilities/**`, repo-root `Scripts/*.sh`, `.github/workflows/**` | 27 | Editor menus, asset builders, validators, the CI guards. |
-| 21 | **Session / Networking** | `Scripts/Session/**` | 7 | The join handshake, the match config, the authority provider and the gameplay-facing session API. Owns the boundary that keeps Relay out of gameplay — see `MULTIPLAYER_RUNTIME_ARCHITECTURE.md`. |
+| 18 | **Save / Content** | `Scripts/Save/**`, `Scripts/Content/**` | 10 | Save data, the content registry, and what ships. |
+| 19 | **Development** | `Scripts/Development/**`, `Scenes/Development/**` | 13 | The nine labs and the lab framework. See `DEVELOPMENT_LABS.md`. |
+| 20 | **Tooling** | `Editor/**`, `Scripts/Utilities/**`, repo-root `Scripts/*.sh`, `.github/workflows/**` | 47 | Editor menus, asset builders, validators, the CI guards. |
+| 21 | **Session / Networking** | `Scripts/Session/**` | 10 | The join handshake, the match config, the authority provider and the gameplay-facing session API. Owns the boundary that keeps Relay out of gameplay — see `MULTIPLAYER_RUNTIME_ARCHITECTURE.md`. |
 
 Anything not listed is **Core**'s until a team claims it in a change to this
 table.
@@ -117,6 +121,10 @@ owns the folder. These have **one owner and no shared editing**, ever.
 | `Scripts/Missions/MissionWorldLoader.cs`, `Scripts/Procedural/InvestigationBootstrap.cs` | Procedural (spec. 20) + Environment (spec. 18) | The mission world is loaded additively behind the lobby and generated from `MissionRuntime.Seed` — the seed rolled once, before the portal opened. A second seed here, or gameplay started in `PrepareWorld`, means the player looks into one world and plays another, or is hunted while reading a noticeboard. |
 | `Scripts/UI/TouchHudFactory.cs` + `Scripts/Player/PlayerFactory.cs` | UI (spec. 29) | Authoritative for movement, look, sprint, crouch, flashlight and carry, and the only place a `MobileInputController` or a `VirtualJoystick` is built. `RuntimeUIFactory` built a second set of all of it; which one drove the game depended on load order. |
 | `Scripts/Save/SaveManager.cs` | Save (spec. 33) | Local persistence with no online dependency, permanently. A format change without a migration eats a save. |
+| `Scripts/Procedural/ModularRoomBuilder.cs` | Procedural (spec. 20) | Stage B geometry for EVERY room in the game - floors, walls, doorways, windows, trim and, since it was found to place none, the room's light. It consumes the layout and never produces one, and it derives its wall-mesh variants by hashing the room's identity rather than drawing them, because a draw would advance a generation stream and reach back into Stage A. |
+| `Scripts/Environment/HouseLightingDirector.cs`, `Scripts/Environment/AmbientRoomLight.cs` | Environment (spec. 18) | Dresses and rolls every room's practical from the mission seed, derived locally so a lighting tweak never becomes a determinism change. `AmbientRoomLight` is the one distinction it makes: a marked light is scenery, never dressed, never rolled off, and not what the wall switch owns. Two places deciding which a light is means one of them wires the ember to the switch. |
+| `Scripts/Interaction/DraggableDoor.cs` + `Scripts/Interaction/InteractiveDoor.cs` | Interaction (spec. 11) | Two components on ONE hinge. The swinging one only writes while it animates, so it leaves a dragged leaf alone and then believes a stale angle; `SyncToAngle` is how the drag tells it where the leaf ended up. They share the hinge transform and the limit, because two answers to "how far does this door open" diverge the first time somebody changes one. |
+| `.gitattributes`, `Scripts/lfs_debt.txt` | Tooling | The git-lfs boundary. The rules are listed one file at a time, so every new model and texture starts OUTSIDE lfs and stays there unless somebody adds a rule - three FBX files of 87-92 MiB arrived that way, against GitHub's 100 MiB hard refusal. `lfs_debt.txt` records what is already in the pack; `check_asset_references.sh` fails on the next one. |
 
 ---
 
