@@ -3039,6 +3039,30 @@ unterscheiden"
         "vor dem Spawn allein ist die Tuer; elf feste Objekte darin sind eine Wand"
   fi
 
+  # Das Testgeraet am Spawn wird UEBER DENSELBEN Aufruf gebaut wie alles andere. Ein zweiter
+  # Bauweg waere Fehler 1, und schlimmer als sonst: er existiert, um ein Geraet zu PRUEFEN,
+  # also pruefte er dann einen Sonderfall statt das Geraet. In dieser Datei baut genau eine
+  # Stelle ein Ausruestungsstueck.
+  if [ "$(code "$TBL" | grep -c 'MissionEquipmentInstaller\.BuildItem(')" = "1" ] &&
+     code "$TBL" | grep -qE 'Place\(testItem,'; then
+    ok "das Testgeraet am Spawn geht durch denselben Bauweg wie die Kiste"
+  else
+    bad "das Testgeraet am Spawn geht durch denselben Bauweg wie die Kiste" \
+        "ein zweiter Bauweg prueft einen Sonderfall statt das Geraet"
+  fi
+
+  # Und es liegt am Spawn STATT auf dem Raster, nicht zusaetzlich. Zwei gleiche Geraete ein
+  # paar Meter auseinander sind der Zustand, in dem "ist es gespawnt?" keine eine Antwort mehr
+  # hat - und genau diese Frage ist der Grund, aus dem es das gibt.
+  if code "$TBL" | grep -qE 'testItem = d;' &&
+     printf '%s' "$(code "$TBL" | sed -n '/testItem = d;/,/^                    }$/p')" \
+       | grep -qE 'continue;'; then
+    ok "das Testgeraet liegt am Spawn statt auf dem Raster, nicht zusaetzlich"
+  else
+    bad "das Testgeraet liegt am Spawn statt auf dem Raster, nicht zusaetzlich" \
+        "zweimal dasselbe Geraet beantwortet die Frage nicht mehr, fuer die es da ist"
+  fi
+
   # Der Spawnpunkt wird beim Geschwister erfragt, das ihn schon verdrahtet hat - nicht ueber
   # einen Objektnamen, der still nicht mehr aufloest (CLAUDE.md Fehler 3 und 10).
   if code "$TBL" | grep -qE 'atmosphere\.PlayerSpawn' &&

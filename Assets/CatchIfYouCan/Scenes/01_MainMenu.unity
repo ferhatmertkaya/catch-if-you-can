@@ -25681,8 +25681,12 @@ MonoBehaviour:
   floorDistance: 1.6
   floorSideOffset: 1.9
   floorArea: {x: 2.6, y: 1.1}
+  layoutAnchor: {fileID: 0}
+  clearanceHeight: 0.5
   minimumGap: 0.06
   surfaceClearance: 0.005
+  spawnTestItemId: spectral_grid
+  spawnTestDistance: 0.8
   takeTorchOutOfHands: 1
 --- !u!1001 &883233463
 PrefabInstance:

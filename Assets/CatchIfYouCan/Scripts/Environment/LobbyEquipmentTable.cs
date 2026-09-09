@@ -88,6 +88,16 @@ namespace CatchIfYouCan.Environment
         [Tooltip("How far above the measured top an item is placed, so nothing sinks into it.")]
         [SerializeField, Min(0f)] private float surfaceClearance = 0.005f;
 
+        [Header("Test item at the spawn")]
+        [Tooltip("One item laid directly at the player's feet, separately from the kit, so it " +
+                 "is there to pick up and mount without having to find it. LEFT EMPTY nothing " +
+                 "is laid at the spawn and every item goes on the kit grid as before.")]
+        [SerializeField] private string spawnTestItemId = EquipmentIds.SpectralGrid;
+
+        [Tooltip("How far in front of the spawn the test item lies, in metres. Far enough to " +
+                 "be outside the player's own capsule, near enough to be underfoot.")]
+        [SerializeField, Min(0f)] private float spawnTestDistance = 0.8f;
+
         [Header("The torch")]
         [Tooltip("Take the torch out of the lobby player's hands, so the one on the table is " +
                  "the one they carry in. Off, they start holding it as before.")]
@@ -402,13 +412,26 @@ namespace CatchIfYouCan.Environment
             EquipmentDefinition[] all = EquipmentDefinitionFactory.All();
 
             var definitions = new List<EquipmentDefinition>();
+            EquipmentDefinition testItem = null;
             if (all != null)
             {
                 for (int i = 0; i < all.Length; i++)
                 {
                     EquipmentDefinition d = all[i];
-                    if (d != null && !string.IsNullOrEmpty(d.Id))
-                        definitions.Add(d);
+                    if (d == null || string.IsNullOrEmpty(d.Id))
+                        continue;
+
+                    // The test item is laid at the spawn instead of on the grid, not as well as.
+                    // Two of the same device a few metres apart is the state where "did it
+                    // spawn?" stops having one answer, and that is the question this is for.
+                    if (!string.IsNullOrEmpty(spawnTestItemId) &&
+                        string.Equals(d.Id, spawnTestItemId, System.StringComparison.Ordinal))
+                    {
+                        testItem = d;
+                        continue;
+                    }
+
+                    definitions.Add(d);
                 }
             }
 
@@ -481,6 +504,85 @@ namespace CatchIfYouCan.Environment
                          (placeholders.Count > 0
                              ? "; DEBUG PLACEHOLDER for: " + string.Join(", ", placeholders)
                              : "; every item has a real runtime object") + ".");
+
+            PlaceTestItemAtSpawn(testItem);
+        }
+
+        /// <summary>
+        /// Lays one item directly at the player's feet.
+        ///
+        /// <para>
+        /// The kit goes wherever there is clear floor, which is correct and is not the same as
+        /// FINDABLE: the projector is a 0.22 m object lying among ten others somewhere off to
+        /// one side, and "I cannot see it" and "it was never built" look identical from the
+        /// spawn. This one is where the player is standing, so the question stops being a
+        /// search.
+        /// </para>
+        ///
+        /// <para>
+        /// It goes through the same <see cref="Place"/> call as everything else - same build,
+        /// same pickup, same wall-mounting - so testing it tests the real item and not a
+        /// special case that only exists here.
+        /// </para>
+        /// </summary>
+        private void PlaceTestItemAtSpawn(EquipmentDefinition testItem)
+        {
+            if (testItem == null)
+            {
+                if (!string.IsNullOrEmpty(spawnTestItemId))
+                    CIYCLog.Warn(LogTag + "'" + spawnTestItemId + "' is named as the test item " +
+                                 "at the spawn, but no definition carries that id, so nothing " +
+                                 "is laid there. Check the spelling against EquipmentIds.");
+                return;
+            }
+
+            Transform spawn = ResolveSpawn();
+            if (spawn == null)
+            {
+                CIYCLog.Warn(LogTag + "no spawn to lay '" + testItem.Id + "' at, so it goes " +
+                             "nowhere. Wire 'playerSpawn' on the LobbyAtmosphere beside this.");
+                return;
+            }
+
+            Vector3 probe = spawn.position + spawn.forward * spawnTestDistance;
+
+            Physics.SyncTransforms();
+
+            // Its own floor height, measured here rather than taken from the kit's spot - the
+            // kit may have ended up on the other side of the room, at another height.
+            float y = probe.y;
+            if (Physics.Raycast(probe + Vector3.up * 1.5f, Vector3.down, out RaycastHit hit,
+                                4f, ~0, QueryTriggerInteraction.Ignore))
+            {
+                y = hit.point.y;
+            }
+            else
+            {
+                CIYCLog.Warn(LogTag + "no floor under the spawn at " + probe.ToString("F2") +
+                             ", so '" + testItem.Id + "' is laid at the spawn's own height.");
+            }
+
+            probe.y = y;
+
+            EquipmentBase item = Place(testItem, probe);
+            if (item == null)
+            {
+                CIYCLog.Error(LogTag + "'" + testItem.Id + "' produced no object, so there is " +
+                              "nothing at the spawn to pick up. This is a build failure, not a " +
+                              "placement one.");
+                return;
+            }
+
+            _placed.Add(item);
+
+            // The exact position, because "it did not spawn" and "it is behind me" are the same
+            // report from inside the game and different bugs outside it.
+            CIYCLog.Info(LogTag + "TEST ITEM: '" + testItem.Id + "' (" + testItem.DisplayName +
+                         ") lies at the player's feet, world " + item.transform.position.ToString("F2") +
+                         ", " + spawnTestDistance.ToString("F1") + " m in front of the spawn" +
+                         (EquipmentRuntimeFactory.HasRuntimePath(testItem.Id)
+                              ? "."
+                              : ", as a DEBUG PLACEHOLDER - it has no runtime object of its own."));
         }
 
         /// <summary>
