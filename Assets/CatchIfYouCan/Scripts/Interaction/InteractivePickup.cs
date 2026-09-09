@@ -54,6 +54,43 @@ namespace CatchIfYouCan.Interaction
             return inventory != null && inventory.HasFreeSlot;
         }
 
+        /// <summary>
+        /// Why <see cref="CanInteract"/> said no, in words.
+        ///
+        /// <para>
+        /// <b>Three different refusals look identical from inside the game.</b> The controller
+        /// drops a target whose <c>CanInteract</c> is false, so there is no prompt, no outline
+        /// and no name - exactly what "nothing happens when I look at it" is - and the item
+        /// having no component, the item already being in your hands, and the bag being full
+        /// all produce that same nothing. This says which one it was, for the debug caption.
+        /// </para>
+        ///
+        /// <para>
+        /// Diagnostic only: it decides nothing, and <see cref="CanInteract"/> stays the single
+        /// answer to whether the pickup may happen.
+        /// </para>
+        /// </summary>
+        public string DescribeInteractability(GameObject interactor)
+        {
+            if (itemComponent == null)
+                return "no EquipmentBase is wired to this pickup";
+
+            if (itemComponent.IsEquipped)
+                return "it is already in your hands";
+
+            if (interactor == null)
+                return "there is no interactor";
+
+            PlayerInventory inventory = interactor.GetComponent<PlayerInventory>();
+            if (inventory == null)
+                return "the player carries no PlayerInventory";
+
+            if (!inventory.HasFreeSlot)
+                return "all " + PlayerInventory.SlotCount + " bag slots are full";
+
+            return "it can be taken";
+        }
+
         public void Interact(GameObject interactor)
         {
             if (itemComponent == null)

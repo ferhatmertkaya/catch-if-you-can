@@ -42,6 +42,10 @@ namespace CatchIfYouCan.Development
         /// <summary>Take and put down. Deliberately not E: E is the shipping interact key.</summary>
         private const KeyCode TakeOrDropKey = KeyCode.X;
 
+        /// <summary>How far the diagnostic ray looks. Longer than the controller's reach, so
+        /// "you are too far away" is one of the answers it can give rather than a silence.</summary>
+        private const float ProbeDistance = 6f;
+
         private InteractionController _interaction;
         private PlayerInventory _inventory;
         private string _label = string.Empty;
@@ -97,8 +101,17 @@ namespace CatchIfYouCan.Development
         /// </summary>
         private string DescribeTarget()
         {
-            if (_interaction == null || _interaction.CurrentTarget == null)
+            if (_interaction == null)
                 return string.Empty;
+
+            // No target is the case that needed explaining, so it is the case that gets the
+            // most words. "I look at it and nothing happens" has four causes that are the same
+            // nothing on screen: the ray reaches no collider at all; it reaches one that belongs
+            // to no interactable; it reaches one that does and CanInteract refused; or there is
+            // no camera to cast from. Saying which one it is turns "why is it like this" from a
+            // question into a reading.
+            if (_interaction.CurrentTarget == null)
+                return DescribeWhyNothing();
 
             var behaviour = _interaction.CurrentTarget as MonoBehaviour;
             if (behaviour == null)
@@ -115,6 +128,46 @@ namespace CatchIfYouCan.Development
             return string.IsNullOrEmpty(prompt)
                 ? behaviour.name + "   /   DEBUG"
                 : prompt.ToUpperInvariant() + "   /   DEBUG";
+        }
+
+        /// <summary>
+        /// Why there is no target under the crosshair.
+        ///
+        /// <para>
+        /// Casts its OWN ray rather than asking the controller, because the controller keeps
+        /// only the answer and not the working: by the time <c>CurrentTarget</c> is null, what
+        /// the ray hit and why it was dropped are both gone.
+        /// </para>
+        /// </summary>
+        private string DescribeWhyNothing()
+        {
+            Camera cam = Camera.main;
+            if (cam == null)
+                return "NO TARGET   /   DEBUG   [no camera tagged MainCamera]";
+
+            var ray = new Ray(cam.transform.position, cam.transform.forward);
+            if (!Physics.Raycast(ray, out RaycastHit hit, ProbeDistance, ~0,
+                                 QueryTriggerInteraction.Collide))
+            {
+                return "NO TARGET   /   DEBUG   [ray hits no collider within " +
+                       ProbeDistance.ToString("F1") + " m]";
+            }
+
+            var interactable = hit.collider.GetComponentInParent<IInteractable>();
+            if (interactable == null)
+            {
+                return "NO TARGET   /   DEBUG   [hit \"" + hit.collider.name +
+                       "\" at " + hit.distance.ToString("F2") + " m - no IInteractable on it " +
+                       "or its parents]";
+            }
+
+            var pickup = interactable as InteractivePickup;
+            string why = pickup != null
+                ? pickup.DescribeInteractability(_interaction.gameObject)
+                : "CanInteract refused";
+
+            return "REFUSED   /   DEBUG   [\"" + hit.collider.name + "\" at " +
+                   hit.distance.ToString("F2") + " m: " + why + "]";
         }
 
         /// <summary>

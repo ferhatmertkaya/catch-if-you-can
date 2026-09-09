@@ -3061,6 +3061,19 @@ unterscheiden"
         "die Wurfkapsel entsteht ausgeschaltet; ohne eigenen Koerper geht der Strahl hindurch"
   fi
 
+  # Der Aufhebekoerper wird an den RENDERERN gemessen, nicht an den Collidern. TryMeasureTop
+  # nimmt Collider zuerst, und der einzige, den ein frisches Stueck traegt, ist die Wurfkapsel -
+  # ausgeschaltet erzeugt, und Unity haelt deren bounds waehrenddessen nicht nach. Was der
+  # Spieler ZIELEN muss, kann nicht an einer Form gemessen werden, die mit dem Bild nichts zu
+  # tun hat: sichtbar und treffbar muessen dasselbe sein.
+  if printf '%s' "$PB" | grep -qE 'TryMeasureRenderers\(' &&
+     ! printf '%s' "$PB" | grep -qE 'TryMeasureTop\('; then
+    ok "der Aufhebekoerper wird am Gezeichneten gemessen, nicht an der Wurfkapsel"
+  else
+    bad "der Aufhebekoerper wird am Gezeichneten gemessen, nicht an der Wurfkapsel" \
+        "die Wurfkapsel ist ausgeschaltet und ihre bounds veraltet; sichtbar und treffbar muessen dasselbe sein"
+  fi
+
   # Und es bekommt keinen ZWEITEN. Zwei Koerper sind zwei Wege in dasselbe Stueck, und zwei
   # Aufforderungen auf einem Objekt sind schlimmer als keine.
   if printf '%s' "$PB" | grep -qE 'GetComponents<Collider>\(\)' &&
@@ -3134,6 +3147,36 @@ unterscheiden"
     bad "der Spawnpunkt wird erfragt, nicht per Namen gesucht" \
         "ein fest verdrahteter Objektname faellt still und fuer immer um"
   fi
+fi
+
+# ---- eine Absage, die sich benennt ------------------------------------------------------------
+#
+# CanInteract hat drei Gruende, Nein zu sagen, und der Controller wirft ein abgelehntes Ziel weg -
+# es gibt also keine Aufforderung, keine Kontur und keinen Namen. "Ich schaue es an und nichts
+# passiert" ist damit fuer alle drei dasselbe Bild, und dazu noch fuer "der Strahl trifft gar
+# nichts". Das Debug-Schild benennt, welcher Fall es war. Diagnose bleibt Diagnose: sie
+# entscheidet nichts, CanInteract bleibt die eine Antwort.
+PU="$ROOT/Assets/CatchIfYouCan/Scripts/Interaction/InteractivePickup.cs"
+DBG="$ROOT/Assets/CatchIfYouCan/Scripts/Development/DebugItemTools.cs"
+if [ -f "$PU" ] && [ -f "$DBG" ] &&
+   code "$PU" | grep -qE 'public string DescribeInteractability\(GameObject' &&
+   code "$DBG" | grep -qE 'DescribeInteractability\(' &&
+   code "$DBG" | grep -qE 'DescribeWhyNothing\(\)'; then
+  ok "eine abgelehnte Aufnahme benennt ihren Grund"
+else
+  bad "eine abgelehnte Aufnahme benennt ihren Grund" \
+      "drei Absagen und ein leerer Strahl sehen im Spiel gleich aus"
+fi
+
+# Und die Diagnose entscheidet nichts: DescribeInteractability wird nirgends als Bedingung
+# benutzt. Ein zweiter Weg zu "darf aufgehoben werden" waere Fehler 1 an der empfindlichsten
+# Stelle - die beiden gingen auseinander, und geglaubt wuerde die falsche.
+if ! code "$PU" | grep -qE 'if \(.*DescribeInteractability' &&
+   ! code "$DBG" | grep -qE 'if \(.*DescribeInteractability'; then
+  ok "die Absagediagnose entscheidet nichts, sie beschreibt nur"
+else
+  bad "die Absagediagnose entscheidet nichts, sie beschreibt nur" \
+      "ein zweiter Weg zu \"darf aufgehoben werden\" geht mit CanInteract auseinander"
 fi
 
 # ---- die Zahlenreihe waehlt einen Ausruestungsplatz -------------------------------------------

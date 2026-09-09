@@ -371,6 +371,29 @@ namespace CatchIfYouCan.Environment
         }
 
         /// <summary>
+        /// The world box of everything this transform DRAWS. Renderers only, deliberately:
+        /// colliders answer "what does it bump into", and the question here is "what can the
+        /// player see and therefore aim at".
+        /// </summary>
+        private static bool TryMeasureRenderers(Transform root, out Bounds bounds)
+        {
+            bounds = default;
+            bool any = false;
+
+            foreach (Renderer r in root.GetComponentsInChildren<Renderer>(true))
+            {
+                if (r == null)
+                    continue;
+                Bounds b = r.bounds;
+                if (b.size == Vector3.zero)
+                    continue;
+                if (!any) { bounds = b; any = true; } else bounds.Encapsulate(b);
+            }
+
+            return any;
+        }
+
+        /// <summary>
         /// The world box of everything under this transform, from colliders first and renderers
         /// second. Colliders first because that is what the player bumps into and what an item
         /// has to rest on; renderers as the fallback for a prop whose visual is bigger than its
@@ -724,10 +747,19 @@ namespace CatchIfYouCan.Environment
                     return;
             }
 
-            if (!TryMeasureTop(t, out Bounds world) || world.size.sqrMagnitude < 1e-8f)
+            // Measured off what is DRAWN, not off what happens to have a collider.
+            //
+            // TryMeasureTop takes colliders first and only falls back to renderers, and the one
+            // collider a fresh item carries is the drop capsule - a shape that belongs to the
+            // thrown-object path, is created disabled, and whose bounds Unity does not keep
+            // updated while it is off. Sizing the thing the player has to AIM AT off that gives
+            // a box that has nothing to do with the object on screen. What can be seen is what
+            // has to be hittable, so this measures renderers and nothing else.
+            if (!TryMeasureRenderers(t, out Bounds world) || world.size.sqrMagnitude < 1e-8f)
             {
-                CIYCLog.Warn(LogTag + "'" + item.name + "' has nothing to measure, so it gets " +
-                             "no pickup body and the interact ray will pass through it.");
+                CIYCLog.Warn(LogTag + "'" + item.name + "' draws nothing that can be measured, " +
+                             "so it gets no pickup body and the interact ray will pass through " +
+                             "it.");
                 return;
             }
 
