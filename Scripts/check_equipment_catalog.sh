@@ -1162,24 +1162,60 @@ if [ -f "$SHDR" ]; then
   l_s1=$(n 'if (stage == 1)')
   l_depth=$(n 'SampleSceneDepth(screenUV)')
   l_s2=$(n 'if (stage == 2)')
-  l_origin=$(n '_OriginWS.xyz')
+  l_world=$(n 'ComputeWorldSpacePosition(screenUV')
   l_s3=$(n 'if (stage == 3)')
-  l_axis=$(n '_AxisXWS.xyz')
+  l_origin=$(n '_OriginWS.xyz')
   l_s4=$(n 'if (stage == 4)')
+  l_axis=$(n '_AxisXWS.xyz')
+  l_s5=$(n 'if (stage == 5)')
   l_dot=$(n 'float dotMask')
-  if [ -n "$l_frag" ] && [ -n "$l_s1" ] && [ -n "$l_depth" ] && [ -n "$l_s2" ] \
-     && [ -n "$l_origin" ] && [ -n "$l_s3" ] && [ -n "$l_axis" ] && [ -n "$l_s4" ] \
-     && [ -n "$l_dot" ] \
-     && [ "$l_s1" -lt "$l_depth" ] && [ "$l_depth" -lt "$l_s2" ] \
-     && [ "$l_s2" -lt "$l_origin" ] && [ "$l_origin" -lt "$l_s3" ] \
-     && [ "$l_s3" -lt "$l_axis" ] && [ "$l_axis" -lt "$l_s4" ] \
-     && [ "$l_s4" -lt "$l_dot" ]; then
+  ladder_ok=1
+  for v in "$l_frag" "$l_s1" "$l_depth" "$l_s2" "$l_world" "$l_s3" "$l_origin" "$l_s4" \
+           "$l_axis" "$l_s5" "$l_dot"; do
+    [ -n "$v" ] || ladder_ok=0
+  done
+  if [ "$ladder_ok" -eq 1 ]; then
+    prev="$l_frag"
+    for v in "$l_s1" "$l_depth" "$l_s2" "$l_world" "$l_s3" "$l_origin" "$l_s4" \
+             "$l_axis" "$l_s5" "$l_dot"; do
+      [ "$prev" -lt "$v" ] || ladder_ok=0
+      prev="$v"
+    done
+  fi
+  if [ "$ladder_ok" -eq 1 ]; then
     ok "each diagnostic rung returns above the work the next rung needs"
   else
-    fail "each diagnostic rung returns above the work the next rung needs (frag=$l_frag s1=$l_s1 depth=$l_depth s2=$l_s2 origin=$l_origin s3=$l_s3 axis=$l_axis s4=$l_s4 dot=$l_dot)"
+    fail "each diagnostic rung returns above the work the next rung needs (frag=$l_frag s1=$l_s1 depth=$l_depth s2=$l_s2 world=$l_world s3=$l_s3 origin=$l_origin s4=$l_s4 axis=$l_s4 s5=$l_s5 dot=$l_dot)"
   fi
 else
   fail "each diagnostic rung returns above the work the next rung needs"
+fi
+
+# 26b. AND NO RUNG SITS BELOW AN INVISIBLE EARLY-OUT. This is worth more than the ordering
+#      itself. The first version of the ladder returned transparent black for sky ABOVE rung 2
+#      and for out-of-range ABOVE rung 3, so ONE unbound depth texture would have blacked out
+#      three rungs at once - and three rungs failing for one cause is not a bisect, it is the
+#      same false finding printed three times. Above the last rung every condition that would
+#      have returned nothing has to return a NAMED COLOUR instead; the invisible returns belong
+#      to stage 0, which is the effect and must add nothing where there is no dot.
+if [ -f "$SHDR" ]; then
+  lastrung=$(printf '%s\n' "$scode" | { grep -n 'if (stage == 5)' || true; } | head -1 | cut -d: -f1)
+  early=$(printf '%s\n' "$scode" | { grep -n 'return half4(0, 0, 0, 0);' || true; } | cut -d: -f1)
+  above=""
+  if [ -n "$lastrung" ]; then
+    for l in $early; do
+      # The last rung's own body is BELOW its `if` line, so its transparent return is not one
+      # of these - what this catches is a return that would swallow a rung above it.
+      [ "$l" -lt "$lastrung" ] && above="$above $l"
+    done
+  fi
+  if [ -n "$lastrung" ] && [ -z "$above" ]; then
+    ok "no diagnostic rung sits below an invisible early-out"
+  else
+    fail "no diagnostic rung sits below an invisible early-out (lastRung=$lastrung invisible returns above it:$above)"
+  fi
+else
+  fail "no diagnostic rung sits below an invisible early-out"
 fi
 
 # 27. And rung 1 is the FIRST thing the fragment shader does. It answers "does this pass
@@ -1354,10 +1390,10 @@ fi
 #     jemand spielt, diagnostiziert nicht mehr, sondern erzeugt (Fehler 23).
 dbg_cs=0
 dbg_sh=0
-if [ -f "$PROJ" ] && printf '%s' "$pcode" | grep -qE 'Range\(0, 4\)\] private int debugStage = 0'; then
+if [ -f "$PROJ" ] && printf '%s' "$pcode" | grep -qE 'Range\(0, 5\)\] private int debugStage = 0'; then
   dbg_cs=1
 fi
-if [ -f "$SHDR" ] && printf '%s' "$scode" | grep -qE '_DebugMode \("Debug Stage \(0 = off\)", Range\(0, 4\)\) = 0'; then
+if [ -f "$SHDR" ] && printf '%s' "$scode" | grep -qE '_DebugMode \("Debug Stage \(0 = off\)", Range\(0, 5\)\) = 0'; then
   dbg_sh=1
 fi
 if [ "$dbg_cs" -eq 1 ] && [ "$dbg_sh" -eq 1 ]; then

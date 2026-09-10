@@ -161,13 +161,22 @@ place that number lives; everything else derives it.
   term are gone from the shader AND from the C#, and a check keeps them off until the rung below
   them is proven. Turned off is not the same as gone: a slider nobody moves is still a line every
   later reader takes for tested, and one that pushes into a uniform the shader no longer declares
-  writes nowhere and says nothing. What is left is a LADDER of four rungs behind one number -
-  magenta over the whole volume, the reconstructed world position, solid green in range, the bare
-  angular grid - with stage 0 the finished dots. Each rung `return`s ABOVE the work the next one
-  needs, and the guard reads the line numbers rather than trusting the order, because a rung that
-  sits below the thing it bisects goes dark for a reason further along and hands the reader a
-  FALSE finding instead of none. The magenta rung is the first statement in the fragment shader,
-  nothing above it but the stage read itself. There is deliberately no rung for the finished dots:
+  writes nowhere and says nothing. What is left is a LADDER of five rungs behind one number -
+  magenta over the whole volume, the raw scene depth, the reconstructed world position, green in
+  range against RED outside it, and a coarse angular chequerboard - with stage 0 the finished
+  dots. Rung 1 is RUNTIME CONFIRMED: it draws, so the pass rasterises, the volume renders, the
+  material resolves and the shader COMPILES (an uncompilable shader is drawn with Unity's magenta
+  error shader, which cannot be invisible - so every earlier "nothing on screen" rules that out).
+  Each rung `return`s ABOVE the work the next one needs, and the guard reads the line numbers
+  rather than trusting the order, because a rung that sits below the thing it bisects goes dark
+  for a reason further along and hands the reader a FALSE finding instead of none. The magenta
+  rung is the first statement in the fragment shader, nothing above it but the stage read itself.
+  AND NO RUNG SITS BELOW AN INVISIBLE EARLY-OUT, which is worth more than the ordering: the sky
+  test returned transparent black above rung 2 and the range test above rung 3, so ONE unbound
+  depth texture would have blacked out three rungs at once and read as three separate failures.
+  Above the last rung nothing returns nothing - sky is BLUE, out of range is RED, and every
+  condition that would have vanished names itself in colour. A bisect whose rungs can share a
+  cause is not a bisect. There is deliberately no rung for the finished dots:
   it would have no branch of its own, fall through to stage 0, and answer a question nobody asked -
   so the shader, the Inspector and the number of implemented branches must all name the same count.
   Culling is OFF, one fewer thing that has to be right before a pixel appears, and the blend stays
@@ -191,7 +200,7 @@ place that number lives; everything else derives it.
   which can only ever find its own children and would report a clean 1 while a second projection
   hung next door. Switch-on also reports whether the CAMERA stands inside the volume, which no
   longer decides what is drawn but still separates "the volume is nowhere near the viewer" from
-  "the volume is all around the viewer and still draws nothing". 100 checks.
+  "the volume is all around the viewer and still draws nothing". 101 checks.
 - `Scripts/check_multiplayer_architecture.sh` — the deterministic assembly stays
   engine-free, gameplay never reaches a Relay API, remote players never read
   local input, ghost decisions stay host-only, online capacity has exactly one

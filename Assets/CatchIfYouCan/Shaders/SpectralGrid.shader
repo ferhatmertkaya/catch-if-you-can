@@ -12,10 +12,11 @@ Shader "CatchIfYouCan/SpectralGrid"
     // back only after a camera has said the rung below them works.
     //
     //   0  the finished dots                        the game.
-    //   1  magenta over the whole volume            does this pass rasterise at all?
-    //   2  the reconstructed world position         is the depth texture readable here?
-    //   3  solid green inside the range             did the lens arrive?
-    //   4  the raw angular grid, no dot test        is the spherical mapping sane?
+    //   1  magenta over the whole volume            does this pass rasterise at all?  CONFIRMED
+    //   2  raw scene depth, sky in blue             is there a depth buffer here at all?
+    //   3  the reconstructed world position         is the inverse view-projection right?
+    //   4  green in range, RED out of it            did the lens arrive, and how big is the ball?
+    //   5  a coarse angular chequerboard            is the mapping a sphere, and does it wrap?
     //
     // Every rung is a `return` placed ABOVE the work the next rung needs, so a rung can never be
     // taken down by a failure further along. Stage 1 is the FIRST statement in the function for
@@ -23,6 +24,13 @@ Shader "CatchIfYouCan/SpectralGrid"
     // dots: it would have no branch of its own and would fall through to what stage 0 already
     // draws, so a reader who selected it would be told about a stage that is not the one they
     // asked for. Every rung offered here is a rung that exists, and a guard counts them.
+    //
+    // AND NO RUNG SITS BELOW AN INVISIBLE EARLY-OUT. The first version of this ladder returned
+    // transparent black for sky ABOVE rung 2 and for out-of-range ABOVE rung 3, so ONE dead
+    // depth texture would have blacked out three rungs at once and read as three separate
+    // failures. Above the last rung there is now no early-out at all: sky is BLUE, out of range
+    // is RED, and every condition that would have returned nothing returns a colour that names
+    // itself. A bisect whose rungs can share a cause is not a bisect (mistake 44).
     //
     // WHAT IT DRAWS. For every pixel of the volume it covers, the shader reconstructs the world
     // position of the SCENE SURFACE behind that pixel from the depth buffer, takes the direction
@@ -57,7 +65,7 @@ Shader "CatchIfYouCan/SpectralGrid"
         _Range      ("Range (m)", Float) = 5.5
         _Intensity  ("Intensity", Range(0, 12)) = 3.0
         _FadeStart  ("Fade Start (fraction of range)", Range(0.05, 1.0)) = 0.55
-        [IntRange] _DebugMode ("Debug Stage (0 = off)", Range(0, 4)) = 0
+        [IntRange] _DebugMode ("Debug Stage (0 = off)", Range(0, 5)) = 0
     }
 
     SubShader
@@ -125,52 +133,113 @@ Shader "CatchIfYouCan/SpectralGrid"
 
             half4 frag(Varyings input) : SV_Target
             {
-                // A staged bisect, because no compiler and no camera runs where this is written.
-                // Each stage answers exactly one question, so one play session names the failing
-                // layer instead of one session per guess. Stage 0 is the game.
+                // A ladder, climbed one rung at a time, because no compiler and no camera runs
+                // where this is written. Each rung answers exactly one question and RETURNS above
+                // the work the next rung needs, so a rung can never be taken down by a failure
+                // further along. Stage 0 is the game.
+                //
+                // AND NO RUNG SITS BELOW AN INVISIBLE EARLY-OUT. That was the first version's
+                // real flaw and it is worth more than the rungs themselves: the sky test returned
+                // transparent black ABOVE rung 2, and the range test above rung 3, so a dead depth
+                // texture - one cause - would have blacked out rungs 2, 3 and 4 together. Three
+                // rungs reporting failure for one reason is not a bisect; it is the same false
+                // finding printed three times (mistake 44). So above the last rung there is no
+                // early-out at all: every condition that would have returned nothing returns a
+                // NAMED COLOUR instead, and the picture says which condition it was.
+                //
+                //   sky, nothing behind this pixel .... BLUE
+                //   inside the range .................. GREEN
+                //   outside the range ................. RED
                 int stage = (int)round(_DebugMode);
 
-                // STAGE 1 - is this pass running AT ALL? Magenta over the whole volume, before
+                // RUNG 1 - does this pass rasterise at all? Magenta over the whole volume, before
                 // anything is sampled, reconstructed or tested. This is the FIRST statement in
-                // the shader for a reason: nothing above it can fail and take the answer with
-                // it. If this is not on screen, the dots are not the question.
+                // the shader for a reason: nothing above it can fail and take the answer with it.
+                // CONFIRMED IN UNITY: this draws. Everything below it is what remains in question.
                 if (stage == 1) return half4(1, 0, 1, 1);
 
                 float2 screenUV = input.screenPos.xy / max(input.screenPos.w, 1e-5);
 
-                // The surface actually behind this pixel. Everything below is computed there,
-                // which is what makes the dots sit on geometry instead of hanging in the air.
+                // The depth of the surface actually behind this pixel. Everything below is
+                // computed there, which is what makes the dots sit on geometry instead of
+                // hanging in the air.
                 float rawDepth = SampleSceneDepth(screenUV);
 
-                // A pixel with nothing behind it is sky. Drawing dots on the sky would be a
-                // projector with infinite range, which is exactly what this must not be.
+                // A pixel with nothing behind it is sky. Note this is now a QUESTION rather than
+                // a return: an unbound or empty depth texture reads as sky for every pixel on the
+                // screen, and that is the single most likely reason this effect has never drawn.
+                // It has to be visible as itself rather than as an absence.
                 #if UNITY_REVERSED_Z
-                    if (rawDepth <= 0.0) return half4(0, 0, 0, 0);
+                    bool isSky = rawDepth <= 0.0;
                 #else
-                    if (rawDepth >= 1.0) return half4(0, 0, 0, 0);
+                    bool isSky = rawDepth >= 1.0;
                 #endif
+
+                // RUNG 2 - is there a depth buffer here at all, and does it vary?
+                //
+                //   a WHOLE SCREEN of flat blue  -> the depth texture is not reaching this pass.
+                //                                   Nothing below this rung can work, and no
+                //                                   amount of dot maths is the reason.
+                //   red stripes over the room    -> depth is being read and it changes across the
+                //                                   scene, which is everything this rung claims.
+                //
+                // The green channel carries the raw value itself, so nearer surfaces read brighter
+                // than far ones (under a reversed-Z buffer, which is every current platform this
+                // ships to) and the stripes give the fine variation that a constant cannot fake.
+                if (stage == 2)
+                {
+                    if (isSky)
+                        return half4(0, 0, 1, 1);
+
+                    return half4(frac(rawDepth * 32.0), rawDepth, 0, 1);
+                }
 
                 float3 worldPos = ComputeWorldSpacePosition(screenUV, rawDepth, UNITY_MATRIX_I_VP);
 
-                // STAGE 2 - is the depth reconstruction right? The world position wrapped to a
-                // colour every metre. Smooth bands that stay put on the walls as the camera
-                // turns are correct; a flat colour, black, or bands that swim with the view mean
-                // the depth texture or the inverse view-projection is not what this thinks.
-                if (stage == 2) return half4(frac(abs(worldPos)), 1);
+                // RUNG 3 - is the reconstruction right? The world position wrapped to a colour
+                // every metre.
+                //
+                //   bands GLUED to the walls as the camera turns -> correct.
+                //   bands that SWIM with the view                -> the inverse view-projection
+                //                                                   is not what this thinks.
+                //   flat colour                                  -> the position is constant, so
+                //                                                   the depth never varied.
+                //
+                // Turning on the spot is the test, not walking: a wrong matrix moves the pattern
+                // with the camera, a right one leaves it painted on the room.
+                if (stage == 3)
+                {
+                    if (isSky)
+                        return half4(0, 0, 1, 1);
+
+                    return half4(frac(abs(worldPos)), 1);
+                }
 
                 float3 toSurface = worldPos - _OriginWS.xyz;
                 float  dist      = length(toSurface);
 
-                // Out of range, or inside the lens itself.
-                if (dist >= _Range || dist < 1e-4) return half4(0, 0, 0, 0);
+                // RUNG 4 - did the lens arrive, and is the range the right size? Green inside the
+                // range, RED outside it rather than nothing, so the boundary itself is drawn.
+                //
+                //   a green ball of room centred on the device -> the origin and the range both
+                //                                                 arrived.
+                //   all red                                    -> _OriginWS is somewhere else
+                //                                                 entirely, or _Range is 0.
+                //   all green                                  -> _Range is enormous.
+                //
+                // A boundary that can be SEEN is worth far more than an absence that has to be
+                // inferred, and the two look identical when the answer is "nothing".
+                if (stage == 4)
+                {
+                    if (isSky)
+                        return half4(0, 0, 1, 1);
 
-                // STAGE 3 - is the lens where the shader thinks it is? Solid green on every
-                // surface within range. A green ball of room centred on the projector means the
-                // origin and the range arrived; green somewhere else, or none at all, means
-                // _OriginWS did not.
-                if (stage == 3) return half4(0, 1, 0, 1);
+                    return dist < _Range ? half4(0, 1, 0, 1) : half4(1, 0, 0, 1);
+                }
 
-                float3 dir = toSurface / dist;
+                // Guarded rather than early-returned: a surface exactly at the lens would divide
+                // by zero, and the axis is a harmless stand-in for a direction nobody can see.
+                float3 dir = dist > 1e-4 ? toSurface / dist : float3(0, 1, 0);
 
                 // Into the projector's own frame, so the pattern turns with the device and a
                 // mounted projector needs nobody to work out which way "outward" is.
@@ -190,14 +259,42 @@ Shader "CatchIfYouCan/SpectralGrid"
                 // angle: 360/_Density degrees on both axes.
                 float2 sphereUV = float2(azimuth * (1.0 / (2.0 * PI)) + 0.5,
                                          elevation * (1.0 / PI) + 0.5);
-                float2 grid     = sphereUV * float2(_Density, _Density * 0.5);
 
-                // STAGE 4 - is the angular grid itself sane? The cell coordinates as colour,
-                // with no dot test at all. This has to look like a smooth chequer wrapped around
-                // the projector; uniform or wild means the axes or the mapping are wrong and no
-                // dot size will ever help.
-                if (stage == 4) return half4(frac(grid.x), frac(grid.y), 0, 1);
+                // RUNG 5 - is the mapping a SPHERE, and does it wrap the room? A coarse
+                // chequerboard of the angular cells, in cells of twenty degrees rather than the
+                // effect's own, because the question here is coverage and shape - a 2.5 degree
+                // chequer aliases into a grey wash at the far end of a room and proves nothing.
+                //
+                //   squares on the floor, the ceiling, and all four walls -> a sphere.
+                //   squares in one direction only                         -> a cone, which is
+                //                                                            what two earlier
+                //                                                            attempts were.
+                //   squares that do not converge anywhere                 -> the axes are wrong.
+                //
+                // Fixed at 18 x 9 so this rung says the same thing whatever the density slider is
+                // set to. Outside the range it draws nothing, so the ball of coverage is bounded
+                // and its edge is the same edge rung 4 drew.
+                if (stage == 5)
+                {
+                    if (isSky || dist >= _Range)
+                        return half4(0, 0, 0, 0);
 
+                    float2 coarse = floor(sphereUV * float2(18.0, 9.0));
+                    float  parity = fmod(coarse.x + coarse.y, 2.0);
+                    return parity < 0.5 ? half4(0, 0.85, 0.85, 1) : half4(0.95, 0.35, 0, 1);
+                }
+
+                // ---------------------------------------------------------------- STAGE 0, the game
+                //
+                // Below here the early-outs are real: this is the effect, and a pixel that carries
+                // no dot must add nothing at all. That is what keeps a dark room dark.
+                if (isSky)
+                    return half4(0, 0, 0, 0);
+
+                if (dist >= _Range || dist < 1e-4)
+                    return half4(0, 0, 0, 0);
+
+                float2 grid = sphereUV * float2(_Density, _Density * 0.5);
                 float2 cell     = frac(grid) - 0.5;
                 float  cellDist = length(cell);
 
@@ -209,7 +306,8 @@ Shader "CatchIfYouCan/SpectralGrid"
                 // the kind of thing that compiles on one compiler and not the next.
                 float aa      = clamp(fwidth(cellDist), 1e-4, 0.25);
                 float dotMask = 1.0 - smoothstep(_DotSize - aa, _DotSize + aa, cellDist);
-                if (dotMask <= 0.002) return half4(0, 0, 0, 0);
+                if (dotMask <= 0.002)
+                    return half4(0, 0, 0, 0);
 
                 // Bright close in, gently weaker with distance, gone by the far end.
                 float travel       = dist / _Range;

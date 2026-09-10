@@ -72,17 +72,27 @@ namespace CatchIfYouCan.Equipment
 
         [Header("Diagnosis")]
         [Tooltip("A ladder for 'it says it is running and nothing is on screen', climbed one " +
-                 "rung at a time. 0 = the game, the finished dots. 1 = MAGENTA over the whole " +
-                 "volume, before anything is sampled or reconstructed - does this pass " +
-                 "rasterise at all? 2 = the reconstructed world position as colour - is the " +
-                 "depth texture readable? 3 = solid green on every surface within range - did " +
-                 "the lens arrive? 4 = the angular grid with no dot test - is the mapping " +
-                 "sane? Each rung returns ABOVE the work the next one needs, so no rung can be " +
-                 "taken down by a failure further along, and every rung offered here has a " +
-                 "branch of its own - one that fell through to stage 0 would answer a question " +
-                 "nobody asked. Ships at 0, and a guard keeps it there: a diagnostic that runs " +
-                 "while somebody plays does not diagnose, it creates (mistake 23).")]
-        [SerializeField, Range(0, 4)] private int debugStage = 0;
+                 "rung at a time. Every rung returns ABOVE the work the next one needs, and none " +
+                 "of them sits below an invisible early-out - sky reads BLUE and out-of-range " +
+                 "reads RED rather than as nothing, so one dead depth texture cannot black out " +
+                 "three rungs at once and read as three separate failures.\n\n" +
+                 "0 = the game, the finished dots.\n" +
+                 "1 = MAGENTA over the whole volume. Does this pass rasterise at all? CONFIRMED " +
+                 "in Unity.\n" +
+                 "2 = raw scene depth. A whole screen of flat blue means the depth texture is " +
+                 "not reaching this pass and nothing below can work; red stripes over the room " +
+                 "mean it is being read and varies.\n" +
+                 "3 = the reconstructed world position as colour. Bands GLUED to the walls as " +
+                 "you turn on the spot are correct; bands that SWIM with the view mean the " +
+                 "inverse view-projection is wrong.\n" +
+                 "4 = green within range, RED outside it. A green ball of room centred on the " +
+                 "device means the lens and the range both arrived; all red means the origin is " +
+                 "somewhere else.\n" +
+                 "5 = a coarse 20-degree angular chequerboard. Squares on the floor, the ceiling " +
+                 "and all four walls mean a sphere; squares in one direction only mean a cone.\n\n" +
+                 "Ships at 0, and a guard keeps it there: a diagnostic that runs while somebody " +
+                 "plays does not diagnose, it creates (mistake 23).")]
+        [SerializeField, Range(0, 5)] private int debugStage = 0;
 
         [Header("Emitter")]
         [Tooltip("Where the lens sits relative to the device's pivot, in its own space. +Y is " +
