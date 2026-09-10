@@ -240,7 +240,13 @@ namespace CatchIfYouCan.Equipment
             // a small thing: it is why a six-stage bisect came back with all six stages
             // identical. They were all stage 0. A control that cannot move what it names is
             // worse than no control, because it produces evidence.
-            if (_propertiesDirty)
+            // While a diagnostic stage is selected, the values go across EVERY frame rather than
+            // on a dirty flag. The flag depends on OnValidate firing, and OnValidate is an editor
+            // callback with its own rules about when it runs; a bisect that quietly measures the
+            // wrong stage has already cost one whole session and produced six false findings.
+            // A diagnostic has to be the one thing in the frame that cannot be doubted, and the
+            // cost of that certainty is a dozen SetFloats on a block this method already owns.
+            if (_propertiesDirty || debugStage > 0)
             {
                 _propertiesDirty = false;
                 PushProperties();
@@ -567,9 +573,26 @@ namespace CatchIfYouCan.Equipment
 
             if (volumes.Length > 1)
             {
+                // Named, not counted. "2" sends the reader looking for a second projector;
+                // the PATHS say whether it is a duplicated volume, a stray marked renderer or
+                // the device's own model caught by the marker.
+                var names = new System.Text.StringBuilder();
+                for (int i = 0; i < volumes.Length; i++)
+                {
+                    if (volumes[i] == null)
+                        continue;
+                    if (names.Length > 0)
+                        names.Append(" | ");
+                    Transform t = volumes[i].transform;
+                    names.Append(t.name);
+                    if (t.parent != null)
+                        names.Append(" (under ").Append(t.parent.name).Append(')');
+                }
+
                 Core.CIYCLog.Error("[CIYC][DOTS][ERROR] unexpectedVolumeCount=" + volumes.Length +
                                    " expected=1 - a second volume was built on a clone that " +
-                                   "already had one, so the pattern is drawn twice.");
+                                   "already had one, so the pattern is drawn twice. They are: " +
+                                   names);
             }
         }
 #endif
