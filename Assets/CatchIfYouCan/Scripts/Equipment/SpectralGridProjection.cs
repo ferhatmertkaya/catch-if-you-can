@@ -231,6 +231,12 @@ namespace CatchIfYouCan.Equipment
             host.localPosition = projectionOriginOffset;
             host.localRotation = Quaternion.identity;
 
+            // This box is the effect's screen footprint, not the device. Marked so that
+            // everything which measures "how big is this item" leaves it out - unmarked, the
+            // lobby measured eleven metres for a 25 cm projector and lifted it above the
+            // ceiling, where an item that is there and an item that never spawned look alike.
+            EffectVolume.Mark(host.gameObject);
+
             // The volume is sized in METRES, so any scale inherited from the device's visual
             // chain is cancelled here. Belt and braces - the chain is unit-scaled today - but it
             // costs one line and removes a way for the box to end up a tenth of the size the

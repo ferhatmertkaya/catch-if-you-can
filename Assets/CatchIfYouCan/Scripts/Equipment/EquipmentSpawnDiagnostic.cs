@@ -50,9 +50,20 @@ namespace CatchIfYouCan.Equipment
             // 1. something drawn
             var renderers = item.GetComponentsInChildren<Renderer>(true);
             int drawn = 0;
+            int effect = 0;
             foreach (Renderer r in renderers)
-                if (r != null && r.enabled) drawn++;
-            lines.Add("visual: " + drawn + " enabled renderer(s) of " + renderers.Length);
+            {
+                if (r == null)
+                    continue;
+                // Counted apart, because an effect volume is off for most of its life and a
+                // report of "1 enabled of 3" reads as two broken renderers rather than as one
+                // device and two switched-off effects.
+                if (EffectVolume.Encloses(r.transform)) { effect++; continue; }
+                if (r.enabled) drawn++;
+            }
+            lines.Add("visual: " + drawn + " enabled renderer(s) of " +
+                      (renderers.Length - effect) +
+                      (effect > 0 ? " (+" + effect + " effect volume(s))" : string.Empty));
             if (drawn == 0) problems.Add("nothing is drawn");
 
             // 2. exactly one visual root - two means the clone rebuilt on top of itself

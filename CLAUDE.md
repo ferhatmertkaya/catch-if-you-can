@@ -140,7 +140,14 @@ place that number lives; everything else derives it.
   allocated once, so nothing allocates while it runs. And G belongs to whoever is SELECTED: a
   claim means "this press was mine", not "this press did something", so a projector in the hand
   consumes G and does nothing with it instead of handing it on to the torch - one press used to
-  print two refusals from two devices, each correct about itself. 80 checks.
+  print two refusals from two devices, each correct about itself. And an EFFECT is not a
+  BODY: the volume the dots are drawn in is an eleven-metre box around the lens, and
+  everything that asks "how big is this item" leaves it out - measured in, the lobby's
+  "put its underside on the floor" lift raised a 0.25 m projector 5.19 m, through the
+  ceiling, which from inside the game is not a floating object but an item that never
+  spawned. Marked with a COMPONENT, because that is the one thing a clone brings with it;
+  marked GetComponent-first, because this runs on the template and on every clone of it.
+  85 checks.
 - `Scripts/check_multiplayer_architecture.sh` — the deterministic assembly stays
   engine-free, gameplay never reaches a Relay API, remote players never read
   local input, ghost decisions stay host-only, online capacity has exactly one
@@ -1054,6 +1061,25 @@ Repeating one of these is the most likely way to break something.
    der Modell-Importer hat keine Polygonreduktion, also ist eine Schwelle, die man setzt und
    nicht erreicht, nur eine Ausrede. `Scripts/scene_budget.txt` haelt den Stand fest, damit die
    Schuld schrumpfen kann und nicht unbemerkt waechst.
+
+42. **Eine Wirkung, die als Koerper vermessen wurde.** Der DOTS-Projektor lag nicht mehr vor den
+   Fuessen des Spielers, sondern auf **y = 6,49 m** - ueber der drei Meter hohen Lobbydecke, in
+   einem Raum, dessen Boden auf null liegt. Gemeldet wurde es als "dots geraet fehlt jetzt", und
+   von innen stimmt das: ein Gegenstand ausserhalb des Raums und ein Gegenstand, der nie gebaut
+   wurde, sehen gleich aus (Fehler 20, 27 und 28, zum vierten Mal).
+   Die Rechnung geht genau auf. Der Tisch legt jeden Gegenstand hin, indem er seine Box misst und
+   ihn so weit hebt, bis die UNTERSEITE auf dem Boden steht. Gemessen wurde aber auch
+   `SpectralGrid_Volume` - der Kasten, in dem der Shader seine Punkte rechnet, mit einer halben
+   Kantenlaenge von 5,5 m. Also: Zielhoehe 1,30 m, Boxunterkante 1,30 + 0,247 (Kopf) + 0,06
+   (Linse) - 5,5 = -3,893, Hub 1,30 - (-3,893) = 5,193, Endhoehe 6,493. Im Log steht 6,49.
+   Der Kasten ist kein Modell, sondern die Bildschirmflaeche, auf der die Wirkung laeuft; er ist
+   absichtlich so gross wie die Reichweite und nie zu sehen. Genau deshalb faellt er niemandem
+   auf, der ihn misst. Die Lehre ist nicht "weniger messen", sondern dass "wie gross ist dieses
+   Ding" zwei verschiedene Fragen sind, sobald ein Objekt etwas zeichnet, das nicht es selbst ist
+   - und dass die Antwort dem Objekt gehoert, nicht dem Messenden. Markiert wird das mit einer
+   KOMPONENTE (`EffectVolume`), weil eine Komponente das Einzige ist, was `Instantiate`
+   mitbringt: jedes Ausruestungsstueck erreicht die Welt als Klon, und ein Name, ein Tag oder ein
+   privates Feld waere beim Klon weg (Fehler 30).
 
 ## Unity Editor availability
 

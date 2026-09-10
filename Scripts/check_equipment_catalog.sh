@@ -1043,6 +1043,89 @@ else
   fail "die Dichte geht als ganze Zellenzahl in den Shader"
 fi
 
+
+# ---------------------------------------------------- an effect is not a body
+#
+# The DOTS projector draws its dots by giving a fragment shader pixels to run on: the mesh
+# it renders is an eleven-metre box around the lens, and it is not the device. Everything
+# that asks "how big is this item" has to leave that box out.
+#
+# Unguarded it did not: the lobby lays an item down by measuring its box and lifting it
+# until its underside rests on the floor, and with the volume measured in, the 0.25 m
+# projector was raised 5.19 m and came to rest at y = 6.49 - above a three-metre ceiling
+# over a floor at zero. From inside the game that is not a floating object; it is an item
+# that never spawned, which is the same report as a build failure and a different bug.
+
+MARKER="Assets/CatchIfYouCan/Scripts/Equipment/EffectVolume.cs"
+HELD="Assets/CatchIfYouCan/Scripts/Equipment/HeldEquipmentBase.cs"
+TABLE="Assets/CatchIfYouCan/Scripts/Environment/LobbyEquipmentTable.cs"
+
+# 19. The marker is a COMPONENT. Every equipment item reaches the world as a clone of a
+#     living template, and a component is the one thing Instantiate brings with it - a name,
+#     a tag, a layer or a private field is not (mistake 30).
+if [ -f "$MARKER" ] && grep -qE 'class EffectVolume[[:space:]]*:[[:space:]]*MonoBehaviour' "$MARKER"; then
+  ok "an effect volume is marked by a component, which survives Instantiate"
+else
+  fail "an effect volume is marked by a component, which survives Instantiate"
+fi
+
+# 20. And marking one asks GetComponent BEFORE AddComponent. This runs on the template and
+#     on every clone of it; AddComponent on a [DisallowMultipleComponent] type that is
+#     already there returns null, and the next line dereferences it (mistake 27).
+if [ -f "$MARKER" ]; then
+  # The window is deliberately narrow. Asking only "does a GetComponent appear earlier in
+  # the file" passes on the one in Encloses twenty lines above, which is a different
+  # question - a guard that is satisfied by an unrelated line is mistake 8 in a shell.
+  mcode=$(sed 's://.*::' "$MARKER" | grep -v '^[[:space:]]*\*')
+  addline=$(printf '%s\n' "$mcode" | grep -n 'AddComponent<EffectVolume>()' | head -1 | cut -d: -f1)
+  near=""
+  if [ -n "$addline" ]; then
+    from=$((addline - 4)); [ "$from" -lt 1 ] && from=1
+    near=$(printf '%s\n' "$mcode" | sed -n "${from},${addline}p" \
+           | grep 'GetComponent<EffectVolume>()' || true)
+  fi
+  if [ -n "$addline" ] && [ -n "$near" ]; then
+    ok "marking an effect volume asks GetComponent before AddComponent"
+  else
+    fail "marking an effect volume asks GetComponent before AddComponent"
+  fi
+else
+  fail "marking an effect volume asks GetComponent before AddComponent"
+fi
+
+# 21. The projector marks its own volume. Unmarked, nothing below can tell it from the
+#     device: it is a MeshRenderer on a child, exactly like the model.
+if [ -f "$PROJ" ] && printf '%s' "$pcode" | grep -qE 'EffectVolume\.Mark\(host\.gameObject\)'; then
+  ok "the projector marks its projection volume as an effect volume"
+else
+  fail "the projector marks its projection volume as an effect volume"
+fi
+
+# 22. The body the interaction ray aims at is measured WITHOUT it. Measured in, the thing
+#     the player aims at is an eleven-metre box rather than the device in front of them.
+if [ -f "$HELD" ] && sed 's://.*::' "$HELD" | grep -v '^[[:space:]]*\*' \
+     | grep -qE 'EffectVolume\.Encloses\(r\.transform\)'; then
+  ok "the pickup trigger is measured without the item's effect volumes"
+else
+  fail "the pickup trigger is measured without the item's effect volumes"
+fi
+
+# 23. And so is the lobby's "sit it on the floor" measurement, in BOTH its passes -
+#     colliders first, renderers as the fallback - because either one reaching the volume
+#     is the 6.49 m lift again.
+if [ -f "$TABLE" ]; then
+  tcode=$(sed 's://.*::' "$TABLE" | grep -v '^[[:space:]]*\*')
+  tcoll=$(printf '%s' "$tcode" | grep -cE 'EffectVolume\.Encloses\(c\.transform\)' || true)
+  trend=$(printf '%s' "$tcode" | grep -cE 'EffectVolume\.Encloses\(r\.transform\)' || true)
+  if [ "$tcoll" -ge 1 ] && [ "$trend" -ge 2 ]; then
+    ok "the lobby measures an item's resting box without its effect volumes"
+  else
+    fail "the lobby measures an item's resting box without its effect volumes (colliders=$tcoll renderers=$trend, wanted >=1 and >=2)"
+  fi
+else
+  fail "the lobby measures an item's resting box without its effect volumes"
+fi
+
 printf '\npassed: %s   failed: %s\n\n' "$passed" "$failed"
 
 if [ "$failed" -gt 0 ]; then

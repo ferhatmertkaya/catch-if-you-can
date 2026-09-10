@@ -947,6 +947,13 @@ namespace CatchIfYouCan.Equipment
                 Renderer r = renderers[i];
                 if (r == null)
                     continue;
+
+                // An effect's screen footprint is not the item's body. The DOTS projector draws
+                // its dots inside an eleven-metre box around its lens; measured in, the thing
+                // the player aims at would be that box rather than the device in front of them.
+                if (EffectVolume.Encloses(r.transform))
+                    continue;
+
                 Bounds b = r.bounds;
                 if (b.size == Vector3.zero)
                     continue;

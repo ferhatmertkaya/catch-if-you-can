@@ -382,7 +382,7 @@ namespace CatchIfYouCan.Environment
 
             foreach (Renderer r in root.GetComponentsInChildren<Renderer>(true))
             {
-                if (r == null)
+                if (r == null || EffectVolume.Encloses(r.transform))
                     continue;
                 Bounds b = r.bounds;
                 if (b.size == Vector3.zero)
@@ -406,7 +406,7 @@ namespace CatchIfYouCan.Environment
 
             foreach (Collider c in root.GetComponentsInChildren<Collider>(true))
             {
-                if (c == null || c.isTrigger)
+                if (c == null || c.isTrigger || EffectVolume.Encloses(c.transform))
                     continue;
                 Bounds b = c.bounds;
                 if (b.size == Vector3.zero)
@@ -417,9 +417,12 @@ namespace CatchIfYouCan.Environment
             if (any)
                 return true;
 
+            // An effect volume is not a thing an item rests on. The DOTS projector's is an
+            // eleven-metre box around its lens, and the lift below puts an item's UNDERSIDE on
+            // the floor: measured in, a 0.25 m device was raised 5.19 m, through the ceiling.
             foreach (Renderer r in root.GetComponentsInChildren<Renderer>(true))
             {
-                if (r == null)
+                if (r == null || EffectVolume.Encloses(r.transform))
                     continue;
                 Bounds b = r.bounds;
                 if (b.size == Vector3.zero)
