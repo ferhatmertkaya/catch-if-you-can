@@ -63,7 +63,6 @@ MonoBehaviour:
   WindowInsert:
     Prefab: {fileID: 1062060072871768, guid: 834edc2f701b31446b5dd6636acd6ec9, type: 3}
     KeepMaterials:
-    - 1
     - Steklo
     LocalOffset: {x: 0, y: 0, z: 0}
     LocalEuler: {x: 0, y: 0, z: 0}

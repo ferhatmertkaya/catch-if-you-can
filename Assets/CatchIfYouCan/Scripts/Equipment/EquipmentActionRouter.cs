@@ -118,10 +118,16 @@ namespace CatchIfYouCan.Equipment
         }
 
         /// <summary>
-        /// G. Takes the press only for a device this player has DEPLOYED; otherwise leaves it
-        /// to the torch, which is what G has always done.
+        /// G. Belongs to the SELECTED equipment, and to the torch only when nothing else has
+        /// been selected.
+        ///
+        /// <para>
+        /// Exactly one consumer per press. Selecting the projector makes G the projector's,
+        /// whether it is mounted or in the hand; the torch gets G back the moment anything else
+        /// is selected.
+        /// </para>
         /// </summary>
-        /// <returns>True when a deployed device handled it and the torch must not.</returns>
+        /// <returns>True when the selected equipment took the press and the torch must not.</returns>
         private bool TryClaimPower()
         {
             if (_inventory == null || MenuInputGate.IsMenuOpen)
@@ -132,10 +138,16 @@ namespace CatchIfYouCan.Equipment
 
             if (!projector.IsPlaced)
             {
-                // Held rather than mounted: say so, and let the torch have the press. Silently
-                // eating it would make G look broken while a projector is in hand.
-                CIYCLog.Info(LogTag + "[BLOCKED] POWER reason=NotMounted");
-                return false;
+                // Held rather than mounted. The press is CLAIMED anyway and spent doing nothing.
+                //
+                // Returning false here handed it on to the torch, so one G press produced two
+                // log lines from two devices - "[BLOCKED] POWER reason=NotMounted" immediately
+                // followed by the torch's "WrongState: not held or placed". Both are correct
+                // about themselves and the pair is wrong: the player selected the projector, so
+                // the projector is who G is addressed to, mounted or not. A claim means "this
+                // press was mine", not "this press did something".
+                CIYCLog.Info(LogTag + "[BLOCKED] POWER reason=NotMounted (press consumed by DOTS)");
+                return true;
             }
 
             CIYCLog.Info(LogTag + "G_ROUTE=DOTS");

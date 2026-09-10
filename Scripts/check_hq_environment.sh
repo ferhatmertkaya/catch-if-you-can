@@ -1688,6 +1688,45 @@ else:
     bad("die Deckenfassung leuchtet nicht von selbst",
         "eine glimmende Fassung ueber einer ausgeschalteten Lampe ist eine Lampe, die luegt")
 
+# ---------------------------------- kein Materialname, der in diesem Paket nichts identifiziert
+#
+# Das Fenster-Insert nannte "1" als eines seiner KeepMaterials. NEUNZEHN Materialien dieses
+# Pakets heissen "1", darunter die Wandschale von Prefab 7 - also wurde die ganze 4-m-Wand mit
+# ausgewaehlt, und ModularRoomBuilder hat sie jede einzelne Mission neu abgelehnt:
+#   role=Window prefab=7 measured=(3.764, 4.116, 0.402) opening=2.05 x 0.90 -> REFUSED
+# Die Ablehnung war richtig - eine Wand gehoert nicht in ein Fensterloch. Der Name war falsch.
+# Drei Zeichen ist dieselbe Schwelle, die der Weiss-Material-Doktor schon benutzt.
+catalog = read("Assets/CatchIfYouCan/ScriptableObjects/Content/ModularInteriorCatalog.asset")
+if catalog is None:
+    bad("kein KeepMaterial ist kuerzer als drei Zeichen", "der Katalog fehlt")
+else:
+    shortnames = []
+    inside = False
+    for line in catalog.splitlines():
+        if line.strip() == "KeepMaterials:":
+            inside = True
+            continue
+        if inside:
+            if line.startswith("    - "):
+                name = line[6:].strip()
+                if len(name) < 3:
+                    shortnames.append(name)
+            else:
+                inside = False
+    if shortnames:
+        bad("kein KeepMaterial ist kuerzer als drei Zeichen",
+            ["'%s' trifft in diesem Paket alles Moegliche" % n for n in shortnames])
+    else:
+        ok("kein KeepMaterial ist kuerzer als drei Zeichen")
+
+# Und der Schreiber kann so einen Namen nicht zurueckbringen.
+writer = code("Assets/CatchIfYouCan/Editor/HQVerifiedCatalog.cs") or ""
+if "RejectAmbiguousNames" in writer and "Trim().Length >= 3" in writer:
+    ok("der Katalog-Schreiber lehnt einen zu kurzen Materialnamen ab")
+else:
+    bad("der Katalog-Schreiber lehnt einen zu kurzen Materialnamen ab",
+        "sonst steht '1' beim naechsten Schreiben wieder drin")
+
 print()
 print("  %d passed, %d failed" % (passed, failed))
 sys.exit(1 if failed else 0)

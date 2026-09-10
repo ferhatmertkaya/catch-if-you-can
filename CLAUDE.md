@@ -125,7 +125,24 @@ place that number lives; everything else derives it.
   into all four channels because which one a cookie is sampled from is a per-pipeline detail
   this machine cannot look up, imported linear and not as transparency, resolving to a file
   that exists, reported as an ERROR when the projector is on and the light is not, and drawn by
-  exactly ONE thing - a cone mesh beside it would be the second flashlight. 78 checks.
+  exactly ONE thing - a cone mesh beside it would be the second flashlight. And the field is a
+  ROOM rather than a beam: one 70-degree spot is a torch, so the dots are thrown by a fixed
+  five-light cluster - one along the device's axis, four leaning 50 degrees off it - whose
+  directions are built in the device's OWN space, because a hardcoded world axis is correct on
+  exactly one wall of one house. Five and not four because four cones have to be 120 degrees
+  wide to close the gaps between them, and a spot cookie is projected by perspective: a dot at
+  the rim of a 120-degree cone is stretched 2.0 across and 4.0 along, which IS the elongated
+  pill. The count is a constant, a cluster that grew past it says so, and the mask is authored
+  at the size it is used at with no mipmaps, aniso 1 and Clamp on BOTH axes - mipmaps are never
+  selected on a texture that is only ever magnified, anisotropic filtering is by definition a
+  directional smear, and the previous mask had wrapU and wrapV inverted against their own
+  intent, which is literally an anisotropic sampling setup on a field of round dots. Every dot
+  is a true circle and the generator PROVES it: centres snapped to pixel centres so each dot is
+  the identical stamp, then the finished texture flood-filled and refused if any blob is not as
+  wide as it is tall. And G belongs to whoever is SELECTED: a claim means "this press was
+  mine", not "this press did something", so a projector in the hand consumes G and does
+  nothing with it instead of handing it on to the torch - one press used to print two refusals
+  from two devices, each correct about itself. 84 checks.
 - `Scripts/check_multiplayer_architecture.sh` — the deterministic assembly stays
   engine-free, gameplay never reaches a Relay API, remote players never read
   local input, ghost decisions stay host-only, online capacity has exactly one
@@ -319,7 +336,7 @@ place that number lives; everything else derives it.
   anything that threw in front of that line left a positioned, visible object carrying
   no collider and no pickup component at all, which is what "the model is there and
   looking at it does nothing" was; every runtime item is a pickup by construction now.
-  295 checks.
+  297 checks.
 
 - `Scripts/check_editor_menu.sh` — the editor menu stays legible, and the purchased architecture has ONE scale. The game scale is the measured ratio 2.95 / 3.92 in one place, with no tool carrying its own copy; the decision is made on effective world scale rather than `localScale`, because a vendor piece at localScale 1 inside a corrected wrapper IS already corrected and its own field says otherwise; an already-corrected ancestor is recognised and a second application is a named verdict rather than a silent pass; architecture is told from props by FOLDER, since a filename classifier caught 3 of 105 in a pack that numbers its prefabs and calls its glass Steklo; an undecidable piece is reported ambiguous rather than guessed, because a chair may already be at real-world size and shrinking one that was right is invisible; the portal is excluded, its opening being a gameplay dimension; the migration audits before it can apply and converts only original-size pieces; and the correction goes on a CIYC wrapper with nothing applied back to the purchased package. Also the menu itself: Fifty-one commands sit in
   seven named groups with none hiding in another root menu, every one carries a risk tag saying
@@ -555,7 +572,7 @@ place that number lives; everything else derives it.
   switch, never rolled off, no real-time shadows, and its flicker attached only after its
   brightness is set, because `CandleFlicker` reads that in `Awake` and `Awake` runs inside
   `AddComponent`. The ceiling rose does not glow on its own: a socket that glows while its lamp
-  is off is a lamp that lies. 165 checks.
+  is off is a lamp that lies. 167 checks.
 
 All twelve run in CI (`.github/workflows/determinism.yml`). Run them locally before
 pushing; they need nothing but a shell (and `python3` for the roster checks).
@@ -934,6 +951,60 @@ Repeating one of these is the most likely way to break something.
    derselben Runde: eine Cookie wird in der GROESSE geschrieben, in der sie benutzt wird -
    `CIYC_URP.asset` haelt den Cookie-Atlas auf 2048, eine 2048er Maske IST also der ganze Atlas,
    und eine, die der Importer verkleinern muss, verliert ihre Punkte an den Filter.
+
+35. **Drei Filtereinstellungen, die aus Kreisen Pillen gemacht haben.** Die DOTS-Punkte kamen im
+   Editor als laengliche Striche an, und die Cookie, die sie erzeugt, enthielt nachweislich
+   runde Scheiben - gleicher Radius in X und Y, aus einer Distanzfunktion gezeichnet. Die
+   Verformung entstand also nicht beim Zeichnen, sondern beim SAMPLEN, und zwar dreifach:
+   `enableMipMap: 1` auf einer Textur, die ueber einen ganzen Raum IMMER vergroessert wird, also
+   nie eine Mipstufe waehlt und nur weicher wird; `aniso: 4`, und anisotrope Filterung ist per
+   Definition ein richtungsabhaengiger Filter, der einen 3-Pixel-Punkt im schraegen Blick
+   entlang einer Achse auszieht; und `wrapU: 0` neben `wrapV: 1` - Repeat quer, Clamp hoch -
+   was woertlich ein anisotropes Sampling-Setup auf einem Feld runder Punkte ist. Das dritte
+   war ausserdem GEGEN die eigene Absicht gesetzt: der Kommentar der Meta-Vorlage sagte "eine
+   Spot-Cookie klemmt in beide Richtungen", und der Aufruf uebergab die Flagge vertauscht. Die
+   Lehre steckt in der Reihenfolge der Fragen: bei einer verformten Textur ist die erste Frage
+   nicht "ist die Quelle falsch gezeichnet", sondern "wird sie richtig gelesen" - und ein
+   Importer hat drei Voreinstellungen, die fuer eine Maske alle drei falsch sind.
+
+36. **Ein Anspruch, der "hat gewirkt" statt "war meiner" bedeutete.** `TryClaimPower` gab false
+   zurueck, wenn der gewaehlte Projektor nicht montiert war - gedacht als "ich habe nichts
+   getan, nimm du". Die Fackel nahm den Druck dann und lehnte ihn ihrerseits ab, also standen
+   im Log zwei Zeilen von zwei Geraeten:
+     [CIYC][DOTS] [BLOCKED] POWER reason=NotMounted
+     Flashlight: WrongState: not held or placed (World)
+   Beide stimmen fuer sich, und das Paar ist falsch. Wer den Projektor gewaehlt hat, adressiert
+   mit G den Projektor, ob der an der Wand haengt oder in der Hand liegt. Ein Anspruch auf eine
+   Eingabe beantwortet die Frage "wem gehoert dieser Druck", nicht "hat dieser Druck etwas
+   bewirkt" - wer die zweite Frage beantwortet, gibt Eingaben an das naechstbeste Geraet weiter,
+   sobald das erste gerade nichts zu tun hat.
+
+37. **Eine Szene, die aus leeren GameObjects bestand, und ein Lader, der das jedes Mal
+   reparierte.** `03_Investigation.unity` enthielt NULL MonoBehaviours. `WORLD`, `VanAnchor`,
+   `HouseAnchor`, `MANAGERS/ProceduralHouseGenerator`, `GhostSpawnManager`, `MissionManager`
+   und `INVESTIGATION_BOOTSTRAP` waren leere Objekte, benannt nach Komponenten, die sie nicht
+   trugen. `MissionWorldLoader` hing den Bootstrap beim Laden selbst an, band die drei Anker und
+   meldete es als Fehler - laut, korrekt und bei jeder Mission neu. Eine Reparatur, die
+   funktioniert, ist trotzdem eine Reparatur: sie laeuft, bevor die Szene etwas sagen kann, sie
+   kann nur die Felder setzen, die sie kennt, und JEDES andere serialisierte Feld steht dann auf
+   dem Wert, den eine frisch angehaengte Komponente zufaellig hat, nicht auf dem, den der Code
+   als Initialisierer schreibt. Beim Nachtragen von Hand gilt genau dasselbe in die andere
+   Richtung: ein Feld, das im YAML fehlt, faellt auf 0/null zurueck und nicht auf den
+   C#-Initialisierer, also muessen alle sechzehn hingeschrieben werden (Fehler 18). Und die
+   Pruefung dazu muss zwei Zustaende unterscheiden, die gleich aussehen: das Dokument fehlt, und
+   das Dokument steht da, ist aber in keiner `m_Component`-Liste eingetragen. Der erste Anlauf
+   suchte nur die guid in der Datei und blieb gruen, als die Komponente von ihrem Objekt
+   abgehaengt wurde.
+
+38. **Ein Materialname, der neunzehn Materialien trifft.** Der Fenster-Insert nannte `"1"` als
+   eines der Materialien, die behalten werden sollen - gemeint war der Fensterrahmen. Dieses
+   gekaufte Paket hat NEUNZEHN Materialien namens `"1"`, und die Wandschale von Prefab 7 traegt
+   eines davon. Also wurde die ganze 4-m-Wand mit ausgewaehlt, und `ModularRoomBuilder` lehnte
+   sie jede Mission neu ab: `measured=(3.764, 4.116, 0.402) opening=2.05 x 0.90 -> REFUSED`. Die
+   Ablehnung war richtig und der Fehler stand woanders - eine Zeile, die korrekt meldet, dass
+   etwas nicht passt, sagt nicht, WARUM das Falsche ueberhaupt angeboten wurde. CLAUDE.md kannte
+   die Regel schon: ein Name mit weniger als drei Zeichen identifiziert in diesem Paket nichts.
+   Sie stand beim Weiss-Material-Doktor und galt fuer den Katalog-Schreiber nicht mit.
 
 ## Unity Editor availability
 

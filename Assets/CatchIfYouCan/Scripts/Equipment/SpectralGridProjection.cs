@@ -3,79 +3,105 @@ using UnityEngine;
 namespace CatchIfYouCan.Equipment
 {
     /// <summary>
-    /// The projector's field of points, as PROJECTED LIGHT: one spot light wearing a dot mask.
+    /// The projector's field of points, as PROJECTED LIGHT: a small fixed cluster of spot
+    /// lights sharing one dot mask as their cookie.
     ///
     /// <para>
     /// The dots belong to the surfaces they fall on. They follow perspective across a corner,
-    /// they stay put when the player walks, and they cost one light and one texture - no
-    /// GameObject per dot, nothing instantiated or destroyed while it runs, and nothing to
-    /// replicate over a network later but the projector's transform and whether it is on.
+    /// they stay put when the player walks, and the whole field costs five lights and one
+    /// texture - no GameObject per dot, no particle system, no decal projector, nothing
+    /// instantiated or destroyed while it runs, and nothing to replicate over a network later
+    /// but the projector's transform and whether it is on.
     /// </para>
     ///
     /// <para>
-    /// <b>A SPOT rather than a point light</b>, because the device is screwed to a wall. A point
-    /// light is a sphere, so half of it is inside the masonry and the useful half still has to
-    /// be masked back to a cone. A spot IS that cone, it cannot spill behind the wall it is
-    /// mounted on, and its cookie is an ordinary 2D texture with no equirectangular mapping to
-    /// get wrong. The spherical cookie is generated and committed beside the spot one for the
-    /// point-light path, but what ships is the one whose behaviour is unambiguous.
+    /// <b>Why a cluster and not one spot.</b> One 70-degree spot is a torch: a bright patch on
+    /// the wall opposite and nothing on the side walls, the floor or the ceiling. The device is
+    /// bolted to a wall, so what it needs to light is the HEMISPHERE in front of it. A cone
+    /// cannot do that; a small number of overlapping cones can, and a point light cannot be
+    /// masked back to a hemisphere without lighting the masonry behind it.
     /// </para>
     ///
     /// <para>
-    /// <b>What this replaced.</b> The projection used to be a cone mesh drawn with
-    /// <c>CatchIfYouCan/SpectralGrid</c>, which reconstructs each pixel's world position from
-    /// the depth buffer and computes the dots there. That is a real projection technique and it
-    /// is not a volume of dots hanging in the air - occlusion falls out of it for free, which
-    /// the cookie below does not get. It produced nothing on screen and I could not establish
-    /// why: the depth texture it needs IS enabled (CIYC_URP.asset, m_RequireDepthTexture: 1),
-    /// and its +Y throw axis matches the rest of the device. It is replaced rather than kept
-    /// alongside, because two things drawing the same dots is how this project ends up with two
-    /// flashlights. The shader and MAT_SpectralGrid are still in the project and still used by
-    /// the lighting lab; nothing here loads them any more.
+    /// <b>Why five and not four.</b> Four cones on their own have to be 120 degrees wide to
+    /// close the gaps between them, and a spot cookie is projected by perspective - a dot at
+    /// the rim of a 120-degree cone is stretched by 1/cos(60) = 2.0 across and 1/cos^2(60) = 4.0
+    /// along, which is the elongated pill this class was rewritten to stop drawing. Adding one
+    /// axial light lets the four tilted ones stay at 100 degrees, where the worst rim stretch is
+    /// 1.56. Five lights, no shadows, one shared cookie.
     /// </para>
     ///
     /// <para>
-    /// <b>The trade this makes.</b> Real-time shadows are off - a cookied spot with shadows is
-    /// not an effect on a phone, it is a slideshow - so the dots are not occluded by geometry
-    /// between the lens and the surface. Inside one room, which is the range this device works
-    /// at, that is not visible. It would be through a doorway.
+    /// <b>What is NOT covered.</b> Cones cannot tile a hemisphere exactly. At the four axis
+    /// azimuths the cluster reaches 10 degrees PAST the wall plane; at the diagonals between
+    /// them it stops about 10 degrees SHORT of it. So the corner where a side wall meets the
+    /// mounting wall gets fewer dots, and a little light passes into the wall behind. Neither is
+    /// avoidable with a finite number of cones, and the alternative - wider cones - brings the
+    /// pills back. Nothing is AIMED backwards: every cone axis points into the room.
     /// </para>
     /// </summary>
     [AddComponentMenu("Catch If You Can/Spectral Grid Projection")]
     public sealed class SpectralGridProjection : MonoBehaviour
     {
+        // ------------------------------------------------------------------ cluster geometry
+
+        /// <summary>One axial light plus four tilted ones. Also what the diagnostic asserts.</summary>
+        public const int LightCount = 5;
+
+        /// <summary>
+        /// How far the four outer cones lean off the outward axis, in degrees. With
+        /// <see cref="ConeAngle"/> at 100 this reaches about 80 degrees from the axis at the
+        /// worst azimuth and about 100 at the best.
+        /// </summary>
+        private const float OuterTiltDegrees = 50f;
+
+        /// <summary>
+        /// Full cone angle of every light in the cluster, in degrees.
+        ///
+        /// <para>
+        /// One value for all five, so a dot is the same size whichever light drew it. Raising it
+        /// widens coverage and stretches the dots at the rim; lowering it opens gaps between the
+        /// cones.
+        /// </para>
+        /// </summary>
+        private const float ConeAngle = 100f;
+
+        // ------------------------------------------------------------------ authored look
+
         [Header("Look")]
         [SerializeField] private Color dotColor = new Color(0.2f, 1f, 0.35f, 1f);
 
-        [Tooltip("Brightness of the projected dot field.")]
-        [SerializeField] private float lightIntensity = 14f;
+        [Tooltip("Brightness of each light in the cluster. Five overlapping cones add up, so " +
+                 "this is well below what a single projector spot wanted.")]
+        [SerializeField] private float lightIntensity = 4.5f;
 
-        [Tooltip("How far the lens sits in front of the device body, along the device's own " +
-                 "working axis, in metres. A light origin inside the wall is occluded by that " +
-                 "wall and lights nothing.")]
+        [Tooltip("How far the dots reach, in metres. A room, not a building.")]
+        [SerializeField, Range(2f, 8f)] private float lightRange = 5f;
+
+        [Tooltip("How far the lens sits off the device body, along the device's own working " +
+                 "axis, in metres. An origin inside the wall is occluded by that wall.")]
         [SerializeField] private float lensForwardOffset = 0.06f;
 
         /// <summary>
         /// The dot mask, by Resources path so it ships with the build.
         ///
         /// <para>
-        /// Authored at 1024 because that is the size it is used at: CIYC_URP.asset sets
-        /// m_AdditionalLightsCookieResolution to 2048, so a 2048 cookie is the entire atlas,
-        /// and a mask the importer has to downscale loses its dots to the filter.
+        /// 512 and deliberately sparse. A cookie's dot COUNT is free at runtime - it is a
+        /// texture, sampled once per lit pixel whatever is drawn on it - so the count is a
+        /// readability decision, not a performance one. What costs per frame is the five lights.
         /// </para>
         /// </summary>
-        private const string CookieResourcePath = "Equipment/DOTS/T_DOTS_SpotCookie_1024";
+        private const string CookieResourcePath = "Equipment/DOTS/T_DOTS_RoomCookie_512";
 
-        /// <summary>The child that carries the light, found by name when a clone already has it.</summary>
-        private const string ProjectorChildName = "SpectralGrid_Projector";
+        private const string ClusterChildName = "SpectralGrid_Cluster";
 
-        private Light _light;
-
-        private float _range = 6f;
-        private float _fullAngle = 70f;
+        private Light[] _lights;
+        private Transform _cluster;
+        private Texture _cookie;
+        private bool _running;
 
         /// <summary>
-        /// Attaches a projection to a device head. The light is a child, so it inherits the
+        /// Attaches a projection to a device head. The cluster is a child, so it inherits the
         /// device's orientation and a wall-mounted projector throws into the room without
         /// anything having to work out which way that is.
         /// </summary>
@@ -89,13 +115,33 @@ namespace CatchIfYouCan.Equipment
             return go.AddComponent<SpectralGridProjection>();
         }
 
-        /// <summary>Sets the shape of the field. Cheap; safe to call whenever it changes.</summary>
-        public void Configure(float range, float fullAngleDegrees)
+        /// <summary>
+        /// Sets how far the field reaches. Cheap; safe to call whenever it changes.
+        ///
+        /// <para>
+        /// The angle argument is the device's EVIDENCE cone, which
+        /// <see cref="SpectralGridProjector.FieldStrengthAt"/> uses to decide whether a ghost is
+        /// standing in the field. It deliberately does not size the lights any more: the lit
+        /// field is a hemisphere and that cone is 70 degrees forward, so a ghost lit by a side
+        /// cone is not currently counted. Widening the evidence cone is an evidence-contract
+        /// decision and is not made here.
+        /// </para>
+        /// </summary>
+        public void Configure(float evidenceRange, float evidenceConeDegrees)
         {
-            _range = Mathf.Max(0.1f, range);
-            _fullAngle = Mathf.Clamp(fullAngleDegrees, 5f, 170f);
-
-            EnsureProjectorLight();
+            // Both arguments describe the device's EVIDENCE field, and neither sizes the lights.
+            //
+            // They used to. One spot could be the evidence cone, because it WAS a cone: 6 m at
+            // 70 degrees, the same shape FieldStrengthAt measures, so what the player saw and
+            // what the ghost scan counted could not disagree. A hemisphere cannot hold that
+            // deal - it is wider than any cone - so the two are now separate numbers with
+            // separate jobs, and the lit field is the one authored here.
+            //
+            // The consequence is real and is NOT fixed here: a ghost standing in a side cone is
+            // lit by dots and is not counted, because FieldStrengthAt still tests 70 degrees
+            // forward. Widening it changes what the projector can prove, which is an
+            // evidence-contract decision rather than a rendering one.
+            EnsureCluster();
             ApplyShape();
         }
 
@@ -105,9 +151,17 @@ namespace CatchIfYouCan.Equipment
         /// </summary>
         public void SetRunning(bool running)
         {
-            EnsureProjectorLight();
-            if (_light != null)
-                _light.enabled = running;
+            _running = running;
+            EnsureCluster();
+
+            if (_lights != null)
+            {
+                for (int i = 0; i < _lights.Length; i++)
+                {
+                    if (_lights[i] != null)
+                        _lights[i].enabled = running;
+                }
+            }
 
 #if UNITY_EDITOR || DEVELOPMENT_BUILD
             if (running)
@@ -116,135 +170,195 @@ namespace CatchIfYouCan.Equipment
         }
 
         /// <summary>
-        /// Builds the light once, and finds the one a CLONE already carries.
+        /// Builds the cluster once, and adopts the one a CLONE already carries.
         ///
         /// <para>
         /// Every piece of equipment in this project reaches the world as an
         /// <c>Instantiate</c> of a live template, and <c>Instantiate</c> copies GameObjects and
-        /// components while dropping the private field that pointed at them. So on the clone
-        /// the child and its Light are already there and <c>_light</c> is null - and a
-        /// <c>new GameObject</c> here would hang a SECOND light on the same device. Two
-        /// coincident lights are not visibly two; they are one that is twice as bright, which
-        /// is mistakes 27 and 30 wearing a third face. The component is the identity that
-        /// survives the copy, so that is what is searched for.
+        /// components while dropping the private field that pointed at them. So on the clone the
+        /// cluster and its five lights are already there and <c>_lights</c> is null - and a
+        /// <c>new GameObject</c> here would hang a SECOND cluster on the same device. Ten
+        /// coincident lights are not visibly ten; they are five at double brightness, and the
+        /// count keeps climbing every time the item is picked up and put down. That is mistakes
+        /// 27 and 30 wearing a third face, so the CHILD is looked for by name and its lights by
+        /// component - both survive the copy; the field does not.
         /// </para>
         /// </summary>
-        private void EnsureProjectorLight()
+        private void EnsureCluster()
         {
-            if (_light != null)
+            if (_lights != null && _lights.Length == LightCount)
                 return;
 
-            _light = GetComponentInChildren<Light>(true);
-
-            if (_light == null)
+            _cluster = transform.Find(ClusterChildName);
+            if (_cluster == null)
             {
-                var host = new GameObject(ProjectorChildName);
+                var host = new GameObject(ClusterChildName);
                 host.transform.SetParent(transform, false);
-                _light = host.AddComponent<Light>();
+                _cluster = host.transform;
             }
-
-            var t = _light.transform;
 
             // Off the surface it is mounted on, along the axis it throws along. A light whose
             // origin sits inside the wall is occluded by that wall and lights nothing in the
             // room - indistinguishable from a light that never switched on.
-            t.localPosition = new Vector3(0f, lensForwardOffset, 0f);
+            _cluster.localPosition = new Vector3(0f, lensForwardOffset, 0f);
+            _cluster.localRotation = Quaternion.identity;
 
-            // A Unity spot shines along its own +Z. This project's carried-transform convention
-            // is that an item's local +Y is its length and the direction it works along - the
-            // cone, the ghost-in-the-field test and the placement's quarter turn all use +Y -
-            // so the light is turned to look along +Y. Left at identity it throws sideways out
-            // of the device, which lights the wall it is bolted to and nothing else.
-            t.localRotation = Quaternion.LookRotation(Vector3.up, Vector3.forward);
+            var existing = _cluster.GetComponentsInChildren<Light>(true);
+            _lights = new Light[LightCount];
 
-            _light.type = LightType.Spot;
-            _light.color = dotColor;
-            _light.intensity = lightIntensity;
-            _light.shadows = LightShadows.None;
-            _light.cookie = LoadCookie();
-            _light.enabled = false;
+            for (int i = 0; i < LightCount; i++)
+            {
+                Light light = i < existing.Length ? existing[i] : null;
+                if (light == null)
+                {
+                    var go = new GameObject("DotsCone_" + i);
+                    go.transform.SetParent(_cluster, false);
+                    light = go.AddComponent<Light>();
+                }
+
+                light.transform.localPosition = Vector3.zero;
+                light.transform.localRotation = Quaternion.LookRotation(
+                    ConeDirection(i), ConeUpReference(i));
+
+                light.type = LightType.Spot;
+                light.color = dotColor;
+                light.shadows = LightShadows.None;
+                light.cookie = LoadCookie();
+                light.enabled = _running;
+
+                _lights[i] = light;
+            }
+
+            // A clone that somehow arrived with MORE than the cluster wants: switch the surplus
+            // off rather than leave it lighting the room from a transform nothing updates.
+            for (int i = LightCount; i < existing.Length; i++)
+            {
+                if (existing[i] != null)
+                    existing[i].enabled = false;
+            }
 
             ApplyShape();
         }
 
-        private void ApplyShape()
+        /// <summary>
+        /// Which way cone <paramref name="index"/> points, in the projection's OWN space.
+        ///
+        /// <para>
+        /// Local +Y is the device's working axis by the shared carried-transform convention -
+        /// the same axis <c>FieldStrengthAt</c> measures along and the same one the placement's
+        /// quarter turn puts along the wall normal. Deriving the cluster from it rather than
+        /// from a world axis is what makes the same code correct on every wall of every room.
+        /// </para>
+        /// </summary>
+        private static Vector3 ConeDirection(int index)
         {
-            if (_light == null)
-                return;
+            if (index == 0)
+                return Vector3.up;
 
-            _light.range = Mathf.Max(0.5f, _range);
-            _light.spotAngle = Mathf.Clamp(_fullAngle, 5f, 170f);
+            float azimuth = (index - 1) * 90f * Mathf.Deg2Rad;
+            float tilt = OuterTiltDegrees * Mathf.Deg2Rad;
+
+            return new Vector3(
+                Mathf.Sin(tilt) * Mathf.Cos(azimuth),
+                Mathf.Cos(tilt),
+                Mathf.Sin(tilt) * Mathf.Sin(azimuth));
         }
 
         /// <summary>
-        /// The generated cookie. A null here is an ERROR rather than a shrug: a cookie-less spot
-        /// is a plain green blob, which reads as a broken dot pattern rather than as a missing
-        /// texture, and those need different fixes.
+        /// An up-vector for <see cref="Quaternion.LookRotation"/> that is never parallel to the
+        /// direction it is paired with. The axial cone looks straight along +Y, so world up
+        /// would be degenerate there and produce an undefined roll.
+        /// </summary>
+        private static Vector3 ConeUpReference(int index) =>
+            index == 0 ? Vector3.forward : Vector3.up;
+
+        private void ApplyShape()
+        {
+            if (_lights == null)
+                return;
+
+            for (int i = 0; i < _lights.Length; i++)
+            {
+                if (_lights[i] == null)
+                    continue;
+
+                _lights[i].range = Mathf.Max(0.5f, lightRange);
+                _lights[i].spotAngle = ConeAngle;
+                _lights[i].intensity = lightIntensity;
+            }
+        }
+
+        /// <summary>
+        /// The generated cookie, loaded once and shared by all five lights.
+        ///
+        /// <para>
+        /// A null here is an ERROR rather than a shrug: a cookie-less spot is a plain green
+        /// blob, which reads as a broken dot pattern rather than as a missing texture, and those
+        /// need different fixes.
+        /// </para>
         /// </summary>
         private Texture LoadCookie()
         {
-            var cookie = Resources.Load<Texture2D>(CookieResourcePath);
-            if (cookie == null)
+            if (_cookie != null)
+                return _cookie;
+
+            _cookie = Resources.Load<Texture2D>(CookieResourcePath);
+            if (_cookie == null)
             {
                 Core.CIYCLog.Error("[CIYC][DOTS][Projection] Resources.Load(\"" +
-                                   CookieResourcePath + "\") is NULL, so the spot has no dot " +
-                                   "mask and will project a plain green cone. Run " +
+                                   CookieResourcePath + "\") is NULL, so the cluster has no dot " +
+                                   "mask and will project plain green cones. Run " +
                                    "Catch If You Can > 4. SPIELINHALT > Equipment > " +
                                    "DOTS-Cookies erzeugen.");
             }
 
-            return cookie;
+            return _cookie;
         }
 
 #if UNITY_EDITOR || DEVELOPMENT_BUILD
         /// <summary>
         /// One block, at switch-on, naming every value that can make a lit projector invisible.
+        /// Never per frame: this runs from <see cref="SetRunning"/>, which runs on a keypress.
         /// </summary>
         private void ReportProjection()
         {
-            var t = _light != null ? _light.transform : transform;
-            string cookieName = _light != null && _light.cookie != null
-                ? _light.cookie.name : "null";
-            string cookieSize = _light != null && _light.cookie != null
-                ? _light.cookie.width + "x" + _light.cookie.height : "-";
+            int live = 0;
+            for (int i = 0; _lights != null && i < _lights.Length; i++)
+            {
+                if (_lights[i] != null && _lights[i].enabled)
+                    live++;
+            }
+
+            var all = GetComponentsInChildren<Light>(true);
+            var cookie = _lights != null && _lights.Length > 0 && _lights[0] != null
+                ? _lights[0].cookie : null;
 
             string block =
                 "[CIYC][DOTS][Projection]" +
-                " componentAlive=" + (this != null) +
-                " projectionObject=" + (_light != null ? _light.gameObject.name : "<none>") +
-                " activeInHierarchy=" + (_light != null && _light.gameObject.activeInHierarchy) +
-                " lightExists=" + (_light != null) +
-                " lightCount=" + GetComponentsInChildren<Light>(true).Length +
-                " lightType=" + (_light != null ? _light.type.ToString() : "-") +
-                " lightEnabled=" + (_light != null && _light.enabled) +
-                " lightIntensity=" + (_light != null ? _light.intensity.ToString("F2") : "-") +
-                " lightRange=" + (_light != null ? _light.range.ToString("F2") : "-") +
-                " spotAngle=" + (_light != null ? _light.spotAngle.ToString("F1") : "-") +
-                " lightColor=" + (_light != null ? _light.color.ToString() : "-") +
-                " cookie=" + cookieName +
-                " cookieSize=" + cookieSize +
-                " cullingMask=" + (_light != null ? _light.cullingMask.ToString() : "-") +
-                // renderingLayerMask is deliberately NOT printed: this machine cannot reach
-                // the Unity docs to confirm the member exists on Light in 6000.5, and a stub
-                // that agrees with a guess is not verification (mistake 9). cullingMask above
-                // is the one that has always been there.
-                " worldPosition=" + t.position.ToString("F2") +
-                " throwDirection=" + t.forward.ToString("F2") +
-                " deviceAxis=" + transform.up.ToString("F2") +
-                " deviceRotation=" + transform.rotation.eulerAngles.ToString("F1");
+                " mode=RoomHemisphere" +
+                " lights=" + live +
+                " cookie=" + (cookie != null ? cookie.name : "null") +
+                " cookieSize=" + (cookie != null ? cookie.width + "x" + cookie.height : "-") +
+                " range=" + lightRange.ToString("F1") +
+                " coneAngle=" + ConeAngle.ToString("F0") +
+                " outerTilt=" + OuterTiltDegrees.ToString("F0") +
+                " intensity=" + lightIntensity.ToString("F2") +
+                " shadows=False" +
+                " directionBasis=" + transform.up.ToString("F2") +
+                " estimatedCoverage=hemisphere";
 
-            bool broken = _light == null || !_light.enabled || _light.cookie == null;
-            if (broken)
-            {
+            if (_lights == null || live != LightCount || cookie == null)
                 Core.CIYCLog.Error(block + "  <- FAILED PROJECTION STATE");
-            }
             else
-            {
-                // What this block cannot see: whether URP actually gave the light a slot in its
-                // additional-lights cookie atlas. A cookie that is assigned and not applied
-                // looks like a plain green cone, and no script-side value says so. If the cone
-                // is solid, check the URP asset's Light Cookies switch and atlas size.
                 Core.CIYCLog.Info(block);
+
+            // The failure this cannot see any other way: a clone that accumulated lights. The
+            // count is fixed by construction, so anything above it is a build that ran twice.
+            if (all.Length > LightCount)
+            {
+                Core.CIYCLog.Error("[CIYC][DOTS][ERROR] unexpectedLightCount=" + all.Length +
+                                   " expected=" + LightCount +
+                                   " - a second cluster was built on a clone that already had one.");
             }
         }
 #endif

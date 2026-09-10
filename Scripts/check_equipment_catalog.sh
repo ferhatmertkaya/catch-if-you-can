@@ -545,14 +545,29 @@ else
   printf '        ein Druck darf nicht Projektor UND Fackel schalten\n'
 fi
 
-# Und die Fackel wird nur uebersprungen, wenn wirklich jemand zugegriffen hat - der Anspruch
-# gibt false zurueck, wenn nichts montiert ist, damit G weiter die Fackel schaltet.
+# Und der Anspruch faellt NUR durch, wenn gar kein Projektor gewaehlt ist.
+#
+# Vorher stand hier das Gegenteil: der nicht montierte Projektor gab G an die Fackel zurueck.
+# Im Editor sah das so aus - ein Druck, zwei Zeilen, zwei Geraete:
+#   [CIYC][DOTS] [BLOCKED] POWER reason=NotMounted
+#   Flashlight: WrongState: not held or placed (World)
+# Beide Meldungen stimmen fuer sich und das Paar ist falsch. Wer den Projektor gewaehlt hat,
+# adressiert mit G den Projektor - ob der an der Wand haengt oder in der Hand liegt. Ein
+# Anspruch heisst "der Druck war meiner", nicht "der Druck hat etwas bewirkt".
+#
+# Geprueft wird der Zweig, nicht die Datei: ein `return false` darf nur dort stehen, wo noch
+# kein Projektor feststeht (kein Inventar, offenes Menue, anderes Geraet gewaehlt), und der
+# Zweig fuer das nicht montierte Geraet muss `return true` liefern.
+claim=$(sed 's://.*::' "$RTR" | sed -n '/private bool TryClaimPower/,/^        }$/p')
+notmounted=$(printf '%s' "$claim" | sed -n '/if (!projector.IsPlaced)/,/^            }$/p')
 if [ -f "$RTR" ] &&
-   sed 's://.*::' "$RTR" | sed -n '/private bool TryClaimPower/,/^        }$/p' \
-     | grep -qE 'return false;'; then
-  ok "ein nicht montiertes Geraet gibt G an die Fackel zurueck"
+   printf '%s' "$claim" | grep -qE 'is not SpectralGridProjector projector' &&
+   printf '%s' "$notmounted" | grep -qE 'return true;' &&
+   ! printf '%s' "$notmounted" | grep -qE 'return false;'; then
+  ok "ein gewaehlter Projektor verbraucht G selbst, montiert oder nicht"
 else
-  fail "ein nicht montiertes Geraet gibt G an die Fackel zurueck"
+  fail "ein gewaehlter Projektor verbraucht G selbst, montiert oder nicht"
+  printf '        sonst laeuft ein Druck durch den Projektor UND die Fackel\n'
 fi
 
 # Die Platzierung wird nur bei GUELTIGEM Ziel bestaetigt, und der Druck nur dann verbraucht.
@@ -909,19 +924,19 @@ else
     fail "ein fehlgeschlagener Projektionszustand wird als Fehler gemeldet"
   fi
 
-  # 6. Das Licht entsteht einmal, nicht je Frame.
-  if printf '%s' "$pcode" | grep -qE 'if \(_light != null\)'; then
-    ok "das Projektionslicht wird einmal gebaut, nicht je Frame"
+  # 6. Das Cluster entsteht einmal, nicht je Frame - und hat eine FESTE Groesse.
+  if printf '%s' "$pcode" | grep -qE '_lights != null && _lights\.Length == LightCount'; then
+    ok "das Cluster wird einmal gebaut, nicht je Frame"
   else
-    fail "das Projektionslicht wird einmal gebaut, nicht je Frame"
+    fail "das Cluster wird einmal gebaut, nicht je Frame"
   fi
 
   # 7. Ausgeschaltet ist ausgeschaltet. Ein Licht, das nach SetRunning(false) weiterbrennt,
-  #    ist ein Projektor, den man nicht ausmachen kann.
-  if printf '%s' "$pcode" | grep -qE '_light\.enabled[[:space:]]*=[[:space:]]*running'; then
-    ok "SetRunning schaltet das Projektionslicht mit"
+  #    ist ein Projektor, den man nicht ausmachen kann - und hier sind es fuenf.
+  if printf '%s' "$pcode" | grep -qE '_lights\[i\]\.enabled[[:space:]]*=[[:space:]]*running'; then
+    ok "SetRunning schaltet jedes Licht des Clusters mit"
   else
-    fail "SetRunning schaltet das Projektionslicht mit"
+    fail "SetRunning schaltet jedes Licht des Clusters mit"
   fi
 
   # 8. Keine Echtzeitschatten. Ein Spot mit Schatten und 4096 Punkten ist auf einem Telefon
@@ -937,21 +952,45 @@ else
   #    Geist-im-Feld-Test und die Vierteldrehung beim Platzieren benutzen alle +Y. Auf
   #    identity gelassen wirft das Licht seitwaerts aus dem Geraet heraus, also genau in die
   #    Wand, an der es haengt.
-  if printf '%s' "$pcode" \
-       | grep -qE 'LookRotation\(Vector3\.up, Vector3\.forward\)'; then
-    ok "das Projektionslicht leuchtet die Arbeitsachse des Geraets entlang"
+  if printf '%s' "$pcode" | grep -qE 'index == 0\)[[:space:]]*$' \
+     && printf '%s' "$pcode" | grep -qE 'return Vector3\.up;' \
+     && printf '%s' "$pcode" | grep -qE 'LookRotation\([[:space:]]*$|LookRotation\(ConeDirection'; then
+    ok "das Cluster leuchtet um die Arbeitsachse des Geraets herum"
   else
-    fail "das Projektionslicht leuchtet die Arbeitsachse des Geraets entlang (+Y, nicht +Z)"
+    fail "das Cluster leuchtet um die Arbeitsachse des Geraets herum (+Y, nicht +Z)"
+  fi
+
+  # 9b. Und die Richtungen kommen aus dem EIGENEN Raum, nie aus Weltachsen. Ein hartcodiertes
+  #     Vector3.right in Weltkoordinaten waere auf genau einer Wand des Hauses richtig.
+  if printf '%s' "$pcode" | grep -qE 'transform\.TransformDirection|Vector3\.up \* |Quaternion\.Euler\([0-9]' ; then
+    fail "die Kegelrichtungen werden im eigenen Raum gebildet, nicht aus Weltachsen"
+  else
+    ok "die Kegelrichtungen werden im eigenen Raum gebildet, nicht aus Weltachsen"
+  fi
+
+  # 9c. Fuenf Lichter, nicht dreissig, und die Zahl steht an EINER Stelle.
+  if printf '%s' "$pcode" | grep -qE 'public const int LightCount = [45678];'; then
+    ok "die Zahl der Lichter ist eine Konstante im erlaubten Rahmen (4-8)"
+  else
+    fail "die Zahl der Lichter ist eine Konstante im erlaubten Rahmen (4-8)"
+  fi
+
+  # 9d. Und ein Cluster, das mehr Lichter hat als es haben darf, meldet sich.
+  if printf '%s' "$pcode" | grep -qE 'unexpectedLightCount='; then
+    ok "ein Cluster mit zu vielen Lichtern meldet sich"
+  else
+    fail "ein Cluster mit zu vielen Lichtern meldet sich"
   fi
 
   # 10. Und der Klon bekommt kein zweites Licht. Jedes Ausruestungsstueck erreicht die Welt als
   #     Instantiate einer lebenden Vorlage: das Kindobjekt und sein Licht sind dann schon da,
   #     das private Feld, das darauf zeigte, nicht. Zwei deckungsgleiche Lichter sieht niemand
   #     als zwei, sondern als eines mit doppelter Helligkeit (Fehler 27 und 30).
-  if printf '%s' "$pcode" | grep -qE 'GetComponentInChildren<Light>\(true\)'; then
-    ok "ein geklonter Projektor bekommt kein zweites Licht"
+  if printf '%s' "$pcode" | grep -qE 'transform\.Find\(ClusterChildName\)' \
+     && printf '%s' "$pcode" | grep -qE 'GetComponentsInChildren<Light>\(true\)'; then
+    ok "ein geklonter Projektor bekommt kein zweites Cluster"
   else
-    fail "ein geklonter Projektor bekommt kein zweites Licht"
+    fail "ein geklonter Projektor bekommt kein zweites Cluster"
   fi
 
   # 11. Und es gibt genau EINE Sache, die die Punkte zeichnet. Ein Kegel-Mesh neben dem Licht
@@ -966,11 +1005,14 @@ fi
 # 9. Nur die eine Cookie-Maske liegt unter Resources. Alles in diesem Ordner wandert in jeden
 #    Build, ob es jemand referenziert oder nicht - Quellmuster, Kugelkarte und Schachbrett sind
 #    Werkzeug und haben dort nichts zu suchen.
+# Genau zwei: die benutzte 512er Maske und ihre 256er Sparvariante. Die 2048er Vorlagen und
+# die alte 1024er Spot-Cookie sind weg - vier grosse Texturen in Resources, von denen eine
+# geladen wird, sind drei, die jeden Build mitfahren, ohne je gesampelt zu werden.
 shipped=$(find Assets/CatchIfYouCan/Resources -name 'T_DOTS_*.png' 2>/dev/null | wc -l | tr -d ' ')
-if [ "$shipped" = "1" ]; then
-  ok "genau eine DOTS-Textur liegt unter Resources"
+if [ "$shipped" = "2" ]; then
+  ok "genau zwei DOTS-Masken liegen unter Resources (512 und 256)"
 else
-  fail "genau eine DOTS-Textur liegt unter Resources (gefunden: $shipped)"
+  fail "genau zwei DOTS-Masken liegen unter Resources (gefunden: $shipped)"
 fi
 
 # 10. Die ausgelieferte Maske hat vier Kanaele. PNG-Farbtyp steht im IHDR an Byte 25; 6 ist
@@ -992,11 +1034,30 @@ if [ ! -f "$GEN" ]; then
 else
   gcode=$(sed 's://.*::' "$GEN" | grep -v '^[[:space:]]*\*')
 
-  if printf '%s' "$gcode" | grep -qE 'new Color\(v, v, v, v\)' \
-     && printf '%s' "$gcode" | grep -qE 'new Color\(0f, 0f, 0f, 0f\)'; then
+  if printf '%s' "$gcode" | grep -qE 'new Color\(v, v, v, v\)'; then
     ok "der Generator schreibt die Maske in alle vier Kanaele"
   else
     fail "der Generator schreibt die Maske in alle vier Kanaele"
+  fi
+
+  # 11b. Jeder Punkt ist ein KREIS, und der Generator misst das an seinem eigenen Ergebnis
+  #      nach, statt es zu behaupten. Ein Kegel voller Pillen sieht man auf keinem Thumbnail -
+  #      man sieht ihn drei Schritte spaeter als Streifen auf einer Wand.
+  if printf '%s' "$gcode" | grep -qE 'MeasureBlobs' \
+     && printf '%s' "$gcode" | grep -qE 'b\.x != b\.y' \
+     && printf '%s' "$gcode" | grep -qE 'REFUSED to write'; then
+    ok "der Generator misst seine Punkte nach und verweigert unrunde"
+  else
+    fail "der Generator misst seine Punkte nach und verweigert unrunde"
+  fi
+
+  # 11c. Und die Mittelpunkte liegen auf Pixelmitten, sonst rastert derselbe Kreis je nach
+  #      Bruchteil mal 3 und mal 4 Pixel breit - und die Messung oben koennte nur ungefaehr
+  #      pruefen statt exakt.
+  if printf '%s' "$gcode" | grep -qE 'Mathf\.Floor\(x\) \+ 0\.5f'; then
+    ok "die Punktmitten liegen auf Pixelmitten"
+  else
+    fail "die Punktmitten liegen auf Pixelmitten"
   fi
 
   # 12. Er schreibt die Laufzeit-Cookie dorthin, wo die Laufzeit sie sucht.
@@ -1028,6 +1089,30 @@ if [ -n "${cookiepath:-}" ] && [ -f "$cmeta" ]; then
     ok "die Cookie-Maske wird linear und ohne Alpha-Transparenz importiert"
   else
     fail "die Cookie-Maske wird linear und ohne Alpha-Transparenz importiert"
+  fi
+
+  # 15. Und mit den drei Einstellungen, die aus runden Punkten Pillen gemacht haben.
+  #
+  # Die Maske wird IMMER vergroessert - 512 Texel ueber einen ganzen Raum - also sind drei
+  # Unity-Voreinstellungen hier schaedlich:
+  #   Mipmaps  werden bei Vergroesserung nie gewaehlt und weichen die Punkte nur auf
+  #   aniso 4  ist ein RICHTUNGSABHAENGIGER Filter: auf einem 3-Pixel-Punkt im schraegen
+  #            Blick zieht er ihn entlang einer Achse aus - genau die gemeldete Pille
+  #   Repeat   URP packt Cookies in einen Atlas; eine wiederholende Cookie blutet ueber
+  #            ihre Nachbarn
+  # Die vorige Maske hatte alle drei, und ihre wrapU/wrapV standen ausserdem VERTAUSCHT
+  # gegen die eigene Absicht - Repeat quer, Clamp hoch. Das ist woertlich ein anisotropes
+  # Sampling-Setup auf einer Textur aus runden Punkten.
+  wrapu=$(grep -E '^[[:space:]]*wrapU:' "$cmeta" | head -1 | tr -dc '0-9')
+  wrapv=$(grep -E '^[[:space:]]*wrapV:' "$cmeta" | head -1 | tr -dc '0-9')
+  aniso=$(grep -E '^[[:space:]]*aniso:' "$cmeta" | head -1 | tr -dc '0-9')
+  if grep -qE '^[[:space:]]*enableMipMap: 0$' "$cmeta" \
+     && [ "$aniso" = "1" ] && [ "$wrapu" = "1" ] && [ "$wrapv" = "1" ]; then
+    ok "die Cookie-Maske hat keine Mipmaps, aniso 1 und Clamp auf BEIDEN Achsen"
+  else
+    fail "die Cookie-Maske hat keine Mipmaps, aniso 1 und Clamp auf BEIDEN Achsen"
+    printf '        gefunden: mipmaps=%s aniso=%s wrapU=%s wrapV=%s (1 = Clamp)\n' \
+      "$(grep -cE '^[[:space:]]*enableMipMap: 1$' "$cmeta")" "$aniso" "$wrapu" "$wrapv"
   fi
 else
   fail "die Cookie-Maske hat eine .meta"

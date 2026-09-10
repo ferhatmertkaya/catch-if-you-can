@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.IO;
 using UnityEditor;
 using UnityEngine;
@@ -5,77 +6,67 @@ using UnityEngine;
 namespace CatchIfYouCan.EditorTools.DOTS
 {
     /// <summary>
-    /// Regenerates the DOTS projector's cookie textures, deterministically, from code.
+    /// Regenerates the DOTS projector's cookie masks, deterministically, from code.
     ///
     /// <para>
-    /// The four PNGs are committed, so a fresh clone needs nothing from Photoshop, Substance
-    /// or a download. This exists so they can be CHANGED - density, dot size, seed - and come
-    /// back with the same PIXELS for the same parameters, rather than being a binary nobody
-    /// can reproduce. (The same pixels, not the same bytes: two PNG encoders may compress the
-    /// identical image differently, so it is the image that is reproducible, not the file.)
+    /// The PNGs are committed, so a fresh clone needs nothing from Photoshop or a download.
+    /// This exists so they can be CHANGED - density, dot size, seed - and come back with the
+    /// same pixels for the same parameters, rather than being a binary nobody can reproduce.
+    /// (The same pixels, not the same bytes: two PNG encoders may compress an identical image
+    /// differently, so it is the image that is reproducible, not the file.)
     /// </para>
     ///
     /// <para>
-    /// <b>The mask is written into every channel.</b> Which channel a light cookie is sampled
-    /// from is a per-pipeline detail, and this machine cannot reach docs.unity3d.com to settle
-    /// it. Rather than guess one and ship a black cookie if the guess is wrong, R, G, B and A
-    /// all carry the same value - correct whichever is read, at no cost, because the importer
-    /// keeps the source alpha (alphaUsage 1) and is told the texture is not transparency.
+    /// <b>Every dot is a true circle, and the generator proves it.</b> One radius in both axes,
+    /// area-coverage antialiased rather than a hard inside/outside test, and every centre
+    /// snapped to a PIXEL CENTRE - a disc whose centre lands at an arbitrary fraction rasterises
+    /// to a 3 px box or a 4 px box depending on where it fell, so the dots would differ from
+    /// each other even though every one is a genuine circle. Snapped, every dot is the identical
+    /// stamp, which is what lets <see cref="MeasureBlobs"/> be exact instead of approximate: it
+    /// flood-fills the finished texture and refuses to write it if any blob is not as wide as it
+    /// is tall. The jitter survives - a cell is about 39 px across, so whole-pixel offsets are
+    /// still irregular.
     /// </para>
     ///
     /// <para>
-    /// The spherical cookie is the interesting one. Dots are distributed evenly on the SPHERE
-    /// by a Fibonacci lattice, not on the square, and each is drawn with its horizontal radius
-    /// divided by cos(latitude) - which is exactly the stretch an equirectangular map applies,
-    /// so the dot comes back round on the sphere instead of smearing into an ellipse near the
-    /// poles. A dot crossing u=0 is drawn a second time at the far edge, or the seam cuts it in
-    /// half. That is the "Cartesian to polar" step, done as geometry rather than as a filter.
-    /// </para>
-    ///
-    /// <para>
-    /// Only the spot cookie lives under <c>Resources</c>. Everything in that folder is pulled
-    /// into every build whether or not anything references it, so the source pattern, the
-    /// equirectangular map and the checker - all authoring and diagnostic assets - sit under
-    /// <c>Textures/DOTS</c> instead and cost a shipped player nothing.
+    /// <b>On the dot count.</b> A cookie's dot count is free at runtime - it is a texture,
+    /// sampled once per lit pixel whatever is drawn on it - so this number is a readability
+    /// decision, not a performance one. What costs per frame is the five lights in the cluster.
+    /// The count is deliberately low BECAUSE there are five: each light projects the whole
+    /// cookie, so the marks a player sees is roughly five times the dots inside the cone.
     /// </para>
     /// </summary>
     public static class DotsCookieGenerator
     {
-        /// <summary>The one cookie the game loads at runtime, so the one that must ship.</summary>
         private const string RuntimeFolder = "Assets/CatchIfYouCan/Resources/Equipment/DOTS";
 
-        /// <summary>Source art and diagnostics. Deliberately NOT under Resources.</summary>
-        private const string AuthoringFolder = "Assets/CatchIfYouCan/Art/Equipment/DOTS";
-
-        /// <summary>Size of the authoring masters.</summary>
-        public const int Resolution = 2048;
-
         /// <summary>
-        /// Size of the cookie the game loads, authored at the size it is USED at.
-        /// CIYC_URP.asset sets m_AdditionalLightsCookieResolution to 2048, so a 2048 cookie is
-        /// the whole atlas and leaves room for no other cookied light; and a mask the importer
-        /// has to downscale loses its dots to the filter. 1024 with a 2 px radius keeps a 4 px
-        /// dot in a 16 px cell.
+        /// Dots per cookie, before the cone clips the corners off.
+        ///
+        /// <para>
+        /// About 129 of these land inside the inscribed circle, and
+        /// <c>SpectralGridProjection</c> runs five lights off one cookie, so a room shows
+        /// roughly 645 marks. Raising this multiplies by five.
+        /// </para>
         /// </summary>
-        public const int SpotResolution = 1024;
+        public const int DotCount = 160;
 
-        public const int DotCount = 4096;
-        public const float DotRadius = 3.0f;
-        public const float SpotDotRadius = 2.0f;
         public const int Seed = 20260910;
+
+        private const int PrimarySize = 512;
+        private const float PrimaryRadius = 1.5f;
+        private const int LowSize = 256;
+        private const float LowRadius = 0.9f;
 
         [MenuItem("Catch If You Can/4. SPIELINHALT/Equipment/DOTS-Cookies erzeugen [SCHREIBT DATEIEN]")]
         public static void Generate()
         {
             if (!EditorUtility.DisplayDialog(
                     "Generate DOTS cookies",
-                    "Writes four PNG files.\n\n" +
-                    RuntimeFolder + "\n" +
-                    "   T_DOTS_SpotCookie_1024  (the one the game loads)\n\n" +
-                    AuthoringFolder + "\n" +
-                    "   T_DOTS_SourcePattern_2048  (flat pattern)\n" +
-                    "   T_DOTS_SphericalCookie_2048  (point-light, equirectangular)\n" +
-                    "   T_DOTS_TestCookie  (checker, to prove cookies apply at all)\n\n" +
+                    "Writes two PNG masks into\n" + RuntimeFolder + "\n\n" +
+                    "T_DOTS_RoomCookie_512  (the one the game loads)\n" +
+                    "T_DOTS_RoomCookie_256  (low-quality variant)\n\n" +
+                    DotCount + " dots, radius " + PrimaryRadius + " px, seed " + Seed + ".\n\n" +
                     "Existing files are overwritten and reimported. Nothing else in the " +
                     "project is touched, and the open scene is not saved.",
                     "Write them", "Cancel"))
@@ -84,24 +75,63 @@ namespace CatchIfYouCan.EditorTools.DOTS
             }
 
             Directory.CreateDirectory(RuntimeFolder);
-            Directory.CreateDirectory(AuthoringFolder);
 
-            WritePng(BuildSpotCookie(), RuntimeFolder, "T_DOTS_SpotCookie_1024.png");
-            WritePng(BuildFlatPattern(), AuthoringFolder, "T_DOTS_SourcePattern_2048.png");
-            WritePng(BuildSphericalCookie(), AuthoringFolder, "T_DOTS_SphericalCookie_2048.png");
-            WritePng(BuildTestCookie(), AuthoringFolder, "T_DOTS_TestCookie.png");
+            if (!WriteCookie(PrimarySize, PrimaryRadius, "T_DOTS_RoomCookie_512.png"))
+                return;
+            if (!WriteCookie(LowSize, LowRadius, "T_DOTS_RoomCookie_256.png"))
+                return;
 
             AssetDatabase.Refresh();
 
-            ApplyCookieImport(RuntimeFolder, "T_DOTS_SpotCookie_1024.png", SpotResolution, false);
-            ApplyCookieImport(AuthoringFolder, "T_DOTS_SourcePattern_2048.png", Resolution, false);
-            ApplyCookieImport(AuthoringFolder, "T_DOTS_SphericalCookie_2048.png", Resolution, true);
-            ApplyCookieImport(AuthoringFolder, "T_DOTS_TestCookie.png", 512, false);
+            ApplyCookieImport("T_DOTS_RoomCookie_512.png", PrimarySize);
+            ApplyCookieImport("T_DOTS_RoomCookie_256.png", LowSize);
+        }
 
-            Debug.Log("[CIYC][DOTS] Wrote 4 cookies, seed " + Seed + ". Runtime cookie: " +
-                      SpotResolution + " px, radius " + SpotDotRadius + " px, in " +
-                      RuntimeFolder + ". Authoring masters: " + Resolution + " px, radius " +
-                      DotRadius + " px, in " + AuthoringFolder + ".");
+        private static bool WriteCookie(int size, float radius, string file)
+        {
+            // Built as a plain mask buffer and measured there, rather than written to a texture
+            // and read back. Same bytes, no GetPixels round trip, and nothing depends on the
+            // asset being readable.
+            byte[] mask = Build(size, radius, out int inCone);
+
+            var boxes = MeasureBlobs(mask, size);
+            int notSquare = 0;
+            foreach (var b in boxes)
+            {
+                if (b.x != b.y)
+                    notSquare++;
+            }
+
+            if (notSquare > 0)
+            {
+                // Refused rather than written. A cookie of elliptical marks is the exact defect
+                // this generator was rewritten to stop producing, and it is not visible in a
+                // thumbnail - it shows up as pills on a wall, three steps and one build later.
+                Debug.LogError("[CIYC][DOTS] REFUSED to write " + file + ": " + notSquare +
+                               " of " + boxes.Count + " dots are not as wide as they are tall.");
+                return false;
+            }
+
+            var tex = new Texture2D(size, size, TextureFormat.RGBA32, false);
+            var pixels = new Color[size * size];
+            for (int i = 0; i < mask.Length; i++)
+            {
+                // The mask goes into every channel: which one a light cookie is sampled from is
+                // a per-pipeline detail this machine cannot look up, and the only configuration
+                // seen working in the editor has it in all four.
+                float v = mask[i] / 255f;
+                pixels[i] = new Color(v, v, v, v);
+            }
+
+            tex.SetPixels(pixels);
+            tex.Apply();
+            File.WriteAllBytes(Path.Combine(RuntimeFolder, file), tex.EncodeToPNG());
+            Object.DestroyImmediate(tex);
+
+            Debug.Log("[CIYC][DOTS] " + file + ": " + size + " px, radius " + radius +
+                      " px, " + inCone + " dots inside the cone, " + boxes.Count +
+                      " blobs measured, all square.");
+            return true;
         }
 
         private static uint _state;
@@ -117,159 +147,164 @@ namespace CatchIfYouCan.EditorTools.DOTS
             return (_state & 0xFFFFFF) / (float)0xFFFFFF;
         }
 
-        private static Texture2D BuildFlatPattern()
+        private static byte[] Build(int size, float radius, out int inCone)
         {
             Reseed(Seed);
-            var tex = Blank(Resolution);
-            int side = Mathf.CeilToInt(Mathf.Sqrt(DotCount));
-            float cell = Resolution / (float)side;
 
+            var mask = new byte[size * size];
+
+            int side = Mathf.CeilToInt(Mathf.Sqrt(DotCount));
+            float cell = size / (float)side;
+            float c = size * 0.5f;
+
+            inCone = 0;
             int placed = 0;
-            for (int gy = 0; gy < side && placed < DotCount; gy++)
-            for (int gx = 0; gx < side && placed < DotCount; gx++, placed++)
-            {
-                float x = (gx + 0.5f) * cell + (NextFloat() - 0.5f) * cell * 0.55f;
-                float y = (gy + 0.5f) * cell + (NextFloat() - 0.5f) * cell * 0.55f;
-                Stamp(tex, x, y, DotRadius, DotRadius);
-            }
-
-            tex.Apply();
-            return tex;
-        }
-
-        private static Texture2D BuildSphericalCookie()
-        {
-            var tex = Blank(Resolution);
-            float golden = Mathf.PI * (3f - Mathf.Sqrt(5f));
-
-            for (int i = 0; i < DotCount; i++)
-            {
-                float z = 1f - (2f * i + 1f) / DotCount;        // even in solid angle
-                float lat = Mathf.Asin(Mathf.Clamp(z, -1f, 1f));
-                float lon = (i * golden) % (2f * Mathf.PI);
-
-                float u = lon / (2f * Mathf.PI) * Resolution;
-                float v = (0.5f - lat / Mathf.PI) * Resolution;
-                float cosLat = Mathf.Max(0.15f, Mathf.Cos(lat));
-                float rx = DotRadius / cosLat;
-
-                Stamp(tex, u, v, rx, DotRadius);
-                if (u - rx < 0f) Stamp(tex, u + Resolution, v, rx, DotRadius);
-                else if (u + rx > Resolution) Stamp(tex, u - Resolution, v, rx, DotRadius);
-            }
-
-            tex.Apply();
-            return tex;
-        }
-
-        private static Texture2D BuildSpotCookie()
-        {
-            Reseed(Seed ^ 0x5A5A);
-            var tex = Blank(SpotResolution);
-            int side = Mathf.CeilToInt(Mathf.Sqrt(DotCount));
-            float cell = SpotResolution / (float)side;
-            float c = SpotResolution * 0.5f;
 
             for (int gy = 0; gy < side; gy++)
             for (int gx = 0; gx < side; gx++)
             {
-                float x = (gx + 0.5f) * cell + (NextFloat() - 0.5f) * cell * 0.55f;
-                float y = (gy + 0.5f) * cell + (NextFloat() - 0.5f) * cell * 0.55f;
+                if (placed >= DotCount)
+                    break;
+                placed++;
+
+                // Jitter capped at 0.35 of a cell each way, so two neighbours can never close
+                // to touching: the gap is cell - 2*radius and a cell is far wider than that.
+                float x = (gx + 0.5f) * cell + (NextFloat() - 0.5f) * cell * 0.70f;
+                float y = (gy + 0.5f) * cell + (NextFloat() - 0.5f) * cell * 0.70f;
+
+                x = Mathf.Floor(x) + 0.5f;
+                y = Mathf.Floor(y) + 0.5f;
 
                 float t = Mathf.Sqrt((x - c) * (x - c) + (y - c) * (y - c)) / c;
-                if (t > 1f - SpotDotRadius / c)
-                    continue;
+                if (t > 1f - (radius + 1f) / c)
+                    continue;                    // outside the cone; the spot clips it anyway
 
-                // Faded to black at the rim, or the cookie's square edge shows as a square.
-                Stamp(tex, x, y, SpotDotRadius, SpotDotRadius, Mathf.Clamp01((1f - t) / 0.25f));
+                Stamp(mask, size, x, y, radius);
+                inCone++;
             }
 
-            tex.Apply();
-            return tex;
+            return mask;
         }
 
-        private static Texture2D BuildTestCookie()
+        /// <summary>One disc, area-antialiased: coverage per pixel, not a hard inside test.</summary>
+        private static void Stamp(byte[] mask, int size, float cx, float cy, float r)
         {
-            var tex = Blank(512);
-            for (int y = 0; y < 512; y++)
-            for (int x = 0; x < 512; x++)
-                if (((x / 64) + (y / 64)) % 2 == 0)
-                    tex.SetPixel(x, y, Color.white);
+            int x0 = Mathf.Max(0, Mathf.FloorToInt(cx - r - 1f));
+            int x1 = Mathf.Min(size - 1, Mathf.CeilToInt(cx + r + 1f));
+            int y0 = Mathf.Max(0, Mathf.FloorToInt(cy - r - 1f));
+            int y1 = Mathf.Min(size - 1, Mathf.CeilToInt(cy + r + 1f));
 
-            tex.Apply();
-            return tex;
-        }
-
-        /// <summary>
-        /// Fully transparent black: alpha 0 rather than <c>Color.black</c>, whose alpha is 1.
-        /// A background of alpha 1 would make the whole mask solid in the alpha channel, which
-        /// is precisely the channel a spot cookie may be read from.
-        /// </summary>
-        private static Texture2D Blank(int size)
-        {
-            var tex = new Texture2D(size, size, TextureFormat.RGBA32, false);
-            var clear = new Color[size * size];
-            for (int i = 0; i < clear.Length; i++) clear[i] = new Color(0f, 0f, 0f, 0f);
-            tex.SetPixels(clear);
-            return tex;
-        }
-
-        private static void Stamp(Texture2D tex, float cx, float cy, float rx, float ry,
-                                  float brightness = 1f)
-        {
-            int x0 = Mathf.Max(0, Mathf.FloorToInt(cx - rx));
-            int x1 = Mathf.Min(tex.width - 1, Mathf.CeilToInt(cx + rx));
-            int y0 = Mathf.Max(0, Mathf.FloorToInt(cy - ry));
-            int y1 = Mathf.Min(tex.height - 1, Mathf.CeilToInt(cy + ry));
+            const int Samples = 4;
+            const float Step = 1f / Samples;
 
             for (int y = y0; y <= y1; y++)
             for (int x = x0; x <= x1; x++)
             {
-                float dx = (x - cx) / rx;
-                float dy = (y - cy) / ry;
-                if (dx * dx + dy * dy > 1f)
+                int hit = 0;
+                for (int sy = 0; sy < Samples; sy++)
+                for (int sx = 0; sx < Samples; sx++)
+                {
+                    float px = x + (sx + 0.5f) * Step;
+                    float py = y + (sy + 0.5f) * Step;
+                    float dx = px - cx;
+                    float dy = py - cy;
+                    if (dx * dx + dy * dy <= r * r)
+                        hit++;
+                }
+
+                if (hit == 0)
                     continue;
 
-                float v = Mathf.Max(tex.GetPixel(x, y).r, brightness);
-                tex.SetPixel(x, y, new Color(v, v, v, v));
+                byte v = (byte)Mathf.RoundToInt(hit / (float)(Samples * Samples) * 255f);
+                int idx = y * size + x;
+                if (v > mask[idx])
+                    mask[idx] = v;
             }
         }
 
-        private static void WritePng(Texture2D tex, string folder, string file)
+        /// <summary>
+        /// Flood-fills every lit blob and returns the size of its bounding box. This is the
+        /// generator inspecting its own output: a dot is a circle when its box is square, and
+        /// because every centre is snapped to a pixel centre, every box should be identical.
+        /// </summary>
+        private static List<Vector2Int> MeasureBlobs(byte[] mask, int size)
         {
-            File.WriteAllBytes(Path.Combine(folder, file), tex.EncodeToPNG());
-            Object.DestroyImmediate(tex);
+            var seen = new bool[size * size];
+            var boxes = new List<Vector2Int>();
+            var stack = new Stack<int>();
+
+            for (int start = 0; start < mask.Length; start++)
+            {
+                if (mask[start] == 0 || seen[start])
+                    continue;
+
+                stack.Clear();
+                stack.Push(start);
+                seen[start] = true;
+
+                int minX = start % size, maxX = minX;
+                int minY = start / size, maxY = minY;
+
+                while (stack.Count > 0)
+                {
+                    int j = stack.Pop();
+                    int jx = j % size, jy = j / size;
+
+                    if (jx < minX) minX = jx;
+                    if (jx > maxX) maxX = jx;
+                    if (jy < minY) minY = jy;
+                    if (jy > maxY) maxY = jy;
+
+                    TryPush(mask, seen, stack, size, jx + 1, jy);
+                    TryPush(mask, seen, stack, size, jx - 1, jy);
+                    TryPush(mask, seen, stack, size, jx, jy + 1);
+                    TryPush(mask, seen, stack, size, jx, jy - 1);
+                }
+
+                boxes.Add(new Vector2Int(maxX - minX + 1, maxY - minY + 1));
+            }
+
+            return boxes;
+        }
+
+        private static void TryPush(byte[] mask, bool[] seen, Stack<int> stack,
+                                    int size, int x, int y)
+        {
+            if (x < 0 || y < 0 || x >= size || y >= size)
+                return;
+
+            int k = y * size + x;
+            if (mask[k] == 0 || seen[k])
+                return;
+
+            seen[k] = true;
+            stack.Push(k);
         }
 
         /// <summary>
-        /// A cookie is a MASK: linear rather than sRGB, mipmapped so the dots do not alias into
-        /// a shimmer at range, and clamped vertically. The equirectangular map repeats
-        /// horizontally so its seam is continuous; a spot cookie clamps both ways or the
-        /// pattern tiles across the cone.
+        /// A cookie is a MASK that is only ever MAGNIFIED - 512 texels spread across a whole
+        /// room - so three of Unity's defaults are actively harmful here.
         ///
         /// <para>
-        /// Compression is set through the per-platform settings that
-        /// <c>InteractiveRoomSkySetup</c> already uses here, rather than through the importer's
-        /// own compression property: the platform path is the one this project has run, and the
-        /// distinction matters because desktop and mobile want opposite answers. Desktop keeps
-        /// the mask uncompressed. Mobile cannot: 2048 RGBA32 is 16 MiB before mipmaps and this
-        /// game targets phones, so it gets ASTC 6x6 (about 1.9 MiB) - the dots survive it
-        /// because one texel of this cookie lands on roughly 3 mm of wall at working range.
+        /// Mipmaps are never selected at magnification and only soften the dots. Anisotropic
+        /// filtering is a DIRECTIONAL filter: on a 3 px dot at a grazing angle it smears the dot
+        /// along one axis, which is precisely the pill this generator was rewritten to stop
+        /// drawing. And URP packs additional-light cookies into one atlas, where a repeating
+        /// cookie bleeds across its neighbours. Off, 1, and Clamp on both axes.
         /// </para>
         ///
         /// <para>
-        /// Filter mode and alpha source are deliberately NOT set from code. Both are real
+        /// Filter mode and compression are deliberately NOT set from code. Both are real
         /// importer members as far as I know, and "as far as I know" is not good enough for an
         /// Editor script: a wrong member name does not fail this one tool, it fails the whole
         /// Editor assembly, and docs.unity3d.com is unreachable from here (mistake 9). The
-        /// committed <c>.meta</c> files carry trilinear filtering and alphaUsage 1, and
-        /// overwriting a PNG in place keeps its <c>.meta</c>, so regenerating preserves them.
+        /// committed <c>.meta</c> files carry bilinear filtering, aniso 1 and uncompressed on
+        /// every platform, and overwriting a PNG in place keeps its <c>.meta</c>.
         /// </para>
         /// </summary>
-        private static void ApplyCookieImport(string folder, string file, int maxSize,
-                                              bool wrapHorizontally)
+        private static void ApplyCookieImport(string file, int maxSize)
         {
-            string path = folder + "/" + file;
+            string path = RuntimeFolder + "/" + file;
             var importer = AssetImporter.GetAtPath(path) as TextureImporter;
             if (importer == null)
             {
@@ -279,34 +314,11 @@ namespace CatchIfYouCan.EditorTools.DOTS
 
             importer.textureType = TextureImporterType.Default;
             importer.sRGBTexture = false;
-            importer.mipmapEnabled = true;
-            importer.wrapModeU = wrapHorizontally ? TextureWrapMode.Repeat : TextureWrapMode.Clamp;
+            importer.mipmapEnabled = false;
+            importer.wrapModeU = TextureWrapMode.Clamp;
             importer.wrapModeV = TextureWrapMode.Clamp;
             importer.maxTextureSize = maxSize;
-
-            SetPlatform(importer, "Standalone", maxSize,
-                        TextureImporterFormat.Automatic, TextureImporterCompression.Uncompressed);
-            SetPlatform(importer, "Android", maxSize,
-                        TextureImporterFormat.ASTC_6x6, TextureImporterCompression.Compressed);
-            SetPlatform(importer, "iPhone", maxSize,
-                        TextureImporterFormat.ASTC_6x6, TextureImporterCompression.Compressed);
-
             importer.SaveAndReimport();
-        }
-
-        private static void SetPlatform(TextureImporter importer, string platform, int maxSize,
-                                        TextureImporterFormat format,
-                                        TextureImporterCompression compression)
-        {
-            var settings = importer.GetPlatformTextureSettings(platform);
-            settings.name = platform;
-            settings.overridden = true;
-            settings.maxTextureSize = maxSize;
-            settings.format = format;
-            settings.textureCompression = compression;
-            settings.compressionQuality = 100;
-            settings.crunchedCompression = false;
-            importer.SetPlatformTextureSettings(settings);
         }
     }
 }

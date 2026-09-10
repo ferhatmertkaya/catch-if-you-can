@@ -3342,11 +3342,12 @@ fi
 # sondern als eines mit doppelter Helligkeit. Gesucht wird deshalb nach der Komponente, denn
 # die ueberlebt die Kopie - das Feld, das auf sie zeigte, nicht.
 PROJ="$ROOT/Assets/CatchIfYouCan/Scripts/Equipment/SpectralGridProjection.cs"
-if [ -f "$PROJ" ] && code "$PROJ" | grep -qE 'GetComponentInChildren<Light>\(true\)'; then
+if [ -f "$PROJ" ] && code "$PROJ" | grep -qE 'transform\.Find\(ClusterChildName\)' &&
+   code "$PROJ" | grep -qE 'GetComponentsInChildren<Light>\(true\)'; then
   ok "die Projektion uebersteht das Klonen ihrer Vorlage"
 else
   bad "die Projektion uebersteht das Klonen ihrer Vorlage" \
-      "ein new GameObject haengt dem Klon ein zweites Licht an, das dort schon eines hat"
+      "ein new GameObject haengt dem Klon ein ZWEITES Cluster an, das dort schon eines hat"
 fi
 
 # Und die Debug-Bequemlichkeiten stehen nicht in einem ausgelieferten Build. Ein Debug-Text im
@@ -3409,6 +3410,72 @@ if [ -z "$missing" ]; then
 else
   bad "die drei uebersprungenen Waende haben Kollision" \
       "ohne Collider laeuft der Spieler hindurch; ohne addedObject:$missing"
+fi
+
+# ---- die Missionsszene bringt ihren Bootstrap selbst mit ---------------------------------
+#
+# 03_Investigation hatte KEINE einzige MonoBehaviour: WORLD, VanAnchor, HouseAnchor, MANAGERS
+# und INVESTIGATION_BOOTSTRAP waren leere GameObjects, benannt nach Komponenten, die sie nicht
+# trugen. MissionWorldLoader hat das bei jedem Laden repariert und laut gemeldet. Eine
+# Reparatur, die funktioniert, ist trotzdem eine Reparatur: sie kann nur die drei Anker
+# binden, und jedes andere serialisierte Feld bleibt auf dem Wert, den die Komponente ohne
+# Szene zufaellig hat. Die Szene sagt jetzt selbst, was sie braucht.
+MISSION_SCENE="$ROOT/Assets/CatchIfYouCan/Scenes/03_Investigation.unity"
+BOOT_META="$ROOT/Assets/CatchIfYouCan/Scripts/Procedural/InvestigationBootstrap.cs.meta"
+
+if [ -f "$MISSION_SCENE" ] && [ -f "$BOOT_META" ]; then
+  bguid="$(grep -m1 '^guid:' "$BOOT_META" | cut -d' ' -f2)"
+
+  # Zwei Dinge, und das zweite ist das, was der erste Anlauf dieser Pruefung uebersehen hat:
+  # die Komponente muss auch auf einem GameObject EINGETRAGEN sein. Ein !u!114-Dokument, das
+  # in keiner m_Component-Liste steht, ist eine Komponente, die es nicht gibt - und die guid
+  # steht trotzdem in der Datei, also war ein blosses grep gruen.
+  verdict="$(python3 - "$MISSION_SCENE" "$bguid" <<'PYEOF'
+import re, sys
+txt = open(sys.argv[1], encoding="utf-8", errors="replace").read()
+docs = re.split(r'(?m)^--- ', txt)[1:]
+
+comp_id, comp = None, None
+for d in docs:
+    m = re.match(r'!u!114 &(\d+)', d)
+    if m and sys.argv[2] in d:
+        comp_id, comp = m.group(1), d
+        break
+
+if comp is None:
+    print("missing 0")
+    raise SystemExit
+
+registered = any(re.match(r'!u!1 &\d+', d) and
+                 re.search(r'- component: \{fileID: %s\}' % comp_id, d) for d in docs)
+
+bound = 0
+for f in ("worldRoot", "vanAnchor", "houseAnchor"):
+    m = re.search(f + r': \{fileID: (\d+)\}', comp)
+    if m and m.group(1) != '0':
+        bound += 1
+
+print(("attached" if registered else "orphaned") + " " + str(bound))
+PYEOF
+)"
+  state="${verdict%% *}"
+  bound="${verdict##* }"
+
+  if [ "$state" = "attached" ]; then
+    ok "03_Investigation traegt selbst einen InvestigationBootstrap"
+  else
+    bad "03_Investigation traegt selbst einen InvestigationBootstrap" \
+        "Zustand: $state - sonst haengt MissionWorldLoader bei jedem Laden einen an"
+  fi
+
+  if [ "$bound" = "3" ]; then
+    ok "der Bootstrap ist an WORLD, VanAnchor und HouseAnchor gebunden"
+  else
+    bad "der Bootstrap ist an WORLD, VanAnchor und HouseAnchor gebunden" \
+        "gebunden: $bound von 3 - eine ungebundene Komponente setzt den Van auf (0, 0, -14)"
+  fi
+else
+  bad "03_Investigation und InvestigationBootstrap existieren" "eine der beiden Dateien fehlt"
 fi
 
 echo

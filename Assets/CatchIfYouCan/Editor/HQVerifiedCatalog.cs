@@ -53,11 +53,53 @@ namespace CatchIfYouCan.EditorTools
         private static readonly string[] DoorParts = { "blue", "door detail", "brown", "door base" };
 
         /// <summary>
-        /// The materials that are the WINDOW. Prefab 7 carries "1" (the frame, textured
-        /// window LP 1-2_1) and "Steklo" (the glass); "wallpaper3" and "white" are again the
-        /// wall shell.
+        /// The materials that are the WINDOW: the glass, and nothing else.
+        ///
+        /// <para>
+        /// This used to be <c>{ "1", "Steklo" }</c>, where "1" was meant to be the frame. This
+        /// pack has NINETEEN materials called "1", and the wall shell of prefab 7 wears one of
+        /// them, so that name kept the shell as well as the frame. Every mission then logged
+        ///   role=Window prefab=7 measured=(3.764, 4.116, 0.402) opening=2.05 x 0.90 -&gt; REFUSED
+        /// which is the builder correctly refusing to hang a whole 4 m wall in a window hole -
+        /// a refusal that is right, loud, and repeated once per mission forever.
+        /// </para>
+        ///
+        /// <para>
+        /// "Steklo" is unique in the pack, so it selects the pane alone. The frame is not lost:
+        /// the generated wall already carries the opening WITH its reveal, which is what the
+        /// insert was adding a second, wall-sized copy of. CLAUDE.md's own rule about this pack
+        /// - a name of fewer than three letters is a coin toss, not a match - is enforced in
+        /// <see cref="RejectAmbiguousNames"/> below so it cannot be written back by hand.
+        /// </para>
         /// </summary>
-        private static readonly string[] WindowParts = { "1", "Steklo" };
+        private static readonly string[] WindowParts = { "Steklo" };
+
+        /// <summary>
+        /// Refuses a material name too short to identify anything in this pack.
+        ///
+        /// <para>
+        /// The pack numbers its materials: nineteen are called "1", three are called "white".
+        /// Matching parts by such a name is a coin toss, and the losing side of the toss is a
+        /// whole vendor wall standing in a doorway. Three characters is the same threshold the
+        /// white-material doctor already uses.
+        /// </para>
+        /// </summary>
+        private static bool RejectAmbiguousNames(string role, string[] names, StringBuilder sb)
+        {
+            bool ok = true;
+            for (int i = 0; i < names.Length; i++)
+            {
+                if (names[i] != null && names[i].Trim().Length >= 3)
+                    continue;
+
+                sb.AppendLine("ABGELEHNT: " + role + " nennt das Material '" + names[i] +
+                              "' - zu kurz, um in diesem Paket etwas zu identifizieren. " +
+                              "Neunzehn Materialien heissen '1'.");
+                ok = false;
+            }
+
+            return ok;
+        }
 
         [MenuItem("Catch If You Can/2. HQ MODULAR HOUSE/Katalog schreiben (geprueft) [SCHREIBT ASSET]", false, 206)]
         public static void WriteVerifiedCatalog()
@@ -124,6 +166,13 @@ namespace CatchIfYouCan.EditorTools
                           "im Katalog eine Zahl.");
 
             // ---- inserts --------------------------------------------------------------------
+
+            if (!RejectAmbiguousNames("Tuer", DoorParts, sb) ||
+                !RejectAmbiguousNames("Fenster", WindowParts, sb))
+            {
+                Debug.LogError(sb.ToString());
+                return;
+            }
 
             catalog.DoorInsert = new StructuralInsert
             {
