@@ -1,6 +1,18 @@
 namespace CatchIfYouCan.Ghost
 {
-    /// <summary>Maps ghost identities and visual profiles to bundled rigged model sources.</summary>
+    /// <summary>
+    /// Maps ghost identities and visual profiles to bundled rigged model sources.
+    ///
+    /// <para>
+    /// Every path here is a Quaternius monster. THE MIMICER and THE STATIC used to name two
+    /// character meshes from the Kenney Mini Dungeon kit - the last two files of that kit still
+    /// in the project after the house interior half was removed. The kit is out entirely now, so
+    /// they are remapped like for like: the human mesh to the bipedal Demon, the orc mesh to the
+    /// Orc. Reusing a model across two ghosts is the pattern here rather than an exception -
+    /// Demon already served Whisper and Hollow, Orc already served Wanderer and Knocker - because
+    /// what tells one entity from another is its EVIDENCE, not its silhouette.
+    /// </para>
+    /// </summary>
     public static class GhostVisualCatalog
     {
         public static string GetModelAssetPath(string ghostId)
@@ -10,11 +22,11 @@ namespace CatchIfYouCan.Ghost
                 case GhostIds.Wanderer: return "Assets/External/Quaternius/Monsters/Orc.gltf";
                 case GhostIds.Whisper: return "Assets/External/Quaternius/Monsters/Demon.gltf";
                 case GhostIds.Watcher: return "Assets/External/Quaternius/Monsters/BlueDemon.gltf";
-                case GhostIds.Mimicer: return "Assets/External/Kenney/MiniDungeon/Models/character-human.fbx";
+                case GhostIds.Mimicer: return "Assets/External/Quaternius/Monsters/Demon.gltf";
                 case GhostIds.Hollow: return "Assets/External/Quaternius/Monsters/Demon.gltf";
                 case GhostIds.Knocker: return "Assets/External/Quaternius/Monsters/Orc.gltf";
                 case GhostIds.Shadeborn: return "Assets/External/Quaternius/Monsters/BlueDemon.gltf";
-                case GhostIds.Static: return "Assets/External/Kenney/MiniDungeon/Models/character-orc.fbx";
+                case GhostIds.Static: return "Assets/External/Quaternius/Monsters/Orc.gltf";
                 case GhostIds.Crawler: return "Assets/External/Quaternius/Monsters/CreepCreature.glb";
                 case GhostIds.WeepingOne: return "Assets/External/Quaternius/Monsters/CreepCreature.glb";
                 default: return GetModelAssetPathForProfile(GhostVisualProfile.HumanSilhouette);

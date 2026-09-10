@@ -421,7 +421,8 @@ place that number lives; everything else derives it.
 
 - `Scripts/check_hq_environment.sh` — the house interior comes from a modular catalog, and
   nothing can quietly put the old one back. No production file names a Kenney content path
-  (the two ghost meshes are allowed by full path), the folders are really gone, and no
+  (there is no exception any more - the two ghost meshes that used to be allowed by full
+  path are Quaternius monsters now), the folders are really gone, and no
   integration tool still declares the methods that built 130 assets on one click. The
   generator tries the modular builder first, a room it cannot build says so loudly, and the
   primitive stand-in is fenced behind `UNITY_EDITOR || DEVELOPMENT_BUILD` — a shipped house

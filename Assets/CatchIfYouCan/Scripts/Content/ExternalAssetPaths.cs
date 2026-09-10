@@ -4,15 +4,18 @@ namespace CatchIfYouCan.Content
     /// Canonical import paths for third-party assets shipped with the project.
     /// </summary>
     /// <remarks>
-    /// The Kenney Furniture Kit and the house half of the Mini Dungeon kit were removed: the
-    /// house interior is being replaced by a purchased modular pack that is not integrated yet.
-    /// Only the two humanoid meshes the ghosts use survive, and they are named for what they
-    /// are used for rather than for the kit they came from. Nothing here may name a folder that
-    /// does not exist - a path that resolves nowhere is this project's most repeated mistake.
+    /// The Kenney kits are gone in full - the Furniture Kit with the house interior it built,
+    /// and the last two Mini Dungeon character meshes with the ghosts that used them, which are
+    /// Quaternius monsters now. <c>GhostCharacterModels</c> went with them rather than being
+    /// left pointing at an empty folder: it was the GATE on the whole integration run, so a
+    /// constant naming a folder that no longer exists would not have failed loudly, it would
+    /// have made Setup Project skip building every ghost prefab and say so in one line nobody
+    /// reads. Nothing here may name a folder that does not exist - a path that resolves nowhere
+    /// is this project's most repeated mistake.
     /// </remarks>
     public static class ExternalAssetPaths
     {
-        public const string GhostCharacterModels = "Assets/External/Kenney/MiniDungeon/Models";
+        /// <summary>Every rigged ghost mesh in the project. Also the gate on the integration run.</summary>
         public const string QuaterniusMonsters = "Assets/External/Quaternius/Monsters";
 
         public const string GhostPrefabsRoot = "Assets/CatchIfYouCan/Prefabs/Ghost/Rigged";

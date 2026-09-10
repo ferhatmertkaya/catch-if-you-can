@@ -88,7 +88,7 @@ namespace CatchIfYouCan.EditorTools
             EnsureLayers(report);
             EnsureTags(report);
             EnsureScriptableObjects(report);
-            if (AssetDatabase.IsValidFolder(Content.ExternalAssetPaths.GhostCharacterModels))
+            if (AssetDatabase.IsValidFolder(Content.ExternalAssetPaths.QuaterniusMonsters))
             {
                 ExternalAssetDownloader.EnsureBundledAssetsPresent();
                 try
@@ -102,7 +102,7 @@ namespace CatchIfYouCan.EditorTools
             }
             else
             {
-                report.AppendLine("Ghost character models not found — skipped Integrate External Assets.");
+                report.AppendLine("Ghost monster models not found — skipped Integrate External Assets.");
             }
 
             EnsureBuildScenes(report);

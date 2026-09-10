@@ -44,10 +44,10 @@ namespace CatchIfYouCan.EditorTools
 
             ExternalAssetDownloader.EnsureBundledAssetsPresent();
 
-            if (!Directory.Exists(ExternalAssetPaths.GhostCharacterModels))
+            if (!Directory.Exists(ExternalAssetPaths.QuaterniusMonsters))
             {
-                report.AppendLine("ERROR: ghost character models missing at " +
-                                  ExternalAssetPaths.GhostCharacterModels + ".");
+                report.AppendLine("ERROR: ghost monster models missing at " +
+                                  ExternalAssetPaths.QuaterniusMonsters + ".");
                 return report.ToString();
             }
 
@@ -55,7 +55,7 @@ namespace CatchIfYouCan.EditorTools
             ConfigureImportSettings(report);
             AssetDatabase.Refresh(ImportAssetOptions.ForceUpdate);
 
-            // The house interior half of this tool is gone with the Kenney kit it read. It
+            // The house interior half of this tool went with the furniture kit it read. It
             // built prop prefabs, prop definitions, room prefabs and the door from a folder
             // of furniture models; the purchased modular pack that replaces them is not
             // integrated yet. What remains is the ghost half, which never depended on it.
@@ -84,15 +84,8 @@ namespace CatchIfYouCan.EditorTools
         private static void ConfigureImportSettings(StringBuilder report)
         {
             int configured = 0;
-            configured += ConfigureModelsInFolder(ExternalAssetPaths.GhostCharacterModels, IsAnimatedModel);
             configured += ConfigureModelsInFolder(ExternalAssetPaths.QuaterniusMonsters, true);
             report.AppendLine($"Import settings configured: {configured} models.");
-        }
-
-        private static bool IsAnimatedModel(string assetPath)
-        {
-            string name = Path.GetFileNameWithoutExtension(assetPath).ToLowerInvariant();
-            return name.StartsWith("character-");
         }
 
         private static int ConfigureModelsInFolder(string folder, System.Func<string, bool> animatedPredicate)
@@ -185,7 +178,6 @@ namespace CatchIfYouCan.EditorTools
         {
             var paths = new List<string>();
             AppendModels(paths, ExternalAssetPaths.QuaterniusMonsters, "*.gltf", "*.glb");
-            AppendModels(paths, ExternalAssetPaths.GhostCharacterModels, "character-*.fbx");
             return paths.Distinct().ToList();
         }
 

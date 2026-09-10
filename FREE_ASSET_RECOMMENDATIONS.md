@@ -1,70 +1,87 @@
 # Free Asset Recommendations
 
-Recommended free / CC0 sources to replace primitive placeholders in **CATCH IF YOU CAN**.
+Sources worth checking when a placeholder needs replacing in **CATCH IF YOU CAN**.
 
-Verify each license on the source page before shipping a commercial build. Do not invent license claims.
+Every asset must still pass the art-direction and evaluation criteria in
+[ASSET_USAGE.md](ASSET_USAGE.md). Free and license-compatible is the floor, not
+the bar: a pack that does not fit the realistic Victorian horror look does not
+go into a production environment, however good the price is.
 
-## Included Automatically
+**Verify each licence on its own source page before shipping a commercial
+build. Do not invent licence claims.**
+
+---
+
+## Already in the repository
 
 | Content | Status |
 |---------|--------|
-| **Kenney Furniture Kit (120 FBX)** | Bundled under `Assets/External/Kenney/FurnitureKit/` |
-| **Kenney Mini Dungeon (21 FBX)** | Bundled under `Assets/External/Kenney/MiniDungeon/` |
-| **Quaternius rigged monsters (4 models)** | Bundled under `Assets/External/Quaternius/Monsters/` |
-| Editor integration (`Integrate External Assets`) | Included — builds prefabs + PropDefinitions + ghost rigs |
-| Primitive room / van fallback meshes | Included (runtime + PrefabFactory) |
-| URP-compatible runtime materials | Included (`RuntimeMaterialFactory`) |
-| Custom shaders (Ghost Dissolve, UV Evidence, Spectral Grid, UI Slime, Electronic Glitch) | Included |
+| Quaternius rigged monsters (4 models) | `Assets/External/Quaternius/Monsters/` — every ghost visual |
+| Editor integration (`Integrate External Assets`) | Builds ghost prefabs, animator controllers and the content catalog |
+| Primitive room fallback meshes | Runtime, fenced to Editor and development builds |
+| URP runtime materials | `RuntimeMaterialFactory` |
+| Custom shaders | Ghost Dissolve, UV Evidence, Spectral Grid, UI Slime, Electronic Glitch |
 | Procedural house / ghost / equipment / mission data factories | Included |
-| UI built at runtime | Included (`RuntimeUIFactory`) |
+| UI built at runtime | `RuntimeUIFactory` |
 
-## Manual Downloads (Recommended)
+---
 
-### Kenney.nl
-
-| Asset | URL | Suggested use | Notes |
-|-------|-----|---------------|-------|
-| Furniture Kit | https://kenney.nl/assets/furniture-kit | Beds, tables, chairs, cabinets | CC0 — verify on page |
-| Modular Buildings | https://kenney.nl/assets | Exterior walls / modular blocks | Check exact pack + license |
-| UI Pack | https://kenney.nl/assets | Optional icon bases (recolor to neon green) | Do not keep stock Kenney look; restyle |
+## Sources worth searching
 
 ### Poly Haven
 
 | Asset type | URL | Suggested use |
 |------------|-----|---------------|
-| Furniture / props | https://polyhaven.com/models | Hero props, detailed furniture |
+| Furniture and props | https://polyhaven.com/models | Hero props, detailed furniture |
 | PBR materials | https://polyhaven.com/textures | Walls, wood, concrete, fabric |
-| HDRIs | https://polyhaven.com/hdris | Night exterior lighting only (mobile: low-res) |
+| HDRIs | https://polyhaven.com/hdris | Night exterior lighting only; low-res on mobile |
 
-Poly Haven assets are typically CC0 — confirm per asset.
+Poly Haven assets are typically CC0 — confirm per asset. This is the best fit
+for the project's look: photogrammetry and realistic PBR.
+
+### AmbientCG
+
+| Asset type | URL | Suggested use |
+|------------|-----|---------------|
+| PBR materials | https://ambientcg.com | Plaster, wallpaper, floorboards, tile |
+
+CC0. Useful for the surface materials the modular interior needs.
+
+### Quaternius
+
+| Asset type | URL | Suggested use |
+|------------|-----|---------------|
+| Rigged creatures | https://quaternius.com | Ghost silhouettes |
+
+CC0. Already the source of every ghost mesh in the project. Stylised, so it
+works for entities seen briefly in the dark and not for furniture.
 
 ### Unity Asset Store
 
-Only use packs that are **currently free** and license-compatible for your release. Prefer Kenney / Poly Haven for clarity.
+Only packs that are **currently free** and license-compatible for the release.
+Read the licence text, not the price tag.
 
-## Import Mapping
+---
 
-| Placeholder | Replace with |
-|-------------|--------------|
-| `Prefabs/Props/Bed` | Kenney / Poly Haven bed |
-| `Prefabs/Props/Wardrobe` | Wardrobe / cabinet |
-| `Prefabs/Props/Table`, `Chair` | Dining / desk sets |
-| `Prefabs/Equipment/*` | Custom low-poly gear (keep unique CIYC silhouette) |
-| Wall/floor materials | Poly Haven PBR (max 2048 arch / 1024 props / 512 small) |
+## Import Checklist
 
-After import:
+1. Judge it against the art direction first — this is the step that gets skipped.
+2. Enable ASTC compression for Android and iOS.
+3. Disable mesh Read/Write unless something actually reads the mesh.
+4. Add LOD Groups for large or repeated pieces.
+5. Prefer primitive colliders.
+6. Texture budget: 2048 architecture, 1024 props, 512 small props.
+7. Record the licence in [THIRD_PARTY_ASSETS.md](THIRD_PARTY_ASSETS.md).
+8. Run `Scripts/check_asset_references.sh` — large binaries need a git-lfs rule.
 
-1. Enable ASTC on Android/iOS
-2. Disable Read/Write on meshes when unused
-3. Add LOD Groups for large pieces
-4. Prefer primitive colliders
-5. Re-run **Catch If You Can → Validator**
+---
 
 ## Brand Safety
 
 Do **not** import assets that recreate:
 
-- Other ghost-hunting games' UI, logos, ghost models, map layouts, or equipment silhouettes
-- Copyrighted audio without license
+- another ghost-hunting game's UI, logos, ghost models, map layouts or equipment silhouettes
+- copyrighted audio without a licence
 
-CIYC visual identity: dark anthracite, ectoplasm green `#57FF68`, teal highlights, research-device UI.
+CIYC visual identity: black, white and grey with ectoplasm green `#57FF68` as
+an accent, over realistic Victorian interiors.

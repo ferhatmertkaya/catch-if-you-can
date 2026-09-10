@@ -8,6 +8,10 @@ Always verify license before import and record each file in [AUDIO_ASSET_LICENSE
 
 ## Footsteps (Player) — min **8** variations
 
+> **On the library names below:** kenney.nl appears here only as a source of free CC0
+> *sound effects*. No Kenney art assets are in this project — the furniture and dungeon
+> kits were removed and will not come back. See `ASSET_USAGE.md`.
+
 | Intended filenames | `footstep_wood_walk_01.wav` … `footstep_wood_walk_08.wav` |
 |--------------------|-----------------------------------------------------------|
 | Folder | `Assets/CatchIfYouCan/Audio/Foley/Footsteps/Wood/` |

@@ -73,13 +73,12 @@ PATHS = "Assets/CatchIfYouCan/Scripts/Content/ExternalAssetPaths.cs"
 # ----------------------------------------------------- 1. nothing reaches the old art
 
 # Every .cs, .asset and .prefab under Assets, minus comments, must not name a Kenney content
-# path. The two humanoid meshes the ghosts use are the one allowed exception, and they are
-# allowed by their FULL path, so a folder that merely starts the same way does not slip in.
-GHOST_MESHES = (
-    "Assets/External/Kenney/MiniDungeon/Models/character-human.fbx",
-    "Assets/External/Kenney/MiniDungeon/Models/character-orc.fbx",
-    "Assets/External/Kenney/MiniDungeon/Models",
-)
+# path. There is no exception any more.
+#
+# There used to be one: the two humanoid meshes THE MIMICER and THE STATIC used were the last
+# files of the Mini Dungeon kit still in the project, and they were allowed here by their full
+# path. Both ghosts are Quaternius monsters now and the kit is gone in full, so the allowance
+# is gone with it - an exception nothing needs is an exception that quietly widens.
 KENNEY_CONTENT = re.compile(r"Assets/(?:CatchIfYouCan/Prefabs/(?:Rooms|Props)|External)/Kenney[^\"'\s]*")
 
 offenders = []
@@ -92,20 +91,18 @@ for dirpath, dirnames, filenames in os.walk(os.path.join(root, "Assets")):
         if body is None:
             continue
         for hit in KENNEY_CONTENT.findall(body):
-            if hit in GHOST_MESHES:
-                continue
             offenders.append("%s names %s" % (rel, hit))
 
 if offenders:
     bad("no production file names a Kenney content path", offenders[:10])
 else:
-    ok("no production file names a Kenney content path "
-       "(the two ghost meshes are named by full path and allowed)")
+    ok("no production file names a Kenney content path (no exceptions remain)")
 
 # The deleted folders must actually be gone, not merely unreferenced.
 still_there = [d for d in ("Assets/CatchIfYouCan/Prefabs/Rooms/Kenney",
                            "Assets/CatchIfYouCan/Prefabs/Props/Kenney",
-                           "Assets/External/Kenney/FurnitureKit")
+                           "Assets/External/Kenney/FurnitureKit",
+                           "Assets/External/Kenney")
                if os.path.isdir(os.path.join(root, d))]
 if still_there:
     bad("the Kenney house interior folders are gone", still_there)

@@ -1,6 +1,7 @@
 # Third-Party Assets
 
-V1 of **CATCH IF YOU CAN** includes redistributed CC0 asset packs for furniture, environment pieces, and rigged ghost/monster models.
+**CATCH IF YOU CAN** redistributes a small number of CC0 assets. Every row below is a pack
+that is actually in this repository and actually used.
 
 | Asset Name | Source | URL | License | Author | Where Used |
 |------------|--------|-----|---------|--------|------------|
@@ -9,15 +10,20 @@ V1 of **CATCH IF YOU CAN** includes redistributed CC0 asset packs for furniture,
 | Input System | Unity Package Manager | `com.unity.inputsystem` | Unity Package license | Unity Technologies | Input |
 | AI Navigation | Unity Package Manager | `com.unity.ai.navigation` | Unity Package license | Unity Technologies | Ghost / player pathing |
 | uGUI / TextMeshPro | Unity Package Manager | `com.unity.ugui` / TMP | Unity Package license | Unity Technologies | UI |
-| Kenney Mini Dungeon | OpenGameArt / Kenney.nl | https://kenney.nl/assets/mini-dungeon | CC0 (verify on source page) | Kenney | Ghost humanoid and orc meshes only — the house interior half of this kit was removed |
-| Quaternius Ultimate Monsters (subset) | Quaternius / descent-3d-assets mirror | https://quaternius.com/packs/ultimatemonsters.html | CC0 (verify on source page) | Quaternius | Rigged ghost prefabs (Orc, Demon, BlueDemon, CreepCreature) |
+| Quaternius Ultimate Monsters (subset) | Quaternius / descent-3d-assets mirror | https://quaternius.com/packs/ultimatemonsters.html | CC0 (verify on source page) | Quaternius | Every ghost visual — Orc, Demon, BlueDemon, CreepCreature |
 
-## Imported model files (bundled)
+## Imported model files
 
-- `Assets/External/Kenney/MiniDungeon/Models/character-human.fbx`, `character-orc.fbx` — the
-  two ghost meshes. The other 19 models of that kit, and the whole Furniture Kit, were removed
-  with the rest of the Kenney house interior; a purchased modular pack replaces them.
 - `Assets/External/Quaternius/Monsters/*` — Demon.gltf, Orc.gltf, BlueDemon.gltf, CreepCreature.glb
+
+## Removed
+
+The Kenney Furniture Kit and Mini Dungeon kit are no longer part of this project. Their
+stylised look could not be reconciled with the realistic Victorian horror art direction, so
+they were removed in full — including the last two Mini Dungeon character meshes, which had
+survived as the visuals for THE MIMICER and THE STATIC and are now Quaternius monsters like
+every other ghost. The decision is permanent unless explicitly revisited, and
+`Scripts/check_hq_environment.sh` fails if any file names a Kenney path again.
 
 When you import additional packs, append a row here with:
 
@@ -30,4 +36,5 @@ When you import additional packs, append a row here with:
 
 Do not list assets you have not actually imported.
 
-See also: `ASSETS_NUTZUNG.md` (German usage guide).
+See also: `ASSET_USAGE.md` — art direction, asset structure, naming and the criteria a
+pack has to meet before it is integrated.
