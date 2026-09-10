@@ -1126,7 +1126,7 @@ if [ -f "$SHDR" ]; then
   # inline behind #if UNITY_REVERSED_Z, and a guard that misses them undercounts the very
   # branches it exists to protect.
   opens=$(printf '%s\n' "$occ" | grep -oE '\bcontinue;' | wc -l | tr -d ' ')
-  if printf '%s' "$occ" | grep -qE 'return 1\.0 - blocked \* _OcclusionStrength;' \
+  if printf '%s' "$occ" | grep -qE 'return 1\.0 - blocked \* strength;' \
      && [ "$opens" -ge 4 ]; then
     ok "the occlusion march is switchable and fails open ($opens unsure branches stay lit)"
   else
@@ -1234,6 +1234,36 @@ if [ -f "$TABLE" ]; then
   fi
 else
   fail "the lobby measures an item's resting box without its effect volumes"
+fi
+
+
+# 29. Die Verdeckung wird AUS ausgeliefert, und das ist eine Entscheidung. Der Marsch ist ein
+#     SCREEN-SPACE-Test: er kann nur fragen, was die KAMERA an einer Stelle sieht, und fuer
+#     einen Punkt, der meterweit von der beleuchteten Flaeche in der Luft haengt, ist das oft
+#     eine naehere Flaeche, die mit der Linse nichts zu tun hat - ein falscher Verdecker, der
+#     einen Punkt loescht, den es geben muesste. Aufgedreht kann er das ganze Feld zudecken,
+#     und ein unsichtbarer DOTS-Projektor ist der aelteste Fehler dieses Geraets.
+if [ -f "$PROJ" ] && printf '%s' "$pcode" | grep -qE 'private float occlusionStrength = 0f'; then
+  ok "die Verdeckung ist voreingestellt AUS, weil ein Screen-Space-Test falsch verdecken kann"
+else
+  fail "die Verdeckung ist voreingestellt AUS, weil ein Screen-Space-Test falsch verdecken kann"
+fi
+
+# 30. Und die Stufendiagnose steht auf 0 - in C# UND im Shader. Eine davon eingeschaltet
+#     ausgeliefert malt den Raum magenta oder flach gruen. Ein Werkzeug, das laeuft, waehrend
+#     jemand spielt, diagnostiziert nicht mehr, sondern erzeugt (Fehler 23).
+dbg_cs=0
+dbg_sh=0
+if [ -f "$PROJ" ] && printf '%s' "$pcode" | grep -qE 'Range\(0, 6\)\] private int debugStage = 0'; then
+  dbg_cs=1
+fi
+if [ -f "$SHDR" ] && printf '%s' "$scode" | grep -qE '_DebugMode \("Debug Stage \(0 = off\)", Range\(0, 6\)\) = 0'; then
+  dbg_sh=1
+fi
+if [ "$dbg_cs" -eq 1 ] && [ "$dbg_sh" -eq 1 ]; then
+  ok "die Diagnosestufe steht in C# UND im Shader auf 0"
+else
+  fail "die Diagnosestufe steht in C# UND im Shader auf 0 (cs=$dbg_cs shader=$dbg_sh)"
 fi
 
 printf '\npassed: %s   failed: %s\n\n' "$passed" "$failed"

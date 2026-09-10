@@ -90,16 +90,29 @@ namespace CatchIfYouCan.Equipment
 
         [Header("Occlusion")]
         [Tooltip("How completely a wall between the lens and a surface takes that surface's " +
-                 "dots away. The test is a screen-space march and is built to fail OPEN: every " +
-                 "way it can be unsure leaves the dot lit, never the other way round. 0 removes " +
-                 "it entirely and costs nothing - use that if it ever misbehaves, because a " +
-                 "projector with too few shadows is a far smaller bug than an invisible one.")]
-        [SerializeField, Range(0f, 1f)] private float occlusionStrength = 1f;
+                 "dots away. OFF by default: the test is a screen-space march, and a screen-" +
+                 "space test can only ask what the CAMERA sees at a point. For a probe hanging " +
+                 "in mid-air metres from the lit surface that is often some nearer surface with " +
+                 "nothing to do with the lens - a false occluder, which removes a dot that " +
+                 "should be there. Turned up it can blanket the whole field, and a projector " +
+                 "with too few shadows is a far smaller bug than an invisible one.")]
+        [SerializeField, Range(0f, 1f)] private float occlusionStrength = 0f;
 
         [Tooltip("How far in front of a marched point a surface has to be before it counts as " +
                  "blocking, in metres. Too small and a surface shadows itself; too large and " +
                  "thin occluders are missed. Missing one is the safe direction.")]
         [SerializeField, Range(0.005f, 0.5f)] private float occlusionBias = 0.05f;
+
+        [Header("Diagnosis")]
+        [Tooltip("A staged bisect for 'it says it is running and nothing is on screen'. " +
+                 "0 = the game. 1 = magenta over the whole volume (is the pass running at " +
+                 "all?). 2 = the reconstructed world position as colour (is the depth texture " +
+                 "right?). 3 = solid green within range (is the lens where the shader thinks?). " +
+                 "4 = the angular grid with no dot test (is the mapping sane?). 5 = the finished " +
+                 "dots with occlusion forced OFF. 6 = the same with it forced fully ON - dots at " +
+                 "5 and none at 6 is the occlusion eating its own field. Ships at 0, and a guard " +
+                 "keeps it there.")]
+        [SerializeField, Range(0, 6)] private int debugStage = 0;
 
         [Header("Emitter")]
         [Tooltip("Where the lens sits relative to the device's pivot, in its own space. +Y is " +
@@ -133,6 +146,7 @@ namespace CatchIfYouCan.Equipment
         private static readonly int GlowStrengthId = Shader.PropertyToID("_GlowStrength");
         private static readonly int OcclusionId = Shader.PropertyToID("_OcclusionStrength");
         private static readonly int OcclusionBiasId = Shader.PropertyToID("_OcclusionBias");
+        private static readonly int DebugModeId = Shader.PropertyToID("_DebugMode");
         private static readonly int OriginId = Shader.PropertyToID("_OriginWS");
         private static readonly int AxisXId = Shader.PropertyToID("_AxisXWS");
         private static readonly int AxisYId = Shader.PropertyToID("_AxisYWS");
@@ -384,6 +398,7 @@ namespace CatchIfYouCan.Equipment
             _block.SetFloat(GlowStrengthId, glowStrength);
             _block.SetFloat(OcclusionId, occlusionStrength);
             _block.SetFloat(OcclusionBiasId, occlusionBias);
+            _block.SetFloat(DebugModeId, debugStage);
 
             _renderer.SetPropertyBlock(_block);
         }
@@ -434,7 +449,46 @@ namespace CatchIfYouCan.Equipment
                 " occlusion=" + occlusionStrength.ToString("F2") +
                 " material=" + (_renderer != null && _renderer.sharedMaterial != null
                     ? _renderer.sharedMaterial.name : "NULL") +
-                " renderer=" + (_renderer != null && _renderer.enabled);
+                " renderer=" + (_renderer != null && _renderer.enabled) +
+                (debugStage > 0 ? "  DEBUG STAGE " + debugStage : string.Empty);
+
+            // Everything a person would otherwise have to pause the game and click through, in
+            // one line at the moment it is switched on. "It says PROJECTING and there is nothing
+            // on screen" has half a dozen causes that all look identical from the player's seat -
+            // a disabled renderer, a culled volume, a material that did not resolve, a shader the
+            // platform refuses, a volume the size of a coin - and each of them is a different
+            // afternoon. None of them can hide from this.
+            string volume = "[CIYC][DOTS][VOLUME]";
+            if (_renderer == null)
+            {
+                volume += " renderer=NULL";
+            }
+            else
+            {
+                Material mat = _renderer.sharedMaterial;
+                Bounds b = _renderer.bounds;
+                volume +=
+                    " go=" + _renderer.gameObject.name +
+                    " activeInHierarchy=" + _renderer.gameObject.activeInHierarchy +
+                    " rendererEnabled=" + _renderer.enabled +
+                    " layer=" + _renderer.gameObject.layer +
+                    " worldScale=" + _renderer.transform.lossyScale.ToString("F3") +
+                    " boundsCenter=" + b.center.ToString("F2") +
+                    " boundsSize=" + b.size.ToString("F2") +
+                    " mesh=" + (_filter != null && _filter.sharedMesh != null
+                        ? _filter.sharedMesh.name + "/" + _filter.sharedMesh.vertexCount + "v"
+                        : "NULL") +
+                    // The NAME answers "shared asset or per-instance copy": Unity suffixes an
+                    // instantiated material with " (Instance)". Reading an id would say the same
+                    // thing through an API this project cannot typecheck offline.
+                    " material=" + (mat != null ? mat.name : "NULL") +
+                    " shader=" + (mat != null && mat.shader != null ? mat.shader.name : "NONE") +
+                    " shaderSupported=" + (mat != null && mat.shader != null && mat.shader.isSupported) +
+                    " occlusion=" + occlusionStrength.ToString("F2") +
+                    " debugStage=" + debugStage;
+            }
+
+            Core.CIYCLog.Info(volume);
 
             bool broken = _renderer == null || !_renderer.enabled ||
                           _renderer.sharedMaterial == null;

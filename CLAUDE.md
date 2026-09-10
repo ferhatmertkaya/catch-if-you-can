@@ -168,7 +168,20 @@ place that number lives; everything else derives it.
   is "too weak" on some platforms and not others; and a wall between the lens and a surface
   takes its dots away through a screen-space march that FAILS OPEN - all four unsure branches
   stay lit, one number switches it off, and it sits below the dot mask so only the pixels that
-  carry a dot pay for it. 92 checks.
+  carry a dot pay for it - and it ships OFF, because a screen-space test can only ask what
+  the CAMERA sees at a point, and for a probe hanging in mid-air metres from the lit
+  surface that is often a nearer surface with nothing to do with the lens: a FALSE
+  occluder, which removes a dot that should be there. Contact-shadow techniques keep
+  their rays centimetres long for that reason; this one is as long as the range, so
+  turned up it can blanket the field, and an invisible projector is this device's oldest
+  bug. Real per-dot occlusion needs a cube shadow map from the lens, which is neither
+  affordable on a phone nor verifiable without an editor. And there is a STAGED bisect
+  behind one number - magenta volume, reconstructed world position, solid green in range,
+  the bare angular grid, dots without occlusion, dots with it forced on - because six
+  explanations for "it says PROJECTING and the screen is black" need six different
+  fixes, and one play session should name the stage instead of one session per guess. It
+  ships at 0 in the shader AND in the C#: a diagnostic that runs while somebody plays
+  does not diagnose, it creates (mistake 23). 94 checks.
 - `Scripts/check_multiplayer_architecture.sh` — the deterministic assembly stays
   engine-free, gameplay never reaches a Relay API, remote players never read
   local input, ghost decisions stay host-only, online capacity has exactly one
