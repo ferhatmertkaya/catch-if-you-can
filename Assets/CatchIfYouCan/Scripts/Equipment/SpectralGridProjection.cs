@@ -132,6 +132,7 @@ namespace CatchIfYouCan.Equipment
         private Mesh _volume;
         private float _builtRange = -1f;
         private bool _running;
+        private bool _propertiesDirty;
 
         private static readonly int DotColorId = Shader.PropertyToID("_DotColor");
         private static readonly int DensityId = Shader.PropertyToID("_Density");
@@ -206,6 +207,7 @@ namespace CatchIfYouCan.Equipment
 
             if (running)
             {
+                _propertiesDirty = false;
                 PushProperties();
                 PushOrigin();
 #if UNITY_EDITOR || DEVELOPMENT_BUILD
@@ -228,9 +230,36 @@ namespace CatchIfYouCan.Equipment
         /// </summary>
         private void LateUpdate()
         {
-            if (_running)
-                PushOrigin();
+            if (!_running)
+                return;
+
+            // The tuning values were pushed ONCE, at switch-on, and never again. Everything
+            // below the lens - density, dot size, intensity, the occlusion dial, the debug
+            // stage - therefore sat in the renderer at whatever it was when G was pressed, and
+            // an Inspector edit during Play changed a number that reached nothing. That is not
+            // a small thing: it is why a six-stage bisect came back with all six stages
+            // identical. They were all stage 0. A control that cannot move what it names is
+            // worse than no control, because it produces evidence.
+            if (_propertiesDirty)
+            {
+                _propertiesDirty = false;
+                PushProperties();
+            }
+
+            PushOrigin();
         }
+
+#if UNITY_EDITOR
+        /// <summary>
+        /// An Inspector edit marks the values stale rather than pushing them here: OnValidate
+        /// can run before <see cref="EnsureVolume"/> has made a renderer, and it can run outside
+        /// Play. The next frame that is actually running does the work.
+        /// </summary>
+        private void OnValidate()
+        {
+            _propertiesDirty = true;
+        }
+#endif
 
         /// <summary>
         /// Builds the volume once, and adopts the one a CLONE already carries.
@@ -489,6 +518,38 @@ namespace CatchIfYouCan.Equipment
             }
 
             Core.CIYCLog.Info(volume);
+
+            // Whether the camera stands INSIDE the box decides which faces of it are drawn, and
+            // that is the one fact nobody can read off a screenshot of an invisible effect. The
+            // pass culls FRONT faces, which is correct both ways round: from inside, the
+            // surfaces facing the viewer are the box's back faces, so they survive and cover the
+            // screen; from outside, the near faces are culled and the far ones cover the box's
+            // silhouette exactly once. Culling BACK would draw nothing at all from inside, which
+            // is why this line exists rather than an argument about it.
+            Camera cam = Camera.main;
+            if (cam == null || _renderer == null)
+            {
+                Core.CIYCLog.Info("[CIYC][DOTS][CAMERA] no main camera or no renderer to compare");
+            }
+            else
+            {
+                Vector3 eye = cam.transform.position;
+                bool inside = _renderer.bounds.Contains(eye);
+                bool masked = (cam.cullingMask & (1 << _renderer.gameObject.layer)) != 0;
+                Core.CIYCLog.Info(
+                    "[CIYC][DOTS][CAMERA] camera=" + cam.name +
+                    " position=" + eye.ToString("F2") +
+                    " volumeContainsCamera=" + inside +
+                    " cameraMaskIncludesVolume=" + masked +
+                    " cullMode=Front (correct " + (inside ? "for a camera inside" : "for a camera outside") + ")");
+
+                if (!masked)
+                {
+                    Core.CIYCLog.Error("[CIYC][DOTS][CAMERA] the camera's culling mask EXCLUDES " +
+                                       "the volume's layer, so this pass never runs for it. " +
+                                       "Nothing downstream of here can be the reason.");
+                }
+            }
 
             bool broken = _renderer == null || !_renderer.enabled ||
                           _renderer.sharedMaterial == null;

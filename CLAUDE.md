@@ -181,7 +181,13 @@ place that number lives; everything else derives it.
   explanations for "it says PROJECTING and the screen is black" need six different
   fixes, and one play session should name the stage instead of one session per guess. It
   ships at 0 in the shader AND in the C#: a diagnostic that runs while somebody plays
-  does not diagnose, it creates (mistake 23). 94 checks.
+  does not diagnose, it creates (mistake 23). And the tuning values REACH the renderer: they
+  were pushed once at switch-on and never again, so an Inspector edit during Play moved a
+  number that arrived nowhere - which is how a six-stage bisect came back with six
+  identical stages, all of them stage 0. A control that cannot move what it names is worse
+  than no control, because it manufactures evidence. Switch-on also reports whether the
+  CAMERA stands inside the volume, because that decides which faces of the box are drawn
+  and it is the one fact a screenshot of an invisible effect cannot show. 97 checks.
 - `Scripts/check_multiplayer_architecture.sh` — the deterministic assembly stays
   engine-free, gameplay never reaches a Relay API, remote players never read
   local input, ghost decisions stay host-only, online capacity has exactly one
@@ -1149,6 +1155,28 @@ Repeating one of these is the most likely way to break something.
    verlorenen Forks" zu und baute einen Cache mit Wiederholungen dagegen. Das war eine
    Behauptung ueber Code, die niemand nachgemessen hatte (Fehler 33) - die Zeile im Log nennt
    den Mechanismus, und der ist weder Last noch Zufall, sondern SIGPIPE.
+
+44. **Ein Regler, der Beweise erzeugt hat, statt etwas zu bewegen.** Fuer "es sagt PROJECTING und
+   der Bildschirm bleibt schwarz" wurde eine sechsstufige Diagnose in den Shader gebaut: Stufe 1
+   magenta ueber das ganze Volumen, dann Tiefenrekonstruktion, Reichweite, Winkelraster, Punkte
+   ohne und mit Verdeckung. Die Stufe wird ueber ein Inspector-Feld gewaehlt.
+   Der Nutzer hat alle sechs Stufen durchgestellt. **Alle sechs waren unsichtbar.** Das las sich
+   wie ein vernichtender Befund - nicht einmal ein hartes `return half4(1,0,1,1)` in der ersten
+   Zeile des Fragment-Shaders kam an, also musste der Pass selbst tot sein: Culling, ColorMask,
+   Pass-Tags, Metal-Kompilierung. Sechs neue Verdaechtige.
+   Es war keiner davon. `PushProperties()` lief an genau zwei Stellen - `Configure()` und
+   `SetRunning(true)` -, und `LateUpdate` schob nur Linse und Achsen nach. Eine Aenderung im
+   Inspector waehrend des Spiels erreichte den Renderer also NIE. Alle sechs Stufen waren Stufe
+   0. Der eigene Log sagte es sogar hin: `debugStage=0`, gedruckt beim Einschalten, und nichts
+   danach hat den Wert je wieder geschrieben. Nur ein G aus/an haette es getan - und die Batterie
+   (75 Einheiten bei 0,85/s = 88 Sekunden) war vorher leer.
+   Die Lehre ist nicht "Diagnosen sind gefaehrlich". Sie ist: ein Diagnosewerkzeug ist selbst
+   Code und braucht denselben Beweis wie das, was es untersucht. Dieses hier hat nicht nichts
+   getan - es hat SECHS FALSCHE BEFUNDE geliefert, jeder davon plausibel, jeder in eine andere
+   Richtung. Ein Regler, der nicht bewegen kann, was er benennt, ist schlimmer als gar keiner,
+   weil man ihm glaubt. Verwandt mit Fehler 23 (das Werkzeug wurde zum Fehler) und mit 43 (der
+   Waechter log ueber das Projekt) - dreimal jetzt hat die Messvorrichtung gelogen, nicht das
+   Gemessene.
 
 ## Unity Editor availability
 

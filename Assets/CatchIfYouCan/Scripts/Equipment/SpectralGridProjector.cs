@@ -209,6 +209,36 @@ namespace CatchIfYouCan.Equipment
             _projection?.SetRunning(false);
         }
 
+        [Header("Development")]
+        [Tooltip("Suspends this device's battery drain so a visual can be looked at for longer " +
+                 "than it lasts. The definition gives it 75 units at 0.85 per second, which is " +
+                 "88 seconds of running - long enough to play with and far too short to step " +
+                 "through six diagnostic stages, which is how a bisect ran out of power halfway. " +
+                 "Read only in the editor and in a development build; a shipping build drains " +
+                 "normally whatever this says, and the battery architecture is untouched.")]
+        [SerializeField] private bool developmentInfiniteBattery;
+
+        /// <summary>
+        /// The battery, minus the development escape hatch.
+        ///
+        /// <para>
+        /// Fenced rather than removed, and fenced on THIS device rather than in
+        /// <see cref="EquipmentBase"/>: the drain is a gameplay decision that belongs to every
+        /// other item as much as this one, and 88 seconds may well be the right number for a
+        /// haunting. What it is not is enough time to look at a projection, change a setting and
+        /// look again. Whether the gameplay duration should change is a design call and is left
+        /// alone here.
+        /// </para>
+        /// </summary>
+        protected override void DrainBattery()
+        {
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+            if (developmentInfiniteBattery)
+                return;
+#endif
+            base.DrainBattery();
+        }
+
         private SpectralGridProjection _projection;
         private Transform _head;
         private float _scanTimer;

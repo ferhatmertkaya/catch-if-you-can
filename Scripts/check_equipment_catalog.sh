@@ -1266,6 +1266,46 @@ else
   fail "die Diagnosestufe steht in C# UND im Shader auf 0 (cs=$dbg_cs shader=$dbg_sh)"
 fi
 
+
+# 31. Ein Regler, der erreicht, was er benennt. Die Werte wurden EINMAL gepusht, beim
+#     Einschalten, und nie wieder: eine Aenderung im Inspector waehrend des Spiels landete
+#     nirgends. Das ist nicht klein - es ist der Grund, warum eine sechsstufige Diagnose mit
+#     sechs identischen Stufen zurueckkam. Alle sechs waren Stufe 0. Ein Regler, der das nicht
+#     bewegen kann, was er benennt, ist schlimmer als keiner, weil er BEWEISE erzeugt.
+if [ -f "$PROJ" ] && printf '%s' "$pcode" | grep -qE '_propertiesDirty = true' \
+   && printf '%s' "$pcode" | sed -n '/private void LateUpdate/,/^        }$/p' \
+        | grep -qE 'PushProperties\(\)'; then
+  ok "eine Aenderung im Inspector erreicht den lebenden Renderer"
+else
+  fail "eine Aenderung im Inspector erreicht den lebenden Renderer"
+fi
+
+# 32. Und beim Einschalten wird gemeldet, ob die Kamera IM Volumen steht. Davon haengt ab,
+#     welche Seiten des Kastens gezeichnet werden, und es ist die eine Tatsache, die man einem
+#     Screenshot von etwas Unsichtbarem nicht ansieht. Lieber eine Zeile als ein Streit.
+if [ -f "$PROJ" ] && printf '%s' "$pcode" | grep -qE 'volumeContainsCamera=' \
+   && printf '%s' "$pcode" | grep -qE 'cameraMaskIncludesVolume='; then
+  ok "beim Einschalten wird gemeldet, ob die Kamera im Volumen steht"
+else
+  fail "beim Einschalten wird gemeldet, ob die Kamera im Volumen steht"
+fi
+
+# 33. Die Dauerbatterie ist eine ENTWICKLERhilfe und aus einem Auslieferungsbuild gezaeunt.
+#     Die Batteriearchitektur selbst bleibt unangetastet: gezaeunt wird auf DIESEM Geraet,
+#     nicht in EquipmentBase.
+#     Der Zaun wird IN der Methode gesucht, nicht irgendwo in der Datei: dieselbe Zeile steht
+#     dort noch dreimal um Log-Ausgaben herum, und ein Waechter, den ein unbeteiligter Treffer
+#     zufriedenstellt, ist Fehler 8 in neuer Kleidung - beim ersten Zahntest blieb er gruen,
+#     nachdem der Zaun um genau diese Methode entfernt worden war.
+drain=$(printf '%s\n' "$sgpcode" | sed -n '/protected override void DrainBattery/,/^        }$/p')
+if [ -f "$SGP" ] && printf '%s' "$drain" | grep -qE 'developmentInfiniteBattery' \
+   && printf '%s' "$drain" | grep -qE '#if UNITY_EDITOR \|\| DEVELOPMENT_BUILD' \
+   && printf '%s' "$drain" | grep -qE 'base\.DrainBattery\(\)'; then
+  ok "die Dauerbatterie ist Entwicklerhilfe und aus dem Auslieferungsbuild gezaeunt"
+else
+  fail "die Dauerbatterie ist Entwicklerhilfe und aus dem Auslieferungsbuild gezaeunt"
+fi
+
 printf '\npassed: %s   failed: %s\n\n' "$passed" "$failed"
 
 if [ "$failed" -gt 0 ]; then
