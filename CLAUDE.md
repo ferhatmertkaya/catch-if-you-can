@@ -97,7 +97,12 @@ place that number lives; everything else derives it.
   slot sits outside the three-slot array while the selected index is validated against
   four, so indexing the array with it threw on every torch selection - after the assign
   and after the equip, so the exception escaped through AddItem and abandoned the rest
-  of the pickup. 50 checks.
+  of the pickup, and the grid projector is a WALL device rather than the family default
+  of floor-and-wall - laid on the floor it points its lens at the ceiling - declared on
+  the device rather than in an Inspector value somebody must set per instance, with the
+  placement query actually reading it; its display name is "DOTS Projector" while the id
+  stays spectral_grid, because the id reaches the evidence contract and the name does
+  not. 52 checks.
 - `Scripts/check_multiplayer_architecture.sh` — the deterministic assembly stays
   engine-free, gameplay never reaches a Relay API, remote players never read
   local input, ghost decisions stay host-only, online capacity has exactly one

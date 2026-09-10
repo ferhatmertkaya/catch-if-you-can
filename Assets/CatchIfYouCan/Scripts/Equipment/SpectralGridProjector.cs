@@ -119,6 +119,18 @@ namespace CatchIfYouCan.Equipment
         /// That is what makes a wall-mounted projector throw into the room without anything
         /// having to work out which way "away from the wall" is.
         /// </summary>
+        /// <summary>
+        /// A wall device, not a floor device.
+        ///
+        /// <para>
+        /// <see cref="PlaceableEquipmentBase"/> defaults to floor AND wall, which is right for
+        /// the video camera and the relic and wrong for this: a grid projector laid on the
+        /// floor points its lens at the ceiling and lights nothing the player walks through.
+        /// Narrowed here rather than in the base, because it is a fact about THIS device.
+        /// </para>
+        /// </summary>
+        protected override PlacementSurface? SurfaceOverride => PlacementSurface.Wall;
+
         protected override void BuildCarried()
         {
             if (CarriedRoot != null)

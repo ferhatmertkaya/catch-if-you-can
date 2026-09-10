@@ -49,7 +49,19 @@ namespace CatchIfYouCan.Equipment
         public bool HasValidCandidate => _candidate.IsValid;
 
         /// <summary>Which surfaces this item accepts. Read by the lab and the validator.</summary>
-        public PlacementSurface AllowedSurfaces => allowedSurfaces;
+        /// <summary>
+        /// Which surfaces this item will sit on, as the item itself sees it.
+        ///
+        /// <para>
+        /// The serialized field is the default for the family; a subclass that is only ever a
+        /// wall device or only ever a floor device says so by overriding this, so the fact
+        /// lives with the device rather than in an Inspector value somebody has to remember to
+        /// set on every instance. Null means "use the field".
+        /// </para>
+        /// </summary>
+        protected virtual PlacementSurface? SurfaceOverride => null;
+
+        public PlacementSurface AllowedSurfaces => SurfaceOverride ?? allowedSurfaces;
 
         /// <summary>
         /// Aim, commit, or back out. One control that reads as three, because at any moment
@@ -200,7 +212,7 @@ namespace CatchIfYouCan.Equipment
                 Origin = view.position,
                 Direction = view.forward,
                 MaxRange = placementRange,
-                Allowed = allowedSurfaces,
+                Allowed = AllowedSurfaces,
                 SurfaceMask = placementMask,
                 HalfExtents = clearanceHalfExtents,
                 SurfaceSkin = 0.01f,

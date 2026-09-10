@@ -493,6 +493,32 @@ done
   || fail "every ApplyModel call names a model and a material that exist" \
        "found only $checked_paths call(s); the three finished items are the flashlight, the UV light and the projector"
 
+# ---- der Projektor ist ein WANDgeraet, und heisst wie er heisst ----------------------------
+#
+# PlaceableEquipmentBase steht auf Boden UND Wand, was fuer die Videokamera und das Relikt
+# richtig ist und fuer dieses Geraet falsch: ein Gitterprojektor auf dem Boden zeigt seine
+# Linse an die Decke und beleuchtet nichts, wo der Spieler durchgeht. Die Einschraenkung
+# gehoert zum GERAET, nicht in einen Inspector-Wert, den man auf jeder Instanz setzen muss.
+SGP="Assets/CatchIfYouCan/Scripts/Equipment/SpectralGridProjector.cs"
+PEB="Assets/CatchIfYouCan/Scripts/Equipment/PlaceableEquipmentBase.cs"
+if [ -f "$SGP" ] && [ -f "$PEB" ] &&
+   sed 's://.*::' "$SGP" | grep -qE 'SurfaceOverride => PlacementSurface\.Wall' &&
+   sed 's://.*::' "$PEB" | grep -qE 'Allowed = AllowedSurfaces'; then
+  ok "der Projektor wird nur an Waende gesetzt, und die Abfrage liest das"
+else
+  fail "der Projektor wird nur an Waende gesetzt, und die Abfrage liest das"
+  printf '        eine Ueberschreibung, die die Platzierungsabfrage nicht liest, aendert nichts\n'
+fi
+
+# Die Id bleibt spectral_grid - sie haengt an EvidenceAuthority, EvidenceValidator,
+# GhostEvidenceManager und der Auswertung -, der ANZEIGENAME ist DOTS Projector.
+if sed 's://.*::' "$FACTORY_DEF" | grep -qE 'Create\("spectral_grid", "DOTS Projector"'; then
+  ok "der Anzeigename ist DOTS Projector, die Id bleibt spectral_grid"
+else
+  fail "der Anzeigename ist DOTS Projector, die Id bleibt spectral_grid"
+  printf '        die Id umzubenennen fasst den Beweiskontrakt an; der Name nicht\n'
+fi
+
 # ---- der Fackelplatz liegt AUSSERHALB des Dreierfeldes -------------------------------------
 #
 # _slots fasst die drei Ermittlungsplaetze. Der ausgewaehlte Index wird gegen

@@ -100,7 +100,7 @@ namespace CatchIfYouCan.Equipment
                     maxBattery: 60f,
                     canPlace: false,
                     description: "Capture photographic evidence and ghost manifestations."),
-                Create("spectral_grid", "Spectral Grid Projector", EquipmentCategory.Detection, 300, 2,
+                Create("spectral_grid", "DOTS Projector", EquipmentCategory.Detection, 300, 2,
                     batteryUsage: 0.85f,
                     maxBattery: 75f,
                     canPlace: true,
