@@ -855,64 +855,60 @@ fi
 
 # ------------------------------------------------------- die Projektion des DOTS-Projektors
 #
-# Die Projektion ist projiziertes LICHT: ein Spot mit einer Punkt-Maske als Cookie. Die Punkte
-# gehoeren den Flaechen, auf die sie fallen, laufen ueber eine Ecke mit der Perspektive mit und
-# bleiben liegen, wenn der Spieler geht - und das kostet ein Licht und eine Textur statt eines
-# GameObjects je Punkt.
+# Die Projektion ist ein WINKELRASTER um einen Ursprung. Ein Shader rekonstruiert je Pixel die
+# Weltposition der Flaeche DAHINTER aus dem Tiefenpuffer, nimmt die Richtung von der Linse zu
+# diesem Punkt und fragt, ob sie auf einen Punkt eines Kugelrasters faellt. Die Punkte gehoeren
+# also den Flaechen, auf die sie fallen - Boden, Wand, Decke, Moebel -, und im Szenengraph gibt
+# es keinen einzigen Punkt: kein GameObject, kein Partikel, kein Licht je Punkt.
 #
-# Davor stand hier ein Kegel-Mesh mit dem Shader CatchIfYouCan/SpectralGrid. Der ist KEIN
-# Volumen voller Punkte in der Luft: er rekonstruiert je Pixel die Weltposition der Flaeche
-# dahinter aus dem Tiefenpuffer und rechnet die Punkte dort - eine richtige Projektion, bei der
-# die Verdeckung sogar geschenkt ist. Warum er nichts gezeigt hat, ist NICHT geklaert; die
-# Tiefentextur, die er braucht, ist eingeschaltet (CIYC_URP.asset, m_RequireDepthTexture: 1),
-# und seine +Y-Wurfachse passt zum Rest des Geraets. Er ist ersetzt und nicht danebengestellt
-# worden, weil zwei Dinge, die dieselben Punkte zeichnen, der Weg zu zwei Taschenlampen sind.
+# Zwei Vorgaenger waren geformt wie der Emitter statt wie der Raum: ein Spot mit 70 Grad, also
+# eine Taschenlampe, und danach fuenf breitere Spots, also eine Taschenlampe mit Begleitung.
+# Keiner davon konnte eine Kugel abdecken, weil ein Kegel das nicht kann. Und beide brauchten
+# ein LICHT, das den Raum aufhellt; dieses hier addiert nur dort etwas, wo ein Punkt ist.
 #
 # Jede Zeile hier deckt einen Zustand ab, in dem der Projektor eingeschaltet ist und trotzdem
 # nichts zu sehen ist - und die sehen alle gleich aus.
 
 PROJ="Assets/CatchIfYouCan/Scripts/Equipment/SpectralGridProjection.cs"
-GEN="Assets/CatchIfYouCan/Editor/DOTS/DotsCookieGenerator.cs"
+SHDR="Assets/CatchIfYouCan/Shaders/SpectralGrid.shader"
 
 if [ ! -f "$PROJ" ]; then
   fail "SpectralGridProjection.cs existiert"
 else
   pcode=$(sed 's://.*::' "$PROJ" | grep -v '^[[:space:]]*\*')
 
-  # 1. Es gibt ueberhaupt ein Licht. Ohne das ist der Rest dieser Klasse Deko im Nebel.
-  if printf '%s' "$pcode" | grep -qE 'AddComponent<Light>\(\)'; then
-    ok "der Projektor baut ein echtes Licht"
+  # 1. Es gibt ueberhaupt etwas, das zeichnet.
+  if printf '%s' "$pcode" | grep -qE 'AddComponent<MeshRenderer>\(\)'; then
+    ok "der Projektor baut ein Zeichenvolumen"
   else
-    fail "der Projektor baut ein echtes Licht - ein Kegel-Mesh wirft nichts auf eine Wand"
+    fail "der Projektor baut ein Zeichenvolumen"
   fi
 
-  # 2. Und zwar einen Spot. Ein Punktlicht ist eine Kugel, und das Geraet haengt an einer
-  #    Wand: die halbe Kugel steckt dann im Mauerwerk.
-  if printf '%s' "$pcode" | grep -qE '\.type[[:space:]]*=[[:space:]]*LightType\.Spot'; then
-    ok "das Projektionslicht ist ein Spot"
+  # 2. Und es ist KEIN Licht mehr. Ein gruenes Licht im Raum ist genau die Flut, die die
+  #    Referenz nicht zeigt: ein dunkler Raum mit hellen Punkten darin.
+  if printf '%s' "$pcode" | grep -qE 'AddComponent<Light>|LightType\.|\.intensity[[:space:]]*=[[:space:]]*lightIntensity'; then
+    fail "die Projektion flutet den Raum nicht mit einem Licht"
   else
-    fail "das Projektionslicht ist ein Spot - eine Kugel an einer Wand leuchtet zur Haelfte hinein"
+    ok "die Projektion flutet den Raum nicht mit einem Licht"
   fi
 
-  # 3. Mit Cookie. Ein Spot ohne Cookie ist ein gruener Fleck, und das liest sich als
-  #    kaputtes Punktmuster statt als fehlende Textur.
-  if printf '%s' "$pcode" | grep -qE '\.cookie[[:space:]]*=[[:space:]]*LoadCookie\(\)'; then
-    ok "dem Projektionslicht wird die Cookie-Maske zugewiesen"
+  # 3. Der Ursprung ist ein eigener Transform am Geraet - nicht die Kamera, nicht der Spieler,
+  #    nicht der Weltursprung.
+  if printf '%s' "$pcode" | grep -qE 'OriginChildName = "ProjectionOrigin"' \
+     && printf '%s' "$pcode" | grep -qE 'ProjectionOrigin =>'; then
+    ok "die Punkte kommen aus einem eigenen Linsen-Transform am Geraet"
   else
-    fail "dem Projektionslicht wird die Cookie-Maske zugewiesen"
+    fail "die Punkte kommen aus einem eigenen Linsen-Transform am Geraet"
   fi
 
-  # 4. Der Cookie-Pfad zeigt auf eine Datei, die es gibt (Fehler 3 und 10). Ein Resources-Pfad
-  #    ins Leere gibt null zurueck und sagt nichts.
-  cookiepath=$(printf '%s' "$pcode" \
-    | grep -oE 'CookieResourcePath[[:space:]]*=[[:space:]]*"[^"]+"' \
-    | sed 's/.*"\(.*\)"/\1/')
-  if [ -z "$cookiepath" ]; then
-    fail "SpectralGridProjection nennt einen Cookie-Pfad"
-  elif [ -f "Assets/CatchIfYouCan/Resources/$cookiepath.png" ]; then
-    ok "der Cookie-Pfad '$cookiepath' loest auf eine vorhandene Datei auf"
+  # 4. Und er wird in WELTKOORDINATEN an den Shader gegeben. Die Fassung davor rechnete im
+  #    Objektraum und zeigte nichts, aus einem nie geklaerten Grund (Fehler 33). Ueber ein
+  #    Uniform kann keine Verschachtelung und keine geerbte Skalierung das Ergebnis kippen.
+  if printf '%s' "$pcode" | grep -qE '_OriginWS' \
+     && printf '%s' "$pcode" | grep -qE '_AxisYWS'; then
+    ok "Linse und Achsen gehen in Weltkoordinaten an den Shader"
   else
-    fail "der Cookie-Pfad '$cookiepath' loest auf keine Datei unter Resources auf"
+    fail "Linse und Achsen gehen in Weltkoordinaten an den Shader"
   fi
 
   # 5. Ein misslungener Zustand wird als ERROR gemeldet, nicht als Info. "0 von 0" in einer
@@ -924,198 +920,127 @@ else
     fail "ein fehlgeschlagener Projektionszustand wird als Fehler gemeldet"
   fi
 
-  # 6. Das Cluster entsteht einmal, nicht je Frame - und hat eine FESTE Groesse.
-  if printf '%s' "$pcode" | grep -qE '_lights != null && _lights\.Length == LightCount'; then
-    ok "das Cluster wird einmal gebaut, nicht je Frame"
+  # 6. Das Volumen entsteht einmal, nicht je Frame.
+  if printf '%s' "$pcode" | grep -qE 'Mathf\.Approximately\(_builtRange, projectionRange\)'; then
+    ok "das Volumen wird einmal gebaut, nicht je Frame"
   else
-    fail "das Cluster wird einmal gebaut, nicht je Frame"
+    fail "das Volumen wird einmal gebaut, nicht je Frame"
   fi
 
-  # 7. Ausgeschaltet ist ausgeschaltet. Ein Licht, das nach SetRunning(false) weiterbrennt,
-  #    ist ein Projektor, den man nicht ausmachen kann - und hier sind es fuenf.
-  if printf '%s' "$pcode" | grep -qE '_lights\[i\]\.enabled[[:space:]]*=[[:space:]]*running'; then
-    ok "SetRunning schaltet jedes Licht des Clusters mit"
+  # 7. Ausgeschaltet ist ausgeschaltet: kein einziger Punkt.
+  if printf '%s' "$pcode" | grep -qE '_renderer\.enabled[[:space:]]*=[[:space:]]*running'; then
+    ok "SetRunning schaltet das Zeichenvolumen mit"
   else
-    fail "SetRunning schaltet jedes Licht des Clusters mit"
+    fail "SetRunning schaltet das Zeichenvolumen mit"
   fi
 
-  # 8. Keine Echtzeitschatten. Ein Spot mit Schatten und 4096 Punkten ist auf einem Telefon
-  #    kein Effekt, sondern ein Standbild.
-  if printf '%s' "$pcode" | grep -qE '\.shadows[[:space:]]*=[[:space:]]*LightShadows\.None'; then
-    ok "das Projektionslicht wirft keine Echtzeitschatten"
+  # 8. Und der Klon bekommt kein zweites Volumen. Jedes Ausruestungsstueck erreicht die Welt als
+  #    Instantiate einer lebenden Vorlage: die Kinder sind dann schon da, die privaten Felder,
+  #    die auf sie zeigten, nicht. Zweimal dasselbe Muster ist doppelte Helligkeit (27 und 30).
+  if printf '%s' "$pcode" | grep -qE 'transform\.Find\(OriginChildName\)' \
+     && printf '%s' "$pcode" | grep -qE 'transform\.Find\(VolumeChildName\)'; then
+    ok "ein geklonter Projektor bekommt kein zweites Volumen"
   else
-    fail "das Projektionslicht wirft keine Echtzeitschatten"
+    fail "ein geklonter Projektor bekommt kein zweites Volumen"
   fi
 
-  # 9. Es leuchtet die Achse entlang, an der das Geraet arbeitet. Ein Unity-Spot strahlt sein
-  #    eigenes +Z entlang; die Trage-Konvention dieses Projekts ist +Y - der Kegel, der
-  #    Geist-im-Feld-Test und die Vierteldrehung beim Platzieren benutzen alle +Y. Auf
-  #    identity gelassen wirft das Licht seitwaerts aus dem Geraet heraus, also genau in die
-  #    Wand, an der es haengt.
-  if printf '%s' "$pcode" | grep -qE 'index == 0\)[[:space:]]*$' \
-     && printf '%s' "$pcode" | grep -qE 'return Vector3\.up;' \
-     && printf '%s' "$pcode" | grep -qE 'LookRotation\([[:space:]]*$|LookRotation\(ConeDirection'; then
-    ok "das Cluster leuchtet um die Arbeitsachse des Geraets herum"
+  if printf '%s' "$pcode" | grep -qE 'unexpectedVolumeCount='; then
+    ok "ein Projektor mit zwei Volumen meldet sich"
   else
-    fail "das Cluster leuchtet um die Arbeitsachse des Geraets herum (+Y, nicht +Z)"
+    fail "ein Projektor mit zwei Volumen meldet sich"
   fi
 
-  # 9b. Und die Richtungen kommen aus dem EIGENEN Raum, nie aus Weltachsen. Ein hartcodiertes
-  #     Vector3.right in Weltkoordinaten waere auf genau einer Wand des Hauses richtig.
-  if printf '%s' "$pcode" | grep -qE 'transform\.TransformDirection|Vector3\.up \* |Quaternion\.Euler\([0-9]' ; then
-    fail "die Kegelrichtungen werden im eigenen Raum gebildet, nicht aus Weltachsen"
+  # 9. Nichts alloziert je Frame. Der Property-Block wird einmal angelegt und danach nur noch
+  #    beschrieben; ein `new MaterialPropertyBlock` in LateUpdate waere Muell je Bild.
+  if printf '%s' "$pcode" | grep -qE 'private void LateUpdate' \
+     && ! printf '%s' "$pcode" | sed -n '/private void LateUpdate/,/^        }$/p' \
+          | grep -qE 'new [A-Za-z]'; then
+    ok "die Bild-fuer-Bild-Aktualisierung alloziert nichts"
   else
-    ok "die Kegelrichtungen werden im eigenen Raum gebildet, nicht aus Weltachsen"
+    fail "die Bild-fuer-Bild-Aktualisierung alloziert nichts"
   fi
 
-  # 9c. Fuenf Lichter, nicht dreissig, und die Zahl steht an EINER Stelle.
-  if printf '%s' "$pcode" | grep -qE 'public const int LightCount = [45678];'; then
-    ok "die Zahl der Lichter ist eine Konstante im erlaubten Rahmen (4-8)"
+  # 10. Und die Reichweite ist einstellbar und endlich.
+  if printf '%s' "$pcode" | grep -qE 'projectionRange = 5\.5f' \
+     && printf '%s' "$pcode" | grep -qE 'SerializeField, Range\(2f, 10f\)\][[:space:]]*private float projectionRange'; then
+    ok "die Reichweite ist einstellbar, endlich und steht auf 5,5 m"
   else
-    fail "die Zahl der Lichter ist eine Konstante im erlaubten Rahmen (4-8)"
-  fi
-
-  # 9d. Und ein Cluster, das mehr Lichter hat als es haben darf, meldet sich.
-  if printf '%s' "$pcode" | grep -qE 'unexpectedLightCount='; then
-    ok "ein Cluster mit zu vielen Lichtern meldet sich"
-  else
-    fail "ein Cluster mit zu vielen Lichtern meldet sich"
-  fi
-
-  # 10. Und der Klon bekommt kein zweites Licht. Jedes Ausruestungsstueck erreicht die Welt als
-  #     Instantiate einer lebenden Vorlage: das Kindobjekt und sein Licht sind dann schon da,
-  #     das private Feld, das darauf zeigte, nicht. Zwei deckungsgleiche Lichter sieht niemand
-  #     als zwei, sondern als eines mit doppelter Helligkeit (Fehler 27 und 30).
-  if printf '%s' "$pcode" | grep -qE 'transform\.Find\(ClusterChildName\)' \
-     && printf '%s' "$pcode" | grep -qE 'GetComponentsInChildren<Light>\(true\)'; then
-    ok "ein geklonter Projektor bekommt kein zweites Cluster"
-  else
-    fail "ein geklonter Projektor bekommt kein zweites Cluster"
-  fi
-
-  # 11. Und es gibt genau EINE Sache, die die Punkte zeichnet. Ein Kegel-Mesh neben dem Licht
-  #     waere die zweite Taschenlampe aus Fehler 1.
-  if printf '%s' "$pcode" | grep -qE 'AddComponent<MeshRenderer>|MAT_SpectralGrid'; then
-    fail "nur eine Implementierung zeichnet die Punkte"
-  else
-    ok "nur eine Implementierung zeichnet die Punkte"
+    fail "die Reichweite ist einstellbar, endlich und steht auf 5,5 m"
   fi
 fi
 
-# 9. Nur die eine Cookie-Maske liegt unter Resources. Alles in diesem Ordner wandert in jeden
-#    Build, ob es jemand referenziert oder nicht - Quellmuster, Kugelkarte und Schachbrett sind
-#    Werkzeug und haben dort nichts zu suchen.
-# Genau zwei: die benutzte 512er Maske und ihre 256er Sparvariante. Die 2048er Vorlagen und
-# die alte 1024er Spot-Cookie sind weg - vier grosse Texturen in Resources, von denen eine
-# geladen wird, sind drei, die jeden Build mitfahren, ohne je gesampelt zu werden.
-shipped=$(find Assets/CatchIfYouCan/Resources -name 'T_DOTS_*.png' 2>/dev/null | wc -l | tr -d ' ')
-if [ "$shipped" = "2" ]; then
-  ok "genau zwei DOTS-Masken liegen unter Resources (512 und 256)"
+# ---- der Shader, der die Punkte macht ------------------------------------------------------
+if [ ! -f "$SHDR" ]; then
+  fail "SpectralGrid.shader existiert"
 else
-  fail "genau zwei DOTS-Masken liegen unter Resources (gefunden: $shipped)"
-fi
+  scode=$(sed 's|//.*||' "$SHDR")
 
-# 10. Die ausgelieferte Maske hat vier Kanaele. PNG-Farbtyp steht im IHDR an Byte 25; 6 ist
-#     RGBA. Aus welchem Kanal eine Cookie gelesen wird, ist Pipeline-Sache, und diese Maschine
-#     kommt nicht an die Unity-Doku - also steht sie in allen vieren, statt einen zu raten.
-if [ -n "${cookiepath:-}" ] && [ -f "Assets/CatchIfYouCan/Resources/$cookiepath.png" ]; then
-  ctype=$(od -An -tu1 -j25 -N1 "Assets/CatchIfYouCan/Resources/$cookiepath.png" | tr -d ' ')
-  if [ "$ctype" = "6" ]; then
-    ok "die Cookie-Maske ist RGBA, traegt das Muster also in jedem Kanal"
+  # 11. Er rechnet aus dem Tiefenpuffer. Ohne das gaebe es keine Punkte AUF Flaechen, sondern
+  #     Punkte in der Luft - und keine Verdeckung durch das, wovor man steht.
+  if printf '%s' "$scode" | grep -qE 'SampleSceneDepth' \
+     && printf '%s' "$scode" | grep -qE 'ComputeWorldSpacePosition'; then
+    ok "der Shader rekonstruiert die Flaeche hinter jedem Pixel"
   else
-    fail "die Cookie-Maske ist RGBA (PNG-Farbtyp ist $ctype, erwartet 6)"
+    fail "der Shader rekonstruiert die Flaeche hinter jedem Pixel"
+  fi
+
+  # 12. In KUGELKOORDINATEN, also rundum. Ein Kegeltest hier waere wieder eine Taschenlampe.
+  if printf '%s' "$scode" | grep -qE 'atan2\(local\.z, local\.x\)' \
+     && printf '%s' "$scode" | grep -qE 'asin\(clamp\(local\.y'; then
+    ok "das Raster liegt in Kugelkoordinaten um das Geraet"
+  else
+    fail "das Raster liegt in Kugelkoordinaten um das Geraet"
+  fi
+
+  # 13. Und es gibt keinen Kegelabbruch mehr, der die obere Halbkugel wegschneidet.
+  if printf '%s' "$scode" | grep -qE 'coneRadius|_HalfAngle'; then
+    fail "kein Kegeltest schneidet die obere Halbkugel weg"
+  else
+    ok "kein Kegeltest schneidet die obere Halbkugel weg"
+  fi
+
+  # 14. Rein additiv: ein Pixel ohne Punkt gibt Schwarz aus und aendert damit gar nichts. Genau
+  #     das haelt einen dunklen Raum dunkel, statt ihn gruen zu waschen.
+  if printf '%s' "$scode" | grep -qE 'Blend One One'; then
+    ok "die Punkte addieren Licht und fluten den Raum nicht"
+  else
+    fail "die Punkte addieren Licht und fluten den Raum nicht"
+  fi
+
+  # 15. Ausserhalb der Reichweite passiert nichts. Ein Projektor ohne Grenze leuchtet das ganze
+  #     Haus aus.
+  if printf '%s' "$scode" | grep -qE 'dist >= _Range'; then
+    ok "Geometrie ausserhalb der Reichweite bekommt nichts"
+  else
+    fail "Geometrie ausserhalb der Reichweite bekommt nichts"
+  fi
+
+  # 16. Der Himmel bekommt keine Punkte - ein Pixel ohne Tiefe ist unendlich weit weg.
+  if printf '%s' "$scode" | grep -qE 'rawDepth <= 0\.0' \
+     && printf '%s' "$scode" | grep -qE 'rawDepth >= 1\.0'; then
+    ok "der Himmel bekommt keine Punkte"
+  else
+    fail "der Himmel bekommt keine Punkte"
+  fi
+
+  # 17. Und die Kantenglaettung ist GEKLAMMERT. fwidth explodiert an der Azimut-Naht und an den
+  #     Polen, wo sich die Richtung zwischen zwei Pixeln um eine halbe Drehung aendert -
+  #     ungeklammert frisst dieser eine Meridian jeden Punkt, der auf ihm liegt.
+  if printf '%s' "$scode" | grep -qE 'clamp\(fwidth\(cellDist\)'; then
+    ok "die Kantenglaettung ist an Naht und Polen geklammert"
+  else
+    fail "die Kantenglaettung ist an Naht und Polen geklammert"
   fi
 fi
 
-# 11. Und der Generator schreibt sie auch so: Hintergrund durchsichtig statt Color.black,
-#     dessen Alpha 1 ist und die ganze Maske im Alphakanal deckend machen wuerde.
-if [ ! -f "$GEN" ]; then
-  fail "der DOTS-Cookie-Generator existiert"
+# 18. Und die Dichte geht als GANZE Zahl hinein. Das Azimutraster laeuft von +PI nach -PI in
+#     sich zurueck, und nur eine ganze Zahl von Zellen trifft sich dort wieder; eine gebrochene
+#     legt eine sichtbare Naht ueber einen Meridian.
+if [ -f "$PROJ" ] && printf '%s' "$pcode" \
+     | grep -qE 'SetFloat\(DensityId, Mathf\.Round\(density\)\)'; then
+  ok "die Dichte geht als ganze Zellenzahl in den Shader"
 else
-  gcode=$(sed 's://.*::' "$GEN" | grep -v '^[[:space:]]*\*')
-
-  if printf '%s' "$gcode" | grep -qE 'new Color\(v, v, v, v\)'; then
-    ok "der Generator schreibt die Maske in alle vier Kanaele"
-  else
-    fail "der Generator schreibt die Maske in alle vier Kanaele"
-  fi
-
-  # 11b. Jeder Punkt ist ein KREIS, und der Generator misst das an seinem eigenen Ergebnis
-  #      nach, statt es zu behaupten. Ein Kegel voller Pillen sieht man auf keinem Thumbnail -
-  #      man sieht ihn drei Schritte spaeter als Streifen auf einer Wand.
-  if printf '%s' "$gcode" | grep -qE 'MeasureBlobs' \
-     && printf '%s' "$gcode" | grep -qE 'b\.x != b\.y' \
-     && printf '%s' "$gcode" | grep -qE 'REFUSED to write'; then
-    ok "der Generator misst seine Punkte nach und verweigert unrunde"
-  else
-    fail "der Generator misst seine Punkte nach und verweigert unrunde"
-  fi
-
-  # 11c. Und die Mittelpunkte liegen auf Pixelmitten, sonst rastert derselbe Kreis je nach
-  #      Bruchteil mal 3 und mal 4 Pixel breit - und die Messung oben koennte nur ungefaehr
-  #      pruefen statt exakt.
-  if printf '%s' "$gcode" | grep -qE 'Mathf\.Floor\(x\) \+ 0\.5f'; then
-    ok "die Punktmitten liegen auf Pixelmitten"
-  else
-    fail "die Punktmitten liegen auf Pixelmitten"
-  fi
-
-  # 12. Er schreibt die Laufzeit-Cookie dorthin, wo die Laufzeit sie sucht.
-  if [ -n "${cookiepath:-}" ]; then
-    leaf=$(basename "$cookiepath")
-    if printf '%s' "$gcode" | grep -q "$leaf" \
-       && printf '%s' "$gcode" | grep -q "Resources/Equipment/DOTS"; then
-      ok "der Generator schreibt '$leaf' in den Ordner, aus dem die Laufzeit laedt"
-    else
-      fail "der Generator schreibt '$leaf' in den Ordner, aus dem die Laufzeit laedt"
-    fi
-  fi
-
-  # 13. Und er ist Editor-Werkzeug: nichts unter Scripts/ ruft ihn auf.
-  if grep -rqE 'DotsCookieGenerator' Assets/CatchIfYouCan/Scripts 2>/dev/null; then
-    fail "kein Laufzeit-Code ruft den Editor-Generator auf"
-  else
-    ok "kein Laufzeit-Code ruft den Editor-Generator auf"
-  fi
-fi
-
-# 14. Die Importeinstellungen der Maske. Beides ist stumm: als sRGB importiert stimmt die
-#     Gammakurve nicht, und alphaIsTransparency 1 laesst Unity die Farbe in das Schwarz
-#     hineinziehen - aus runden Punkten werden Woelkchen.
-cmeta="Assets/CatchIfYouCan/Resources/${cookiepath:-}.png.meta"
-if [ -n "${cookiepath:-}" ] && [ -f "$cmeta" ]; then
-  if grep -qE '^[[:space:]]*sRGBTexture: 0$' "$cmeta" \
-     && grep -qE '^[[:space:]]*alphaIsTransparency: 0$' "$cmeta"; then
-    ok "die Cookie-Maske wird linear und ohne Alpha-Transparenz importiert"
-  else
-    fail "die Cookie-Maske wird linear und ohne Alpha-Transparenz importiert"
-  fi
-
-  # 15. Und mit den drei Einstellungen, die aus runden Punkten Pillen gemacht haben.
-  #
-  # Die Maske wird IMMER vergroessert - 512 Texel ueber einen ganzen Raum - also sind drei
-  # Unity-Voreinstellungen hier schaedlich:
-  #   Mipmaps  werden bei Vergroesserung nie gewaehlt und weichen die Punkte nur auf
-  #   aniso 4  ist ein RICHTUNGSABHAENGIGER Filter: auf einem 3-Pixel-Punkt im schraegen
-  #            Blick zieht er ihn entlang einer Achse aus - genau die gemeldete Pille
-  #   Repeat   URP packt Cookies in einen Atlas; eine wiederholende Cookie blutet ueber
-  #            ihre Nachbarn
-  # Die vorige Maske hatte alle drei, und ihre wrapU/wrapV standen ausserdem VERTAUSCHT
-  # gegen die eigene Absicht - Repeat quer, Clamp hoch. Das ist woertlich ein anisotropes
-  # Sampling-Setup auf einer Textur aus runden Punkten.
-  wrapu=$(grep -E '^[[:space:]]*wrapU:' "$cmeta" | head -1 | tr -dc '0-9')
-  wrapv=$(grep -E '^[[:space:]]*wrapV:' "$cmeta" | head -1 | tr -dc '0-9')
-  aniso=$(grep -E '^[[:space:]]*aniso:' "$cmeta" | head -1 | tr -dc '0-9')
-  if grep -qE '^[[:space:]]*enableMipMap: 0$' "$cmeta" \
-     && [ "$aniso" = "1" ] && [ "$wrapu" = "1" ] && [ "$wrapv" = "1" ]; then
-    ok "die Cookie-Maske hat keine Mipmaps, aniso 1 und Clamp auf BEIDEN Achsen"
-  else
-    fail "die Cookie-Maske hat keine Mipmaps, aniso 1 und Clamp auf BEIDEN Achsen"
-    printf '        gefunden: mipmaps=%s aniso=%s wrapU=%s wrapV=%s (1 = Clamp)\n' \
-      "$(grep -cE '^[[:space:]]*enableMipMap: 1$' "$cmeta")" "$aniso" "$wrapu" "$wrapv"
-  fi
-else
-  fail "die Cookie-Maske hat eine .meta"
+  fail "die Dichte geht als ganze Zellenzahl in den Shader"
 fi
 
 printf '\npassed: %s   failed: %s\n\n' "$passed" "$failed"

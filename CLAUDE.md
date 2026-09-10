@@ -116,33 +116,31 @@ place that number lives; everything else derives it.
   and G belongs to ONE device - the torch offers the press to a deployed device first
   and skips itself only when that device took it. A debug convenience may not share a
   key with a real control: the dev take/drop sat on X, so one press ran both paths and
-  threw the projector on the floor. And the dots are projected LIGHT rather than a second
-  renderer: one spot wearing a generated dot mask as its cookie, pointed along the device's own
-  +Y working axis rather than a Unity spot's native +Z - left at identity it throws sideways out
-  of the device, into the wall it is bolted to, which looks exactly like a light that never
-  switched on - built once and FOUND on a clone rather than added a second time beside the one
-  Instantiate already copied, switched off with the device, shadowless, with the mask written
-  into all four channels because which one a cookie is sampled from is a per-pipeline detail
-  this machine cannot look up, imported linear and not as transparency, resolving to a file
-  that exists, reported as an ERROR when the projector is on and the light is not, and drawn by
-  exactly ONE thing - a cone mesh beside it would be the second flashlight. And the field is a
-  ROOM rather than a beam: one 70-degree spot is a torch, so the dots are thrown by a fixed
-  five-light cluster - one along the device's axis, four leaning 50 degrees off it - whose
-  directions are built in the device's OWN space, because a hardcoded world axis is correct on
-  exactly one wall of one house. Five and not four because four cones have to be 120 degrees
-  wide to close the gaps between them, and a spot cookie is projected by perspective: a dot at
-  the rim of a 120-degree cone is stretched 2.0 across and 4.0 along, which IS the elongated
-  pill. The count is a constant, a cluster that grew past it says so, and the mask is authored
-  at the size it is used at with no mipmaps, aniso 1 and Clamp on BOTH axes - mipmaps are never
-  selected on a texture that is only ever magnified, anisotropic filtering is by definition a
-  directional smear, and the previous mask had wrapU and wrapV inverted against their own
-  intent, which is literally an anisotropic sampling setup on a field of round dots. Every dot
-  is a true circle and the generator PROVES it: centres snapped to pixel centres so each dot is
-  the identical stamp, then the finished texture flood-filled and refused if any blob is not as
-  wide as it is tall. And G belongs to whoever is SELECTED: a claim means "this press was
-  mine", not "this press did something", so a projector in the hand consumes G and does
-  nothing with it instead of handing it on to the torch - one press used to print two refusals
-  from two devices, each correct about itself. 84 checks.
+  threw the projector on the floor. And the dots are a SPHERE of laser points around the emitter,
+  drawn by one volume and one shader: for every pixel the shader reconstructs the world position
+  of the surface BEHIND it from the depth buffer, takes the direction from the lens to that
+  point, and asks whether it lands on a dot of an ANGULAR grid in the device's own spherical
+  coordinates - so the pattern surrounds the projector, reaching the ceiling as much as the
+  floor, and converging towards its axis the way a real multi-directional projector does. Two
+  earlier attempts were shaped like the emitter instead of like the room - one 70-degree spot,
+  which is a torch, then five wider spots, which is a torch with company - and neither could
+  cover a sphere, because a cone cannot. There is no LIGHT in it at all now: the pass is purely
+  additive, so a pixel that is not on a dot outputs black and changes nothing, which is what
+  keeps a dark room dark instead of washing it green. The lens is its own named child and its
+  position and axes go to the shader in WORLD coordinates rather than through the object matrix,
+  because the object-space version drew nothing for a reason nobody ever established (mistake
+  33) and removing the dependency beats guessing at it a fifth time. The density is rounded to a
+  whole number of cells, because the azimuth grid runs from +PI back to -PI and only a whole
+  number meets itself there; the antialiasing width is CLAMPED, because fwidth explodes across
+  that seam and at the poles, where the direction changes by half a turn between neighbouring
+  pixels, and unclamped that one meridian swallows every dot on it; the range is finite and
+  tunable so geometry beyond it gets nothing; the sky gets nothing, a pixel with no depth being
+  infinitely far away; the volume is built once and adopted rather than rebuilt on a clone; a
+  second volume says so; and the per-frame update writes four vectors into a property block
+  allocated once, so nothing allocates while it runs. And G belongs to whoever is SELECTED: a
+  claim means "this press was mine", not "this press did something", so a projector in the hand
+  consumes G and does nothing with it instead of handing it on to the torch - one press used to
+  print two refusals from two devices, each correct about itself. 80 checks.
 - `Scripts/check_multiplayer_architecture.sh` — the deterministic assembly stays
   engine-free, gameplay never reaches a Relay API, remote players never read
   local input, ghost decisions stay host-only, online capacity has exactly one
@@ -1005,6 +1003,27 @@ Repeating one of these is the most likely way to break something.
    etwas nicht passt, sagt nicht, WARUM das Falsche ueberhaupt angeboten wurde. CLAUDE.md kannte
    die Regel schon: ein Name mit weniger als drei Zeichen identifiziert in diesem Paket nichts.
    Sie stand beim Weiss-Material-Doktor und galt fuer den Katalog-Schreiber nicht mit.
+
+39. **Zwei Anlaeufe, die die Form des EMITTERS hatten statt der Form des RAUMS.** Der
+   DOTS-Projektor bekam erst einen Spot mit 70 Grad, dann fuenf breitere Spots. Beide Male war
+   die Frage falsch gestellt: ein Spot ist ein Kegel, und ein Kegel kann keine Kugel abdecken -
+   fuenf davon auch nicht, sie lassen zwischen sich Luecken und muessen, um die zu schliessen,
+   so breit werden, dass die Cookie an ihrem Rand die Punkte zu Pillen zieht. Was das Geraet
+   TUT, ist in alle Richtungen strahlen; was ein Spot kann, ist in eine. Die Referenzbilder
+   zeigten das von Anfang an - ein Muster, das den Projektor umschliesst und zu seiner Achse hin
+   zusammenlaeuft - und zwei Runden lang wurde trotzdem am Kegel weitergebaut, weil ein Kegel
+   das war, was schon dastand. Die Loesung war nicht mehr Kegel, sondern eine andere Koordinate:
+   ein Winkelraster in KUGELKOORDINATEN um die Linse, ausgewertet auf der Flaeche, die der
+   Tiefenpuffer hinter jedem Pixel liefert. Und sie kostet nichts extra, weil ein Punkt darin
+   kein Objekt ist, sondern ein Test.
+
+40. **Ein gruenes Licht, das den Raum aufhellt, statt Punkte, die auf ihm liegen.** Beide
+   Licht-Fassungen mussten hell genug sein, um gesehen zu werden, und ein Licht, das hell genug
+   ist, beleuchtet alles dazwischen mit: aus einem dunklen Raum mit hellen Punkten wurde ein
+   gruener Raum. Die Referenz ist das Gegenteil - stockdunkel, und darin tausende sehr helle,
+   sehr kleine Punkte. Ein additiver Pass kann das, was ein Licht nicht kann: wo kein Punkt ist,
+   gibt er Schwarz aus und aendert damit exakt nichts, egal wie hell die Punkte selbst sind.
+   Helligkeit und Flut sind bei einem Licht dieselbe Zahl und hier zwei verschiedene Dinge.
 
 ## Unity Editor availability
 

@@ -3342,12 +3342,12 @@ fi
 # sondern als eines mit doppelter Helligkeit. Gesucht wird deshalb nach der Komponente, denn
 # die ueberlebt die Kopie - das Feld, das auf sie zeigte, nicht.
 PROJ="$ROOT/Assets/CatchIfYouCan/Scripts/Equipment/SpectralGridProjection.cs"
-if [ -f "$PROJ" ] && code "$PROJ" | grep -qE 'transform\.Find\(ClusterChildName\)' &&
-   code "$PROJ" | grep -qE 'GetComponentsInChildren<Light>\(true\)'; then
+if [ -f "$PROJ" ] && code "$PROJ" | grep -qE 'transform\.Find\(OriginChildName\)' &&
+   code "$PROJ" | grep -qE 'transform\.Find\(VolumeChildName\)'; then
   ok "die Projektion uebersteht das Klonen ihrer Vorlage"
 else
   bad "die Projektion uebersteht das Klonen ihrer Vorlage" \
-      "ein new GameObject haengt dem Klon ein ZWEITES Cluster an, das dort schon eines hat"
+      "ein new GameObject haengt dem Klon ein ZWEITES Volumen an, das dort schon eines hat"
 fi
 
 # Und die Debug-Bequemlichkeiten stehen nicht in einem ausgelieferten Build. Ein Debug-Text im
