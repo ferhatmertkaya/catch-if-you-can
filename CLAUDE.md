@@ -108,7 +108,15 @@ place that number lives; everything else derives it.
   placement, because the thing the interaction ray finds then is the wall the preview
   stands on, which would place the device and pick it straight back up in the same
   frame. The router reads no key of its own; MobileInputController stays the only thing
-  in gameplay code that does. 57 checks.
+  in gameplay code that does. The AIM step is GONE: it was reachable only from a HUD
+  button this screen does not build, behind an F key whose signal nothing in the project
+  reads - a projector in the hand now aims by itself, driven from the lifecycle so
+  holstering, dropping and placing all end it through transitions that already happen. X
+  is consumed ONLY on a valid candidate, so carrying one does not swallow every press;
+  and G belongs to ONE device - the torch offers the press to a deployed device first
+  and skips itself only when that device took it. A debug convenience may not share a
+  key with a real control: the dev take/drop sat on X, so one press ran both paths and
+  threw the projector on the floor. 61 checks.
 - `Scripts/check_multiplayer_architecture.sh` — the deterministic assembly stays
   engine-free, gameplay never reaches a Relay API, remote players never read
   local input, ghost decisions stay host-only, online capacity has exactly one
@@ -864,6 +872,22 @@ Repeating one of these is the most likely way to break something.
    derselben Datei geht ueber `GetSlot`, das die Fackel kennt; diese eine Zeile ging daran
    vorbei. Ein Sonderplatz, der nur an EINER Stelle nicht mitgedacht wird, ist genau so viel
    wert wie gar keiner.
+
+32. **Zwei Tasten, die niemand zu Ende verfolgt hatte.** Der Projektor liess sich nicht an die
+   Wand haengen, und dahinter lagen zwei getrennte Ursachen, die beide erst im Editor auffielen.
+   F tat NICHTS: `PressUse()` setzt ein Flag, und `UsePressed` wird im ganzen Projekt von
+   niemandem gelesen; der Use-Knopf, der es sonst ausloest, wird in `WireHUD` ausdruecklich auf
+   null gesetzt. Ein Signal, das gesendet und nie empfangen wird - dieselbe Form wie "public und
+   niemand ruft es auf", nur eine Ebene tiefer.
+   Und X warf das Geraet auf den Boden. `DebugItemTools` lag seit jeher auf X, als X noch keine
+   Spieltaste war. In dem Moment, in dem X zur Interakt-Taste wurde, lief EIN Druck durch BEIDE
+   Pfade: die Interaktion tat ihres, und die Entwicklerhilfe legte ab, was in der Hand war. Wer
+   mit dem Projektor an eine Wand ging und X drueckte, sah ihn fallen.
+   Die Lehre ist nicht "besser testen", sondern dass eine neue Tastenbindung eine Suche nach
+   derselben Taste im ganzen Projekt verlangt - auch in Dateien, die als Entwicklerhilfe gelten
+   und deshalb bei der Ueberlegung nicht mitgedacht werden. Und ein Schritt, der nur ueber einen
+   Knopf erreichbar ist, den ein Bildschirm nicht baut, ist kein Schritt, sondern eine Sackgasse:
+   das AIM ist ersatzlos weg, weil es keine Entscheidung trug.
 
 ## Unity Editor availability
 

@@ -84,10 +84,36 @@ namespace CatchIfYouCan.Equipment
             ApplyPower();
         }
 
+        /// <summary>
+        /// Aiming is the device's RESTING state in the hand, not a mode the player switches on.
+        ///
+        /// <para>
+        /// The AIM action existed and was reachable only from a HUD button that is not built
+        /// on this screen, and the F key behind it raises a signal nothing in the project
+        /// reads - so placement could not be started at all. Rather than adding a key for a
+        /// step that carries no decision, the step is removed: a projector in the hand is a
+        /// projector looking for a wall, and the preview appears when one is in front of it.
+        /// </para>
+        ///
+        /// <para>
+        /// Driven from the lifecycle rather than from a per-frame check, so holstering,
+        /// dropping and placing all end the aim through the transitions they already make.
+        /// </para>
+        /// </summary>
         protected override void OnLifecycleStateChanged(EquipmentLifecycleState from,
                                                         EquipmentLifecycleState to)
         {
             ApplyPower();
+
+            if (to == EquipmentLifecycleState.Equipped)
+            {
+                var began = TryBeginPlacement();
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+                Core.CIYCLog.Info(began.Ok
+                    ? "[CIYC][DOTS] HELD_AUTO_PLACEMENT_ACTIVE"
+                    : "[CIYC][DOTS] [BLOCKED] AUTO_PLACEMENT reason=" + began.Status);
+#endif
+            }
         }
 
         /// <summary>

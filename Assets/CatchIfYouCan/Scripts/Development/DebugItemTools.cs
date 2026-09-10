@@ -39,8 +39,17 @@ namespace CatchIfYouCan.Development
     {
         private const string LogTag = "[CIYC][DebugItems] ";
 
-        /// <summary>Take and put down. Deliberately not E: E is the shipping interact key.</summary>
-        private const KeyCode TakeOrDropKey = KeyCode.X;
+        /// <summary>
+        /// Take and put down. B, because X and E are both the shipping interact key.
+        ///
+        /// <para>
+        /// This was X, and when X became the game's interact key one press ran BOTH paths: the
+        /// interaction controller did its thing and this dropped whatever was in hand. Walking
+        /// up to a wall with the projector and pressing X threw it on the floor. A debug
+        /// convenience that shares a key with a real control is not a convenience.
+        /// </para>
+        /// </summary>
+        private const KeyCode TakeOrDropKey = KeyCode.B;
 
         /// <summary>How far the diagnostic ray looks. Longer than the controller's reach, so
         /// "you are too far away" is one of the answers it can give rather than a silence.</summary>

@@ -499,6 +499,7 @@ done
 # Input.GetKeyDown in fuenf Skripten waere genau der Zustand, den dieses Projekt vermeidet:
 # fuenf Meinungen darueber, was eine Taste bedeutet.
 MIC="Assets/CatchIfYouCan/Scripts/Input/MobileInputController.cs"
+SGP="Assets/CatchIfYouCan/Scripts/Equipment/SpectralGridProjector.cs"
 RTR="Assets/CatchIfYouCan/Scripts/Equipment/EquipmentActionRouter.cs"
 IC="Assets/CatchIfYouCan/Scripts/Interaction/InteractionController.cs"
 
@@ -530,13 +531,56 @@ else
   fail "ein Druck wird einmal verbraucht, nicht zweimal"
 fi
 
-# Und G erreicht ein montiertes Geraet, mit genanntem Grund, wenn nicht.
-if [ -f "$RTR" ] &&
-   sed 's://.*::' "$RTR" | grep -qE 'EquipmentPowerPressed' &&
+# G gehoert EINEM Geraet, nie zweien. Der Torch bietet den Druck ueber EquipmentPowerClaim
+# an; nimmt ein montiertes Geraet ihn, schaltet die Fackel NICHT mit. Beide Signale
+# bedingungslos zu setzen hiess: ein Druck, zwei Geraete, und keines davon das gemeinte.
+if [ -f "$RTR" ] && [ -f "$MIC" ] &&
+   sed 's://.*::' "$MIC" | grep -qE 'EquipmentPowerClaim' &&
+   sed 's://.*::' "$MIC" | grep -qE 'if \(claim != null \&\& claim\(\)\)' &&
+   sed 's://.*::' "$RTR" | grep -qE 'EquipmentPowerClaim = TryClaimPower' &&
    sed 's://.*::' "$RTR" | grep -qE 'reason=NotMounted'; then
-  ok "G schaltet ein montiertes Geraet und nennt sonst den Grund"
+  ok "G gehoert einem Geraet: montiert dem Projektor, sonst der Fackel"
 else
-  fail "G schaltet ein montiertes Geraet und nennt sonst den Grund"
+  fail "G gehoert einem Geraet: montiert dem Projektor, sonst der Fackel"
+  printf '        ein Druck darf nicht Projektor UND Fackel schalten\n'
+fi
+
+# Und die Fackel wird nur uebersprungen, wenn wirklich jemand zugegriffen hat - der Anspruch
+# gibt false zurueck, wenn nichts montiert ist, damit G weiter die Fackel schaltet.
+if [ -f "$RTR" ] &&
+   sed 's://.*::' "$RTR" | sed -n '/private bool TryClaimPower/,/^        }$/p' \
+     | grep -qE 'return false;'; then
+  ok "ein nicht montiertes Geraet gibt G an die Fackel zurueck"
+else
+  fail "ein nicht montiertes Geraet gibt G an die Fackel zurueck"
+fi
+
+# Die Platzierung wird nur bei GUELTIGEM Ziel bestaetigt, und der Druck nur dann verbraucht.
+if [ -f "$RTR" ] &&
+   sed 's://.*::' "$RTR" | grep -qE 'if \(!aiming\.HasValidCandidate\)' &&
+   sed 's://.*::' "$RTR" | grep -qE 'X_ROUTE=PLACE'; then
+  ok "X platziert nur bei gueltigem Ziel und verbraucht sich nur dann"
+else
+  fail "X platziert nur bei gueltigem Ziel und verbraucht sich nur dann"
+fi
+
+# Und der Projektor zielt, sobald er in der Hand ist - kein AIM-Schritt, der ueber einen
+# Knopf laeuft, den dieser Bildschirm nicht baut, und eine Taste, die niemand ausliest.
+if [ -f "$SGP" ] &&
+   sed 's://.*::' "$SGP" | grep -qE 'to == EquipmentLifecycleState\.Equipped' &&
+   sed 's://.*::' "$SGP" | grep -qE 'TryBeginPlacement\(\)'; then
+  ok "der Projektor zielt, sobald er in der Hand ist"
+else
+  fail "der Projektor zielt, sobald er in der Hand ist"
+fi
+
+# Und die Entwicklerhilfe teilt sich keine Taste mit einer echten Steuerung.
+DIT="Assets/CatchIfYouCan/Scripts/Development/DebugItemTools.cs"
+if [ -f "$DIT" ] && ! sed 's://.*::' "$DIT" | grep -qE 'TakeOrDropKey = KeyCode\.(X|E)\b'; then
+  ok "die Entwicklerhilfe liegt nicht auf der Interakt-Taste"
+else
+  fail "die Entwicklerhilfe liegt nicht auf der Interakt-Taste"
+  printf '        ein Druck lief sonst durch beide Pfade und warf das Geraet auf den Boden\n'
 fi
 
 # Ein Geraet an der Wand wird ENTFERNT, nicht aufgehoben: TryPickupPlaced schaltet es ab und

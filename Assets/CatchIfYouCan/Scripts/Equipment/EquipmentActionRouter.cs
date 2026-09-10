@@ -46,6 +46,18 @@ namespace CatchIfYouCan.Equipment
             _inventory = GetComponent<PlayerInventory>();
         }
 
+        private void OnEnable()
+        {
+            // The torch offers G here first. Claiming it means the torch does NOT also toggle.
+            MobileInputController.EquipmentPowerClaim = TryClaimPower;
+        }
+
+        private void OnDisable()
+        {
+            if (MobileInputController.EquipmentPowerClaim == TryClaimPower)
+                MobileInputController.EquipmentPowerClaim = null;
+        }
+
         private void Update()
         {
             ConsumedInteractThisFrame = false;
@@ -60,14 +72,17 @@ namespace CatchIfYouCan.Equipment
 
             if (_input.InteractPressed)
                 HandleInteract();
-
-            if (_input.EquipmentPowerPressed)
-                HandlePower();
         }
 
         /// <summary>
-        /// X. Commits a placement when one is being aimed; otherwise leaves the press alone so
-        /// the interaction controller can pick things up and take mounted devices back.
+        /// X. Commits a placement ONLY when a valid one is being aimed.
+        ///
+        /// <para>
+        /// The press is consumed only in that case. Without a valid wall the press belongs to
+        /// the interaction controller as usual, so looking at something else and pressing X
+        /// still picks it up - swallowing every press while a projector is in hand would make
+        /// the rest of the world unusable while carrying one.
+        /// </para>
         /// </summary>
         private void HandleInteract()
         {
@@ -76,19 +91,16 @@ namespace CatchIfYouCan.Equipment
                 aiming.LifecycleState != EquipmentLifecycleState.PlacementPreview)
                 return;
 
-            // The press belongs to the placement whether or not it succeeds: a refused commit
-            // must not fall through into "pick up whatever the ray hits", which with a preview
-            // in front of the player is the wall.
-            ConsumedInteractThisFrame = true;
-
             if (!aiming.HasValidCandidate)
             {
-                CIYCLog.Info(LogTag + "[BLOCKED] PLACE reason=" +
-                             (aiming.Candidate.Status == EquipmentActionStatus.Blocked
-                                  ? "Blocked:" + aiming.Candidate.Detail
-                                  : "NoValidWall"));
+                CIYCLog.Info(LogTag + "PREVIEW_HIDDEN reason=NoValidWall (X left to the world)");
                 return;
             }
+
+            // The press belongs to the placement from here on. Letting it through as well is
+            // how the same X both places the device and immediately acts on the wall behind it.
+            ConsumedInteractThisFrame = true;
+            CIYCLog.Info(LogTag + "X_ROUTE=PLACE");
 
             EquipmentActionResult placed = aiming.TryPlace();
             if (placed.Ok)
@@ -99,30 +111,37 @@ namespace CatchIfYouCan.Equipment
             }
             else
             {
-                CIYCLog.Info(LogTag + "[BLOCKED] PLACE reason=" + placed.Status +
-                             (string.IsNullOrEmpty(placed.Detail) ? "" : ":" + placed.Detail));
+                CIYCLog.Error(LogTag + "[BLOCKED] PLACE reason=" + placed.Status +
+                              (string.IsNullOrEmpty(placed.Detail) ? "" : ":" + placed.Detail) +
+                              " - the preview was valid, so this is a routing bug.");
             }
         }
 
         /// <summary>
-        /// G. Switches the device the player is responsible for: the one they are holding, or
-        /// the one they have on a wall. A device that is neither says so rather than doing
-        /// nothing.
+        /// G. Takes the press only for a device this player has DEPLOYED; otherwise leaves it
+        /// to the torch, which is what G has always done.
         /// </summary>
-        private void HandlePower()
+        /// <returns>True when a deployed device handled it and the torch must not.</returns>
+        private bool TryClaimPower()
         {
-            var selected = _inventory.GetSelectedItem();
-            if (selected is not SpectralGridProjector projector)
-                return;
+            if (_inventory == null || MenuInputGate.IsMenuOpen)
+                return false;
+
+            if (_inventory.GetSelectedItem() is not SpectralGridProjector projector)
+                return false;
 
             if (!projector.IsPlaced)
             {
+                // Held rather than mounted: say so, and let the torch have the press. Silently
+                // eating it would make G look broken while a projector is in hand.
                 CIYCLog.Info(LogTag + "[BLOCKED] POWER reason=NotMounted");
-                return;
+                return false;
             }
 
+            CIYCLog.Info(LogTag + "G_ROUTE=DOTS");
             projector.SetPowered(!projector.IsProjecting);
             CIYCLog.Info(LogTag + (projector.IsProjecting ? "POWER_ON" : "POWER_OFF"));
+            return true;
         }
     }
 }

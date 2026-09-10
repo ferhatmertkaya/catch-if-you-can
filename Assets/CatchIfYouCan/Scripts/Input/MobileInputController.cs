@@ -442,10 +442,27 @@ namespace CatchIfYouCan.Input
             OnJournalTap?.Invoke();
         }
 
+        /// <summary>
+        /// Offered the G press before the torch sees it. Returning true means a deployed device
+        /// took it, and the torch is NOT also toggled.
+        ///
+        /// <para>
+        /// One key, one device. Raising both signals unconditionally meant a mounted projector
+        /// and the torch switched together, which is two things happening for one press and
+        /// neither of them what the player asked for.
+        /// </para>
+        /// </summary>
+        public static System.Func<bool> EquipmentPowerClaim;
+
         public void PressFlashlight()
         {
-            _flashlightFrame = Time.frameCount;
             _equipmentPowerFrame = Time.frameCount;
+
+            var claim = EquipmentPowerClaim;
+            if (claim != null && claim())
+                return;
+
+            _flashlightFrame = Time.frameCount;
             OnFlashlightTap?.Invoke();
         }
 
