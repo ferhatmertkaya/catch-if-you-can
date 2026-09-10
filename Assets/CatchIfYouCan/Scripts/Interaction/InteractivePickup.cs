@@ -13,7 +13,16 @@ namespace CatchIfYouCan.Interaction
         [SerializeField] private bool destroyOnPickup = true;
         [SerializeField] private float pickupNoise = 0.2f;
 
-        public string Prompt => prompt;
+        /// <summary>
+        /// "Remove" for a device standing on a wall, "Pick Up" for one lying in the room.
+        ///
+        /// <para>
+        /// The same object is both at different times, and the word is the only thing on screen
+        /// that says which. Derived rather than stored, so it cannot go stale against the
+        /// item's actual state.
+        /// </para>
+        /// </summary>
+        public string Prompt => itemComponent != null && itemComponent.IsPlaced ? "Remove" : prompt;
         public float HoldDuration => 0f;
         public InteractionType InteractionType => InteractionType.Pickup;
         public float Distance => distance;
@@ -97,8 +106,36 @@ namespace CatchIfYouCan.Interaction
                 return;
 
             PlayerInventory inventory = interactor.GetComponent<PlayerInventory>();
-            if (inventory == null || !inventory.AddItem(itemComponent))
+            if (inventory == null)
                 return;
+
+            // A device on a wall comes OFF the wall; it does not get picked up off the floor.
+            // TryPickupPlaced is the call that switches the device off, clears its placed state
+            // and hands it back - AddItem alone would leave it thinking it is still installed,
+            // and HeldEquipmentBase refuses to equip an item in the Placed state, so the player
+            // would end up with an invisible item they could not put down.
+            if (itemComponent.IsPlaced)
+            {
+                if (itemComponent is CatchIfYouCan.Equipment.HeldEquipmentBase held)
+                {
+                    var taken = held.TryPickupPlaced(inventory);
+                    if (!taken.Ok)
+                    {
+                        Core.CIYCLog.Info("[CIYC][DOTS] [BLOCKED] REMOVE reason=" + taken.Status);
+                        return;
+                    }
+
+                    Core.CIYCLog.Info("[CIYC][DOTS] REMOVED");
+                }
+                else if (!inventory.AddItem(itemComponent))
+                {
+                    return;
+                }
+            }
+            else if (!inventory.AddItem(itemComponent))
+            {
+                return;
+            }
 
             PlayerNoiseEmitter noise = interactor.GetComponent<PlayerNoiseEmitter>();
             if (noise != null)

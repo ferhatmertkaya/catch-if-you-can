@@ -21,6 +21,7 @@ namespace CatchIfYouCan.Interaction
         public event Action<string, InteractionType, float> OnPromptChanged;
 
         private MobileInputController _input;
+        private Equipment.EquipmentActionRouter _router;
         private IInteractable _heldTarget;
         private float _holdTimer;
 
@@ -84,6 +85,20 @@ namespace CatchIfYouCan.Interaction
             }
 
             if (!_input.InteractPressed && !_input.InteractHeld)
+            {
+                HoldProgress = 0f;
+                _holdTimer = 0f;
+                _heldTarget = null;
+                return;
+            }
+
+            // One press, one action. While a device is being aimed at a wall, X belongs to the
+            // placement - and the thing this ray finds in front of the player at that moment is
+            // the wall the preview is standing on. Without this the item is placed and picked
+            // straight back up in the same frame, which reads as the placement never happening.
+            if (_router == null)
+                _router = GetComponent<Equipment.EquipmentActionRouter>();
+            if (_router != null && _router.ConsumedInteractThisFrame)
             {
                 HoldProgress = 0f;
                 _holdTimer = 0f;

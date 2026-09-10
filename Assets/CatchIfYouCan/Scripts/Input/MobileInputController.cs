@@ -107,6 +107,8 @@ namespace CatchIfYouCan.Input
 
         public bool InteractPressed => _interactFrame == Time.frameCount;
         public bool UsePressed => _useFrame == Time.frameCount;
+
+        private int _equipmentPowerFrame = -1;
         public bool JournalPressed => _journalFrame == Time.frameCount;
         public bool FlashlightPressed => _flashlightFrame == Time.frameCount;
         public bool InteractHeld { get; private set; }
@@ -242,7 +244,12 @@ namespace CatchIfYouCan.Input
             if (Keyboard.current == null)
                 return;
 
-            if (Keyboard.current.eKey.wasPressedThisFrame)
+            // X is this game's interact key: pick up, confirm a wall placement, take a mounted
+            // device back off the wall. E stays bound so nobody's muscle memory breaks, but X
+            // is the one the prompts name. Both land on the same PressInteract, so there is
+            // still exactly one action behind them.
+            if (Keyboard.current.xKey.wasPressedThisFrame ||
+                Keyboard.current.eKey.wasPressedThisFrame)
                 PressInteract();
             if (Keyboard.current.fKey.wasPressedThisFrame)
                 PressUse();
@@ -262,7 +269,8 @@ namespace CatchIfYouCan.Input
             if (Keyboard.current.cKey.wasReleasedThisFrame)
                 SetCrouch(false);
 #else
-            if (UnityEngine.Input.GetKeyDown(KeyCode.E))
+            if (UnityEngine.Input.GetKeyDown(KeyCode.X) ||
+                UnityEngine.Input.GetKeyDown(KeyCode.E))
                 PressInteract();
             if (UnityEngine.Input.GetKeyDown(KeyCode.F))
                 PressUse();
@@ -437,8 +445,20 @@ namespace CatchIfYouCan.Input
         public void PressFlashlight()
         {
             _flashlightFrame = Time.frameCount;
+            _equipmentPowerFrame = Time.frameCount;
             OnFlashlightTap?.Invoke();
         }
+
+        /// <summary>
+        /// True on the frame G was pressed, for a DEPLOYED device's own power switch.
+        ///
+        /// <para>
+        /// A separate signal rather than a second call inside the torch's path: the torch keeps
+        /// its own behaviour untouched, and a device standing on a wall reads the same key
+        /// without either of them having to know about the other.
+        /// </para>
+        /// </summary>
+        public bool EquipmentPowerPressed => _equipmentPowerFrame == Time.frameCount;
 
         /// <summary>
         /// True when the mouse cursor is over a UI element that should stop the camera.

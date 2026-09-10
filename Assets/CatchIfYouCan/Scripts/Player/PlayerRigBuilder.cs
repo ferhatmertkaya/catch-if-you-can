@@ -108,6 +108,11 @@ namespace CatchIfYouCan.Player
 
             var interaction = player.AddComponent<InteractionController>();
             PlayerFactory.SetPrivateField(interaction, "viewCamera", viewCamera);
+
+            // X for a placement commit and G for a deployed device's power. Added AFTER the
+            // inventory above, because its Awake reads it - Awake runs inside AddComponent
+            // (mistakes 17, 25 and 27), so the order of these two lines is the wiring.
+            player.AddComponent<Equipment.EquipmentActionRouter>();
             PlayerFactory.SetPrivateField(fear, "targetCamera", viewCamera);
 
             inventory.SetHandAnchor(handAnchor.transform);

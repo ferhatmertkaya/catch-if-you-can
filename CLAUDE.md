@@ -102,7 +102,13 @@ place that number lives; everything else derives it.
   the device rather than in an Inspector value somebody must set per instance, with the
   placement query actually reading it; its display name is "DOTS Projector" while the id
   stays spectral_grid, because the id reaches the evidence contract and the name does
-  not. 52 checks.
+  not; X is bound to Interact in BOTH keyboard paths so it picks up, commits a wall
+  placement and takes a mounted device back off, G raises a power signal a deployed
+  device reads, and the press is spent ONCE - while a preview is up X belongs to the
+  placement, because the thing the interaction ray finds then is the wall the preview
+  stands on, which would place the device and pick it straight back up in the same
+  frame. The router reads no key of its own; MobileInputController stays the only thing
+  in gameplay code that does. 57 checks.
 - `Scripts/check_multiplayer_architecture.sh` — the deterministic assembly stays
   engine-free, gameplay never reaches a Relay API, remote players never read
   local input, ghost decisions stay host-only, online capacity has exactly one

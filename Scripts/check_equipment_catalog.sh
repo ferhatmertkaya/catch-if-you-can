@@ -493,6 +493,65 @@ done
   || fail "every ApplyModel call names a model and a material that exist" \
        "found only $checked_paths call(s); the three finished items are the flashlight, the UV light and the projector"
 
+# ---- X platziert, G schaltet, und beides ueber EINEN Eingabeweg ----------------------------
+#
+# MobileInputController ist die einzige Stelle im Spielcode, die eine Taste liest. Ein
+# Input.GetKeyDown in fuenf Skripten waere genau der Zustand, den dieses Projekt vermeidet:
+# fuenf Meinungen darueber, was eine Taste bedeutet.
+MIC="Assets/CatchIfYouCan/Scripts/Input/MobileInputController.cs"
+RTR="Assets/CatchIfYouCan/Scripts/Equipment/EquipmentActionRouter.cs"
+IC="Assets/CatchIfYouCan/Scripts/Interaction/InteractionController.cs"
+
+if [ -f "$MIC" ] &&
+   sed 's://.*::' "$MIC" | grep -qE 'KeyCode\.X' &&
+   sed 's://.*::' "$MIC" | grep -qE 'xKey\.wasPressedThisFrame'; then
+  ok "X liegt auf Interact, in beiden Eingabepfaden"
+else
+  fail "X liegt auf Interact, in beiden Eingabepfaden"
+  printf '        ENABLE_INPUT_SYSTEM und der alte Pfad muessen dieselbe Taste kennen\n'
+fi
+
+# Kein zweiter Tastenleser. Der Router fragt den Controller, er liest nichts selbst.
+if [ -f "$RTR" ] && ! sed 's://.*::' "$RTR" | grep -qE 'Input\.GetKey|Keyboard\.current'; then
+  ok "der Aktionsrouter liest keine Taste selbst"
+else
+  fail "der Aktionsrouter liest keine Taste selbst"
+  printf '        ein zweiter Tastenleser ist eine zweite Meinung darueber, was X bedeutet\n'
+fi
+
+# Ein Druck, eine Wirkung: waehrend gezielt wird, gehoert X der Platzierung. Sonst wird das
+# Geraet gesetzt und im selben Frame wieder aufgehoben, was aussieht wie "nichts passiert".
+if [ -f "$RTR" ] && [ -f "$IC" ] &&
+   sed 's://.*::' "$RTR" | grep -qE 'ConsumedInteractThisFrame' &&
+   sed 's://.*::' "$RTR" | grep -qE 'TryPlace\(\)' &&
+   sed 's://.*::' "$IC" | grep -qE 'ConsumedInteractThisFrame'; then
+  ok "ein Druck wird einmal verbraucht, nicht zweimal"
+else
+  fail "ein Druck wird einmal verbraucht, nicht zweimal"
+fi
+
+# Und G erreicht ein montiertes Geraet, mit genanntem Grund, wenn nicht.
+if [ -f "$RTR" ] &&
+   sed 's://.*::' "$RTR" | grep -qE 'EquipmentPowerPressed' &&
+   sed 's://.*::' "$RTR" | grep -qE 'reason=NotMounted'; then
+  ok "G schaltet ein montiertes Geraet und nennt sonst den Grund"
+else
+  fail "G schaltet ein montiertes Geraet und nennt sonst den Grund"
+fi
+
+# Ein Geraet an der Wand wird ENTFERNT, nicht aufgehoben: TryPickupPlaced schaltet es ab und
+# raeumt den Platzierungszustand auf. AddItem allein liesse es sich fuer installiert halten,
+# und HeldEquipmentBase weigert sich, ein Placed-Item in die Hand zu geben.
+IP="Assets/CatchIfYouCan/Scripts/Interaction/InteractivePickup.cs"
+if [ -f "$IP" ] &&
+   sed 's://.*::' "$IP" | grep -qE 'itemComponent\.IsPlaced' &&
+   sed 's://.*::' "$IP" | grep -qE 'TryPickupPlaced\(inventory\)' &&
+   sed 's://.*::' "$IP" | grep -qE '\? "Remove"'; then
+  ok "ein Geraet an der Wand wird entfernt und heisst auch so"
+else
+  fail "ein Geraet an der Wand wird entfernt und heisst auch so"
+fi
+
 # ---- der Projektor ist ein WANDgeraet, und heisst wie er heisst ----------------------------
 #
 # PlaceableEquipmentBase steht auf Boden UND Wand, was fuer die Videokamera und das Relikt
