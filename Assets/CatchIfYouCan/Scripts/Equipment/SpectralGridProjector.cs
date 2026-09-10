@@ -146,16 +146,51 @@ namespace CatchIfYouCan.Equipment
         /// having to work out which way "away from the wall" is.
         /// </summary>
         /// <summary>
-        /// A wall device, not a floor device.
+        /// A floor device as well as a wall device - and on the floor it LIES DOWN.
         ///
         /// <para>
-        /// <see cref="PlaceableEquipmentBase"/> defaults to floor AND wall, which is right for
-        /// the video camera and the relic and wrong for this: a grid projector laid on the
-        /// floor points its lens at the ceiling and lights nothing the player walks through.
-        /// Narrowed here rather than in the base, because it is a fact about THIS device.
+        /// It was wall-only, and the reason written down for that was true at the time: the
+        /// field was a 70-degree cone along the device's +Y, so a projector standing on a floor
+        /// pointed its lens at the ceiling and lit nothing the player walks through. The field
+        /// is a SPHERE now. Which way the device points no longer changes what is lit, so the
+        /// restriction was protecting against a shape the effect no longer has - a rule that
+        /// outlives its reason is just a rule.
+        /// </para>
+        ///
+        /// <para>
+        /// What still matters is that it lies rather than stands: see
+        /// <see cref="OrientForPlacement"/>. Declared here on the DEVICE rather than left to an
+        /// Inspector value somebody has to set on every instance, and the placement query reads
+        /// this - an override nothing reads changes nothing.
         /// </para>
         /// </summary>
-        protected override PlacementSurface? SurfaceOverride => PlacementSurface.Wall;
+        protected override PlacementSurface? SurfaceOverride => PlacementSurface.FloorAndWall;
+
+        /// <summary>
+        /// Lays it down on a floor instead of standing it on end.
+        ///
+        /// <para>
+        /// The base puts a floor item's working axis along the floor's normal, which stands a
+        /// 25 cm tube upright on its end - correct for a camera on a tripod and wrong for this.
+        /// The SAME quarter turn the wall case already uses does the job: the placement query
+        /// builds a floor rotation whose +Z is the player's own facing flattened into the floor
+        /// plane and whose +Y is the normal, so turning it about X maps the device's +Y onto
+        /// that flattened forward. It ends up horizontal, pointing away from whoever set it
+        /// down.
+        /// </para>
+        ///
+        /// <para>
+        /// The lit field does not care - it is a sphere about the lens. The EVIDENCE cone does:
+        /// <see cref="FieldStrengthAt"/> tests 70 degrees along this same +Y, so lying down
+        /// sweeps it horizontally across the room at about ankle height instead of at the
+        /// ceiling, which is the same kind of coverage a wall mounting gives and a good deal
+        /// more than standing on end gave.
+        /// </para>
+        /// </summary>
+        protected override Quaternion OrientForPlacement(in PlacementResult result)
+        {
+            return result.Rotation * Quaternion.Euler(90f, 0f, 0f);
+        }
 
         protected override void BuildCarried()
         {
@@ -305,10 +340,71 @@ namespace CatchIfYouCan.Equipment
         /// </summary>
         protected override void OnPlacedInWorld(in PlacementResult result)
         {
+            SeatOnSurface(result);
+
             // Placing does not switch it on, and does not switch it off. Whatever the player
             // set in the hand is what is installed - the power is the item's, and the item is
             // the same object it was a moment ago.
             ApplyPower();
+        }
+
+        /// <summary>
+        /// Rests a floor-placed device ON the floor rather than half inside it.
+        ///
+        /// <para>
+        /// The placement puts the item's PIVOT on the contact point, which is right for
+        /// something standing on its base and wrong the moment it lies on its side: the pivot
+        /// is then somewhere in the middle of the model and half of it is under the boards.
+        /// How far under is a fact about this model's pivot, and this project has been wrong
+        /// about that twice - the purchased pack puts pivots tens of metres from their own
+        /// mesh, and the flashlight's length was set from a comment nobody checked against the
+        /// file (mistakes 12 and 29). So it is MEASURED here instead of written down: whatever
+        /// the model turns out to be, its lowest drawn point ends up on the surface.
+        /// </para>
+        ///
+        /// <para>
+        /// Measured off what is DRAWN, with the projection volume left out - that box is
+        /// eleven metres across and is the effect's screen footprint rather than the device, and
+        /// measuring it once already lifted this projector through the lobby ceiling (mistake
+        /// 42). Only ever lifts: a device that already clears the floor is left where it is.
+        /// </para>
+        /// </summary>
+        private void SeatOnSurface(in PlacementResult result)
+        {
+            if (result.Surface != PlacementSurface.Floor)
+                return;
+
+            if (!TryMeasureDrawnBounds(out Bounds drawn))
+                return;
+
+            float sink = result.Position.y - drawn.min.y;
+            if (sink > 0.0001f)
+                transform.position += Vector3.up * sink;
+        }
+
+        /// <summary>
+        /// The world box of everything this device DRAWS, effect volumes excluded.
+        /// </summary>
+        private bool TryMeasureDrawnBounds(out Bounds bounds)
+        {
+            bounds = default;
+            bool any = false;
+
+            var renderers = GetComponentsInChildren<Renderer>(true);
+            for (int i = 0; i < renderers.Length; i++)
+            {
+                Renderer r = renderers[i];
+                if (r == null || EffectVolume.Encloses(r.transform))
+                    continue;
+
+                Bounds b = r.bounds;
+                if (b.size == Vector3.zero)
+                    continue;
+
+                if (!any) { bounds = b; any = true; } else bounds.Encapsulate(b);
+            }
+
+            return any;
         }
     }
 }

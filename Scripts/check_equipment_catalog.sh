@@ -611,21 +611,49 @@ else
   fail "ein Geraet an der Wand wird entfernt und heisst auch so"
 fi
 
-# ---- der Projektor ist ein WANDgeraet, und heisst wie er heisst ----------------------------
+# ---- der Projektor steht auf Boden UND Wand, und auf dem Boden LIEGT er --------------------
 #
-# PlaceableEquipmentBase steht auf Boden UND Wand, was fuer die Videokamera und das Relikt
-# richtig ist und fuer dieses Geraet falsch: ein Gitterprojektor auf dem Boden zeigt seine
-# Linse an die Decke und beleuchtet nichts, wo der Spieler durchgeht. Die Einschraenkung
-# gehoert zum GERAET, nicht in einen Inspector-Wert, den man auf jeder Instanz setzen muss.
+# Er war Wand-only, und der Grund dafuer stimmte damals: das Feld war ein 70-Grad-Kegel entlang
+# +Y, ein Projektor auf dem Boden zeigte also an die Decke. Das Feld ist jetzt eine KUGEL - die
+# Richtung entscheidet nicht mehr, was beleuchtet wird, und die Einschraenkung schuetzte vor
+# einer Form, die der Effekt nicht mehr hat. Was bleibt: die Erlaubnis gehoert zum GERAET statt
+# in einen Inspector-Wert, die Abfrage muss sie lesen, und auf dem Boden muss er LIEGEN.
 SGP="Assets/CatchIfYouCan/Scripts/Equipment/SpectralGridProjector.cs"
 PEB="Assets/CatchIfYouCan/Scripts/Equipment/PlaceableEquipmentBase.cs"
+sgpcode=$(sed 's://.*::' "$SGP" 2>/dev/null | grep -v '^[[:space:]]*\*')
+
 if [ -f "$SGP" ] && [ -f "$PEB" ] &&
-   sed 's://.*::' "$SGP" | grep -qE 'SurfaceOverride => PlacementSurface\.Wall' &&
+   printf '%s' "$sgpcode" | grep -qE 'SurfaceOverride => PlacementSurface\.FloorAndWall' &&
    sed 's://.*::' "$PEB" | grep -qE 'Allowed = AllowedSurfaces'; then
-  ok "der Projektor wird nur an Waende gesetzt, und die Abfrage liest das"
+  ok "der Projektor darf auf Boden und Wand, und die Abfrage liest das"
 else
-  fail "der Projektor wird nur an Waende gesetzt, und die Abfrage liest das"
+  fail "der Projektor darf auf Boden und Wand, und die Abfrage liest das"
   printf '        eine Ueberschreibung, die die Platzierungsabfrage nicht liest, aendert nichts\n'
+fi
+
+# Und auf dem Boden LIEGT er. Die Basis legt die Arbeitsachse eines Bodengeraets auf die
+# Flaechennormale, stellt das Rohr also hochkant auf sein Ende. Dieselbe Vierteldrehung, die
+# der Wandfall schon benutzt, kippt +Y auf das +Z der Bodendrehung - und das baut die
+# Platzierungsabfrage aus der Blickrichtung des Spielers, flach in die Bodenebene gelegt.
+if [ -f "$SGP" ] && printf '%s' "$sgpcode" \
+     | grep -qE 'override Quaternion OrientForPlacement' \
+   && printf '%s' "$sgpcode" | grep -qE 'result\.Rotation \* Quaternion\.Euler\(90f, 0f, 0f\)'; then
+  ok "auf dem Boden liegt der Projektor, statt hochkant zu stehen"
+else
+  fail "auf dem Boden liegt der Projektor, statt hochkant zu stehen"
+fi
+
+# Und er liegt AUF dem Boden statt halb darin. Die Platzierung setzt den PIVOT auf den
+# Auftreffpunkt, was fuer etwas auf seiner Standflaeche stimmt und in dem Moment falsch wird,
+# in dem das Ding auf der Seite liegt. Wie weit darunter ist eine Tatsache ueber diesen Pivot,
+# und die wird GEMESSEN statt hingeschrieben (Fehler 12 und 29) - ohne das Projektionsvolumen,
+# denn das ist elf Meter gross und hat diesen Projektor schon einmal durch die Decke gehoben
+# (Fehler 42).
+if [ -f "$SGP" ] && printf '%s' "$sgpcode" | grep -qE 'result\.Position\.y - drawn\.min\.y' \
+   && printf '%s' "$sgpcode" | grep -qE 'EffectVolume\.Encloses\(r\.transform\)'; then
+  ok "der liegende Projektor wird auf die Flaeche gesetzt, gemessen statt geraten"
+else
+  fail "der liegende Projektor wird auf die Flaeche gesetzt, gemessen statt geraten"
 fi
 
 # Die Id bleibt spectral_grid - sie haengt an EvidenceAuthority, EvidenceValidator,

@@ -97,10 +97,19 @@ place that number lives; everything else derives it.
   slot sits outside the three-slot array while the selected index is validated against
   four, so indexing the array with it threw on every torch selection - after the assign
   and after the equip, so the exception escaped through AddItem and abandoned the rest
-  of the pickup, and the grid projector is a WALL device rather than the family default
-  of floor-and-wall - laid on the floor it points its lens at the ceiling - declared on
-  the device rather than in an Inspector value somebody must set per instance, with the
-  placement query actually reading it; its display name is "DOTS Projector" while the id
+  of the pickup, and the grid projector goes on the FLOOR as well as a wall, and on the floor it LIES
+  DOWN. It was wall-only for a reason that was true then and is not now: the field was a
+  70-degree cone along +Y, so a projector standing on a floor pointed its lens at the
+  ceiling - the field is a SPHERE, so which way it points no longer changes what is lit,
+  and a rule that outlives its reason is just a rule. What it must not do is STAND: the
+  same quarter turn the wall case uses maps +Y onto the floor rotation's forward, which
+  the placement query builds from the player's own facing flattened into the floor, so it
+  lies pointing away from whoever set it down. And it lies ON the floor rather than half
+  in it - the placement puts the PIVOT on the contact point, which is right on a base and
+  wrong on a side, so the lift is MEASURED off what is drawn (the projection volume left
+  out, it having lifted this device through a ceiling once already) instead of written
+  down. All of it declared on the device rather than in an Inspector value somebody must
+  set per instance, with the placement query actually reading it; its display name is "DOTS Projector" while the id
   stays spectral_grid, because the id reaches the evidence contract and the name does
   not; X is bound to Interact in BOTH keyboard paths so it picks up, commits a wall
   placement and takes a mounted device back off, G raises a power signal a deployed
@@ -159,7 +168,7 @@ place that number lives; everything else derives it.
   is "too weak" on some platforms and not others; and a wall between the lens and a surface
   takes its dots away through a screen-space march that FAILS OPEN - all four unsure branches
   stay lit, one number switches it off, and it sits below the dot mask so only the pixels that
-  carry a dot pay for it. 90 checks.
+  carry a dot pay for it. 92 checks.
 - `Scripts/check_multiplayer_architecture.sh` — the deterministic assembly stays
   engine-free, gameplay never reaches a Relay API, remote players never read
   local input, ghost decisions stay host-only, online capacity has exactly one
