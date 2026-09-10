@@ -1,78 +1,109 @@
-# CATCH IF YOU CAN — iOS Deploy v2
+# CATCH IF YOU CAN — iOS Deployment
 
-## Was ist neu in v2?
+Build the iOS Xcode project on macOS and run it on a device.
 
-- `BuildIOS.sh` findet **jede** installierte Unity-Version (nicht nur 6000.3.0f1)
-- Klare Fehlermeldung + öffnet Unity Hub / Anleitung
-- Kein `zsh: no matches found` mehr bei fehlendem Xcode-Projekt
-- `START_HERE_MAC.command` → Doppelklick im Finder
-- `OpenInUnity.sh` → GUI-Fallback ohne Batchmode
-- Input Actions Dateiendung korrigiert (`.inputactions`)
+---
 
-## Dein Fehler war
+## Requirements
 
-```
-ERROR: Unity 6.3 LTS nicht gefunden.
-```
+- macOS
+- Unity **6000.5.10f1** (Unity 6.5), installed through Unity Hub
+- Unity module: **iOS Build Support**
+- Xcode 15 or newer
+- An Apple Development signing team configured in Xcode
 
-Das heißt: Auf dem Mac ist (noch) **kein Unity Editor** unter  
-`/Applications/Unity/Hub/Editor/...` installiert — nicht dass das Spiel kaputt ist.
+---
 
-## Ablauf (empfohlen)
+## "Unity 6000.5.10f1 not found"
 
-### A) Einmalig Unity installieren
+This message from `BuildIOS.sh` means no Unity Editor was found under
+`/Applications/Unity/Hub/Editor/`. It is a missing installation, not a broken
+project.
 
-1. [Unity Hub](https://unity.com/download) installieren
-2. **Unity 6.3 LTS** installieren
-3. Module anhaken: **iOS Build Support**
-4. Xcode aus dem App Store (15+)
+Install Unity Hub from <https://unity.com/download>, then install Unity
+6000.5.10f1 with the iOS Build Support module ticked.
 
-### B) Bauen
-
-**Option 1 — Doppelklick**
-
-`START_HERE_MAC.command` (Rechtsklick → Öffnen, beim ersten Mal)
-
-**Option 2 — Terminal**
+If Unity is installed somewhere else, point the script at it:
 
 ```bash
-cd ~/Desktop/CatchIfYouCan
-chmod +x BuildIOS.sh START_HERE_MAC.command OpenInUnity.sh
-./BuildIOS.sh
+UNITY_BIN="/Applications/Unity/Hub/Editor/<your-version>/Unity.app/Contents/MacOS/Unity" ./BuildIOS.sh
 ```
 
-**Option 3 — Nur GUI**
-
-```bash
-./OpenInUnity.sh
-```
-
-Dann in Unity:
-
-1. **Catch If You Can → Setup Project**
-2. **Catch If You Can → Build iOS**
-3. `Builds/iOS` in Xcode öffnen
-
-### C) Xcode → iPhone
-
-1. Signing → dein Apple Team
-2. Bundle ID: `com.catchifyoucan.game`
-3. Device wählen → **Run**
-
-## Unity liegt woanders?
-
-```bash
-UNITY_BIN="/Applications/Unity/Hub/Editor/DEINE_VERSION/Unity.app/Contents/MacOS/Unity" ./BuildIOS.sh
-```
-
-Alle Editoren auflisten:
+List the editors the machine has:
 
 ```bash
 ls /Applications/Unity/Hub/Editor
 ```
 
-## Package
+`BuildIOS.sh` prefers 6000.5.10f1 and will fall back to another Unity 6.x
+install with a warning.
 
-- Bundle: `com.catchifyoucan.game`
-- iOS 15+, ARM64, IL2CPP, Landscape
-- Produkt: CATCH IF YOU CAN 1.0.0
+---
+
+## Build
+
+Three routes; all three produce the same Xcode project in `Builds/iOS/`.
+
+**Double-click** — `START_HERE_MAC.command` in Finder. The first time, use
+right-click → Open, because the file is unsigned.
+
+**Terminal**
+
+```bash
+cd <repository>
+chmod +x BuildIOS.sh START_HERE_MAC.command OpenInUnity.sh
+./BuildIOS.sh
+```
+
+**From the Unity GUI** — if the headless build fails, open the project and
+build from the menu:
+
+```bash
+./OpenInUnity.sh
+```
+
+Then in Unity: **Catch If You Can → 5. BUILD → iOS**.
+
+> `Catch If You Can → 9. ENTWICKLER - DEBUG → Migration → Setup Project` is a
+> bulk migration command that rewrites project settings and assets. It is not
+> part of a normal build and asks for confirmation before it runs. You do not
+> need it to build.
+
+Build logs are written to `Builds/Logs/`.
+
+---
+
+## Xcode → iPhone
+
+1. Open `Builds/iOS/` in Xcode.
+2. Signing & Capabilities → select your Apple Development team.
+3. Confirm the bundle identifier is `com.catchifyoucan.game`.
+4. Select the device and press **Run**.
+
+---
+
+## Player Settings
+
+| | |
+|---|---|
+| Product | CATCH IF YOU CAN |
+| Bundle identifier | `com.catchifyoucan.game` |
+| Version | 1.0.0 |
+| Minimum iOS | 15 |
+| Architecture | ARM64 |
+| Scripting backend | IL2CPP |
+| Graphics | Metal |
+| Orientation | Landscape |
+
+Safe area insets are handled at runtime by `SafeAreaFitter`. V1 requests no
+microphone permission.
+
+---
+
+## Helper Scripts
+
+| Script | What it does |
+|---|---|
+| `START_HERE_MAC.command` | Finder entry point; runs the build with a readable error if Unity is missing. |
+| `BuildIOS.sh` | Headless build to `Builds/iOS/`. Honours `UNITY_BIN`. |
+| `OpenInUnity.sh` | Opens the project in the Unity GUI without batch mode. |

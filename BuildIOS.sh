@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # CATCH IF YOU CAN — macOS iOS / Xcode export (v2)
-# Works with any installed Unity 6.x (prefers 6000.3 LTS).
+# Works with any installed Unity 6.x (requires 6000.5.10f1; prefers it strictly).
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -39,7 +39,7 @@ pick_unity() {
       echo "$UNITY_BIN"
       return 0
     fi
-    echo "ERROR: UNITY_BIN ist gesetzt, aber nicht ausführbar: $UNITY_BIN" >&2
+    echo "ERROR: UNITY_BIN is set but is not executable: $UNITY_BIN" >&2
     return 1
   fi
 
@@ -49,9 +49,16 @@ pick_unity() {
     return 1
   fi
 
-  # Prefer Unity 6.3 LTS (6000.3.x)
+  # Required baseline: Unity 6.5 == 6000.5.10f1 (exact).
   local preferred
-  preferred="$(printf '%s\n' "$all" | grep '/6000\.3\.' | sort -V | tail -n 1 || true)"
+  preferred="$(printf '%s\n' "$all" | grep '/6000\.5\.10f1/' | sort -V | tail -n 1 || true)"
+  if [[ -n "$preferred" ]]; then
+    echo "$preferred"
+    return 0
+  fi
+
+  # Then any 6000.5.x - tolerated with a warning below, not endorsed.
+  preferred="$(printf '%s\n' "$all" | grep '/6000\.5\.' | sort -V | tail -n 1 || true)"
   if [[ -n "$preferred" ]]; then
     echo "$preferred"
     return 0
@@ -76,33 +83,32 @@ print_install_help() {
   cat <<'EOF'
 
 ============================================================
-Unity wurde nicht gefunden.
+Unity was not found.
 ============================================================
 
-1) Unity Hub öffnen:
+1) Open Unity Hub:
    open -a "Unity Hub"
 
-2) Installieren:
-   - Unity 6.3 LTS (oder Unity 6.x)
+2) Install:
+   - Unity 6.5 (6000.5.10f1) - exactly this version
    - Module: iOS Build Support
-   - (empfohlen) Android Build Support nur falls nötig
+   - Android Build Support only if you also need it
 
-3) Danach erneut:
+3) Then run again:
    ./BuildIOS.sh
 
-ODER manuell (GUI, ohne Script):
-   - Unity Hub → Add → diesen CatchIfYouCan Ordner wählen
-   - Mit Unity 6.x öffnen
-   - Menü: Catch If You Can → Setup Project
-   - Menü: Catch If You Can → Build iOS
-   - Danach: open Builds/iOS
+OR manually, through the GUI:
+   - Unity Hub -> Add -> select this repository folder
+   - Open it with Unity 6000.5.10f1
+   - Menu: Catch If You Can -> 5. BUILD -> iOS
+   - Then: open Builds/iOS
 
-Falls Unity schon installiert ist, aber woanders liegt:
+If Unity is installed somewhere else:
    UNITY_BIN="/Applications/Unity/Hub/Editor/XXXX/Unity.app/Contents/MacOS/Unity" ./BuildIOS.sh
 
-Gefundene Unity-Installationen (falls vorhanden):
+Unity installations found on this machine, if any:
 EOF
-  list_unity_editors || echo "  (keine)"
+  list_unity_editors || echo "  (none)"
 }
 
 UNITY="$(pick_unity || true)"
@@ -111,7 +117,7 @@ if [[ -z "${UNITY:-}" ]]; then
   # Soft-fail: still open helpful docs / Hub if possible
   if [[ -d "/Applications/Unity Hub.app" ]]; then
     echo ""
-    echo "Öffne Unity Hub…"
+    echo "Opening Unity Hub..."
     open -a "Unity Hub" || true
   fi
   open "$PROJECT_DIR/DEPLOY_IOS.md" 2>/dev/null || true
@@ -124,10 +130,12 @@ echo "Version dir: $UNITY_VERSION_DIR"
 echo "Project:     $PROJECT_DIR"
 echo "Output:      $OUT_DIR"
 
-# Warn if not 6.3
-if [[ "$UNITY_VERSION_DIR" != 6000.3.* ]]; then
-  echo "WARNUNG: Empfohlen ist Unity 6000.3.x LTS. Gefunden: $UNITY_VERSION_DIR"
-  echo "         Build wird trotzdem versucht."
+# Warn if this is not the pinned editor version
+if [[ "$UNITY_VERSION_DIR" != "6000.5.10f1" ]]; then
+  echo "WARNING: Unity 6000.5.10f1 is required. Found: $UNITY_VERSION_DIR"
+  echo "         Another version rewrites ProjectVersion.txt and changes the"
+  echo "         toolchain underneath the determinism baseline."
+  echo "         Building anyway."
 fi
 
 # Clean previous iOS export
@@ -153,19 +161,18 @@ echo "Unity log: $LOG_FILE"
 XCODE_PROJ="$(find "$OUT_DIR" -name '*.xcodeproj' 2>/dev/null | head -n 1 || true)"
 if [[ -z "$XCODE_PROJ" ]]; then
   echo ""
-  echo "ERROR: Kein .xcodeproj unter $OUT_DIR."
-  echo "Häufige Ursachen:"
-  echo "  - iOS Build Support Modul fehlt in Unity Hub"
-  echo "  - Erster Projektimport braucht GUI (License / Package resolve)"
+  echo "ERROR: no .xcodeproj under $OUT_DIR."
+  echo "Common causes:"
+  echo "  - the iOS Build Support module is missing in Unity Hub"
+  echo "  - the first project import needs the GUI (licence / package resolve)"
   echo ""
-  echo "Fallback GUI-Build:"
+  echo "GUI fallback:"
   echo "  1) open -a \"Unity Hub\""
-  echo "  2) Projekt hinzufügen: $PROJECT_DIR"
-  echo "  3) Öffnen → Catch If You Can → Setup Project"
-  echo "  4) Catch If You Can → Build iOS"
+  echo "  2) Add the project: $PROJECT_DIR"
+  echo "  3) Open it, then: Catch If You Can -> 5. BUILD -> iOS"
   echo ""
   if [[ -f "$LOG_FILE" ]]; then
-    echo "----- letzte 60 Log-Zeilen -----"
+    echo "----- last 60 log lines -----"
     tail -n 60 "$LOG_FILE" || true
   fi
   exit 2
@@ -187,6 +194,6 @@ rm -f "$ZIP_OUT"
 echo "Xcode export zip: $ZIP_OUT"
 echo ""
 echo "In Xcode:"
-echo "  1. Signing & Capabilities → Team"
+echo "  1. Signing & Capabilities -> Team"
 echo "  2. Bundle ID: com.catchifyoucan.game"
-echo "  3. iPhone anschließen → Product → Run"
+echo "  3. Connect the iPhone -> Product -> Run"

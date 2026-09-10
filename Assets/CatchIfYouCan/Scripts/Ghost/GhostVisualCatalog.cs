@@ -1,22 +1,34 @@
 namespace CatchIfYouCan.Ghost
 {
-    /// <summary>Maps ghost identities and visual profiles to bundled rigged model sources.</summary>
+    /// <summary>
+    /// Maps ghost identities and visual profiles to bundled rigged model sources.
+    ///
+    /// <para>
+    /// Every path here is a Quaternius monster. THE MIMICER and THE STATIC used to name two
+    /// character meshes from the Kenney Mini Dungeon kit - the last two files of that kit still
+    /// in the project after the house interior half was removed. The kit is out entirely now, so
+    /// they are remapped like for like: the human mesh to the bipedal Demon, the orc mesh to the
+    /// Orc. Reusing a model across two ghosts is the pattern here rather than an exception -
+    /// Demon already served Whisper and Hollow, Orc already served Wanderer and Knocker - because
+    /// what tells one entity from another is its EVIDENCE, not its silhouette.
+    /// </para>
+    /// </summary>
     public static class GhostVisualCatalog
     {
         public static string GetModelAssetPath(string ghostId)
         {
             switch (ghostId)
             {
-                case "the_wanderer": return "Assets/External/Quaternius/Monsters/Orc.gltf";
-                case "the_whisper": return "Assets/External/Quaternius/Monsters/Demon.gltf";
-                case "the_watcher": return "Assets/External/Quaternius/Monsters/BlueDemon.gltf";
-                case "the_mimicer": return "Assets/External/Kenney/MiniDungeon/Models/character-human.fbx";
-                case "the_hollow": return "Assets/External/Quaternius/Monsters/Demon.gltf";
-                case "the_knocker": return "Assets/External/Quaternius/Monsters/Orc.gltf";
-                case "the_shadeborn": return "Assets/External/Quaternius/Monsters/BlueDemon.gltf";
-                case "the_static": return "Assets/External/Kenney/MiniDungeon/Models/character-orc.fbx";
-                case "the_crawler": return "Assets/External/Quaternius/Monsters/CreepCreature.glb";
-                case "the_weeping_one": return "Assets/External/Quaternius/Monsters/CreepCreature.glb";
+                case GhostIds.Wanderer: return "Assets/External/Quaternius/Monsters/Orc.gltf";
+                case GhostIds.Whisper: return "Assets/External/Quaternius/Monsters/Demon.gltf";
+                case GhostIds.Watcher: return "Assets/External/Quaternius/Monsters/BlueDemon.gltf";
+                case GhostIds.Mimicer: return "Assets/External/Quaternius/Monsters/Demon.gltf";
+                case GhostIds.Hollow: return "Assets/External/Quaternius/Monsters/Demon.gltf";
+                case GhostIds.Knocker: return "Assets/External/Quaternius/Monsters/Orc.gltf";
+                case GhostIds.Shadeborn: return "Assets/External/Quaternius/Monsters/BlueDemon.gltf";
+                case GhostIds.Static: return "Assets/External/Quaternius/Monsters/Orc.gltf";
+                case GhostIds.Crawler: return "Assets/External/Quaternius/Monsters/CreepCreature.glb";
+                case GhostIds.WeepingOne: return "Assets/External/Quaternius/Monsters/CreepCreature.glb";
                 default: return GetModelAssetPathForProfile(GhostVisualProfile.HumanSilhouette);
             }
         }
@@ -38,32 +50,61 @@ namespace CatchIfYouCan.Ghost
             }
         }
 
+        /// <summary>Resources subfolder ghost prefabs are looked up in.</summary>
+        public const string PrefabResourceFolder = "Ghosts/";
+
+        /// <summary>
+        /// Where the editor tooling must WRITE ghost prefabs for the lookup above to find them.
+        ///
+        /// <para>
+        /// It exists because half of this bug was fixed once already. The runtime path was
+        /// corrected from "CatchIfYouCan/Ghosts/" to "Ghosts/", and the tool that builds the
+        /// prefabs went on writing them to Assets/CatchIfYouCan/Resources/CatchIfYouCan/Ghosts
+        /// - so every ghost the integrator produced was still unreachable and every ghost in
+        /// the game was still the primitive fallback. A reader and a writer that agree by
+        /// having been edited on the same day will disagree again; these two now derive from
+        /// one constant.
+        /// </para>
+        /// </summary>
+        public const string PrefabAssetFolder = "Assets/CatchIfYouCan/Resources/Ghosts";
+
+        /// <summary>
+        /// Where a ghost's prefab is looked for under Resources.
+        ///
+        /// <para>
+        /// This used to return "CatchIfYouCan/Ghosts/{id}". A Resources path is relative to a
+        /// Resources folder, and this project's is Assets/CatchIfYouCan/Resources - so the old
+        /// path resolved to Assets/CatchIfYouCan/Resources/CatchIfYouCan/Ghosts, a folder that
+        /// has never existed. Every lookup missed, silently, and every ghost in the game was
+        /// the primitive capsule fallback. The project name was in the path twice.
+        /// </para>
+        /// </summary>
         public static string GetPrefabResourcePath(string ghostId)
         {
-            return $"CatchIfYouCan/Ghosts/{ghostId}";
+            return PrefabResourceFolder + ghostId;
         }
 
         public static string GetPrefabResourcePath(GhostVisualProfile profile)
         {
-            return $"CatchIfYouCan/Ghosts/profile_{profile}";
+            return PrefabResourceFolder + "profile_" + profile;
         }
 
         public static float GetScaleMultiplier(string ghostId)
         {
             switch (ghostId)
             {
-                case "the_crawler": return 0.55f;
-                case "the_weeping_one": return 0.75f;
-                case "the_whisper": return 0.95f;
-                case "the_shadeborn": return 1.15f;
-                case "the_knocker": return 1.05f;
+                case GhostIds.Crawler: return 0.55f;
+                case GhostIds.WeepingOne: return 0.75f;
+                case GhostIds.Whisper: return 0.95f;
+                case GhostIds.Shadeborn: return 1.15f;
+                case GhostIds.Knocker: return 1.05f;
                 default: return 1f;
             }
         }
 
         public static float GetVerticalOffset(string ghostId)
         {
-            return ghostId == "the_crawler" ? 0.15f : 0f;
+            return ghostId == GhostIds.Crawler ? 0.15f : 0f;
         }
     }
 }

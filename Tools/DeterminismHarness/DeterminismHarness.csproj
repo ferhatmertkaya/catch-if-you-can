@@ -1,0 +1,45 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Compiles the pure deterministic generation core OUTSIDE Unity.
+
+    The core (Assets/CatchIfYouCan/Scripts/Procedural/Deterministic) references no
+    UnityEngine type, which is what makes this possible - and is itself the strongest
+    guarantee that generation cannot read engine state. This project runs the determinism
+    suite in CI without a Unity licence, and generates the golden seed table.
+
+    Run:  dotnet run (see README) with command: test | golden | report
+  -->
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>disable</Nullable>
+    <LangVersion>9.0</LangVersion>
+    <AssemblyName>DeterminismHarness</AssemblyName>
+    <RootNamespace>CatchIfYouCan.Tools</RootNamespace>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="../../Assets/CatchIfYouCan/Scripts/Procedural/Deterministic/**/*.cs" />
+
+    <!--
+      One file from the session layer, named individually rather than by wildcard.
+
+      SessionMode carries the offline/online product contract and is deliberately pure - it
+      has no usings at all and reaches the protocol by full name - so it compiles here and
+      the contract becomes testable without Unity, which is the only way it gets tested at
+      all today.
+
+      Including it also enforces that purity: the moment somebody adds a UnityEngine
+      dependency to SessionMode.cs, this build fails and CI says so. The rest of
+      Scripts/Session is not included, because it legitimately uses UnityEngine.
+    -->
+    <Compile Include="../../Assets/CatchIfYouCan/Scripts/Session/SessionMode.cs" />
+    <Compile Include="Program.cs" />
+    <Compile Include="DeterminismSuite.cs" />
+  </ItemGroup>
+
+</Project>

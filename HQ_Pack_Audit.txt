@@ -1,0 +1,158 @@
+=========================================================
+HQ PACK AUDIT  -  ES WURDE NICHTS GEAENDERT
+=========================================================
+Ordner: Assets/HQ Modular House
+
+Texturen : 388
+Modelle  : 121
+Materialien: 279
+Prefabs  : 105
+Szenen   : 1
+
+--- AUFLOESUNGSVERTEILUNG (laengste Kante) ---
+     PIXEL      JETZT    DESKTOP    ANDROID        iOS
+      1024        201        201        201        201
+       512        187        187        187        187
+
+--- IST-ZUSTAND DER IMPORTER (zurueckgelesen, nicht der Plan) ---
+     PIXEL    DESKTOP    ANDROID        iOS
+      1024        201        201        201
+       512        187        187        187
+
+  Plattform-Overrides gesetzt:  Standalone 388   Android 388   iOS 388   von 388
+  IST entspricht dem Plan bei:  388 von 388
+  -> Der Plan ist vollstaendig angewendet.
+
+  Speicher im IST-Zustand:  Desktop 1,321.3 MB   Android 1,321.3 MB   iOS 1,321.3 MB
+  verbleibende 4096:        Desktop 0   Android 0   iOS 0
+
+--- GESCHAETZTER TEXTURSPEICHER (RGBA32, inkl. Mipmaps) ---
+  ZIEL             SPEICHER    ERSPARNIS
+  JETZT          1,321.3 MB            -
+  DESKTOP        1,321.3 MB       -0.0 %
+  ANDROID        1,321.3 MB       -0.0 %
+  iOS            1,321.3 MB       -0.0 %
+
+  RGBA32 ist der ehrliche Worst Case und die Zahl, die den Editor
+  lahmlegt. Im Build komprimiert (DXT/BC auf Desktop, ASTC auf Mobile)
+  liegt der echte VRAM-Bedarf typischerweise bei einem Viertel bis
+  einem Achtel davon. Die VERHAELTNISSE oben stimmen trotzdem.
+
+  Read/Write AN : 0 von 388
+  ohne Mipmaps  : 0 von 388
+
+--- QUALITAETSKLASSE (Objekt-Wichtigkeit) ---
+  A_Architecture       85
+  B_HeroFurniture     188
+  C_Prop              102
+  E_AlphaCritical      13
+
+--- MAP-TYP ---
+  Albedo                129
+  Emission                9
+  Normal                126
+  SpecularSmoothness    112
+  Unknown                12
+
+--- ALPHA, AUS DEN MATERIALIEN STATT AUS DEN NAMEN ---
+  wirklich transparente Materialien : 10 von 279
+  Texturen davon benutzt (Klasse E) : 13
+  Name behauptet Alpha, Material nicht: 23   <- diese werden NICHT als E behandelt
+
+--- 25 GROESSTE TEXTUREN ---
+  PIXEL      JETZT    TYP      DESK   ANDR   iOS    KLASSE               DATEI
+  1024x1024  5.3 MB   Albedo   1024   1024   1024   B_HeroFurniture      Super Shtori_shtori 1_AlbedoTransparency.png
+  1024x1024  5.3 MB   Normal   1024   1024   1024   B_HeroFurniture      4_SHKAF3_Normal.png
+  1024x1024  5.3 MB   Albedo   1024   1024   1024   B_HeroFurniture      mirror_AlbedoTransparency.png
+  1024x1024  5.3 MB   Normal   1024   1024   1024   B_HeroFurniture      mirror_Normal.png
+  1024x1024  5.3 MB   Albedo   1024   1024   1024   B_HeroFurniture      7_bike_AlbedoTransparency.png
+  1024x1024  5.3 MB   Albedo   1024   1024   1024   B_HeroFurniture      Tumba 1_tumba 1_AlbedoTransparency.png
+  1024x1024  5.3 MB   Normal   1024   1024   1024   B_HeroFurniture      Tumba 1_tumba 1_Normal.png
+  1024x1024  5.3 MB   Albedo   1024   1024   1024   B_HeroFurniture      Tumba 2_Tumba 2_AlbedoTransparency.png
+  1024x1024  5.3 MB   Normal   1024   1024   1024   B_HeroFurniture      Tumba 2_Tumba 2_Normal.png
+  1024x1024  5.3 MB   Albedo   1024   1024   1024   E_AlphaCritical      BRA_BRA_AlbedoTransparency1.png
+  1024x1024  5.3 MB   Albedo   1024   1024   1024   B_HeroFurniture      Toy Cube_toy  Cube_AlbedoTransparency.png
+  1024x1024  5.3 MB   Normal   1024   1024   1024   B_HeroFurniture      BRA_BRA_Normal.png
+  1024x1024  5.3 MB   Albedo   1024   1024   1024   B_HeroFurniture      Polotence 1_Polotence 1_AlbedoTransparency.png
+  1024x1024  5.3 MB   Albedo   1024   1024   1024   B_HeroFurniture      Polotence 1_Polotence 1_AlbedoTransparency 2.png
+  1024x1024  5.3 MB   Albedo   1024   1024   1024   B_HeroFurniture      BED 2_bed 2 belio_AlbedoTransparency.png
+  1024x1024  5.3 MB   Normal   1024   1024   1024   B_HeroFurniture      BED 2_bed 2 belio_Normal.png
+  1024x1024  5.3 MB   Albedo   1024   1024   1024   B_HeroFurniture      BED 2_Bed 2 krowat _AlbedoTransparency.png
+  1024x1024  5.3 MB   Normal   1024   1024   1024   B_HeroFurniture      BED 2_Bed 2 krowat _Normal.png
+  1024x1024  5.3 MB   Albedo   1024   1024   1024   B_HeroFurniture      suitcase 1_Material _26_AlbedoTransparency.png
+  1024x1024  5.3 MB   Normal   1024   1024   1024   B_HeroFurniture      suitcase 1_Material _26_Normal.png
+  1024x1024  5.3 MB   Albedo   1024   1024   1024   B_HeroFurniture      Suitcase 2_suitcase 2_AlbedoTransparency 1.png
+  1024x1024  5.3 MB   Albedo   1024   1024   1024   B_HeroFurniture      Suitcase 2_suitcase 2_AlbedoTransparency 2.png
+  1024x1024  5.3 MB   Albedo   1024   1024   1024   B_HeroFurniture      Suitcase 2_suitcase 2_AlbedoTransparency.png
+  1024x1024  5.3 MB   Normal   1024   1024   1024   B_HeroFurniture      Suitcase 2_suitcase 2_Normal.png
+  1024x1024  5.3 MB   Albedo   1024   1024   1024   B_HeroFurniture      2_DefaultMaterial_AlbedoTransparency.png
+
+--- MESHES ---
+  Modelle gesamt : 121
+  Dreiecke gesamt: 535,993
+  ohne LODGroup  : 121 von 121
+  Read/Write AN  : 121 von 121
+
+  VORSCHLAG: Read/Write bleibt AN. Begruendung:
+
+  NavMeshRuntimeBuilder baut die NavMesh zur LAUFZEIT aus RENDER-Meshes,
+  nicht aus Collidern - auf beiden Wegen. Der NavMeshBuilder-Pfad setzt
+  sourceObject = MeshFilter.sharedMesh, und der NavMeshSurface-Pfad setzt
+  useGeometry auf RenderMeshes. Beides liest Vertexdaten auf der CPU, und
+  dafuer muss Read/Write an sein.
+
+  Welche HQ-Meshes den Sammler wirklich erreichen, entscheidet
+  ShouldInclude: Tag 'Environment' ODER ein Name mit 'Floor'/'Wall' -
+  geprueft am MeshFilter-Objekt SELBST, also an den Kind-Objekten der
+  Vendor-Prefabs, deren Namen wir nicht vergeben. Das laesst sich statisch
+  nicht entscheiden, und die sichere Antwort auf eine unentscheidbare
+  Frage ist, nichts abzuschalten.
+
+  Der Preis dafuer ist klein: 535,993 Dreiecke im
+  ganzen Paket. Die CPU-Kopie liegt in der Groessenordnung einiger
+  zehn MB - gegen ein Texturproblem von mehreren GB. Read/Write
+  abzuschalten spart fast nichts und riskiert, dass der Geist nicht
+  mehr laufen kann.
+
+  Wer das aendern will, aendert nicht die Importer, sondern den Sammler:
+  NavMesh aus PhysicsColliders statt RenderMeshes. Das ist eine
+  Aenderung an der Generierung, nicht an Import-Einstellungen.
+
+--- 15 GROESSTE MESHES ---
+      50,396 Tris    57,809 Verts  Kompression Off         19.FBX
+      31,044 Tris    31,380 Verts  Kompression Off         Telescope.FBX
+      18,505 Tris    11,094 Verts  Kompression Off         cortains.FBX
+      16,026 Tris    10,224 Verts  Kompression Off         5сб.FBX
+      15,481 Tris     8,878 Verts  Kompression Off         26.FBX
+      14,176 Tris    14,908 Verts  Kompression Off         5.FBX
+      13,840 Tris     8,977 Verts  Kompression Off         18.FBX
+      12,362 Tris    12,989 Verts  Kompression Off         20.FBX
+      12,098 Tris     8,857 Verts  Kompression Off         7.FBX
+      11,546 Tris     8,834 Verts  Kompression Off         4.FBX
+      10,101 Tris     8,291 Verts  Kompression Off         1.FBX
+      10,031 Tris     7,774 Verts  Kompression Off         3.FBX
+       9,985 Tris     9,902 Verts  Kompression Off         2.FBX
+       8,513 Tris     7,140 Verts  Kompression Off         23.FBX
+       8,332 Tris     8,428 Verts  Kompression Off         25.FBX
+
+  Mesh-Kompression wird NICHT gesetzt: sie ist verlustbehaftet auf
+  Vertexpositionen, und eine Wand, die sich um einen Millimeter
+  verschiebt, reisst eine Fuge auf. LODs werden NICHT erzeugt.
+
+--- MATERIALIEN AUF NICHT-URP-SHADERN ---
+  keine. Die URP-Konvertierung hat alles im Paket erwischt.
+
+--- MOEGLICHE DOPPELTE TEXTUREN (gleiche Pixelmasse UND Dateigroesse) ---
+  6 Gruppe(n). NICHTS wird geloescht -
+  ob zwei Texturen dieselben sind, ist eine Frage an die Kunst, nicht an Bytes.
+    1024x1024@50331692  ->  Assets/HQ Modular House/interior/other/fireplace/New Folder/2_fence2 door_AlbedoTransparency.tga | Assets/HQ Modular House/interior/other/fireplace/New Folder/2_fence2 door_Normal.tga
+    1024x1024@22836060  ->  Assets/HQ Modular House/interior/other/MATERIALS/walls/wallpaper1/222_DefaultMaterial_Normal.png | Assets/HQ Modular House/interior/other/MATERIALS/walls/wallpaper3/222_DefaultMaterial_Normal.png
+    512x512@1039017  ->  Assets/HQ Modular House/props/Library/Carpet/Materials/carpet/nomeradona_fabric_normal.jpg | Assets/HQ Modular House/props/Library/Carpet/Materials/nomeradona_fabric_normal.jpg
+    512x512@31821265  ->  Assets/HQ Modular House/props/Library/Carpet/Materials/carpet/textures 1/unity 5/Carpet_carpet_Normal.png | Assets/HQ Modular House/props/Library/Carpet/Materials/carpet/textures 2/unity 5/Carpet_carpet_Normal.png | Assets/HQ Modular House/props/Library/Carpet/Materials/Carpet_carpet_Normal.png
+    512x512@6521901  ->  Assets/HQ Modular House/props/Library/Carpet/Materials/carpet/textures 1/unity 5/Carpet_carpet_SpecularSmoothness.png | Assets/HQ Modular House/props/Library/Carpet/Materials/Carpet_carpet_SpecularSmoothness.png
+    1024x1024@22069030  ->  Assets/HQ Modular House/props/Library/Carpet/Materials/carpet/textures 2/unity 5/Carpet_carpet_AlbedoTransparency.png | Assets/HQ Modular House/props/Library/Carpet/Materials/Carpet_carpet_AlbedoTransparency 1.png
+
+=========================================================
+ENDE DES AUDITS. Es wurde keine Datei und keine Einstellung geaendert.
+Bericht auch geschrieben nach: /Users/localhost/Desktop/CatchIfYouCan-New/HQ_Pack_Audit.txt
+=========================================================

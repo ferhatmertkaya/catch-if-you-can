@@ -1,0 +1,63 @@
+name: Determinism
+
+# Runs the deterministic generation suite. Needs no Unity licence: the generation core is
+# engine-free by construction, which is exactly the property that makes it deterministic,
+# so plain .NET can compile and run it.
+#
+# This does NOT yet cover the cross-platform half of T4 in Docs/DETERMINISM.md - proving
+# that an IL2CPP iOS-arm64 build and an IL2CPP Android-arm64 build produce the same hashes
+# needs Unity build agents.
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+
+jobs:
+  determinism:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Static guard and determinism suite
+        run: Scripts/check_determinism.sh
+
+      - name: Development scene guard
+        run: Scripts/check_dev_scenes.sh
+
+      - name: Equipment catalog guard
+        run: Scripts/check_equipment_catalog.sh
+
+      - name: Multiplayer architecture guard
+        run: Scripts/check_multiplayer_architecture.sh
+
+      - name: Agent architecture guard
+        run: Scripts/check_agent_architecture.sh
+
+      - name: UI and portal guard
+        run: Scripts/check_ui_and_portal.sh
+
+      - name: Vertical slice guard
+        run: Scripts/check_vertical_slice.sh
+
+      - name: Project tag and layer guard
+        run: Scripts/check_project_tags.sh
+
+      - name: Asset reference and LFS payload guard
+        run: Scripts/check_asset_references.sh
+
+      - name: HQ modular environment guard
+        run: Scripts/check_hq_environment.sh
+
+      - name: Editor menu guard
+        run: Scripts/check_editor_menu.sh
+
+      - name: Room furnishing guard
+        run: Scripts/check_room_furnishing.sh
+
+      - name: Scene mesh budget guard
+        run: Scripts/check_scene_budget.sh

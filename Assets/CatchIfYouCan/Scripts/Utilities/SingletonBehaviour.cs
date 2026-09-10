@@ -18,8 +18,18 @@ namespace CatchIfYouCan.Utilities
             if (Instance == null)
                 Instance = GetComponent<T>();
 
+            // Only a ROOT object can be kept across scenes. Unity logs "DontDestroyOnLoad
+            // only works for root GameObjects" and does nothing otherwise - so a subsystem
+            // parented under its manager was never actually persisting, and said so three
+            // times on every boot. Detached first, which is what the call needs and what the
+            // singleton contract has always assumed.
             if (persist)
+            {
+                if (transform.parent != null)
+                    transform.SetParent(null, true);
+
                 DontDestroyOnLoad(gameObject);
+            }
         }
 
         protected virtual void OnDestroy()

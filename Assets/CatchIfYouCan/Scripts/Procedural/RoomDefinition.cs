@@ -1,3 +1,4 @@
+using CatchIfYouCan.Procedural.Deterministic;
 using UnityEngine;
 
 namespace CatchIfYouCan.Procedural
@@ -6,6 +7,10 @@ namespace CatchIfYouCan.Procedural
     public class RoomDefinition : ScriptableObject
     {
         [Header("Identity")]
+        [Tooltip("Frozen id used by deterministic generation and by the layout hash. " +
+                 "Leave empty to derive it from the category.")]
+        public string StableId;
+
         public RoomCategory Category = RoomCategory.Hallway;
 
         [Header("Prefabs")]
@@ -17,15 +22,25 @@ namespace CatchIfYouCan.Procedural
         [Header("Selection")]
         [Min(0.01f)] public float Weight = 1f;
 
-        public GameObject PickPrefab(System.Random rng)
+        public string ResolveStableId() =>
+            !string.IsNullOrEmpty(StableId) ? StableId : "ARCH_" + Category;
+
+        public int VariantCount => PrefabVariants != null && PrefabVariants.Length > 0 ? PrefabVariants.Length : 1;
+
+        /// <summary>
+        /// Returns the variant the LAYOUT chose. Stage A picks the index from the
+        /// RoomVariants stream; Stage B only looks it up, so instantiation makes no
+        /// random choice of its own.
+        /// </summary>
+        public GameObject GetPrefabVariant(int variantIndex)
         {
             if (PrefabVariants == null || PrefabVariants.Length == 0)
                 return null;
 
-            if (PrefabVariants.Length == 1)
-                return PrefabVariants[0];
+            int index = variantIndex % PrefabVariants.Length;
+            if (index < 0)
+                index += PrefabVariants.Length;
 
-            int index = rng.Next(0, PrefabVariants.Length);
             return PrefabVariants[index];
         }
     }

@@ -42,8 +42,7 @@ namespace CatchIfYouCan.Audio
         private void Start()
         {
             _identity = GhostIdentityAudio.Resolve(_ghost?.Definition?.DisplayName);
-            var playerGo = GameObject.FindGameObjectWithTag("Player");
-            _player = playerGo != null ? playerGo.transform : null;
+            _player = Core.LocalPlayerService.RootTransform;
         }
 
         private void OnEnable()
@@ -170,7 +169,7 @@ namespace CatchIfYouCan.Audio
         private bool IsPlayerHidden()
         {
             if (_player == null) return false;
-            var spots = FindObjectsByType<HideSpot>(FindObjectsSortMode.None);
+            var spots = FindObjectsByType<HideSpot>();
             for (int i = 0; i < spots.Length; i++)
             {
                 if (spots[i] != null && spots[i].PlayerHidden)

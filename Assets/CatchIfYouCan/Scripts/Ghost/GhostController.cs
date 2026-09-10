@@ -29,6 +29,53 @@ namespace CatchIfYouCan.Ghost
         public GhostState CurrentState => _stateMachine != null ? _stateMachine.Current : GhostState.Dormant;
         public NavMeshAgent Agent => _agent;
 
+        /// <summary>Whether the ghost is currently manifested. What a peer is told, not what it guesses.</summary>
+        public bool IsManifestationVisible => _manifestVisible;
+
+        /// <summary>Where this ghost's position and state come from.</summary>
+        public enum GhostDriveMode
+        {
+            /// <summary>This process simulates it, subject to <c>SessionAuthority.CanSimulateGhost</c>.</summary>
+            HostSimulation = 0,
+
+            /// <summary>Another machine decides; this one draws what it is told.</summary>
+            RemoteState,
+        }
+
+        /// <summary>
+        /// How this ghost is driven. <see cref="GhostDriveMode.HostSimulation"/> unless
+        /// something has said otherwise, which is what single player is.
+        /// </summary>
+        public GhostDriveMode Drive { get; private set; }
+
+        /// <summary>
+        /// Every ghost currently in the scene. There is normally one, and equipment that needs
+        /// it was each calling FindAnyObjectByType - the thermometer did it every frame, per
+        /// frame, forever. A ghost knows when it exists.
+        /// </summary>
+        private static readonly System.Collections.Generic.List<GhostController> Alive =
+            new System.Collections.Generic.List<GhostController>();
+
+        /// <summary>The ghost, or null. Null is normal outside an investigation.</summary>
+        public static GhostController Active => Alive.Count > 0 ? Alive[0] : null;
+
+        /// <summary>All of them, for a lab that deliberately spawns more than one.</summary>
+        public static System.Collections.Generic.IReadOnlyList<GhostController> All => Alive;
+
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+        private static void ResetOnPlay() => Alive.Clear();
+
+        private void OnEnable()
+        {
+            if (!Alive.Contains(this))
+                Alive.Add(this);
+        }
+
+        private void OnDisable()
+        {
+            Alive.Remove(this);
+        }
+
         private void Awake()
         {
             _agent = GetComponent<NavMeshAgent>();
@@ -64,9 +111,68 @@ namespace CatchIfYouCan.Ghost
         private void Update()
         {
             if (definition == null) return;
-            _stateMachine.Tick(Time.deltaTime);
-            UpdateManifestationVisibility();
-            UpdateRoomAwareness();
+
+            // Exactly one peer runs the ghost. Everything below the presentation line - the
+            // state machine, room awareness, the footsteps that disturb salt - is a decision,
+            // and four machines each making it independently is four different ghosts wearing
+            // the same transform.
+            //
+            // In single player this is always true, so nothing changes.
+            if (Drive == GhostDriveMode.HostSimulation && Core.SessionAuthority.CanSimulateGhost)
+            {
+                _stateMachine.Tick(Time.deltaTime);
+                UpdateRoomAwareness();
+                UpdateFootsteps();
+
+                // When a manifestation ends is a decision as much as when it starts, and it
+                // runs on the same clock as the roll that began it. A remote-driven ghost is
+                // told whether it is visible; expiring it locally would hide a ghost the host
+                // is still showing everybody else, because the end time it would compare
+                // against was never set on this machine.
+                UpdateManifestationVisibility();
+            }
+        }
+
+        [Header("Traces")]
+        [Tooltip("How far the ghost must travel before it counts as having taken a step, in " +
+                 "metres. The step is what disturbs salt.")]
+        [SerializeField, Min(0.05f)] private float stepDistance = 0.55f;
+
+        private Vector3 _lastStepPosition;
+        private bool _hasStepped;
+
+        /// <summary>
+        /// Tells the salt where the ghost walked.
+        ///
+        /// <para>
+        /// Nothing used to. <c>SaltFootprintUtility.NotifyGhostStep</c> existed, was correct,
+        /// and had no caller anywhere in the project - so salt was a mechanic made of a pile
+        /// that could not be poured, a step that was never reported and a footprint that was
+        /// never built. This is the missing caller.
+        /// </para>
+        ///
+        /// <para>
+        /// On distance covered rather than per frame: a step is a step, and a stationary ghost
+        /// standing in a pile should not grind it.
+        /// </para>
+        /// </summary>
+        private void UpdateFootsteps()
+        {
+            Vector3 here = transform.position;
+
+            if (!_hasStepped)
+            {
+                _hasStepped = true;
+                _lastStepPosition = here;
+                return;
+            }
+
+            if ((here - _lastStepPosition).sqrMagnitude < stepDistance * stepDistance)
+                return;
+
+            Vector3 from = _lastStepPosition;
+            _lastStepPosition = here;
+            Equipment.SaltPile.NotifyGhostStep(from, here);
         }
 
         public void OnStateEntered(GhostState state)
@@ -178,6 +284,30 @@ namespace CatchIfYouCan.Ghost
         public void RequestDoorInteraction(bool slam) => _interaction.TryDoorInteraction(slam);
         public void RequestObjectThrow() => _interaction.TryObjectThrow();
         public bool TryBeginHunt() => _hunt.TryStartHunt();
+
+        /// <summary>
+        /// Cuts an active hunt short. The warding relic's whole purpose, asked for through the
+        /// ghost rather than taken.
+        ///
+        /// <para>
+        /// A public request rather than a <c>FindAnyObjectByType&lt;HuntController&gt;</c> from
+        /// outside: the relic used to sweep the scene for the component and call into it, which
+        /// is reaching past the ghost to operate one of its parts. Returns false when there was
+        /// no hunt to end, so a ward does not spend a charge on nothing.
+        /// </para>
+        /// </summary>
+        public bool TryEndHunt()
+        {
+            if (_hunt == null || (!_hunt.IsHunting && !_hunt.PreWarningActive))
+                return false;
+
+            _hunt.ForceEndHunt();
+            return true;
+        }
+
+        /// <summary>Whether a hunt or its pre-warning is running right now.</summary>
+        public bool IsHuntImminentOrActive =>
+            _hunt != null && (_hunt.IsHunting || _hunt.PreWarningActive);
         public void NotifyDirectorEvent(HorrorEventType type) => _stateMachine.ForceState(GhostState.Event);
 
         public void OnHuntStarted()
@@ -216,6 +346,47 @@ namespace CatchIfYouCan.Ghost
                 return;
 
             manifestationRenderers = GetComponentsInChildren<Renderer>(true);
+        }
+
+        /// <summary>
+        /// Hands this ghost over to replicated state, permanently.
+        ///
+        /// <para>
+        /// One-way, like the player's equivalent: a ghost that is somebody else's simulation
+        /// is somebody else's for its whole life. The agent is switched off because a second
+        /// pathfinder fighting a received position is a ghost that stutters between where it
+        /// is and where it thinks it should walk.
+        /// </para>
+        /// </summary>
+        public void DriveFromRemoteState()
+        {
+            Drive = GhostDriveMode.RemoteState;
+
+            if (_agent != null)
+            {
+                if (_agent.isOnNavMesh)
+                    _agent.ResetPath();
+
+                _agent.enabled = false;
+            }
+        }
+
+        /// <summary>
+        /// Takes a state that was decided on another machine, for presentation.
+        ///
+        /// <para>
+        /// Not <c>ForceState</c>, which runs the entry decisions belonging to the state -
+        /// picking a roam target, performing an interaction. A client that ran those would be
+        /// a second ghost making its own choices behind the same transform.
+        /// </para>
+        /// </summary>
+        public void AdoptReplicatedState(GhostState replicated)
+        {
+            if (Drive != GhostDriveMode.RemoteState)
+                return;
+
+            if (_stateMachine != null)
+                _stateMachine.AdoptReplicatedState(replicated);
         }
 
         public void SetManifestationVisible(bool visible)

@@ -16,7 +16,7 @@ namespace CatchIfYouCan.Missions
 
         public static CaseIntroPresenter Ensure(CanvasGroup fadeOverlay)
         {
-            var existing = Object.FindFirstObjectByType<CaseIntroPresenter>();
+            var existing = Object.FindAnyObjectByType<CaseIntroPresenter>();
             if (existing != null)
             {
                 if (fadeOverlay != null && existing.overlay == null)
@@ -24,7 +24,7 @@ namespace CatchIfYouCan.Missions
                 return existing;
             }
 
-            var canvas = Object.FindFirstObjectByType<Canvas>();
+            var canvas = Object.FindAnyObjectByType<Canvas>();
             if (canvas == null)
                 return null;
 

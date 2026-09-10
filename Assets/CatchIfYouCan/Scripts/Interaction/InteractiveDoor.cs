@@ -84,6 +84,64 @@ namespace CatchIfYouCan.Interaction
 
         public void SetLocked(bool value) => locked = value;
 
+        /// <summary>
+        /// Hands a runtime-built door its hinge and its swing.
+        ///
+        /// <para>
+        /// A public method rather than reflection into the private fields (CLAUDE.md mistake 4):
+        /// reflection compiles, reviews clean and dies silently on the next rename - and the
+        /// rename that kills it here would leave every generated door rotating about its own
+        /// centre, which swings half the leaf into the wall it hangs in.
+        /// </para>
+        ///
+        /// <para>
+        /// Safe to call after <see cref="Awake"/>: the door is put back into its closed state
+        /// afterwards, on the new hinge, so a component added and configured on the next line
+        /// does not keep the angle it computed against itself.
+        /// </para>
+        /// </summary>
+        public void Configure(Transform hingeTransform, float openAngle)
+        {
+            if (hingeTransform != null)
+                hinge = hingeTransform;
+
+            if (openAngle > 0.1f)
+                maxAngle = openAngle;
+
+            _isOpen = startOpen;
+            _targetAngle = _isOpen ? maxAngle : minAngle;
+            _currentAngle = _targetAngle;
+            ApplyAngle(_currentAngle);
+        }
+
+        /// <summary>
+        /// Tells this door where its leaf actually IS, after somebody moved it by hand.
+        ///
+        /// <para>
+        /// <see cref="DraggableDoor"/> writes the hinge directly while it is held. This one only
+        /// writes the hinge while <c>_currentAngle</c> differs from <c>_targetAngle</c>, so it
+        /// leaves a dragged leaf alone - and then believes the angle it last computed. The next
+        /// press of the interact key would snap the leaf from that stale angle to the target,
+        /// which is a jump nobody asked for and no animation would explain.
+        /// </para>
+        /// <para>
+        /// A public method rather than reflection into these three fields (CLAUDE.md mistake 4).
+        /// It moves nothing: it records where the leaf already stands, and whether that counts
+        /// as open, so the next press starts from the truth.
+        /// </para>
+        /// </summary>
+        public void SyncToAngle(float degrees)
+        {
+            _currentAngle = Mathf.Clamp(degrees, Mathf.Min(minAngle, maxAngle),
+                                        Mathf.Max(minAngle, maxAngle));
+            _targetAngle = _currentAngle;
+            _moving = false;
+
+            // Half way counts as open. The prompt has to say the thing the press will do, and a
+            // door left at 40 degrees is one somebody opened.
+            _isOpen = Mathf.Abs(_currentAngle - minAngle) > Mathf.Abs(maxAngle - minAngle) * 0.5f;
+        }
+
         public void ForceOpenByGhost()
         {
             if (!ghostControllable || locked)

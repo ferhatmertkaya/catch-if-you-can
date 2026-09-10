@@ -97,8 +97,7 @@ namespace CatchIfYouCan.Audio
 
         private static Transform FindListenerTransform()
         {
-            var listener = Object.FindFirstObjectByType<AudioListener>();
-            return listener != null ? listener.transform : Camera.main != null ? Camera.main.transform : null;
+            return Core.LocalPlayerService.ResolveListenerTransform();
         }
     }
 }

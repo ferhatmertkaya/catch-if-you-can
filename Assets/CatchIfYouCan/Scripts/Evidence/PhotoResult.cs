@@ -12,7 +12,10 @@ namespace CatchIfYouCan.Evidence
         public float VisibilityScore;
         public float CenteringScore;
         public bool CapturedEvent;
-        public EvidenceType? RelatedEvidence;
+
+        // Unity cannot serialize Nullable<T>; photo results only ever live in
+        // EvidenceManager's runtime list, so the nullable stays.
+        [NonSerialized] public EvidenceType? RelatedEvidence;
         public Vector3 CapturePosition;
         public Vector3 SubjectPosition;
         public string Caption;

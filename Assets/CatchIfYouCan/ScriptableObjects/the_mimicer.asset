@@ -1,0 +1,39 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 2afbb20e89c1646c4a259a296c4b7657, type: 3}
+  m_Name: the_mimicer
+  m_EditorClassIdentifier: Assembly-CSharp::CatchIfYouCan.Ghost.GhostDefinition
+  Id: the_mimicer
+  DisplayName: THE MIMICER
+  Description: Copies footsteps, voices, and household sounds.
+  BehaviorNotes: Parabolic anomalies and thrown objects.
+  Strengths: Creates false leads.
+  Weaknesses: Reveals itself under sustained recording.
+  Evidence1: 3
+  Evidence2: 0
+  Evidence3: 1
+  Aggression: 0.65
+  Curiosity: 0.45
+  Activity: 0.7
+  RoamFrequency: 0.4
+  HuntThreshold: 0.6
+  SoundSensitivity: 0.53000003
+  ElectronicsSensitivity: 0.525
+  DoorInteractionChance: 0.3625
+  LightInteractionChance: 0.29
+  ObjectThrowChance: 0.23
+  ManifestationChance: 0.1675
+  ResponseFrequency: 0.435
+  Speed: 2.8
+  SearchAbility: 0.5775
+  VisualProfile: 3
+  Prefab: {fileID: 5346464834816484279, guid: 7ecaec9422f414695ba5f4784d6f0fb1, type: 3}

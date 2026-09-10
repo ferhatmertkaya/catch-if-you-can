@@ -24,6 +24,11 @@ namespace CatchIfYouCan.Ghost
         {
             if (_ghost?.Definition == null) return false;
 
+            // Every branch below rolls dice and then changes something every player can see -
+            // a door, a light, a thrown object, a mark on a wall. Host-only, or four machines
+            // roll four different outcomes and the house disagrees with itself.
+            if (!Core.SessionAuthority.CanSimulateGhost) return false;
+
             float roll = Random.value;
             var def = _ghost.Definition;
 
@@ -67,7 +72,7 @@ namespace CatchIfYouCan.Ghost
             var lightSwitch = FindNearestTagged(lightTag);
             if (lightSwitch == null)
             {
-                var lights = FindObjectsByType<Light>(FindObjectsSortMode.None);
+                var lights = FindObjectsByType<Light>();
                 if (lights.Length == 0) return false;
                 var light = lights[Random.Range(0, lights.Length)];
                 light.enabled = !light.enabled;
@@ -102,6 +107,15 @@ namespace CatchIfYouCan.Ghost
             rb.AddForce(dir.normalized * Random.Range(3f, 7f), ForceMode.Impulse);
             rb.AddTorque(Random.insideUnitSphere * 2f, ForceMode.Impulse);
 
+            // The object is now evidence, for a while. This is the only thing in the game that
+            // makes PhysicalDisturbance true: the evidence is not a reading, it is the claim
+            // that something moved on its own, and the claim is only honest if something did.
+            //
+            // Deliberately not on the door interaction. A door the ghost swung is a noise and a
+            // scare; it is not an object left out of place for somebody to photograph, and
+            // marking every slam would make the evidence mean nothing.
+            GhostDisturbance.MarkObject(obj);
+
             GameEvents.NoiseGenerated(0.55f, obj.transform.position);
             if (GhostActivitySystem.Instance != null)
                 GhostActivitySystem.Instance.RegisterGhostEvent(0.6f);
@@ -122,9 +136,34 @@ namespace CatchIfYouCan.Ghost
                     GameEvents.BreakerChanged();
                     break;
                 case HorrorEventType.MirrorWriting:
-                    GameEvents.EvidenceDetected(EvidenceType.UVTraces);
+                    // Writing on a mirror leaves a mark on the mirror. It does not tell the
+                    // player they have found UV Traces - that used to be exactly what it did,
+                    // announcing the evidence with nothing written anywhere and no lamp ever
+                    // switched on. Now something is actually there to be found.
+                    LeaveWrittenMark();
                     break;
             }
+        }
+
+        /// <summary>
+        /// Leaves the mark the ghost just made where the ghost made it, so a UV lamp has
+        /// something to find.
+        ///
+        /// <para>
+        /// Not anchored to a mirror on purpose. The only mirror this project builds is the one
+        /// the DEV labs install, so a mark placed on "the mirror" would exist in a lab and
+        /// nowhere in a mission - which is the same nothing this branch used to leave behind,
+        /// dressed up.
+        /// </para>
+        /// </summary>
+        private void LeaveWrittenMark()
+        {
+            var evidence = GetComponent<GhostEvidenceManager>();
+            if (evidence == null)
+                return;
+
+            Vector3 spot = transform.position + transform.forward * 1.2f + Vector3.up * 1.4f;
+            evidence.Manifest(EvidenceType.UVTraces, spot);
         }
 
         private GameObject FindNearestTagged(string tag)

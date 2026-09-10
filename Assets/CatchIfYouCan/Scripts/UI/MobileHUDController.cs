@@ -1,6 +1,5 @@
 using System.Collections;
 using CatchIfYouCan.Core;
-using CatchIfYouCan.Equipment;
 using CatchIfYouCan.Input;
 using CatchIfYouCan.Player;
 using UnityEngine;
@@ -16,7 +15,9 @@ namespace CatchIfYouCan.UI
         [SerializeField] private Button interactButton;
         [SerializeField] private Button crouchButton;
         [SerializeField] private Button sprintButton;
-        [SerializeField] private Image[] equipmentSlots = new Image[3];
+        [Tooltip("The three inventory slots. It owns them outright - two components writing " +
+                 "the same Images is how the icon and the highlight end up disagreeing.")]
+        [SerializeField] private InventorySlotSelector inventorySelector;
         [SerializeField] private Button useButton;
         [SerializeField] private RectTransform safeAreaRoot;
         [SerializeField] private float interactPulseSpeed = 3f;
@@ -35,7 +36,7 @@ namespace CatchIfYouCan.UI
             Button interactButton,
             Button crouchButton,
             Button sprintButton,
-            Image[] equipmentSlots,
+            InventorySlotSelector inventorySelector,
             Button useButton)
         {
             this.caseIcon = caseIcon;
@@ -44,7 +45,7 @@ namespace CatchIfYouCan.UI
             this.interactButton = interactButton;
             this.crouchButton = crouchButton;
             this.sprintButton = sprintButton;
-            this.equipmentSlots = equipmentSlots;
+            this.inventorySelector = inventorySelector;
             this.useButton = useButton;
             ApplySafeArea();
             WireButtons();
@@ -56,13 +57,11 @@ namespace CatchIfYouCan.UI
                 UIManager.Instance.Show(UIScreen.HUD, false);
             ApplySafeArea();
             WireButtons();
-            RefreshEquipmentSlots();
-            GameEvents.OnEquipmentChanged += RefreshEquipmentSlots;
+            inventorySelector?.Refresh();
         }
 
         private void OnDisable()
         {
-            GameEvents.OnEquipmentChanged -= RefreshEquipmentSlots;
             StopPulse();
         }
 
@@ -104,27 +103,51 @@ namespace CatchIfYouCan.UI
                 useButton.onClick.AddListener(() => input?.PressUse());
             }
 
-            if (crouchButton != null)
-            {
-                crouchButton.onClick.RemoveAllListeners();
-                var crouchTrigger = crouchButton.gameObject.AddComponent<HoldButton>();
-                crouchTrigger.OnHeldChanged += held => input?.SetCrouch(held);
-            }
+            WireHold(crouchButton, held => MobileInputController.Instance?.SetCrouch(held));
+            WireHold(sprintButton, held => MobileInputController.Instance?.SetSprint(held));
+        }
 
-            if (sprintButton != null)
-            {
-                sprintButton.onClick.RemoveAllListeners();
-                var sprintTrigger = sprintButton.gameObject.AddComponent<HoldButton>();
-                sprintTrigger.OnHeldChanged += held => input?.SetSprint(held);
-            }
+        /// <summary>
+        /// Attaches the hold behaviour to a button once, however many times the HUD is wired.
+        ///
+        /// <para>
+        /// WireButtons runs from BindRuntime, from OnEnable and from Start, and each run used
+        /// to <c>AddComponent&lt;HoldButton&gt;</c> unconditionally. So crouch and sprint
+        /// arrived with three of them before the first frame, each with its own subscriber,
+        /// and every enable of the HUD added two more - one press, three or five or seven
+        /// SetCrouch calls, growing for the life of the session.
+        /// </para>
+        ///
+        /// <para>
+        /// The handler is also read through the singleton at press time rather than captured
+        /// at wire time, because the HUD is built before the input controller exists in every
+        /// scene that spawns one - a captured null stays null.
+        /// </para>
+        /// </summary>
+        private static void WireHold(Button button, System.Action<bool> onHeld)
+        {
+            if (button == null)
+                return;
+
+            button.onClick.RemoveAllListeners();
+
+            var hold = button.GetComponent<HoldButton>();
+            if (hold != null)
+                return;
+
+            hold = button.gameObject.AddComponent<HoldButton>();
+            hold.OnHeldChanged += onHeld;
         }
 
         public void SetInteractAvailable(bool available)
         {
             if (_interactAvailable == available) return;
             _interactAvailable = available;
+            // Was `available || true`, which is true. The interact button is deliberately
+            // always pressable - the pulse is what says whether there is anything to interact
+            // with - so this states that rather than computing it and discarding the answer.
             if (interactButton != null)
-                interactButton.interactable = available || true;
+                interactButton.interactable = true;
 
             if (available)
                 StartPulse();
@@ -137,29 +160,6 @@ namespace CatchIfYouCan.UI
             if (caseIcon == null) return;
             caseIcon.sprite = sprite;
             caseIcon.color = sprite != null ? Color.white : UITheme.Primary;
-        }
-
-        private void RefreshEquipmentSlots()
-        {
-            if (equipmentSlots == null || equipmentSlots.Length == 0) return;
-            var mgr = EquipmentManager.Instance;
-            var inventory = FindFirstObjectByType<PlayerInventory>();
-
-            for (int i = 0; i < equipmentSlots.Length; i++)
-            {
-                if (equipmentSlots[i] == null) continue;
-                Sprite icon = null;
-                if (mgr != null && i < mgr.Loadout.Count && mgr.Loadout[i] != null)
-                    icon = mgr.Loadout[i].Icon;
-                else if (inventory != null)
-                {
-                    var item = inventory.GetSlot(i);
-                    icon = item?.Definition?.Icon;
-                }
-                equipmentSlots[i].sprite = icon;
-                equipmentSlots[i].color = icon != null ? Color.white : new Color(1, 1, 1, 0.15f);
-                UITheme.ApplyBorder(equipmentSlots[i].gameObject, 1f);
-            }
         }
 
         private void ApplySafeArea()

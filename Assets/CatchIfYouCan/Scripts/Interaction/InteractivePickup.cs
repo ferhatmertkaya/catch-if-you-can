@@ -13,7 +13,16 @@ namespace CatchIfYouCan.Interaction
         [SerializeField] private bool destroyOnPickup = true;
         [SerializeField] private float pickupNoise = 0.2f;
 
-        public string Prompt => prompt;
+        /// <summary>
+        /// "Remove" for a device standing on a wall, "Pick Up" for one lying in the room.
+        ///
+        /// <para>
+        /// The same object is both at different times, and the word is the only thing on screen
+        /// that says which. Derived rather than stored, so it cannot go stale against the
+        /// item's actual state.
+        /// </para>
+        /// </summary>
+        public string Prompt => itemComponent != null && itemComponent.IsPlaced ? "Remove" : prompt;
         public float HoldDuration => 0f;
         public InteractionType InteractionType => InteractionType.Pickup;
         public float Distance => distance;
@@ -24,13 +33,71 @@ namespace CatchIfYouCan.Interaction
                 itemComponent = GetComponent<EquipmentBase>();
         }
 
+        /// <summary>
+        /// Points the pickup at the item it picks up, for the code that builds equipment
+        /// rather than authoring it. Callers used to set these three fields through
+        /// reflection, which compiles happily and then fails silently the day one of them is
+        /// renamed.
+        /// </summary>
+        public void Configure(EquipmentBase item, string interactionPrompt, bool destroyWhenTaken)
+        {
+            itemComponent = item;
+            if (!string.IsNullOrEmpty(interactionPrompt))
+                prompt = interactionPrompt;
+            destroyOnPickup = destroyWhenTaken;
+        }
+
         public bool CanInteract(GameObject interactor)
         {
             if (itemComponent == null)
                 return false;
 
+            // Never offer something the player is already holding. Without this a carried item
+            // whose collider sits in front of the camera - anything held at the viewmodel anchor
+            // - is picked up by the interaction ray every frame and permanently reads as "Pick
+            // Up", covering whatever is actually in front of the player.
+            if (itemComponent.IsEquipped)
+                return false;
+
             PlayerInventory inventory = interactor.GetComponent<PlayerInventory>();
-            return inventory != null;
+            return inventory != null && inventory.HasFreeSlot;
+        }
+
+        /// <summary>
+        /// Why <see cref="CanInteract"/> said no, in words.
+        ///
+        /// <para>
+        /// <b>Three different refusals look identical from inside the game.</b> The controller
+        /// drops a target whose <c>CanInteract</c> is false, so there is no prompt, no outline
+        /// and no name - exactly what "nothing happens when I look at it" is - and the item
+        /// having no component, the item already being in your hands, and the bag being full
+        /// all produce that same nothing. This says which one it was, for the debug caption.
+        /// </para>
+        ///
+        /// <para>
+        /// Diagnostic only: it decides nothing, and <see cref="CanInteract"/> stays the single
+        /// answer to whether the pickup may happen.
+        /// </para>
+        /// </summary>
+        public string DescribeInteractability(GameObject interactor)
+        {
+            if (itemComponent == null)
+                return "no EquipmentBase is wired to this pickup";
+
+            if (itemComponent.IsEquipped)
+                return "it is already in your hands";
+
+            if (interactor == null)
+                return "there is no interactor";
+
+            PlayerInventory inventory = interactor.GetComponent<PlayerInventory>();
+            if (inventory == null)
+                return "the player carries no PlayerInventory";
+
+            if (!inventory.HasFreeSlot)
+                return "all " + PlayerInventory.SlotCount + " bag slots are full";
+
+            return "it can be taken";
         }
 
         public void Interact(GameObject interactor)
@@ -39,14 +106,49 @@ namespace CatchIfYouCan.Interaction
                 return;
 
             PlayerInventory inventory = interactor.GetComponent<PlayerInventory>();
-            if (inventory == null || !inventory.AddItem(itemComponent))
+            if (inventory == null)
                 return;
+
+            // A device on a wall comes OFF the wall; it does not get picked up off the floor.
+            // TryPickupPlaced is the call that switches the device off, clears its placed state
+            // and hands it back - AddItem alone would leave it thinking it is still installed,
+            // and HeldEquipmentBase refuses to equip an item in the Placed state, so the player
+            // would end up with an invisible item they could not put down.
+            if (itemComponent.IsPlaced)
+            {
+                if (itemComponent is CatchIfYouCan.Equipment.HeldEquipmentBase held)
+                {
+                    var taken = held.TryPickupPlaced(inventory);
+                    if (!taken.Ok)
+                    {
+                        Core.CIYCLog.Info("[CIYC][DOTS] [BLOCKED] REMOVE reason=" + taken.Status);
+                        return;
+                    }
+
+                    Core.CIYCLog.Info("[CIYC][DOTS] REMOVED");
+                }
+                else if (!inventory.AddItem(itemComponent))
+                {
+                    return;
+                }
+            }
+            else if (!inventory.AddItem(itemComponent))
+            {
+                return;
+            }
 
             PlayerNoiseEmitter noise = interactor.GetComponent<PlayerNoiseEmitter>();
             if (noise != null)
                 noise.EmitCustomNoise(pickupNoise);
             else
                 GameEvents.NoiseGenerated(pickupNoise, transform.position);
+
+            // When the item lives on this same object - which is what Awake's fallback sets up -
+            // the inventory now owns the thing being destroyed. Destroying or deactivating it
+            // here would take the item straight back out of the bag it was just put in. Only the
+            // separate-marker case has anything left to clean up.
+            if (itemComponent.gameObject == gameObject)
+                return;
 
             if (destroyOnPickup)
             {

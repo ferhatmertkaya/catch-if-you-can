@@ -12,6 +12,8 @@ TagManager:
   - Door
   - Van
   - Breaker
+  - Environment
+  - LightSwitch
   layers:
   - Default
   - TransparentFX

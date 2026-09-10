@@ -1,5 +1,6 @@
 using System;
 using UnityEngine;
+using CatchIfYouCan.Core;
 using CatchIfYouCan.Input;
 
 namespace CatchIfYouCan.Interaction
@@ -20,22 +21,24 @@ namespace CatchIfYouCan.Interaction
         public event Action<string, InteractionType, float> OnPromptChanged;
 
         private MobileInputController _input;
+        private Equipment.EquipmentActionRouter _router;
         private IInteractable _heldTarget;
         private float _holdTimer;
 
-        private void Awake()
-        {
-            if (viewCamera == null)
-                viewCamera = Camera.main;
-        }
-
-        private void Start()
-        {
-            _input = MobileInputController.Instance;
-        }
-
         private void Update()
         {
+            // Both of these used to be latched once, the camera in Awake and the input in
+            // Start, and both can legitimately not exist yet at that moment: the factory
+            // assigns the camera immediately after AddComponent returns, and the input
+            // singleton is created alongside the HUD. Losing either race left interaction
+            // dead for the whole session with nothing on screen to say why. Resolved per
+            // frame until they answer, then cached.
+            if (viewCamera == null)
+                viewCamera = LocalPlayerService.ResolveViewCamera();
+
+            if (_input == null)
+                _input = MobileInputController.Instance;
+
             if (_input == null || viewCamera == null)
                 return;
 
@@ -89,10 +92,24 @@ namespace CatchIfYouCan.Interaction
                 return;
             }
 
+            // One press, one action. While a device is being aimed at a wall, X belongs to the
+            // placement - and the thing this ray finds in front of the player at that moment is
+            // the wall the preview is standing on. Without this the item is placed and picked
+            // straight back up in the same frame, which reads as the placement never happening.
+            if (_router == null)
+                _router = GetComponent<Equipment.EquipmentActionRouter>();
+            if (_router != null && _router.ConsumedInteractThisFrame)
+            {
+                HoldProgress = 0f;
+                _holdTimer = 0f;
+                _heldTarget = null;
+                return;
+            }
+
             if (CurrentTarget.HoldDuration <= 0f)
             {
                 if (_input.InteractPressed)
-                    CurrentTarget.Interact(gameObject);
+                    Request(CurrentTarget);
                 return;
             }
 
@@ -110,11 +127,56 @@ namespace CatchIfYouCan.Interaction
 
             if (_holdTimer >= CurrentTarget.HoldDuration)
             {
-                CurrentTarget.Interact(gameObject);
+                Request(CurrentTarget);
                 _holdTimer = 0f;
                 HoldProgress = 0f;
                 _heldTarget = null;
             }
+        }
+
+        /// <summary>
+        /// Asks for an interaction rather than performing one.
+        ///
+        /// <para>
+        /// A door's open state, a light switch, a breaker: every player sees these, so exactly
+        /// one machine may change them. Both execution sites - tap and hold - go through here,
+        /// so there is one place a networking layer forwards from and one place the reach is
+        /// checked.
+        /// </para>
+        ///
+        /// <para>
+        /// The reach check is against the target's real transform at the moment of the
+        /// decision, not the raycast that found it a frame or two ago. Aiming at a door and
+        /// walking away from it while a hold completes is a real sequence, and it should fail.
+        /// </para>
+        ///
+        /// <para>
+        /// In single player this process is the authority, so the request is validated and
+        /// carried out in the same call and nothing about the feel changes.
+        /// </para>
+        /// </summary>
+        private void Request(IInteractable target)
+        {
+            if (target == null)
+                return;
+
+            if (!Session.AuthorityRequests.CanDecide)
+            {
+                // A client's intent goes to the host, which is a routing job rather than this
+                // component's. Until there is a network there is no client, so this is
+                // unreachable today - and it is where the forward will go.
+                return;
+            }
+
+            var behaviour = target as MonoBehaviour;
+            if (behaviour != null)
+            {
+                var reach = Session.AuthorityRequests.ValidateReach(transform, behaviour.transform);
+                if (!Session.AuthorityRequests.Allows(reach))
+                    return;
+            }
+
+            target.Interact(gameObject);
         }
 
         private void BroadcastPrompt()

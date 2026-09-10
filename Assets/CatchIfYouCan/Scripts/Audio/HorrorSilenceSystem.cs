@@ -16,7 +16,7 @@ namespace CatchIfYouCan.Audio
 
         private void Awake()
         {
-            _snapshots = AudioManager.Instance?.SnapshotController ?? FindFirstObjectByType<AudioSnapshotController>();
+            _snapshots = AudioManager.Instance?.SnapshotController ?? FindAnyObjectByType<AudioSnapshotController>();
         }
 
         public bool TrySilenceBeforeMajorEvent()

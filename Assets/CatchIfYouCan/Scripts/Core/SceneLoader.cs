@@ -34,12 +34,35 @@ namespace CatchIfYouCan.Core
             if (loadingCanvas != null) loadingCanvas.alpha = 0f;
         }
 
-        public void LoadScene(string sceneName) => StartCoroutine(LoadRoutine(sceneName));
+        /// <summary>
+        /// Loads a production scene by identity. Prefer this over the string overload:
+        /// a typo in an identity is a compile error, a typo in a name is a black screen.
+        /// </summary>
+        public void Load(CiycScene scene) => LoadScene(CiycScenes.NameOf(scene));
 
-        public void LoadBoot() => LoadScene("00_Boot");
-        public void LoadMainMenu() => LoadScene("01_MainMenu");
-        public void LoadTraining() => LoadScene("02_Training");
-        public void LoadInvestigation() => LoadScene("03_Investigation");
+        public void LoadScene(string sceneName)
+        {
+            // A scene missing from the build list loads perfectly in the editor and not at
+            // all on device, where LoadSceneAsync returns null and the coroutine then
+            // dereferences it. That NullReferenceException names this file, not the scene
+            // that was never registered. Refuse first and say which scene and why.
+            if (!CiycScenes.IsRegisteredInBuild(sceneName))
+            {
+                CIYCLog.Error("Cannot load scene '" + sceneName + "': it is not in the build " +
+                              "settings scene list. Add " + CiycScenes.PathOf(sceneName) +
+                              " under File > Build Settings, or run " +
+                              "Catch If You Can > Setup Project.");
+                return;
+            }
+
+            StartCoroutine(LoadRoutine(sceneName));
+        }
+
+        public void LoadBoot() => Load(CiycScene.Boot);
+        public void LoadMainMenu() => Load(CiycScene.MainMenu);
+        public void LoadLobby() => Load(CiycScene.Lobby);
+        public void LoadTraining() => Load(CiycScene.Training);
+        public void LoadInvestigation() => Load(CiycScene.Investigation);
 
         private IEnumerator LoadRoutine(string sceneName)
         {

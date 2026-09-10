@@ -510,6 +510,7 @@ GameObject:
   serializedVersion: 6
   m_Component:
   - component: {fileID: 400102}
+  - component: {fileID: 400103}
   m_Layer: 0
   m_Name: INVESTIGATION_BOOTSTRAP
   m_TagString: Untagged
@@ -532,6 +533,34 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &400103
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 400101}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 29ca09b579fbe468dbe746518755598c, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  worldRoot: {fileID: 400012}
+  vanAnchor: {fileID: 400022}
+  houseAnchor: {fileID: 400032}
+  playerPrefab: {fileID: 0}
+  generateWorld: 1
+  worldKind: 0
+  testRoomPosition: {x: 0, y: 0, z: -150}
+  testRoomSize: {x: 8, y: 3, z: 8}
+  emptyFloorSize: 16
+  houseGenerator: {fileID: 0}
+  ghostSpawnManager: {fileID: 0}
+  fallbackGhost: {fileID: 0}
+  fallbackMission: {fileID: 0}
+  fadeOverlay: {fileID: 0}
+  introHoldSeconds: 3
+  fadeDuration: 1.2
 --- !u!1 &400111
 GameObject:
   m_ObjectHideFlags: 0

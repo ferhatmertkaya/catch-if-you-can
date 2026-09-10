@@ -18,14 +18,37 @@ namespace CatchIfYouCan.Audio
         private bool _doorOpen;
         private WeatherAudioController _weather;
 
+        /// <summary>
+        /// True once <see cref="SetupSources"/> has actually run, which is the only state in
+        /// which <see cref="Update"/> has anything to talk to.
+        ///
+        /// <para>
+        /// Without it, a controller that was handed no van kept its <see cref="Update"/> and
+        /// dereferenced sources that were never created: one NullReferenceException per frame,
+        /// for the whole mission, out of a component whose entire job is ambience. Hundreds of
+        /// lines of stack buried every other message in the console - including the ones that
+        /// said why the world was wrong.
+        /// </para>
+        /// </summary>
+        private bool _ready;
+
         public void Initialize(VanBuildResult van, WeatherAudioController weather)
         {
             _weather = weather;
-            if (van?.Root == null) return;
+            if (van?.Root == null)
+            {
+                Core.CIYCLog.Warn("[CIYC][Audio] VanAudioController was given no van, so it has " +
+                                  "no sources and stays idle: the van's hum, fan and rain are " +
+                                  "off for this run. It used to keep updating anyway and threw " +
+                                  "once per frame.");
+                return;
+            }
+
             transform.SetParent(van.Root.transform, false);
             _exitDoor = van.ExitDoor;
             SetupSources();
             PlayInteriorLoops();
+            _ready = true;
         }
 
         private void SetupSources()
@@ -46,6 +69,9 @@ namespace CatchIfYouCan.Audio
 
         private void Update()
         {
+            if (!_ready)
+                return;
+
             UpdateRainOnMetal();
             CheckDoorState();
         }

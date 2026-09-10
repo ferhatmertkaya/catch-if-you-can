@@ -41,7 +41,7 @@ namespace CatchIfYouCan.Audio
 
             Source.clip = request.ResolvedClip;
             Source.volume = Mathf.Clamp01(request.Volume);
-            Source.pitch = Mathf.Clamp(def.Pitch, 0.1f, 3f);
+            Source.pitch = Mathf.Clamp(request.Pitch, 0.1f, 3f);
             Source.loop = def.Loop;
             Source.spatialBlend = def.SpatialBlend;
             Source.minDistance = def.MinDistance;
@@ -109,8 +109,10 @@ namespace CatchIfYouCan.Audio
 
         private static Transform GetListenerTransform()
         {
-            var listener = Object.FindFirstObjectByType<AudioListener>();
-            return listener != null ? listener.transform : Camera.main != null ? Camera.main.transform : null;
+            // "Any listener in the scene" was the wrong question even in single player:
+            // during the menu-to-lobby hand-off two exist for part of a frame, and the
+            // search does not say which one it picked.
+            return Core.LocalPlayerService.ResolveListenerTransform();
         }
     }
 }

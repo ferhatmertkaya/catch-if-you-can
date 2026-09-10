@@ -16,13 +16,11 @@ namespace CatchIfYouCan.Audio
 
         private void Start()
         {
-            var go = GameObject.FindGameObjectWithTag("Player");
-            _player = go != null ? go.transform : null;
-            if (go != null)
-                _fear = go.GetComponent<FearSystem>();
+            _player = Core.LocalPlayerService.RootTransform;
+            _fear = Core.LocalPlayerService.GetPlayerComponent<FearSystem>();
             _timer = Random.Range(minInterval, maxInterval);
             if (silenceSystem == null)
-                silenceSystem = FindFirstObjectByType<HorrorSilenceSystem>();
+                silenceSystem = FindAnyObjectByType<HorrorSilenceSystem>();
         }
 
         private void Update()
@@ -80,7 +78,7 @@ namespace CatchIfYouCan.Audio
 
         private void PlayFalseDoor()
         {
-            var doors = FindObjectsByType<DoorAudioController>(FindObjectsSortMode.None);
+            var doors = FindObjectsByType<DoorAudioController>();
             if (doors.Length == 0)
             {
                 AudioManager.Instance?.PlayEvent("Env.Door.Creak", RandomNearby(2f, 8f), 0.4f);

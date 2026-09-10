@@ -21,6 +21,9 @@ namespace CatchIfYouCan.UI
         [SerializeField] private Button settingsButton;
         [SerializeField] private Button creditsButton;
 
+        [Header("Music")]
+        [SerializeField] private AudioClip menuMusic;
+
         [Header("Ambience")]
         [SerializeField] private float flickerMinInterval = 4f;
         [SerializeField] private float flickerMaxInterval = 12f;
@@ -61,6 +64,7 @@ namespace CatchIfYouCan.UI
         private void OnEnable()
         {
             RefreshHeader();
+            PlayMenuMusic();
             if (_flickerRoutine == null)
                 _flickerRoutine = StartCoroutine(FlickerLoop());
             if (UIManager.Instance != null)
@@ -131,6 +135,22 @@ namespace CatchIfYouCan.UI
             UITheme.SetText(versionText, $"v{Application.version}");
             UITheme.StyleTitle(levelText);
             UITheme.StyleTitle(moneyText);
+        }
+
+        private void PlayMenuMusic()
+        {
+            if (menuMusic == null)
+                menuMusic = Resources.Load<AudioClip>("Audio/Music/Menu/ciyc_menu_main_theme");
+
+            if (AudioManager.Instance == null || menuMusic == null)
+                return;
+
+            float volume = SettingsManager.Instance != null
+                ? SettingsManager.Instance.MusicVolume
+                : 0.5f;
+
+            AudioManager.Instance.SetMusicVolume(volume);
+            AudioManager.Instance.PlayMusic(menuMusic);
         }
 
         private void OnPlay()

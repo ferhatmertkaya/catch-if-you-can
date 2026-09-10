@@ -1,45 +1,157 @@
+using System;
 using System.Collections.Generic;
 using CatchIfYouCan.Content;
 using CatchIfYouCan.Core;
 using CatchIfYouCan.Interaction;
+using CatchIfYouCan.Procedural.Deterministic;
 using UnityEngine;
 
 namespace CatchIfYouCan.Procedural
 {
+    /// <summary>
+    /// Two-stage house generation.
+    ///
+    ///   STAGE A - HouseLayoutBuilder produces an authoritative, engine-free HouseLayout
+    ///             from (seed, generationVersion, mapDefinitionId, content). Validation and
+    ///             retries happen entirely on that pure data.
+    ///
+    ///   STAGE B - this class instantiates the finished layout. It makes NO generation
+    ///             decision: no RNG, no physics queries, no dependence on what is already
+    ///             in the scene.
+    ///
+    /// The previous implementation interleaved the two: it instantiated a candidate house,
+    /// validated the GameObjects, destroyed them and retried - all inside one frame, with
+    /// Object.Destroy deferred to end of frame. Attempt N therefore saw attempts 0..N-1
+    /// still present in the physics scene, and because the editor takes the DestroyImmediate
+    /// branch while a player build does not, the editor and a device build produced
+    /// different houses from the same seed.
+    /// </summary>
     public class ProceduralHouseGenerator : MonoBehaviour
     {
-        public const int MaxGenerationAttempts = 6;
+        public const int MaxGenerationAttempts = HouseLayoutBuilder.MaxAttempts;
+
+        [Header("Map")]
+        [Tooltip("Which map definition to generate. Part of the layout identity together " +
+                 "with the seed and the generation version.")]
+        [SerializeField] private string mapDefinitionId = "HOUSE_DEFAULT_A";
 
         [Header("Layout")]
+        [Tooltip("Derived from the MapDefinition now; kept only so existing scenes and " +
+                 "prefabs deserialize unchanged. Room placement comes from the layout.")]
         [SerializeField] private Vector3 roomSpacing = PrimitiveRoomFactory.DefaultRoomSize;
         [SerializeField] private Transform houseRoot;
         [SerializeField] private Transform propRoot;
 
         [Header("Content")]
+        [Tooltip("Die Produktionsquelle fuer Hausgeometrie: modulare Teile, aus denen der " +
+                 "Bauer die Huelle jedes Raums zusammensetzt. Fehlt der Katalog oder kann er " +
+                 "eine tragende Rolle nicht liefern, wird das laut gemeldet und der Raum " +
+                 "NICHT gebaut - ein stiller Ersatz laesst eine gescheiterte Migration wie " +
+                 "einen Erfolg aussehen.")]
+        [SerializeField] private Content.ModularInteriorCatalog modularInteriorCatalog;
+
+        [SerializeField] private Content.RoomFurnishingCatalog roomFurnishingCatalog;
+
+        /// <summary>
+        /// Der Modulkatalog, mit dem dieser Generator baut.
+        ///
+        /// Oeffentlich lesbar, damit der Testraum aus demselben Katalog gebaut wird wie das Haus
+        /// - eine eigene Aufloesung dort waere eine zweite Stelle, an der entschieden wird,
+        /// welche Oberflaechen ein Raum bekommt (CLAUDE.md Fehler 1). Ein Getter, keine
+        /// Reflection (Fehler 4).
+        /// </summary>
+        public Content.ModularInteriorCatalog ModularInterior => modularInteriorCatalog;
+
         [SerializeField] private RoomDefinition[] roomDefinitions;
         [SerializeField] private PropDefinition[] propDefinitions;
 
         [Header("Systems")]
         [SerializeField] private NavMeshRuntimeBuilder navMeshBuilder;
+        [Tooltip("No longer used. Prop overlap is resolved analytically in Stage A; a " +
+                 "physics query can never influence generation. Kept for scene compatibility.")]
         [SerializeField] private LayerMask overlapMask = ~0;
 
         [Header("Door Prefab")]
         [SerializeField] private GameObject doorPrefab;
 
-        private readonly Dictionary<RoomCategory, RoomDefinition> _definitionLookup = new Dictionary<RoomCategory, RoomDefinition>();
-        private System.Random _rng;
+        [Header("Room Surfaces")]
+        [Tooltip("Die Materialien der vom Code gebauten Raumhuelle. Sie kommen aus dem " +
+                 "InvestigationContentCatalog, damit sie in einem Build wirklich mitkommen: " +
+                 "der Katalog liegt unter Resources, also zieht er sie mit hinein. Ein " +
+                 "direkter Pfad auf Assets/.../Materials wuerde im Editor funktionieren und " +
+                 "im Build nichts finden.")]
+        [SerializeField] private Material wallMaterial;
+        [SerializeField] private Material floorMaterial;
+        [SerializeField] private Material ceilingMaterial;
+        [SerializeField] private Material trimMaterial;
+
+        private Transform _activeHouseRoot;
 
         public GeneratedHouse LastGenerated { get; private set; }
 
+        /// <summary>The authoritative layout behind <see cref="LastGenerated"/>.</summary>
+        public HouseLayout LastLayout { get; private set; }
+
+        /// <summary>Canonical hash of <see cref="LastLayout"/>, with per-section breakdown.</summary>
+        public LayoutHash LastHash { get; private set; }
+
+        public LayoutValidationResult LastValidation { get; private set; }
+
+        public bool LastGenerationFailed => LastValidation != null && !LastValidation.IsValid;
+
+        /// <summary>
+        /// Raised when Stage A could not produce a valid layout. Generation failures must
+        /// fail visibly; nothing silently substitutes a different seed.
+        /// </summary>
+        public static event Action<int, LayoutValidationResult> GenerationFailed;
+
         private void Awake()
         {
-            CacheDefinitions();
             InvestigationContentLoader.ApplyToGenerator(this);
+            EnsureRoots();
 
+            if (navMeshBuilder == null)
+                navMeshBuilder = GetComponent<NavMeshRuntimeBuilder>();
+        }
+
+        /// <summary>
+        /// Gives the house a root, and makes sure that root belongs to THIS generator's scene.
+        ///
+        /// <para>
+        /// <c>new GameObject</c> puts the object in the ACTIVE scene, which is not the same
+        /// thing as the scene this component lives in. While the lobby portal prepares the
+        /// mission world the investigation scene is loaded ADDITIVELY and the lobby stays
+        /// active, so a root created here landed in the lobby - and the entire generated house
+        /// hung off an object the lobby owned.
+        /// </para>
+        /// <para>
+        /// That is one cause with two faces. The mission's entry anchor proves its floor by
+        /// asking whether the collider it hit belongs to its own scene, because a physics query
+        /// is global across every loaded scene and the lobby's 40 x 40 m safety floor sits under
+        /// very nearly anywhere; every room failed that test, the anchor stayed null, and the
+        /// doorway read a null destination as a failed preparation and collapsed a second after
+        /// opening. And had it opened, unloading the lobby would have taken the house with it,
+        /// so the player would have arrived in a room and then fallen through the world.
+        /// </para>
+        /// <para>
+        /// Only a scene ROOT can be moved between scenes, which is exactly what this owns:
+        /// a root this class created and nothing has re-parented. A <c>houseRoot</c> wired in
+        /// the inspector already sits inside a scene's hierarchy and is left alone.
+        /// </para>
+        /// </summary>
+        private void EnsureRoots()
+        {
             if (houseRoot == null)
             {
                 var rootGo = new GameObject("GeneratedHouseRoot");
                 houseRoot = rootGo.transform;
+            }
+
+            if (houseRoot.parent == null && gameObject.scene.IsValid() &&
+                houseRoot.gameObject.scene != gameObject.scene)
+            {
+                UnityEngine.SceneManagement.SceneManager.MoveGameObjectToScene(
+                    houseRoot.gameObject, gameObject.scene);
             }
 
             if (propRoot == null)
@@ -48,187 +160,288 @@ namespace CatchIfYouCan.Procedural
                 propRoot = propGo.transform;
                 propRoot.SetParent(houseRoot, false);
             }
-
-            if (navMeshBuilder == null)
-                navMeshBuilder = GetComponent<NavMeshRuntimeBuilder>();
         }
+
+        // ================================================================ STAGE A
+
+        /// <summary>
+        /// Runs Stage A only. Pure: allocates no GameObjects and touches no scene state, so
+        /// it is safe to call for hashing, for a multiplayer pre-flight check, or from a test.
+        /// </summary>
+        /// <exception cref="DuplicateStableIdException">
+        /// If authored content contains two definitions resolving to the same stable id.
+        /// Deliberately NOT caught: duplicate identity makes content ordering - and therefore
+        /// the layout a seed produces - dependent on authoring order, so continuing would
+        /// mean shipping a silent cross-client divergence. Fail loudly instead.
+        /// </exception>
+        public HouseLayout BuildLayout(int seed, out LayoutValidationResult validation)
+        {
+            var content = ContentSnapshotFactory.Create(roomDefinitions, propDefinitions);
+            var map = MapDefinition.ById(mapDefinitionId);
+            return HouseLayoutBuilder.Generate(seed, map, content, out validation);
+        }
+
+        // ================================================================ STAGE A + B
 
         public GeneratedHouse Generate(int seed)
         {
             SeedManager.SetSeed(seed);
-            _rng = SeedManager.CreateRandom(seed);
 
-            for (int attempt = 0; attempt < MaxGenerationAttempts; attempt++)
+            var layout = BuildLayout(seed, out var validation);
+            LastLayout = layout;
+            LastValidation = validation;
+            LastHash = LayoutHasher.Compute(layout);
+
+            if (!validation.IsValid)
             {
-                int attemptSeed = attempt == 0 ? seed : seed + attempt * 7919;
-                var house = GenerateInternal(attemptSeed);
-                var validation = HouseValidator.Validate(house);
-                if (validation.IsValid)
-                {
-                    LastGenerated = house;
-                    CIYCLog.Info($"House generated with seed {attemptSeed} ({house.Rooms.Count} rooms).");
-                    return house;
-                }
-
-                HouseValidator.LogValidation(validation);
-                DestroyHouseObjects(house);
+                // Fail loudly and keep the layout we actually have. The old code silently
+                // re-generated from KnownGoodSeed on failure, which is precisely the
+                // "silently repair the layout" behaviour that desyncs a multiplayer session:
+                // one client would have quietly built a different house from everyone else.
+                CIYCLog.Error(
+                    $"[Determinism] House generation FAILED for seed {seed} " +
+                    $"(map {layout.MapDefinitionId}, generationVersion {layout.GenerationVersion}) " +
+                    $"after {MaxGenerationAttempts} attempts: {validation}");
+                CIYCLog.Error(LastHash.ToReport());
+                GenerationFailed?.Invoke(seed, validation);
+            }
+            else
+            {
+                CIYCLog.Info(
+                    $"House generated: seed {seed}, {layout.Rooms.Count} rooms, " +
+                    $"attempt {layout.Attempt}, hash {LastHash.Final}");
             }
 
-            if (seed != SeedManager.KnownGoodSeed)
-            {
-                CIYCLog.Warn($"Generation failed for seed {seed}; falling back to {SeedManager.KnownGoodSeed}.");
-                return Generate(SeedManager.KnownGoodSeed);
-            }
-
-            var fallback = GenerateInternal(SeedManager.KnownGoodSeed);
-            LastGenerated = fallback;
-            CIYCLog.Error("House generation failed even for known good seed; returning best effort layout.");
-            return fallback;
+            var house = Instantiate(layout);
+            LastGenerated = house;
+            return house;
         }
 
-        private GeneratedHouse GenerateInternal(int seed)
+        // ================================================================ STAGE B
+
+        /// <summary>
+        /// Builds the scene for a finished layout. Deterministic by construction: it reads
+        /// only the layout, never the scene.
+        /// </summary>
+        public GeneratedHouse Instantiate(HouseLayout layout)
         {
-            _rng = SeedManager.CreateRandom(seed);
+            // Asked again here, not only in Awake. Awake runs INSIDE AddComponent, before the
+            // caller has re-parented this generator into the mission scene's world root - so
+            // the scene it compared against then was not yet the scene the house has to end up
+            // in. By the time a layout is being built the generator is where it belongs.
+            EnsureRoots();
+
+            // Told before the first room is built, so a room shell that falls back to boxes at
+            // least falls back to TEXTURED boxes.
+            PrimitiveRoomFactory.ConfigureSurfaces(wallMaterial, floorMaterial, ceilingMaterial,
+                                                   trimMaterial);
+
             ClearExisting();
 
-            var graph = HouseLayoutGraph.Build(seed);
-            var house = new GeneratedHouse
+            // Build into a fresh root and swap, rather than reusing one that still holds
+            // objects awaiting a deferred Destroy.
+            var newRootGo = new GameObject($"House_{layout.Seed}_{Fnv1a64.ToShortHex(LastHash.FinalHash)}");
+            _activeHouseRoot = newRootGo.transform;
+            _activeHouseRoot.SetParent(houseRoot, false);
+
+            if (propRoot == null || propRoot.parent != _activeHouseRoot)
             {
-                Seed = seed,
-                Root = houseRoot,
-                LayoutGraph = graph
-            };
-
-            var nodeDoors = BuildDoorDirectionMap(graph);
-            for (int i = 0; i < graph.Nodes.Count; i++)
-            {
-                var node = graph.Nodes[i];
-                nodeDoors.TryGetValue(node.Id, out var doorDirs);
-
-                var roomInstance = InstantiateRoom(node, doorDirs, node.OpenDirections);
-                house.Rooms.Add(roomInstance);
-
-                if (node.Category == RoomCategory.Entrance)
-                    house.Entrance = roomInstance;
+                var propGo = new GameObject("PropRoot");
+                propRoot = propGo.transform;
+                propRoot.SetParent(_activeHouseRoot, false);
             }
 
-            ConnectDoors(house, graph);
-            SealUnusedOpenings(house);
+            var house = new GeneratedHouse
+            {
+                Seed = layout.Seed,
+                Root = _activeHouseRoot,
+                Layout = layout,
+                LayoutHash = LastHash,
+                LayoutGraph = HouseLayoutGraph.FromLayout(layout)
+            };
+
+            var roomsById = new Dictionary<int, GeneratedRoomInstance>(layout.Rooms.Count);
+
+            for (int i = 0; i < layout.Rooms.Count; i++)
+            {
+                var instance = InstantiateRoom(layout.Rooms[i]);
+                house.Rooms.Add(instance);
+                roomsById[instance.NodeId] = instance;
+
+                if (layout.Rooms[i].RoomId == layout.EntranceRoomId)
+                    house.Entrance = instance;
+            }
+
+            ConnectDoors(house, layout, roomsById);
+            SealUnusedOpenings(house, layout, roomsById);
+
+            // VOR InstallRoomInteractables, und das ist die Reihenfolge, nicht die Gewohnheit:
+            // jenes sucht je Raum ein Light und baut nur dann einen Lichtschalter dazu. Solange
+            // nichts Lampen aufstellte, fand es keins - das ist die gemeldete Bilanz "0 von 0
+            // practicals", und sie war kein Fehler der Suche, sondern das ehrliche Ergebnis eines
+            // Hauses ohne Lampen. Und VOR BuildNavigation, damit die Moebel im NavMesh landen.
+            FurnishRooms(house, layout);
+
             InstallRoomInteractables(house);
-            SpawnProps(house);
-            AssignGhostRoom(house);
+            SpawnProps(layout, roomsById);
+            AssignGhostRoom(house, layout, roomsById);
             CollectHideSpots(house);
-            EnsureMinimumHideSpot(house);
+            EnsureMinimumHideSpot(house, layout, roomsById);
             BuildNavigation(house);
+
+            // Last, and once: what is actually standing in the finished house, with anything
+            // that cannot be furniture named together with the path that made it.
+            HouseContentReport.Report(house);
 
             return house;
         }
 
-        private Dictionary<int, HashSet<SocketDirection>> BuildDoorDirectionMap(HouseLayoutGraph graph)
+        private GeneratedRoomInstance InstantiateRoom(LayoutRoom room)
         {
-            var map = new Dictionary<int, HashSet<SocketDirection>>();
-            for (int i = 0; i < graph.Edges.Count; i++)
-            {
-                var edge = graph.Edges[i];
-                AddDoorDirection(map, edge.NodeAId, edge.DirectionFromA);
-                AddDoorDirection(map, edge.NodeBId, RoomSocket.Opposite(edge.DirectionFromA));
-            }
+            Vector3 position = new Vector3(
+                Quantize.Metres(room.PositionMm.X),
+                Quantize.Metres(room.PositionMm.Y),
+                Quantize.Metres(room.PositionMm.Z));
 
-            return map;
-        }
-
-        private static void AddDoorDirection(Dictionary<int, HashSet<SocketDirection>> map, int nodeId, SocketDirection direction)
-        {
-            if (!map.TryGetValue(nodeId, out var set))
-            {
-                set = new HashSet<SocketDirection>();
-                map[nodeId] = set;
-            }
-
-            set.Add(direction);
-        }
-
-        private GeneratedRoomInstance InstantiateRoom(
-            HouseLayoutNode node,
-            HashSet<SocketDirection> doorDirections,
-            List<SocketDirection> openDirections)
-        {
-            Vector3 position = new Vector3(node.GridCell.x * roomSpacing.x, 0f, node.GridCell.y * roomSpacing.z);
             GameObject roomGo = null;
             RoomModule module = null;
 
-            var definition = GetDefinition(node.Category);
-            GameObject prefab = definition?.PickPrefab(_rng);
-            if (prefab != null)
+            // 1. The production path: modular pieces assembled against the logical shell.
+            if (modularInteriorCatalog != null)
             {
-                roomGo = Instantiate(prefab, position, Quaternion.identity, houseRoot);
-                module = roomGo.GetComponent<RoomModule>();
-                if (module == null)
-                    module = roomGo.AddComponent<RoomModule>();
+                roomGo = ModularRoomBuilder.Build(room, position, _activeHouseRoot,
+                    modularInteriorCatalog, out string modularError);
 
-                module.Configure(node.Category, definition != null ? new Bounds(Vector3.up * (definition.Size.y * 0.5f), definition.Size) : new Bounds(Vector3.up * 1.5f, roomSpacing), node.Id);
-                module.CollectSockets();
+                if (roomGo == null)
+                    Core.CIYCLog.Error("[CIYC][House] Der modulare Innenausbau konnte Raum " +
+                                       room.RoomId + " (" + room.Category + ") nicht bauen: " +
+                                       modularError);
+                else
+                    module = roomGo.GetComponent<RoomModule>();
             }
-            else
+
+            // 2. A whole-room prefab, if a RoomDefinition still carries one. The Kenney rooms
+            //    that used to arrive here are gone; this branch survives for a pack that ships
+            //    finished rooms rather than a kit, and does nothing when nothing is wired.
+            if (roomGo == null)
             {
-                roomGo = PrimitiveRoomFactory.CreateRoom(
-                    node.Category,
-                    position,
-                    doorDirections,
-                    openDirections,
-                    node.Id,
-                    houseRoot);
+                var definition = ContentSnapshotFactory.FindRoom(roomDefinitions, room.ArchetypeId);
+                // The VARIANT was chosen in Stage A from the RoomVariants stream. Stage B only
+                // looks it up - picking here would reintroduce a generation decision.
+                GameObject prefab = definition != null ? definition.GetPrefabVariant(room.VariantIndex) : null;
+
+                if (prefab != null)
+                {
+                    roomGo = UnityEngine.Object.Instantiate(prefab, position, Quaternion.identity, _activeHouseRoot);
+                    module = roomGo.GetComponent<RoomModule>();
+                    if (module == null)
+                        module = roomGo.AddComponent<RoomModule>();
+
+                    Vector3 size = definition.Size;
+                    module.Configure(room.Category, new Bounds(Vector3.up * (size.y * 0.5f), size), room.RoomId);
+                    module.CollectSockets();
+                }
+            }
+
+            // 3. Nothing could build it. In the editor and in a development build a primitive
+            //    box stands in so the layout is still walkable and inspectable - with the error
+            //    above already on screen. In a player build there is no stand-in: a house made
+            //    of grey boxes that ships looks exactly like a house that was never migrated,
+            //    and that is the failure this whole pass exists to make impossible.
+            if (roomGo == null)
+            {
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+                Core.CIYCLog.Warn("[CIYC][House] Raum " + room.RoomId + " faellt auf eine " +
+                                  "Primitiv-Box zurueck. Das ist NUR im Editor und im " +
+                                  "Development-Build erlaubt.");
+                roomGo = PrimitiveRoomFactory.CreateRoom(room, position, _activeHouseRoot);
                 module = roomGo.GetComponent<RoomModule>();
+#else
+                Core.CIYCLog.Error("[CIYC][House] Raum " + room.RoomId + " (" + room.Category +
+                                   ") hat keine Geometrie und bekommt auch keinen Ersatz. " +
+                                   "Der modulare Innenausbau ist nicht vollstaendig " +
+                                   "eingerichtet.");
+                roomGo = new GameObject($"Room_{room.Category}_{room.RoomId}_MISSING");
+                roomGo.transform.SetParent(_activeHouseRoot, false);
+                roomGo.transform.position = position;
+                module = roomGo.AddComponent<RoomModule>();
+                var missingSize = new Vector3(
+                    Quantize.Metres(room.SizeMm.X),
+                    Quantize.Metres(room.SizeMm.Y),
+                    Quantize.Metres(room.SizeMm.Z));
+                module.Configure(room.Category,
+                    new Bounds(Vector3.up * (missingSize.y * 0.5f), missingSize), room.RoomId);
+                module.CollectSockets();
+#endif
             }
 
             return new GeneratedRoomInstance
             {
-                NodeId = node.Id,
-                Category = node.Category,
-                GridCell = node.GridCell,
+                NodeId = room.RoomId,
+                Category = room.Category,
+                Cell = room.Cell,
                 Root = roomGo,
                 Module = module
             };
         }
 
-        private void ConnectDoors(GeneratedHouse house, HouseLayoutGraph graph)
+        private void ConnectDoors(GeneratedHouse house, HouseLayout layout,
+            Dictionary<int, GeneratedRoomInstance> roomsById)
         {
-            for (int i = 0; i < graph.Edges.Count; i++)
+            for (int i = 0; i < layout.Doors.Count; i++)
             {
-                var edge = graph.Edges[i];
-                var roomA = FindRoom(house, edge.NodeAId);
-                var roomB = FindRoom(house, edge.NodeBId);
-                if (roomA?.Module == null || roomB?.Module == null)
+                var door = layout.Doors[i];
+                if (!roomsById.TryGetValue(door.RoomAId, out var roomA) ||
+                    !roomsById.TryGetValue(door.RoomBId, out var roomB))
                     continue;
 
-                var socketA = roomA.Module.GetSocket(SocketType.Door, edge.DirectionFromA);
-                var socketB = roomB.Module.GetSocket(SocketType.Door, RoomSocket.Opposite(edge.DirectionFromA));
+                if (roomA.Module == null || roomB.Module == null)
+                    continue;
 
-                if (socketA == null || socketB == null)
-                {
-                    EnsureDoorSockets(roomA, edge.DirectionFromA);
-                    EnsureDoorSockets(roomB, RoomSocket.Opposite(edge.DirectionFromA));
-                    socketA = roomA.Module.GetSocket(SocketType.Door, edge.DirectionFromA);
-                    socketB = roomB.Module.GetSocket(SocketType.Door, RoomSocket.Opposite(edge.DirectionFromA));
-                }
+                var dirA = DirectionOfDoorSlot(door.SocketASlot);
+                var dirB = DirectionOfDoorSlot(door.SocketBSlot);
 
+                EnsureDoorSocket(roomA, dirA);
+                EnsureDoorSocket(roomB, dirB);
+
+                var socketA = roomA.Module.GetSocket(SocketType.Door, dirA);
+                var socketB = roomB.Module.GetSocket(SocketType.Door, dirB);
                 if (socketA == null || socketB == null)
                     continue;
 
                 socketA.ConnectTo(socketB);
-                var door = CreateDoorBetween(socketA, socketB);
+
+                Vector3 position = new Vector3(
+                    Quantize.Metres(door.PositionMm.X),
+                    Quantize.Metres(door.PositionMm.Y),
+                    Quantize.Metres(door.PositionMm.Z));
+                Quaternion rotation = Quaternion.Euler(0f, door.RotationIndex * 90f, 0f);
+
+                var interactiveDoor = CreateDoorAt(position, rotation);
                 house.Doors.Add(new GeneratedDoorConnection
                 {
                     RoomA = roomA,
                     RoomB = roomB,
                     SocketA = socketA,
                     SocketB = socketB,
-                    Door = door
+                    Door = interactiveDoor
                 });
             }
         }
 
-        private void EnsureDoorSockets(GeneratedRoomInstance room, SocketDirection direction)
+        private static SocketDirection DirectionOfDoorSlot(SocketSlot slot)
+        {
+            switch (slot)
+            {
+                case SocketSlot.DoorNorth: return SocketDirection.North;
+                case SocketSlot.DoorEast: return SocketDirection.East;
+                case SocketSlot.DoorSouth: return SocketDirection.South;
+                case SocketSlot.DoorWest: return SocketDirection.West;
+                default: return SocketDirection.North;
+            }
+        }
+
+        private void EnsureDoorSocket(GeneratedRoomInstance room, SocketDirection direction)
         {
             if (room?.Module == null)
                 return;
@@ -236,43 +449,68 @@ namespace CatchIfYouCan.Procedural
             if (room.Module.GetSocket(SocketType.Door, direction) != null)
                 return;
 
+            var slot = SocketSlots.DoorSlot(direction);
+            var sizeMm = Vec3i.FromMetres(
+                room.Module.LocalBounds.size.x,
+                room.Module.LocalBounds.size.y,
+                room.Module.LocalBounds.size.z);
+            var offset = RoomSocketLayout.LocalSocketOffset(slot, sizeMm);
+
             var socketGo = new GameObject($"Socket_Door_{direction}");
             socketGo.transform.SetParent(room.Root.transform, false);
-            socketGo.transform.localPosition = GetLocalDoorPosition(room.Module.LocalBounds.size, direction);
-            socketGo.transform.localRotation = Quaternion.LookRotation(RoomSocket.DirectionToLocalVector(direction), Vector3.up);
+            socketGo.transform.localPosition = new Vector3(
+                Quantize.Metres(offset.X), Quantize.Metres(offset.Y), Quantize.Metres(offset.Z));
+            socketGo.transform.localRotation =
+                Quaternion.LookRotation(RoomSocket.DirectionToLocalVector(direction), Vector3.up);
+
             var socket = socketGo.AddComponent<RoomSocket>();
             socket.Initialize(room.Module, SocketType.Door, direction);
             room.Module.CollectSockets();
         }
 
-        private static Vector3 GetLocalDoorPosition(Vector3 size, SocketDirection direction)
+        private InteractiveDoor CreateDoorAt(Vector3 position, Quaternion rotation)
         {
-            float halfX = size.x * 0.5f;
-            float halfZ = size.z * 0.5f;
-            switch (direction)
+            // Ohne Tuer-Prefab wird KEINE Tuer erfunden. Die alte Notloesung baute zwei
+            // Wuerfel in die Oeffnung: einen Rahmen ohne Collider und ein Blatt MIT Collider,
+            // beide mit Unitys eingebautem Standardmaterial. Unter URP ist das die magenta
+            // Flaeche in der Tuer, und das Blatt ist der Grund, warum der Spieler nicht
+            // hindurchkam. Ein fehlgeschlagener Inhalt darf nie zu einem stillen Platzhalter
+            // werden - genau das ist Fehler 3 und 14 in CLAUDE.md.
+            //
+            // Die Oeffnung bleibt also frei. house.Doors merkt sich die Verbindung weiterhin,
+            // nur mit Door == null; beide Verbraucher (RoomAudioInstaller,
+            // InvestigationAudioBootstrap) pruefen bereits darauf.
+            if (doorPrefab == null)
             {
-                case SocketDirection.North: return new Vector3(0f, 1.1f, halfZ);
-                case SocketDirection.South: return new Vector3(0f, 1.1f, -halfZ);
-                case SocketDirection.East: return new Vector3(halfX, 1.1f, 0f);
-                case SocketDirection.West: return new Vector3(-halfX, 1.1f, 0f);
-                default: return Vector3.up;
-            }
-        }
+                // No PREFAB is not the same as no door. What the rule above forbids is a
+                // FABRICATED stand-in: two untextured cubes carrying Unity's built-in default
+                // material, which under URP is a magenta panel in the frame and an invisible
+                // blocker in the threshold. What it does not forbid is a real door, built at the
+                // exact size of the opening, wearing a material this project owns - and refused
+                // outright when that material is missing, which is the same rule again rather
+                // than an exception to it.
+                var built = ModularDoorFactory.Build(_activeHouseRoot, position, rotation,
+                                                     modularInteriorCatalog);
+                if (built != null)
+                {
+                    built.gameObject.tag = "Door";
+                    return built;
+                }
 
-        private InteractiveDoor CreateDoorBetween(RoomSocket socketA, RoomSocket socketB)
-        {
-            Vector3 midpoint = (socketA.transform.position + socketB.transform.position) * 0.5f;
-            Quaternion rotation = Quaternion.LookRotation(socketA.GetWorldDirection(), Vector3.up);
+                if (!_missingDoorPrefabReported)
+                {
+                    _missingDoorPrefabReported = true;
+                    CIYCLog.Error("[CIYC][House] Kein Tuer-Prefab im Content-Katalog und kein " +
+                                  "DoorLeafMaterial im ModularInteriorCatalog. Die " +
+                                  "Tueroeffnungen bleiben leer statt einen Platzhalter zu " +
+                                  "bekommen, der sie zumauert.");
+                }
 
-            GameObject doorGo;
-            if (doorPrefab != null)
-            {
-                doorGo = Instantiate(doorPrefab, midpoint, rotation, houseRoot);
+                return null;
             }
-            else
-            {
-                doorGo = BuildPrimitiveDoor(midpoint, rotation);
-            }
+
+            GameObject doorGo = UnityEngine.Object.Instantiate(
+                doorPrefab, position, rotation, _activeHouseRoot);
 
             doorGo.tag = "Door";
             var door = doorGo.GetComponent<InteractiveDoor>();
@@ -282,54 +520,139 @@ namespace CatchIfYouCan.Procedural
             return door;
         }
 
-        private GameObject BuildPrimitiveDoor(Vector3 position, Quaternion rotation)
+        private void SealUnusedOpenings(GeneratedHouse house, HouseLayout layout,
+            Dictionary<int, GeneratedRoomInstance> roomsById)
         {
-            var doorRoot = new GameObject("Door");
-            doorRoot.transform.SetParent(houseRoot, false);
-            doorRoot.transform.SetPositionAndRotation(position, rotation);
-
-            var frame = GameObject.CreatePrimitive(PrimitiveType.Cube);
-            frame.name = "DoorFrame";
-            frame.transform.SetParent(doorRoot.transform, false);
-            frame.transform.localScale = new Vector3(1.3f, 2.2f, 0.12f);
-            Object.Destroy(frame.GetComponent<Collider>());
-
-            var panel = GameObject.CreatePrimitive(PrimitiveType.Cube);
-            panel.name = "DoorPanel";
-            panel.transform.SetParent(doorRoot.transform, false);
-            panel.transform.localPosition = new Vector3(0.55f, 0f, 0f);
-            panel.transform.localScale = new Vector3(1.1f, 2.1f, 0.08f);
-            panel.tag = "Door";
-
-            return doorRoot;
-        }
-
-        private void SealUnusedOpenings(GeneratedHouse house)
-        {
-            for (int i = 0; i < house.Rooms.Count; i++)
+            for (int i = 0; i < layout.Rooms.Count; i++)
             {
-                var room = house.Rooms[i];
-                if (room?.Module == null || house.LayoutGraph == null)
+                var room = layout.Rooms[i];
+                if (!roomsById.TryGetValue(room.RoomId, out var instance) || instance.Module == null)
                     continue;
 
-                var node = house.LayoutGraph.GetNode(room.NodeId);
-                if (node == null)
-                    continue;
-
-                for (int d = 0; d < node.OpenDirections.Count; d++)
+                // Canonical cardinal order, not a HashSet walk.
+                for (int d = 0; d < Directions.Cardinal.Length; d++)
                 {
-                    var dir = node.OpenDirections[d];
-                    var doorSocket = room.Module.GetSocket(SocketType.Door, dir);
-                    if (doorSocket == null)
-                    {
-                        EnsureDoorSockets(room, dir);
-                        doorSocket = room.Module.GetSocket(SocketType.Door, dir);
-                    }
+                    var dir = Directions.Cardinal[d];
+                    if (!room.IsOpen(dir))
+                        continue;
 
-                    if (doorSocket != null)
-                        doorSocket.MarkOccupied(true);
+                    EnsureDoorSocket(instance, dir);
+                    var socket = instance.Module.GetSocket(SocketType.Door, dir);
+                    socket?.MarkOccupied(true);
                 }
             }
+        }
+
+        /// <summary>
+        /// Richtet jeden Raum nach seiner Funktion ein.
+        ///
+        /// <para>
+        /// STAGE B. Der Grundriss steht schon und wird hier nur gelesen; nichts davon geht in den
+        /// Layout-Hash. Der Zufall kommt aus einem eigenen, aus (Seed, Raum-ID) abgeleiteten
+        /// Strom, nicht aus einem CiycRandom-Strom - einen von denen zu ziehen wuerde ihn
+        /// weitertreiben und damit in die Grundrisserzeugung zurueckgreifen.
+        /// </para>
+        /// </summary>
+        private void FurnishRooms(GeneratedHouse house, HouseLayout layout)
+        {
+            if (roomFurnishingCatalog == null)
+            {
+                CIYCLog.Warn("[CIYC][House][Furnish] Kein RoomFurnishingCatalog im " +
+                             "Content-Katalog. Die Raeume bleiben LEER - das ist sichtbar " +
+                             "unfertig und damit besser als Wuerfel, die wie Moebel aussehen. " +
+                             "Katalog fuellen mit: Catch If You Can > Content > " +
+                             "Build Room Furnishing Catalog.");
+                return;
+            }
+
+            var cache = new Furnishing.FurniturePrefabCache();
+            var reports = new List<Furnishing.FurnishReport>(house.Rooms.Count);
+
+            for (int i = 0; i < house.Rooms.Count; i++)
+            {
+                GeneratedRoomInstance room = house.Rooms[i];
+                if (room?.Root == null)
+                    continue;
+
+                var shell = room.Root.GetComponent<Furnishing.RoomShellInfo>();
+                if (shell == null)
+                {
+                    // Nur die modulare Huelle schreibt eine. Ein Raum aus einem fertigen
+                    // Prefab oder aus der Primitiv-Notloesung hat keine, und ohne die Masse und
+                    // die Tuerlage waere jede Platzierung geraten.
+                    CIYCLog.Warn("[CIYC][House][Furnish] Raum " + room.Root.name +
+                                 " hat keine RoomShellInfo und wird nicht eingerichtet.");
+                    continue;
+                }
+
+                reports.Add(Furnishing.RoomFurnisher.Furnish(room, shell, roomFurnishingCatalog,
+                                                             cache, layout.Seed));
+            }
+
+            ReportFurnishing(reports, cache);
+        }
+
+        /// <summary>
+        /// Eine kompakte Zusammenfassung, und die Ausreisser einzeln.
+        ///
+        /// Nicht eine Warnung je fehlgeschlagenem Platzierungsversuch: ein Stuhl, der an der
+        /// ersten Wand nicht passt und an der zweiten schon, ist der Normalfall dieses Verfahrens
+        /// und keine Meldung wert. Was gemeldet wird, ist ein Raum ohne Einrichtung, ein
+        /// fehlendes Kernmoebel und ein blockierter Laufweg.
+        /// </summary>
+        private void ReportFurnishing(List<Furnishing.FurnishReport> reports,
+                                      Furnishing.FurniturePrefabCache cache)
+        {
+            int furnished = 0, major = 0, decor = 0, lights = 0;
+            var problems = new System.Text.StringBuilder();
+
+            for (int i = 0; i < reports.Count; i++)
+            {
+                Furnishing.FurnishReport r = reports[i];
+                major += r.Major;
+                decor += r.Decor;
+                lights += r.Lights;
+
+                if (r.Major > 0 || r.Optional > 0 || r.Decor > 0)
+                    furnished++;
+
+                bool bad = r.MissingRoles.Count > 0 || !r.WalkwaysClear ||
+                           (r.Major == 0 && r.Optional == 0);
+
+                if (bad && problems.Length < 1200)
+                    problems.Append("\n  - ").Append(r.Compact());
+
+                if (roomFurnishingCatalog != null && roomFurnishingCatalog.VerboseDiagnostics)
+                {
+                    CIYCLog.Info("[CIYC][House][Furnish] " + r.Compact() +
+                                 (r.Rejected.Count > 0 ? " verworfen: " + string.Join("; ", r.Rejected) : ""));
+                }
+            }
+
+            string headline = "[CIYC][House][Furnish] rooms=" + reports.Count +
+                              " furnished=" + furnished +
+                              " majorPieces=" + major + " decor=" + decor + " lights=" + lights;
+
+            if (cache.Missing.Count > 0)
+            {
+                headline += " missingAssets=" + cache.Missing.Count + " (" +
+                            string.Join(", ", cache.Missing) + ")";
+            }
+
+            if (problems.Length == 0)
+            {
+                CIYCLog.Info(headline + " - jeder Raum mit einem Profil ist eingerichtet.");
+                return;
+            }
+
+            CIYCLog.Warn(headline + ". Diese Raeume brauchen Aufmerksamkeit:" + problems);
+        }
+
+        private void SpawnProps(HouseLayout layout, Dictionary<int, GeneratedRoomInstance> roomsById)
+        {
+            var spawner = new PropSpawner(propRoot);
+            spawner.SpawnPlacements(layout.Furniture, propDefinitions, roomsById);
+            spawner.SpawnPlacements(layout.Props, propDefinitions, roomsById);
         }
 
         private void InstallRoomInteractables(GeneratedHouse house)
@@ -342,7 +665,22 @@ namespace CatchIfYouCan.Procedural
                 if (room?.Root == null)
                     continue;
 
-                var roomLight = room.Root.GetComponentInChildren<Light>();
+                // Das PRAKTIKAL des Raums, nicht irgendein Licht darin. GetComponentInChildren
+                // liefert das erste in der Hierarchie, und seit ein Raum auch ein Restlicht hat,
+                // ist das erste nicht mehr zwangslaeufig das mit dem Schalter. Ein Schalter, der
+                // das Restlicht schaltet, laesst die Deckenleuchte brennen und meldet "aus".
+                Light roomLight = null;
+                foreach (Light candidate in room.Root.GetComponentsInChildren<Light>(true))
+                {
+                    if (candidate == null || candidate.type == LightType.Directional)
+                        continue;
+                    if (Environment.AmbientRoomLight.Is(candidate))
+                        continue;
+
+                    roomLight = candidate;
+                    break;
+                }
+
                 if (roomLight == null)
                     continue;
 
@@ -359,10 +697,58 @@ namespace CatchIfYouCan.Procedural
             InstallBreakerBox(house, lightControllers);
         }
 
+        private static bool _missingDoorPrefabReported;
+        private static Material _neutralPrimitiveMaterial;
+
+        /// <summary>
+        /// Ein Primitiv mit einem Material, das unter URP auch zeichnet.
+        ///
+        /// GameObject.CreatePrimitive haengt Unitys eingebautes Standardmaterial an, und das
+        /// ist ein Shader der Built-in-Pipeline: unter URP zeichnet er magenta. Jedes Primitiv
+        /// in der Hausgenerierung geht deshalb durch diese eine Stelle, und der Waechter
+        /// prueft, dass es keine zweite gibt.
+        /// </summary>
+        private static GameObject CreateNeutralPrimitive(PrimitiveType type, string name)
+        {
+            var go = GameObject.CreatePrimitive(type);
+            go.name = name;
+
+            if (_neutralPrimitiveMaterial == null)
+            {
+                var shader = Art.CiycShaders.FindLit();
+                if (shader != null)
+                {
+                    _neutralPrimitiveMaterial = new Material(shader) { name = "CIYC_NeutralFixture" };
+                    _neutralPrimitiveMaterial.color = new Color(0.55f, 0.54f, 0.52f);
+                }
+            }
+
+            var renderer = go.GetComponent<Renderer>();
+            if (renderer == null)
+                return go;
+
+            if (_neutralPrimitiveMaterial != null)
+            {
+                renderer.sharedMaterial = _neutralPrimitiveMaterial;
+                return go;
+            }
+
+            // No shader, so no material - and doing nothing here is NOT neutral.
+            // GameObject.CreatePrimitive arrives carrying Unity's built-in default material,
+            // which is a Built-in-pipeline shader and draws solid MAGENTA under URP.
+            //
+            // Through the one shared rule (Art.PrimitiveSurface), which switches the RENDERER
+            // off and names what was missing. The COLLIDER stays - an invisible floor still
+            // holds the player up, where a magenta one only says something is wrong in a
+            // language that looks like a level.
+            Art.PrimitiveSurface.Apply(go, null, "generated primitive " + name +
+                                       " (CiycShaders.FindLit returned null)");
+            return go;
+        }
+
         private static void CreateLightSwitch(GeneratedRoomInstance room, LightController lightController)
         {
-            var switchGo = GameObject.CreatePrimitive(PrimitiveType.Cube);
-            switchGo.name = "LightSwitch";
+            var switchGo = CreateNeutralPrimitive(PrimitiveType.Cube, "LightSwitch");
             switchGo.tag = "LightSwitch";
             switchGo.transform.SetParent(room.Root.transform, false);
             switchGo.transform.localPosition = new Vector3(-2.2f, 1.2f, 0f);
@@ -392,8 +778,7 @@ namespace CatchIfYouCan.Procedural
             if (target?.Root == null)
                 return;
 
-            var breakerGo = GameObject.CreatePrimitive(PrimitiveType.Cube);
-            breakerGo.name = "BreakerBox";
+            var breakerGo = CreateNeutralPrimitive(PrimitiveType.Cube, "BreakerBox");
             breakerGo.transform.SetParent(target.Root.transform, false);
             breakerGo.transform.localPosition = new Vector3(2f, 1.1f, -2f);
             breakerGo.transform.localScale = new Vector3(0.35f, 0.5f, 0.12f);
@@ -402,100 +787,18 @@ namespace CatchIfYouCan.Procedural
             SetPrivateField(breaker, "houseLights", lightControllers.ToArray());
         }
 
-        private void EnsureMinimumHideSpot(GeneratedHouse house)
+        private void AssignGhostRoom(GeneratedHouse house, HouseLayout layout,
+            Dictionary<int, GeneratedRoomInstance> roomsById)
         {
-            CollectHideSpots(house);
-            if (house.HideSpots.Count > 0)
-                return;
-
-            GeneratedRoomInstance target = null;
-            for (int i = 0; i < house.Rooms.Count; i++)
+            // Chosen in Stage A from the GhostRoomCandidates stream and part of the layout
+            // hash, so every client agrees on it without any further communication.
+            if (layout.GhostRoomId >= 0 && roomsById.TryGetValue(layout.GhostRoomId, out var ghostRoom))
             {
-                var room = house.Rooms[i];
-                if (room.Category == RoomCategory.Bedroom ||
-                    room.Category == RoomCategory.KidsRoom ||
-                    room.Category == RoomCategory.Storage)
-                {
-                    target = room;
-                    break;
-                }
+                house.GhostRoom = ghostRoom;
+                return;
             }
 
-            target ??= house.Rooms.Count > 0 ? house.Rooms[0] : null;
-            if (target?.Root == null)
-                return;
-
-            var hideGo = new GameObject("HideSpot_Fallback");
-            hideGo.transform.SetParent(target.Root.transform, false);
-            hideGo.transform.localPosition = new Vector3(-1.5f, 0f, -1.5f);
-            hideGo.AddComponent<HideSpot>();
-            house.HideSpots.Add(hideGo.GetComponent<HideSpot>());
-        }
-
-        private static void SetPrivateField(object target, string fieldName, object value)
-        {
-            if (target == null)
-                return;
-
-            var field = target.GetType().GetField(fieldName,
-                System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-            field?.SetValue(target, value);
-        }
-
-        private void SpawnProps(GeneratedHouse house)
-        {
-            if (propDefinitions == null || propDefinitions.Length == 0)
-                return;
-
-            var spawner = new PropSpawner(propRoot, overlapMask);
-            spawner.SpawnProps(house.Rooms, propDefinitions, _rng, spawnChancePerSocket: 0.82f);
-        }
-
-        private void AssignGhostRoom(GeneratedHouse house)
-        {
-            GeneratedRoomInstance best = null;
-            float bestScore = float.MinValue;
-
-            for (int i = 0; i < house.Rooms.Count; i++)
-            {
-                var room = house.Rooms[i];
-                if (room.Category == RoomCategory.Entrance || room.Category == RoomCategory.Hallway)
-                    continue;
-
-                float score = ScoreGhostRoom(house, room);
-                if (score > bestScore)
-                {
-                    bestScore = score;
-                    best = room;
-                }
-            }
-
-            house.GhostRoom = best ?? (house.Rooms.Count > 1 ? house.Rooms[1] : house.Entrance);
-        }
-
-        private float ScoreGhostRoom(GeneratedHouse house, GeneratedRoomInstance room)
-        {
-            if (house.Entrance == null)
-                return RandomRange(0f, 1f);
-
-            float distance = Vector3.Distance(room.Root.transform.position, house.Entrance.Root.transform.position);
-            float categoryBonus = 0f;
-            switch (room.Category)
-            {
-                case RoomCategory.Basement:
-                case RoomCategory.Attic:
-                    categoryBonus = 2f;
-                    break;
-                case RoomCategory.Bedroom:
-                case RoomCategory.KidsRoom:
-                    categoryBonus = 1.5f;
-                    break;
-                case RoomCategory.Bathroom:
-                    categoryBonus = 1f;
-                    break;
-            }
-
-            return distance + categoryBonus + RandomRange(0f, 0.5f);
+            house.GhostRoom = house.Rooms.Count > 1 ? house.Rooms[1] : house.Entrance;
         }
 
         private void CollectHideSpots(GeneratedHouse house)
@@ -510,80 +813,95 @@ namespace CatchIfYouCan.Procedural
             }
         }
 
+        private void EnsureMinimumHideSpot(GeneratedHouse house, HouseLayout layout,
+            Dictionary<int, GeneratedRoomInstance> roomsById)
+        {
+            if (house.HideSpots.Count > 0)
+                return;
+
+            // Fall back to the layout's own hide-spot anchors, which every client has.
+            for (int i = 0; i < layout.HideSpots.Count; i++)
+            {
+                var anchor = layout.HideSpots[i];
+                if (!roomsById.TryGetValue(anchor.RoomId, out var room) || room.Root == null)
+                    continue;
+
+                var hideGo = new GameObject("HideSpot_Layout");
+                hideGo.transform.SetParent(room.Root.transform, true);
+                hideGo.transform.position = new Vector3(
+                    Quantize.Metres(anchor.PositionMm.X),
+                    Quantize.Metres(anchor.PositionMm.Y),
+                    Quantize.Metres(anchor.PositionMm.Z));
+                house.HideSpots.Add(hideGo.AddComponent<HideSpot>());
+            }
+
+            if (house.HideSpots.Count > 0)
+                return;
+
+            var target = house.Rooms.Count > 0 ? house.Rooms[0] : null;
+            if (target?.Root == null)
+                return;
+
+            var fallbackGo = new GameObject("HideSpot_Fallback");
+            fallbackGo.transform.SetParent(target.Root.transform, false);
+            fallbackGo.transform.localPosition = new Vector3(-1.5f, 0f, -1.5f);
+            house.HideSpots.Add(fallbackGo.AddComponent<HideSpot>());
+        }
+
         private void BuildNavigation(GeneratedHouse house)
         {
             if (navMeshBuilder == null)
-            {
                 navMeshBuilder = gameObject.AddComponent<NavMeshRuntimeBuilder>();
-            }
 
+            // The NavMesh is built FROM the finished layout. Its output is deliberately not
+            // part of the layout hash: a runtime bake carries no cross-platform bit-identity
+            // guarantee, and ghost pathing is host-authoritative (Docs/NETWORKING.md §4).
             navMeshBuilder.Build(house.Root);
         }
 
-        private GeneratedRoomInstance FindRoom(GeneratedHouse house, int nodeId)
+        private static void SetPrivateField(object target, string fieldName, object value)
         {
-            for (int i = 0; i < house.Rooms.Count; i++)
-            {
-                if (house.Rooms[i].NodeId == nodeId)
-                    return house.Rooms[i];
-            }
-
-            return null;
-        }
-
-        private RoomDefinition GetDefinition(RoomCategory category)
-        {
-            if (_definitionLookup.TryGetValue(category, out var def))
-                return def;
-            return null;
-        }
-
-        private void CacheDefinitions()
-        {
-            _definitionLookup.Clear();
-            if (roomDefinitions == null)
+            if (target == null)
                 return;
 
-            for (int i = 0; i < roomDefinitions.Length; i++)
-            {
-                var def = roomDefinitions[i];
-                if (def != null)
-                    _definitionLookup[def.Category] = def;
-            }
+            var field = target.GetType().GetField(fieldName,
+                System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+            field?.SetValue(target, value);
         }
 
+        /// <summary>
+        /// Detaches previous house roots immediately, then destroys them.
+        ///
+        /// The detach matters: Object.Destroy is deferred to end of frame at runtime, so
+        /// without it the old hierarchy would still be reachable while the new house is
+        /// being built. Generation no longer reads the scene, so this is now hygiene rather
+        /// than correctness - but leaving the trap in place invites the next regression.
+        /// </summary>
         private void ClearExisting()
         {
             if (houseRoot == null)
                 return;
 
             for (int i = houseRoot.childCount - 1; i >= 0; i--)
-                DestroyImmediateSafe(houseRoot.GetChild(i).gameObject);
+            {
+                var child = houseRoot.GetChild(i).gameObject;
+                child.transform.SetParent(null, false);
+                DestroyImmediateSafe(child);
+            }
+
+            _activeHouseRoot = null;
+            propRoot = null;
         }
 
-        private static void DestroyHouseObjects(GeneratedHouse house)
+        private static void DestroyImmediateSafe(UnityEngine.Object target)
         {
-            if (house?.Root == null)
-                return;
-
-            for (int i = house.Root.childCount - 1; i >= 0; i--)
-                DestroyImmediateSafe(house.Root.GetChild(i).gameObject);
-        }
-
-        private static void DestroyImmediateSafe(GameObject go)
-        {
-            if (go == null)
+            if (target == null)
                 return;
 
             if (Application.isPlaying)
-                Object.Destroy(go);
+                UnityEngine.Object.Destroy(target);
             else
-                Object.DestroyImmediate(go);
-        }
-
-        private float RandomRange(float min, float max)
-        {
-            return SeedManager.NextFloat(_rng, min, max);
+                UnityEngine.Object.DestroyImmediate(target);
         }
 
         public void ApplyContentCatalog(InvestigationContentCatalog catalog)
@@ -600,7 +918,25 @@ namespace CatchIfYouCan.Procedural
             if (doorPrefab == null)
                 doorPrefab = catalog.DoorPrefab;
 
-            CacheDefinitions();
+            if (modularInteriorCatalog == null)
+                modularInteriorCatalog = catalog.ModularInterior;
+
+            if (roomFurnishingCatalog == null)
+                roomFurnishingCatalog = catalog.RoomFurnishing;
+
+            // These four were declared on the catalog and read by nobody: a field that looks
+            // like a setting and changes nothing. They drive the room shell now.
+            if (wallMaterial == null)
+                wallMaterial = catalog.WallMaterial;
+
+            if (floorMaterial == null)
+                floorMaterial = catalog.FloorMaterial;
+
+            if (ceilingMaterial == null)
+                ceilingMaterial = catalog.CeilingMaterial;
+
+            if (trimMaterial == null)
+                trimMaterial = catalog.TrimMaterial;
         }
     }
 }

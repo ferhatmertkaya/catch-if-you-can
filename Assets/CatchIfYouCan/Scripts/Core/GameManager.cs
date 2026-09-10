@@ -43,7 +43,7 @@ namespace CatchIfYouCan.Core
             DontDestroyOnLoad(gameObject);
             Application.targetFrameRate = Mathf.RoundToInt(targetFramerate);
             Screen.sleepTimeout = SleepTimeout.NeverSleep;
-            Input.multiTouchEnabled = true;
+            UnityEngine.Input.multiTouchEnabled = true;
         }
 
         private void Start()

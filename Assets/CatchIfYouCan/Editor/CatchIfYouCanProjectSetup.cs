@@ -20,9 +20,18 @@ namespace CatchIfYouCan.EditorTools
             "Player", "Ghost", "Interactable", "Evidence", "Environment", "HideSpot", "Equipment", "PostProcessing"
         };
 
+        // Every tag the game assigns or compares. Assigning an undefined tag throws, and so
+        // does CompareTag against one, so a name missing from here is not a cosmetic gap -
+        // it aborts whatever was building at that line. "Environment" and "LightSwitch"
+        // were used by four runtime call sites and one editor builder while being in
+        // neither this list nor TagManager.asset. "Player" is deliberately absent: it is one
+        // of Unity's seven built-in tags, so adding it here would insert a second, duplicate
+        // "Player" into the dropdown rather than define anything.
+        // Scripts/check_project_tags.sh now fails if the two ever drift apart again.
         private static readonly string[] RequiredTags =
         {
-            "Interactable", "Ghost", "HideSpot", "Evidence", "Equipment", "Door", "Van", "Breaker", "Player"
+            "Interactable", "Ghost", "HideSpot", "Evidence", "Equipment", "Door", "Van", "Breaker",
+            "Environment", "LightSwitch"
         };
 
         private static readonly string[] RequiredFolders =
@@ -39,17 +48,26 @@ namespace CatchIfYouCan.EditorTools
             "Builds/iOS"
         };
 
-        private static readonly string[] RequiredScenes =
-        {
-            Root + "/Scenes/00_Boot.unity",
-            Root + "/Scenes/01_MainMenu.unity",
-            Root + "/Scenes/02_Training.unity",
-            Root + "/Scenes/03_Investigation.unity"
-        };
+        // Derived, never retyped. This list used to be four hard-coded paths, and it is
+        // assigned straight onto EditorBuildSettings.scenes below - so a scene added by
+        // hand and forgotten here was silently deleted from the build the next time anyone
+        // ran Setup Project.
+        private static string[] RequiredScenes => Core.CiycScenes.ProductionPaths();
 
-        [MenuItem("Catch If You Can/Setup Project")]
+        [MenuItem("Catch If You Can/9. ENTWICKLER - DEBUG/Migration/Setup Project [MASSENAENDERUNG]", false, 952)]
         public static void SetupProject()
         {
+            if (!DangerousCommandGate.Confirm(
+                    "Setup Project",
+                    "Legt die Projektstruktur an: erzeugt Assets, importiert sie, schreibt " +
+                    "Dateien und ruft AssetDatabase.Refresh.\n\n" +
+                    "Gedacht fuer ein frisches Projekt. In einem eingerichteten Projekt hat es " +
+                    "nichts zu tun und kostet nur einen Refresh.",
+                    DangerousCommandGate.UnknownCount,
+                    reimports: true, savesScenes: false,
+                    actionLabel: "Ja, Projekt einrichten"))
+                return;
+
             string report = RunSetup();
             EditorUtility.DisplayDialog("Catch If You Can", report, "OK");
         }
@@ -70,7 +88,7 @@ namespace CatchIfYouCan.EditorTools
             EnsureLayers(report);
             EnsureTags(report);
             EnsureScriptableObjects(report);
-            if (AssetDatabase.IsValidFolder("Assets/External/Kenney/FurnitureKit/Models"))
+            if (AssetDatabase.IsValidFolder(Content.ExternalAssetPaths.QuaterniusMonsters))
             {
                 ExternalAssetDownloader.EnsureBundledAssetsPresent();
                 try
@@ -84,7 +102,7 @@ namespace CatchIfYouCan.EditorTools
             }
             else
             {
-                report.AppendLine("External assets not found — skipped Integrate External Assets.");
+                report.AppendLine("Ghost monster models not found — skipped Integrate External Assets.");
             }
 
             EnsureBuildScenes(report);
@@ -265,21 +283,47 @@ namespace CatchIfYouCan.EditorTools
         private static void EnsureBuildScenes(StringBuilder report)
         {
             var scenes = new List<EditorBuildSettingsScene>();
+            var required = RequiredScenes;
             int missing = 0;
 
-            for (int i = 0; i < RequiredScenes.Length; i++)
+            // Production scenes first and in order, because index 0 is the scene the player
+            // starts in.
+            for (int i = 0; i < required.Length; i++)
             {
-                bool exists = File.Exists(RequiredScenes[i]);
+                bool exists = File.Exists(required[i]);
                 if (!exists)
                     missing++;
 
-                scenes.Add(new EditorBuildSettingsScene(RequiredScenes[i], exists));
+                scenes.Add(new EditorBuildSettingsScene(required[i], exists));
+            }
+
+            // Anything else already registered is kept, disabled or not. This used to be a
+            // wholesale replacement, which quietly removed every scene the production list
+            // did not know about - including, after the lobby split, the lobby itself if
+            // this file had not been updated in the same change.
+            int kept = 0;
+            var existing = EditorBuildSettings.scenes;
+            if (existing != null)
+            {
+                for (int i = 0; i < existing.Length; i++)
+                {
+                    if (existing[i] == null || string.IsNullOrEmpty(existing[i].path))
+                        continue;
+                    if (System.Array.IndexOf(required, existing[i].path) >= 0)
+                        continue;
+
+                    scenes.Add(existing[i]);
+                    kept++;
+                }
             }
 
             EditorBuildSettings.scenes = scenes.ToArray();
+
             report.AppendLine(missing == 0
-                ? "Build Settings: all 4 scenes registered."
-                : $"Build Settings: {missing} scene(s) missing on disk.");
+                ? $"Build Settings: all {required.Length} production scenes registered."
+                : $"Build Settings: {missing} of {required.Length} production scene(s) missing on disk.");
+            if (kept > 0)
+                report.AppendLine($"Build Settings: kept {kept} additional non-production scene(s).");
         }
 
         private static void ValidateUrp(StringBuilder report)

@@ -1,0 +1,246 @@
+using System;
+using System.Collections.Generic;
+
+namespace CatchIfYouCan.Procedural.Deterministic
+{
+    public readonly struct RoomArchetype
+    {
+        public readonly string ArchetypeId;
+        public readonly RoomCategory Category;
+        public readonly Vec3i SizeMm;
+        public readonly int VariantCount;
+        public readonly int WeightFixed;
+
+        public RoomArchetype(string archetypeId, RoomCategory category, Vec3i sizeMm, int variantCount, int weightFixed)
+        {
+            ArchetypeId = archetypeId;
+            Category = category;
+            SizeMm = sizeMm;
+            VariantCount = variantCount < 1 ? 1 : variantCount;
+            WeightFixed = weightFixed;
+        }
+    }
+
+    public readonly struct PropArchetype
+    {
+        public readonly string PropDefinitionId;
+        public readonly PropKind Kind;
+        public readonly Vec3i BoundsMm;
+        public readonly int WeightFixed;
+        /// <summary>Room categories this prop may occupy. Empty means "any".</summary>
+        public readonly RoomCategory[] AllowedCategories;
+
+        public PropArchetype(string propDefinitionId, PropKind kind, Vec3i boundsMm, int weightFixed,
+            RoomCategory[] allowedCategories)
+        {
+            PropDefinitionId = propDefinitionId;
+            Kind = kind;
+            BoundsMm = boundsMm;
+            WeightFixed = weightFixed;
+            AllowedCategories = allowedCategories ?? Array.Empty<RoomCategory>();
+        }
+
+        public bool MatchesRoom(RoomCategory category)
+        {
+            if (AllowedCategories.Length == 0)
+                return true;
+
+            for (int i = 0; i < AllowedCategories.Length; i++)
+            {
+                if (AllowedCategories[i] == category)
+                    return true;
+            }
+
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// The engine-free view of authored content that generation is allowed to read.
+    ///
+    /// Content parity is part of determinism: a seed indexes into this set, so two clients
+    /// with different content produce different layouts from the same seed. The
+    /// <see cref="ContentHash"/> is compared alongside the layout hash, and a mismatch
+    /// there is a DIFFERENT error - it means the clients are running different builds and
+    /// no amount of seed agreement will help.
+    ///
+    /// Entries are sorted by stable id at construction, so authoring order (for example the
+    /// order of a [SerializeField] array in the inspector) can never change generation.
+    /// Duplicate stable ids are REJECTED at construction rather than tie-broken - see
+    /// <see cref="DuplicateStableIdException"/> for why hiding them would be worse.
+    /// </summary>
+    public sealed class ContentSnapshot
+    {
+        public IReadOnlyList<RoomArchetype> RoomArchetypes { get; }
+        public IReadOnlyList<PropArchetype> PropArchetypes { get; }
+        public ulong ContentHash { get; }
+
+        /// <exception cref="DuplicateStableIdException">
+        /// If two entries resolve to the same stable id. Rejected rather than tie-broken:
+        /// see <see cref="DuplicateStableIdException"/>.
+        /// </exception>
+        public ContentSnapshot(IEnumerable<RoomArchetype> roomArchetypes, IEnumerable<PropArchetype> propArchetypes)
+        {
+            var rooms = new List<RoomArchetype>(roomArchetypes ?? Array.Empty<RoomArchetype>());
+            var props = new List<PropArchetype>(propArchetypes ?? Array.Empty<PropArchetype>());
+
+            // Sort FIRST, then check adjacent pairs. Sorting makes duplicate detection a
+            // single linear pass and needs no hash container, whose enumeration order could
+            // otherwise leak into the error message.
+            rooms.Sort((a, b) => string.CompareOrdinal(a.ArchetypeId, b.ArchetypeId));
+            props.Sort((a, b) => string.CompareOrdinal(a.PropDefinitionId, b.PropDefinitionId));
+
+            // The sort key must be TOTAL for the ordering to be deterministic: List.Sort is
+            // an unstable introsort, so equal keys leave the relative order dependent on the
+            // input order. Rejecting duplicates is what makes the single-key sort total -
+            // rather than adding a tie-break that would hide the bad content.
+            ThrowIfDuplicateRoomIds(rooms);
+            ThrowIfDuplicatePropIds(props);
+
+            RoomArchetypes = rooms;
+            PropArchetypes = props;
+            ContentHash = ComputeContentHash(rooms, props);
+        }
+
+        private static void ThrowIfDuplicateRoomIds(List<RoomArchetype> sortedRooms)
+        {
+            List<string> duplicates = null;
+            for (int i = 1; i < sortedRooms.Count; i++)
+            {
+                if (!string.Equals(sortedRooms[i].ArchetypeId, sortedRooms[i - 1].ArchetypeId, StringComparison.Ordinal))
+                    continue;
+
+                duplicates ??= new List<string>();
+                if (duplicates.Count == 0 ||
+                    !string.Equals(duplicates[duplicates.Count - 1], sortedRooms[i].ArchetypeId, StringComparison.Ordinal))
+                    duplicates.Add(sortedRooms[i].ArchetypeId);
+            }
+
+            if (duplicates != null)
+                throw new DuplicateStableIdException("room archetype", duplicates);
+        }
+
+        private static void ThrowIfDuplicatePropIds(List<PropArchetype> sortedProps)
+        {
+            List<string> duplicates = null;
+            for (int i = 1; i < sortedProps.Count; i++)
+            {
+                if (!string.Equals(sortedProps[i].PropDefinitionId, sortedProps[i - 1].PropDefinitionId, StringComparison.Ordinal))
+                    continue;
+
+                duplicates ??= new List<string>();
+                if (duplicates.Count == 0 ||
+                    !string.Equals(duplicates[duplicates.Count - 1], sortedProps[i].PropDefinitionId, StringComparison.Ordinal))
+                    duplicates.Add(sortedProps[i].PropDefinitionId);
+            }
+
+            if (duplicates != null)
+                throw new DuplicateStableIdException("prop definition", duplicates);
+        }
+
+        /// <summary>
+        /// Non-throwing duplicate check for tooling that wants to REPORT bad content rather
+        /// than refuse to run - the editor content validator, for example. Returns every
+        /// duplicated id in canonical order; empty means the ids are a valid total ordering.
+        /// </summary>
+        public static IReadOnlyList<string> FindDuplicateIds(
+            IEnumerable<string> resolvedIds)
+        {
+            var ids = new List<string>(resolvedIds ?? Array.Empty<string>());
+            ids.Sort(StringComparer.Ordinal);
+
+            var duplicates = new List<string>();
+            for (int i = 1; i < ids.Count; i++)
+            {
+                if (!string.Equals(ids[i], ids[i - 1], StringComparison.Ordinal))
+                    continue;
+
+                if (duplicates.Count == 0 ||
+                    !string.Equals(duplicates[duplicates.Count - 1], ids[i], StringComparison.Ordinal))
+                    duplicates.Add(ids[i]);
+            }
+
+            return duplicates;
+        }
+
+        private static ulong ComputeContentHash(List<RoomArchetype> rooms, List<PropArchetype> props)
+        {
+            var h = Fnv1a64.Create();
+            h.WriteString(GenerationVersion.AlgorithmId);
+            h.WriteInt32(GenerationVersion.Current);
+
+            h.WriteInt32(rooms.Count);
+            for (int i = 0; i < rooms.Count; i++)
+            {
+                var r = rooms[i];
+                h.WriteString(r.ArchetypeId);
+                h.WriteInt32((int)r.Category);
+                h.WriteVec3i(r.SizeMm);
+                h.WriteInt32(r.VariantCount);
+                h.WriteInt32(r.WeightFixed);
+            }
+
+            h.WriteInt32(props.Count);
+            for (int i = 0; i < props.Count; i++)
+            {
+                var p = props[i];
+                h.WriteString(p.PropDefinitionId);
+                h.WriteInt32((int)p.Kind);
+                h.WriteVec3i(p.BoundsMm);
+                h.WriteInt32(p.WeightFixed);
+                h.WriteInt32(p.AllowedCategories.Length);
+                for (int c = 0; c < p.AllowedCategories.Length; c++)
+                    h.WriteInt32((int)p.AllowedCategories[c]);
+            }
+
+            return h.Value;
+        }
+
+        /// <summary>Room archetypes for a category, in canonical id order. Never allocates a dictionary.</summary>
+        public void CollectRoomArchetypes(RoomCategory category, List<RoomArchetype> buffer)
+        {
+            buffer.Clear();
+            for (int i = 0; i < RoomArchetypes.Count; i++)
+            {
+                if (RoomArchetypes[i].Category == category)
+                    buffer.Add(RoomArchetypes[i]);
+            }
+        }
+
+        public void CollectPropArchetypes(RoomCategory category, PropKind kind, List<PropArchetype> buffer)
+        {
+            buffer.Clear();
+            for (int i = 0; i < PropArchetypes.Count; i++)
+            {
+                var p = PropArchetypes[i];
+                if (p.Kind == kind && p.MatchesRoom(category))
+                    buffer.Add(p);
+            }
+        }
+
+        /// <summary>A deterministic fallback used when no content is authored, so tests and empty scenes still generate.</summary>
+        public static ContentSnapshot CreateFallback()
+        {
+            var rooms = new List<RoomArchetype>();
+            foreach (RoomCategory category in Enum.GetValues(typeof(RoomCategory)))
+            {
+                rooms.Add(new RoomArchetype(
+                    "ARCH_" + category,
+                    category,
+                    new Vec3i(6000, 3000, 6000),
+                    1,
+                    Quantize.Weight(1f)));
+            }
+
+            var props = new List<PropArchetype>
+            {
+                new PropArchetype("PROP_CRATE", PropKind.Prop, new Vec3i(700, 700, 700), Quantize.Weight(1f), null),
+                new PropArchetype("PROP_LAMP", PropKind.Prop, new Vec3i(400, 1400, 400), Quantize.Weight(0.7f), null),
+                new PropArchetype("FURN_SHELF", PropKind.Furniture, new Vec3i(1600, 2000, 500), Quantize.Weight(1f), null),
+                new PropArchetype("FURN_TABLE", PropKind.Furniture, new Vec3i(1400, 800, 900), Quantize.Weight(1f), null),
+            };
+
+            return new ContentSnapshot(rooms, props);
+        }
+    }
+}

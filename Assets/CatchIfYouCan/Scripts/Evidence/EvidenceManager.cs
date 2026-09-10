@@ -14,7 +14,11 @@ namespace CatchIfYouCan.Evidence
         public string Id;
         public string Title;
         public string Body;
-        public EvidenceType? RelatedEvidence;
+
+        // Unity cannot serialize Nullable<T>, so this field is runtime-only. Journal
+        // entries are never written to a save file or an inspector, so the nullable
+        // reads better here than a sentinel enum value would.
+        [NonSerialized] public EvidenceType? RelatedEvidence;
         public long TimestampUtcTicks;
 
         public JournalEntry()
@@ -82,9 +86,17 @@ namespace CatchIfYouCan.Evidence
                 return;
 
             _journalEntries.Add(entry);
-            if (entry.RelatedEvidence.HasValue)
-                RegisterEvidence(entry.RelatedEvidence.Value);
 
+            // A journal entry is a record, not proof. It does not touch evidence truth at all.
+            //
+            // It used to call RegisterEvidence directly, which is how the EVP recorder proved
+            // EVP Response against ghosts that do not make one. AH routed it through the
+            // validator instead, which closed the hole but kept the shape: a caller with a
+            // string and an enum could still start a confirmation. Now that each evidence type
+            // has exactly one declared observing device (EvidenceAuthority), a journal entry
+            // has no device and therefore no standing - so rather than submit an observation
+            // that is always refused, it does not submit one. The device that measured the
+            // thing has already said so through Observe; this writes down that it happened.
             CIYCLog.Info($"Journal entry added: {entry.Title}");
         }
 

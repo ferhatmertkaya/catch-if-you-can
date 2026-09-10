@@ -8,7 +8,7 @@ namespace CatchIfYouCan.EditorTools
 {
     public static class HouseGeneratorTestTool
     {
-        [MenuItem("Catch If You Can/Generate 100 Houses")]
+        [MenuItem("Catch If You Can/9. ENTWICKLER - DEBUG/100 Haeuser generieren (Test) [AENDERT SZENE]", false, 920)]
         public static void Generate100Houses()
         {
             var report = new StringBuilder();
@@ -90,10 +90,10 @@ namespace CatchIfYouCan.EditorTools
             if (graph.Nodes.Count > HouseLayoutGraph.MaxRooms)
                 errors.Add($"Too many rooms ({graph.Nodes.Count}).");
 
-            var cells = new HashSet<UnityEngine.Vector2Int>();
+            var cells = new HashSet<CatchIfYouCan.Procedural.Deterministic.GridCell>();
             for (int i = 0; i < graph.Nodes.Count; i++)
             {
-                var cell = graph.Nodes[i].GridCell;
+                var cell = graph.Nodes[i].Cell;
                 if (!cells.Add(cell))
                     errors.Add($"Grid overlap at {cell} (node {graph.Nodes[i].Id}).");
             }

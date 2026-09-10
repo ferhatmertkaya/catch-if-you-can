@@ -10,7 +10,7 @@ namespace CatchIfYouCan.UI
     {
         public static EventSystem EnsureEventSystem()
         {
-            var existing = Object.FindFirstObjectByType<EventSystem>();
+            var existing = Object.FindAnyObjectByType<EventSystem>();
             if (existing != null)
                 return existing;
 

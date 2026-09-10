@@ -45,8 +45,11 @@ namespace CatchIfYouCan.UI
             scaler.matchWidthOrHeight = 0.5f;
             canvasGo.AddComponent<GraphicRaycaster>();
 
-            var safe = canvasGo.AddComponent<SafeAreaFitter>();
-            safe.enabled = true;
+            // NO SafeAreaFitter here. A root Canvas has its RectTransform driven by the
+            // canvas itself, so the fitter can never apply anything - it detects that in
+            // OnEnable, refuses, disables itself and logs an error. Adding it and then setting
+            // enabled = true logged that error TWICE per canvas, on every scene, forever.
+            // The safe area belongs on a stretched child; TouchHudFactory does it that way.
 
             return canvas;
         }
@@ -68,8 +71,18 @@ namespace CatchIfYouCan.UI
             return go;
         }
 
+        /// <summary>
+        /// A label in one of the project's three faces.
+        ///
+        /// <para>
+        /// <paramref name="role"/> is what makes the interface branded rather than default. It
+        /// is not a colour or a size - those are already here - it is which typeface the label
+        /// is set in, and leaving it out is how every screen ended up in the built-in sans.
+        /// </para>
+        /// </summary>
         public static Component CreateText(Transform parent, string name, string text, int fontSize,
-            TextAnchor alignment = TextAnchor.MiddleCenter, bool bold = false)
+            TextAnchor alignment = TextAnchor.MiddleCenter, bool bold = false,
+            UITheme.FontRole role = UITheme.FontRole.Body)
         {
             GameObject go;
             Component comp;
@@ -96,12 +109,14 @@ namespace CatchIfYouCan.UI
                 legacy.text = text;
                 legacy.fontSize = fontSize;
                 legacy.alignment = alignment;
-                legacy.font = _defaultFont;
+                legacy.font = UITheme.BodyFont != null ? UITheme.BodyFont : _defaultFont;
                 legacy.fontStyle = bold ? FontStyle.Bold : FontStyle.Normal;
                 legacy.color = UITheme.TextPrimary;
                 legacy.raycastTarget = false;
                 comp = legacy;
             }
+
+            UITheme.ApplyFont(comp, role);
 
             var rect = go.GetComponent<RectTransform>();
             rect.sizeDelta = new Vector2(400, fontSize + 12);
@@ -117,8 +132,11 @@ namespace CatchIfYouCan.UI
             var rect = go.GetComponent<RectTransform>();
             rect.sizeDelta = new Vector2(420, height);
 
+            // A dark surface with a hairline, in both weights. "Primary" is now a shade, not a
+            // colour: the old primary button was a solid brand-green fill, which is what made
+            // every menu read as a form rather than as a game.
             var img = go.GetComponent<Image>();
-            img.color = primary ? UITheme.Secondary : UITheme.BackgroundPanel;
+            img.color = primary ? UITheme.Surface : UITheme.BackgroundPanel;
             UITheme.ApplyBorder(go);
 
             var btn = go.GetComponent<Button>();
@@ -128,12 +146,49 @@ namespace CatchIfYouCan.UI
                 UiAudioService.Instance?.PlayButton();
                 onClick?.Invoke();
             });
-            go.AddComponent<UIButtonFeedback>();
 
-            var text = CreateText(go.transform, "Label", label, 22, TextAnchor.MiddleCenter, true);
+            // The accent is a bar down the leading edge, not a fill. It is the one green thing
+            // on a button and it is four pixels wide.
+            Image accent = CreateAccentBar(go.transform);
+            var feedback = go.AddComponent<UIButtonFeedback>();
+            feedback.BindAccent(accent);
+
+            // 22 was too small to read at arm's length on a phone, which is the only distance
+            // this game is ever played at. Scaled to the control: a 68-high board entry gets a
+            // caption you can read from the sofa, a 40-high settings tab stays a tab.
+            int labelSize = height >= 64f ? 30 : height >= 52f ? 26 : 22;
+
+            var text = CreateText(go.transform, "Label", label, labelSize, TextAnchor.MiddleCenter,
+                true, UITheme.FontRole.Button);
             Stretch(text.gameObject);
+            var labelRect = text.GetComponent<RectTransform>();
+            labelRect.offsetMin = new Vector2(UITheme.AccentBarWidth + 12f, 0f);
+            labelRect.offsetMax = new Vector2(-12f, 0f);
 
             return btn;
+        }
+
+        /// <summary>
+        /// The thin green bar that marks a held or selected control. Hidden until something
+        /// asks for it, and never wider than <see cref="UITheme.AccentBarWidth"/>.
+        /// </summary>
+        private static Image CreateAccentBar(Transform parent)
+        {
+            var go = new GameObject("Accent", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
+            go.transform.SetParent(parent, false);
+
+            var rect = go.GetComponent<RectTransform>();
+            rect.anchorMin = new Vector2(0f, 0f);
+            rect.anchorMax = new Vector2(0f, 1f);
+            rect.pivot = new Vector2(0f, 0.5f);
+            rect.offsetMin = Vector2.zero;
+            rect.offsetMax = Vector2.zero;
+            rect.sizeDelta = new Vector2(UITheme.AccentBarWidth, 0f);
+
+            var img = go.GetComponent<Image>();
+            img.color = Color.clear;
+            img.raycastTarget = false;
+            return img;
         }
 
         public static Slider CreateSlider(Transform parent, string name, float min, float max, float value)
@@ -208,63 +263,175 @@ namespace CatchIfYouCan.UI
             rect.offsetMax = Vector2.zero;
         }
 
+        /// <summary>
+        /// A stretched child carrying a working <see cref="SafeAreaFitter"/>.
+        ///
+        /// <para>
+        /// It has to be a child. <see cref="BuildRootCanvas"/> puts a fitter on the canvas
+        /// object itself, where a root Canvas drives its own RectTransform and rewrites the
+        /// anchors every frame - so that one can never apply and now says so out loud.
+        /// <c>TouchHudFactory</c> has always done it this way, which is why the on-screen
+        /// controls were correct while the screens below were not.
+        /// </para>
+        /// </summary>
+        private static RectTransform CreateSafeAreaContainer(Transform parent, string name)
+        {
+            var go = new GameObject(name, typeof(RectTransform));
+            go.transform.SetParent(parent, false);
+
+            var rect = go.GetComponent<RectTransform>();
+            rect.anchorMin = Vector2.zero;
+            rect.anchorMax = Vector2.one;
+            rect.offsetMin = Vector2.zero;
+            rect.offsetMax = Vector2.zero;
+
+            go.AddComponent<SafeAreaFitter>();
+            return rect;
+        }
+
+        /// <summary>
+        /// Insets a screen's CONTENT into the safe area while its own background keeps
+        /// reaching the physical edges of the display.
+        ///
+        /// <para>
+        /// This is the shape almost every screen here needs, and it is why they could not
+        /// simply be re-parented wholesale. Each of these roots <em>is</em> the background -
+        /// a dim overlay, or a near-opaque panel - and insetting that would leave the game
+        /// showing through a strip beside the notch. Only what sits on top has to move.
+        /// </para>
+        ///
+        /// <para>
+        /// Nothing the caller built needs changing. Everything is positioned with normalised
+        /// anchors and zero offsets by <c>Position</c>, so re-parenting into a container that
+        /// covers a smaller rectangle rescales all of it, and the bindings are direct object
+        /// references that do not care where a transform hangs.
+        /// </para>
+        /// </summary>
+        private static void ConstrainContentToSafeArea(GameObject screenRoot)
+        {
+            RectTransform content = CreateSafeAreaContainer(screenRoot.transform, "SafeAreaContent");
+
+            // Collected before anything moves: re-parenting while iterating a transform's
+            // children walks past half of them.
+            var existing = new System.Collections.Generic.List<Transform>();
+            foreach (Transform child in screenRoot.transform)
+            {
+                if (child != content.transform)
+                    existing.Add(child);
+            }
+
+            foreach (Transform child in existing)
+                child.SetParent(content, false);
+        }
+
         public static RuntimeUIBuildResult BuildCompleteUI()
         {
             var canvas = BuildRootCanvas("RuntimeUI", out _);
-            Object.DontDestroyOnLoad(canvas.gameObject);
+            UnityEngine.Object.DontDestroyOnLoad(canvas.gameObject);
 
             var result = new RuntimeUIBuildResult { Canvas = canvas };
 
-            result.MainMenuRoot = CreatePanel(canvas.transform, "MainMenu");
+            // Screens that are a floating window, or that carry no background of their own,
+            // hang here and are inset whole. Screens that ARE their own background stay on the
+            // canvas and inset only their content - see ConstrainContentToSafeArea.
+            RectTransform safeArea = CreateSafeAreaContainer(canvas.transform, "SafeArea");
+
+            // CONSTRAINED. Its background is cleared below, so there is nothing to bleed and
+            // the whole menu can move inside the safe area.
+            result.MainMenuRoot = CreatePanel(safeArea, "MainMenu");
+            var mainMenuBackground = result.MainMenuRoot.GetComponent<Image>();
+            if (mainMenuBackground != null)
+            {
+                mainMenuBackground.color = Color.clear;
+                mainMenuBackground.raycastTarget = false;
+            }
             var mainMenu = result.MainMenuRoot.AddComponent<MainMenuController>();
             WireMainMenu(mainMenu, result.MainMenuRoot.transform);
 
+            // MIXED. The root stays full-bleed so its children can reach the display edges,
+            // and only the controls on it are inset.
             result.HudRoot = CreatePanel(canvas.transform, "HUD");
+
+            // Cleared, because this one is drawn OVER the game.
+            //
+            // CreatePanel applies UITheme.ApplyPanel to every root it makes, which is #101513
+            // at 0.92 alpha - correct for a menu that replaces the view, and a near-opaque
+            // sheet over the 3D scene here. UIScreen.HUD is shown from the investigation flow,
+            // so this was the gameplay HUD blacking out the gameplay.
+            //
+            // raycastTarget matters as much as the colour: a full-screen Image that takes
+            // raycasts swallows every touch that does not land on a button, which is the look
+            // drag and the joystick area both.
+            //
+            // The border ApplyPanel added needs no removal - ApplyBorder sets
+            // useGraphicAlpha, so the outline's alpha is multiplied by the graphic's and a
+            // cleared graphic draws no outline. This is the same treatment MainMenu above
+            // already gives itself, for the same reason.
+            var hudBackground = result.HudRoot.GetComponent<Image>();
+            if (hudBackground != null)
+            {
+                hudBackground.color = Color.clear;
+                hudBackground.raycastTarget = false;
+            }
+
             var hud = result.HudRoot.AddComponent<MobileHUDController>();
             WireHUD(hud, result.HudRoot.transform);
+            ConstrainContentToSafeArea(result.HudRoot);
 
             result.MissionSelectRoot = CreatePanel(canvas.transform, "MissionSelect");
             var missionSelect = result.MissionSelectRoot.AddComponent<MissionSelectUI>();
             WireMissionSelect(missionSelect, result.MissionSelectRoot.transform);
+            ConstrainContentToSafeArea(result.MissionSelectRoot);   // MIXED
 
             result.JournalRoot = CreatePanel(canvas.transform, "Journal");
             var journal = result.JournalRoot.AddComponent<JournalController>();
             WireJournal(journal, result.JournalRoot.transform);
+            ConstrainContentToSafeArea(result.JournalRoot);         // MIXED
 
             result.PauseRoot = CreatePanel(canvas.transform, "Pause");
             var pause = result.PauseRoot.AddComponent<PauseMenuUI>();
             WirePause(pause, result.PauseRoot.transform);
+            ConstrainContentToSafeArea(result.PauseRoot);           // MIXED - dim overlay bleeds
 
             result.SettingsRoot = CreatePanel(canvas.transform, "Settings");
             var settings = result.SettingsRoot.AddComponent<SettingsUI>();
             WireSettings(settings, result.SettingsRoot.transform);
+            ConstrainContentToSafeArea(result.SettingsRoot);        // MIXED
 
             result.MissionResultRoot = CreatePanel(canvas.transform, "MissionResult");
             var missionResult = result.MissionResultRoot.AddComponent<MissionResultUI>();
             WireMissionResult(missionResult, result.MissionResultRoot.transform);
+            ConstrainContentToSafeArea(result.MissionResultRoot);   // MIXED - dim overlay bleeds
 
             result.EquipmentShopRoot = CreatePanel(canvas.transform, "EquipmentShop");
             var shop = result.EquipmentShopRoot.AddComponent<EquipmentShopUI>();
             WireEquipmentShop(shop, result.EquipmentShopRoot.transform);
+            ConstrainContentToSafeArea(result.EquipmentShopRoot);   // MIXED
 
             result.LoadingRoot = CreatePanel(canvas.transform, "Loading");
             var loading = result.LoadingRoot.AddComponent<LoadingUI>();
             WireLoading(loading, result.LoadingRoot.transform);
+            ConstrainContentToSafeArea(result.LoadingRoot);         // MIXED - the fill must bleed
 
-            result.InteractionRoot = CreatePanel(canvas.transform, "InteractionPrompt");
+            result.InteractionRoot = // CONSTRAINED. The root itself is repositioned to a small chip; a prompt under the
+            // home indicator is a prompt nobody can read.
+            CreatePanel(safeArea, "InteractionPrompt");
             var interaction = result.InteractionRoot.AddComponent<InteractionPromptUI>();
             WireInteractionPrompt(interaction, result.InteractionRoot.transform);
 
             result.EntityDiscoveredRoot = CreatePanel(canvas.transform, "EntityDiscovered");
             var entityDisc = result.EntityDiscoveredRoot.AddComponent<EntityDiscoveredUI>();
             WireEntityDiscovered(entityDisc, result.EntityDiscoveredRoot.transform);
+            ConstrainContentToSafeArea(result.EntityDiscoveredRoot);// MIXED - dim overlay bleeds
 
-            result.CameraMonitorRoot = CreatePanel(canvas.transform, "CameraMonitor");
+            result.CameraMonitorRoot = // CONSTRAINED. A floating window - its corner must be a corner of the SAFE rect.
+            CreatePanel(safeArea, "CameraMonitor");
             var camMon = result.CameraMonitorRoot.AddComponent<CameraMonitorUI>();
             WireCameraMonitor(camMon, result.CameraMonitorRoot.transform);
 
 #if DEVELOPMENT_BUILD || UNITY_EDITOR
-            result.DebugRoot = CreatePanel(canvas.transform, "DebugMenu");
+            result.DebugRoot = // CONSTRAINED. A floating window, same reason.
+            CreatePanel(safeArea, "DebugMenu");
             var debug = result.DebugRoot.AddComponent<DebugMenuUI>();
             WireDebugMenu(debug, result.DebugRoot.transform);
 #endif
@@ -308,6 +475,39 @@ namespace CatchIfYouCan.UI
             return result;
         }
 
+        private const string BrandingLogoResourcePath = "UI/Branding/CatchIfYouCan_Logo";
+
+        /// <summary>
+        /// Loads the branding logo from Resources so it ships in Player builds.
+        /// Resources.Load&lt;Sprite&gt; only succeeds while the PNG is imported as Sprite
+        /// (2D and UI); if that import setting is ever changed the sprite sub-asset
+        /// disappears and the load returns null, so fall back to the Texture2D and build an
+        /// equivalent sprite at runtime rather than losing the logo on device.
+        /// </summary>
+        private static Sprite LoadBrandingLogo()
+        {
+            var sprite = Resources.Load<Sprite>(BrandingLogoResourcePath);
+            if (sprite != null)
+                return sprite;
+
+            var texture = Resources.Load<Texture2D>(BrandingLogoResourcePath);
+            if (texture == null)
+            {
+                Debug.LogError(
+                    $"[CIYC UI] Branding logo missing from Resources/{BrandingLogoResourcePath}. " +
+                    "The menu will render without a logo.");
+                return null;
+            }
+
+            return Sprite.Create(
+                texture,
+                new Rect(0f, 0f, texture.width, texture.height),
+                new Vector2(0.5f, 0.5f),
+                100f,
+                0,
+                SpriteMeshType.FullRect);
+        }
+
         private static void WireMainMenu(MainMenuController ctrl, Transform root)
         {
             var left = CreatePanel(root, "LeftColumn", false);
@@ -316,17 +516,35 @@ namespace CatchIfYouCan.UI
             leftRect.anchorMax = new Vector2(0.35f, 0.85f);
             leftRect.offsetMin = leftRect.offsetMax = Vector2.zero;
 
-            var logoCatch = CreateText(root, "LogoCatch", "CATCH", 96, TextAnchor.UpperLeft, true);
-            Position(logoCatch.gameObject, 0.05f, 0.72f, 0.4f, 0.95f);
-            UITheme.StyleTitle(logoCatch);
+            var leftBackground = left.GetComponent<Image>();
+            if (leftBackground != null)
+            {
+                leftBackground.color = Color.clear;
+                leftBackground.raycastTarget = false;
+            }
 
-            var logoIfYou = CreateText(root, "LogoIfYou", "IF YOU", 72, TextAnchor.UpperLeft, true);
-            Position(logoIfYou.gameObject, 0.05f, 0.58f, 0.4f, 0.74f);
-            UITheme.StyleTitle(logoIfYou);
+            var bakedLogo = GameObject.Find("GameLogo_Baked");
+            if (bakedLogo == null)
+            {
+                var gameLogo = new GameObject(
+                "GameLogo",
+                typeof(RectTransform),
+                typeof(CanvasRenderer),
+                typeof(Image));
 
-            var logoCan = CreateText(root, "LogoCan", "CAN", 96, TextAnchor.UpperLeft, true);
-            Position(logoCan.gameObject, 0.05f, 0.42f, 0.4f, 0.6f);
-            UITheme.SetTextColor(logoCan, UITheme.Secondary);
+            gameLogo.transform.SetParent(root, false);
+
+            var gameLogoImage = gameLogo.GetComponent<Image>();
+            gameLogoImage.sprite = LoadBrandingLogo();
+            gameLogoImage.color = Color.white;
+            gameLogoImage.preserveAspect = true;
+            gameLogoImage.raycastTarget = false;
+            // An Image with no sprite still draws a solid white quad, which reads as a broken
+            // panel over the menu. Nothing is better than that.
+            gameLogoImage.enabled = gameLogoImage.sprite != null;
+
+            Position(gameLogo, -0.15f, 0.16f, 0.45f, 0.88f);
+            }
 
             var layout = left.AddComponent<VerticalLayoutGroup>();
             layout.spacing = 12;
@@ -337,8 +555,8 @@ namespace CatchIfYouCan.UI
             layout.childForceExpandHeight = false;
 
             ctrl.BindRuntime(
-                levelText: CreateText(root, "LevelText", "LV 1", 24, TextAnchor.UpperRight),
-                moneyText: CreateText(root, "MoneyText", "$500", 24, TextAnchor.UpperRight),
+                levelText: CreateText(root, "LevelText", "LV 1", 24, TextAnchor.UpperRight, false, UITheme.FontRole.Header),
+                moneyText: CreateText(root, "MoneyText", "$500", 24, TextAnchor.UpperRight, false, UITheme.FontRole.Header),
                 versionText: CreateText(root, "VersionText", "v1.0", 16, TextAnchor.LowerRight),
                 flickerOverlay: CreatePanel(root, "FlickerOverlay").GetComponent<Image>(),
                 playButton: CreateButton(left.transform, "PLAY", null, true),
@@ -359,114 +577,381 @@ namespace CatchIfYouCan.UI
             ctrl.FlickerOverlay.raycastTarget = false;
         }
 
+        /// <summary>
+        /// The half of the on-screen interface that is NOT a movement control.
+        ///
+        /// <para>
+        /// <b>This used to build a second set of movement controls.</b> It made its own
+        /// <c>MobileInputController</c>, its own <c>MoveJoystick</c> with its own
+        /// <see cref="VirtualJoystick"/>, and its own sprint and crouch buttons - all of which
+        /// <c>TouchHudFactory</c> also builds, per player, as the ones the game actually plays
+        /// with. Which of the two joysticks ended up bound to the controller depended purely on
+        /// which ran first: bind is last-writer-wins, so the orphan stayed on screen, still
+        /// raycasting, still stealing touches, and driving nothing.
+        /// </para>
+        ///
+        /// <para>
+        /// It also could not be suspended. <see cref="MenuInputGate"/> hides the player's
+        /// TouchHUD, which is a per-player object; a joystick parented to the HUD <em>screen</em>
+        /// is not that object, so it stayed on top of every fullscreen menu.
+        /// </para>
+        ///
+        /// <para>
+        /// <b>TouchHudFactory is authoritative for movement, look, sprint, crouch, flashlight
+        /// and carry.</b> What is left here is what it does not build: the case icon, the
+        /// journal, interact, use, the three inventory slots and the equipment panel - and they
+        /// sit above its bottom-right cluster rather than on top of it.
+        /// </para>
+        /// </summary>
         private static void WireHUD(MobileHUDController hud, Transform root)
         {
+            // Every panel CreatePanel makes is UITheme.ApplyPanel - a near-opaque dark sheet,
+            // which is right for a menu that replaces the view and wrong for anything drawn
+            // over the game. The HUD root was cleared for exactly this reason and its CHILDREN
+            // were not, so a solid black band still ran across the top of the screen during
+            // play. Everything on this screen is an overlay now.
             var topBar = CreatePanel(root, "TopBar", false);
             Position(topBar, 0, 0.88f, 1, 1);
+            MakeOverlay(topBar, 0.28f);
+
             var caseIcon = CreatePanel(topBar.transform, "CaseIcon", false);
+            MakeOverlay(caseIcon, 0f);
             caseIcon.GetComponent<RectTransform>().sizeDelta = new Vector2(64, 64);
             var journalBtn = CreateButton(topBar.transform, "JOURNAL", null, false, 48);
 
-            var joystickArea = CreatePanel(root, "JoystickArea", false);
-            Position(joystickArea, 0.02f, 0.05f, 0.28f, 0.45f);
-            joystickArea.GetComponent<Image>().color = new Color(1, 1, 1, 0.05f);
+            // NO interact and NO use button here. The touch HUD already owns both: its
+            // round cluster carries interact above the flashlight, and the carry control sits
+            // beside it. Building a second pair as black bars put two controls for one action
+            // on screen at once, which is what the captures show.
+            Button interactBtn = null;
+            Button useBtn = null;
 
-            var interactBtn = CreateButton(root, "INTERACT", null, true, 64);
-            Position(interactBtn.gameObject, 0.72f, 0.12f, 0.92f, 0.22f);
+            var selector = BuildInventorySlots(root);
+            BuildEquipmentPanel(root);
 
-            var crouchBtn = CreateButton(root, "CROUCH", null, false, 52);
-            Position(crouchBtn.gameObject, 0.55f, 0.05f, 0.68f, 0.14f);
-
-            var sprintBtn = CreateButton(root, "SPRINT", null, false, 52);
-            Position(sprintBtn.gameObject, 0.7f, 0.05f, 0.83f, 0.14f);
-
-            var useBtn = CreateButton(root, "USE", null, true, 52);
-            Position(useBtn.gameObject, 0.85f, 0.05f, 0.98f, 0.14f);
-
-            var slots = new Image[3];
-            var slotRow = CreatePanel(root, "EquipmentSlots", false);
-            Position(slotRow, 0.35f, 0.02f, 0.65f, 0.12f);
-            var hlg = slotRow.AddComponent<HorizontalLayoutGroup>();
-            hlg.spacing = 8;
-            hlg.childAlignment = TextAnchor.MiddleCenter;
-            for (int i = 0; i < 3; i++)
-            {
-                var slot = CreatePanel(slotRow.transform, "Slot" + (i + 1), false);
-                slot.GetComponent<RectTransform>().sizeDelta = new Vector2(72, 72);
-                slots[i] = slot.GetComponent<Image>();
-            }
-
+            // joystickArea, crouchButton, sprintButton, interactButton and useButton are all
+            // deliberately null. MobileHUDController null-checks every one, and the touch HUD
+            // owns all five. What is left to this screen is the case icon, the journal and the
+            // inventory strip.
             hud.BindRuntime(
                 caseIcon: caseIcon.GetComponent<Image>(),
                 journalButton: journalBtn,
-                joystickArea: joystickArea.GetComponent<RectTransform>(),
+                joystickArea: null,
                 interactButton: interactBtn,
-                crouchButton: crouchBtn,
-                sprintButton: sprintBtn,
-                equipmentSlots: slots,
+                crouchButton: null,
+                sprintButton: null,
+                inventorySelector: selector,
                 useButton: useBtn);
-
-            EnsureMobileInput(joystickArea.transform);
         }
 
-        private static void EnsureMobileInput(Transform joystickParent)
+        /// <summary>
+        /// Turns a panel built for a menu into one that can sit over the game.
+        ///
+        /// <para>
+        /// Alpha zero means "structure only, draw nothing" - a layout rectangle. Anything above
+        /// that is a readability wash behind text, never a surface.
+        /// </para>
+        /// </summary>
+        private static void MakeOverlay(GameObject panel, float alpha)
         {
-            if (MobileInputController.Instance != null)
+            if (panel == null)
                 return;
 
-            var inputGo = new GameObject("MobileInputController");
-            Object.DontDestroyOnLoad(inputGo);
-            var input = inputGo.AddComponent<MobileInputController>();
-
-            var joystickGo = new GameObject("MoveJoystick", typeof(RectTransform));
-            joystickGo.transform.SetParent(joystickParent, false);
-            Stretch(joystickGo);
-            var bg = CreatePanel(joystickGo.transform, "Background", true);
-            bg.GetComponent<Image>().color = new Color(1f, 1f, 1f, 0.08f);
-            var handle = CreatePanel(joystickGo.transform, "Handle", false);
-            handle.GetComponent<RectTransform>().sizeDelta = new Vector2(72, 72);
-            handle.GetComponent<Image>().color = new Color(1f, 1f, 1f, 0.35f);
-
-            var joystick = joystickGo.AddComponent<VirtualJoystick>();
-            SetPrivateField(joystick, "background", bg.GetComponent<RectTransform>());
-            SetPrivateField(joystick, "handle", handle.GetComponent<RectTransform>());
-            input.BindJoystick(joystick);
-        }
-
-        private static void SetPrivateField(object target, string fieldName, object value)
-        {
-            if (target == null)
+            var image = panel.GetComponent<Image>();
+            if (image == null)
                 return;
 
-            var field = target.GetType().GetField(fieldName,
-                System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-            field?.SetValue(target, value);
+            if (alpha <= 0.001f)
+            {
+                image.color = Color.clear;
+                image.raycastTarget = false;
+                return;
+            }
+
+            var c = UITheme.BackgroundDark;
+            c.a = alpha;
+            image.color = c;
+            image.raycastTarget = false;
         }
 
+        /// <summary>
+        /// Puts an icon on a button beside its caption. Silently does nothing when the sprite
+        /// is missing, because a button with a word on it still works and a magenta square does
+        /// not.
+        /// </summary>
+        private static void AddButtonIcon(Button button, Sprite sprite)
+        {
+            if (button == null || sprite == null)
+                return;
+
+            var go = new GameObject("Icon", typeof(RectTransform), typeof(CanvasRenderer), typeof(Image));
+            go.transform.SetParent(button.transform, false);
+            go.transform.SetAsFirstSibling();
+
+            var rect = go.GetComponent<RectTransform>();
+            rect.anchorMin = new Vector2(0f, 0.5f);
+            rect.anchorMax = new Vector2(0f, 0.5f);
+            rect.pivot = new Vector2(0f, 0.5f);
+            rect.sizeDelta = new Vector2(34f, 34f);
+            rect.anchoredPosition = new Vector2(UITheme.AccentBarWidth + 12f, 0f);
+
+            var image = go.GetComponent<Image>();
+            image.sprite = sprite;
+            image.color = UITheme.TextPrimary;
+            image.raycastTarget = false;
+            image.preserveAspect = true;
+
+            // The caption steps aside for it rather than being drawn underneath.
+            Component label = FindLabel(button);
+            if (label != null)
+            {
+                var labelRect = label.GetComponent<RectTransform>();
+                if (labelRect != null)
+                    labelRect.offsetMin = new Vector2(UITheme.AccentBarWidth + 54f, 0f);
+            }
+        }
+
+        /// <summary>
+        /// The three inventory slots, as buttons rather than pictures.
+        ///
+        /// <para>
+        /// The row sits between the joystick and the crouch button, and it stops short of
+        /// both. It used to run from 0.35 to 0.65 across the screen, which overlapped crouch
+        /// at 0.55 - harmless while the slots were pictures and a stolen tap the moment they
+        /// became buttons. Nothing here reaches the left third of the screen, so the stick is
+        /// never covered, and it is a hand's width tall at the very bottom, so a look drag
+        /// that starts anywhere else is unaffected. It is a child of the safe-area root like
+        /// the rest of the HUD, so a notch or a home bar moves it with everything else.
+        /// </para>
+        ///
+        /// <para>
+        /// Each slot is a frame with an icon inside it. Two graphics rather than one because
+        /// the highlight has to be able to say "this slot is selected" while the slot is
+        /// empty, which a tinted icon cannot.
+        /// </para>
+        /// </summary>
+        private static InventorySlotSelector BuildInventorySlots(Transform root)
+        {
+            int count = Player.PlayerInventory.SlotCount;
+            var buttons = new Button[count];
+            var icons = new Image[count];
+            var frames = new Image[count];
+
+            var slotRow = CreatePanel(root, "EquipmentSlots", false);
+            MakeOverlay(slotRow, 0.35f);
+            Position(slotRow, 0.32f, 0.02f, 0.53f, 0.115f);
+            // The row keeps the panel look it always had; only the slots inside it are new.
+            // It does not take taps, so a press between two slots falls through rather than
+            // being swallowed by the container.
+            slotRow.GetComponent<Image>().raycastTarget = false;
+
+            var hlg = slotRow.AddComponent<HorizontalLayoutGroup>();
+            hlg.spacing = 8;
+            hlg.childAlignment = TextAnchor.MiddleCenter;
+
+            for (int i = 0; i < count; i++)
+            {
+                var slot = CreatePanel(slotRow.transform, "Slot" + (i + 1), false);
+                slot.GetComponent<RectTransform>().sizeDelta = new Vector2(72, 72);
+
+                frames[i] = slot.GetComponent<Image>();
+                frames[i].raycastTarget = true;
+                UITheme.ApplyBorder(slot, 1f);
+
+                buttons[i] = slot.AddComponent<Button>();
+                buttons[i].targetGraphic = frames[i];
+
+                var iconGo = new GameObject("Icon", typeof(RectTransform), typeof(CanvasRenderer),
+                                            typeof(Image));
+                iconGo.transform.SetParent(slot.transform, false);
+                var iconRect = iconGo.GetComponent<RectTransform>();
+                iconRect.anchorMin = new Vector2(0.16f, 0.16f);
+                iconRect.anchorMax = new Vector2(0.84f, 0.84f);
+                iconRect.offsetMin = iconRect.offsetMax = Vector2.zero;
+
+                icons[i] = iconGo.GetComponent<Image>();
+                icons[i].preserveAspect = true;
+                // The frame takes the tap. An icon that also took it would swallow the press
+                // whenever a slot happened to have a sprite in it.
+                icons[i].raycastTarget = false;
+            }
+
+            var selector = slotRow.AddComponent<InventorySlotSelector>();
+            selector.BindRuntime(buttons, icons, frames);
+            return selector;
+        }
+
+        /// <summary>
+        /// The held item's name, its readout and its own controls.
+        ///
+        /// <para>
+        /// It sits above the slot row and to the left of the action cluster, in the band the
+        /// HUD leaves empty between the joystick and the crouch button. Nothing here reaches
+        /// the left third of the screen, so the movement stick is never covered, and it stops
+        /// short of 0.55 where crouch begins.
+        /// </para>
+        /// </summary>
+        private static EquipmentHudPanel BuildEquipmentPanel(Transform root)
+        {
+            var panel = CreatePanel(root, "EquipmentPanel", false);
+            MakeOverlay(panel, 0.4f);
+            Position(panel, 0.32f, 0.12f, 0.53f, 0.235f);
+            // The container does not take taps: a press between two buttons should fall
+            // through rather than be swallowed by the panel behind them.
+            panel.GetComponent<Image>().raycastTarget = false;
+
+            var title = CreateText(panel.transform, "Title", "EMPTY", 20,
+                                   TextAnchor.UpperCenter, true, UITheme.FontRole.Header);
+            Position(title.gameObject, 0f, 0.66f, 1f, 1f);
+
+            var readout = CreateText(panel.transform, "Readout", string.Empty, 24,
+                                     TextAnchor.MiddleCenter, false, UITheme.FontRole.Header);
+            Position(readout.gameObject, 0f, 0.34f, 1f, 0.66f);
+
+            var row = CreatePanel(panel.transform, "Actions", false);
+            Position(row, 0f, 0f, 1f, 0.32f);
+            row.GetComponent<Image>().raycastTarget = false;
+
+            var layout = row.AddComponent<HorizontalLayoutGroup>();
+            layout.spacing = 6;
+            layout.childAlignment = TextAnchor.MiddleCenter;
+            layout.childForceExpandWidth = true;
+            layout.childForceExpandHeight = true;
+
+            var buttons = new Button[EquipmentHudPanel.ActionCount];
+            var labels = new Component[EquipmentHudPanel.ActionCount];
+
+            for (int i = 0; i < EquipmentHudPanel.ActionCount; i++)
+            {
+                buttons[i] = CreateButton(row.transform, string.Empty, null, false, 36);
+                labels[i] = FindLabel(buttons[i]);
+                // Built hidden. An item with one control should show one button, not one
+                // button and two blanks.
+                buttons[i].gameObject.SetActive(false);
+            }
+
+            var component = panel.AddComponent<EquipmentHudPanel>();
+            component.BindRuntime(title, readout, buttons, labels);
+            return component;
+        }
+
+        /// <summary>
+        /// The text component inside a button built by <see cref="CreateButton"/>.
+        ///
+        /// <para>
+        /// Not <c>GetComponentInChildren&lt;Text&gt;</c>: this project builds its labels as
+        /// TextMeshProUGUI when TMP is present, and that search returns null in exactly the
+        /// configuration the game actually ships in - a label that silently never updates.
+        /// </para>
+        /// </summary>
+        public static Component FindLabel(Button button)
+        {
+            if (button == null)
+                return null;
+
+            var label = button.transform.Find("Label");
+            if (label == null)
+                return null;
+
+#if TMP_PRESENT || UNITY_TEXTMESHPRO
+            var tmp = label.GetComponent<TextMeshProUGUI>();
+            if (tmp != null)
+                return tmp;
+#endif
+            return label.GetComponent<Text>();
+        }
+
+
+        /// <summary>
+        /// Mission select: the list on the left, the chosen mission on the right, the two
+        /// decisions in the bottom corners.
+        ///
+        /// <para>
+        /// <b>The detail title and the detail body used to be stacked on the same pixels.</b>
+        /// Both were created with <c>CreateText</c>, which leaves a label at its default
+        /// centred anchors with a fixed 400-wide rect, and neither was positioned afterwards -
+        /// so a 32-point mission name and a six-line briefing were drawn over each other in the
+        /// middle of the panel. Every label on this screen is now given a rectangle.
+        /// </para>
+        ///
+        /// <para>
+        /// The two commitments sit in opposite bottom corners, and Back is on the left, where
+        /// every platform's own back control is and where a thumb already rests.
+        /// </para>
+        /// </summary>
         private static void WireMissionSelect(MissionSelectUI ui, Transform root)
         {
-            var title = CreateText(root, "Title", "SELECT MISSION", 42, TextAnchor.UpperCenter, true);
-            Position(title.gameObject, 0.1f, 0.85f, 0.9f, 0.95f);
+            root.GetComponent<Image>().color = UITheme.Overlay;
+
+            var title = CreateText(root, "Title", "SELECT MISSION", 46, TextAnchor.UpperLeft, true,
+                UITheme.FontRole.Title);
+            Position(title.gameObject, 0.05f, 0.86f, 0.62f, 0.95f);
             UITheme.StyleTitle(title);
 
-            var list = CreatePanel(root, "MissionList", false);
-            Position(list, 0.05f, 0.2f, 0.55f, 0.82f);
-            var vlg = list.AddComponent<VerticalLayoutGroup>();
-            vlg.spacing = 8;
-            vlg.padding = new RectOffset(8, 8, 8, 8);
+            // A hairline of brand green under the title. Four pixels tall, and the only green
+            // on the screen that is not a selection.
+            var rule = CreatePanel(root, "TitleRule", false);
+            Position(rule, 0.05f, 0.845f, 0.16f, 0.845f);
+            var ruleRect = rule.GetComponent<RectTransform>();
+            ruleRect.offsetMin = new Vector2(0f, -3f);
+            ruleRect.offsetMax = new Vector2(0f, 1f);
+            rule.GetComponent<Image>().color = UITheme.Secondary;
 
+            // ---- left: the list --------------------------------------------------------------
+            var list = CreatePanel(root, "MissionList", false);
+            Position(list, 0.05f, 0.18f, 0.44f, 0.80f);
+            list.GetComponent<Image>().enabled = false;
+
+            var vlg = list.AddComponent<VerticalLayoutGroup>();
+            vlg.spacing = 10f;
+            vlg.padding = new RectOffset(0, 0, 0, 0);
+            vlg.childAlignment = TextAnchor.UpperCenter;
+            vlg.childControlWidth = true;
+            vlg.childControlHeight = true;
+            vlg.childForceExpandWidth = true;
+            vlg.childForceExpandHeight = false;
+
+            // ---- right: the chosen mission ---------------------------------------------------
             var detail = CreatePanel(root, "DetailPanel", false);
-            Position(detail, 0.58f, 0.2f, 0.95f, 0.82f);
+            Position(detail, 0.47f, 0.18f, 0.95f, 0.80f);
+            UITheme.ApplyPanel(detail.GetComponent<Image>());
+            UITheme.ApplyBorder(detail);
+
+            var detailTitle = CreateText(detail.transform, "DetailTitle", string.Empty, 34,
+                TextAnchor.UpperLeft, true, UITheme.FontRole.Title);
+            Position(detailTitle.gameObject, 0f, 0.84f, 1f, 1f);
+            Inset(detailTitle.gameObject, 28f, 20f, 28f, 4f);
+
+            var detailBody = CreateText(detail.transform, "DetailBody", string.Empty, 21,
+                TextAnchor.UpperLeft, false, UITheme.FontRole.Body);
+            Position(detailBody.gameObject, 0f, 0f, 1f, 0.84f);
+            Inset(detailBody.gameObject, 28f, 4f, 28f, 24f);
 
             ui.BindRuntime(
                 missionListParent: list.transform,
-                detailTitle: CreateText(detail.transform, "DetailTitle", "", 32, TextAnchor.UpperLeft, true),
-                detailBody: CreateText(detail.transform, "DetailBody", "", 20, TextAnchor.UpperLeft),
-                startButton: CreateButton(root, "START INVESTIGATION", null, true, 64),
-                backButton: CreateButton(root, "BACK", null, false, 48));
+                detailTitle: detailTitle,
+                detailBody: detailBody,
+                startButton: CreateButton(root, "START INVESTIGATION", null, true, 68),
+                backButton: CreateButton(root, "\u2190  BACK", null, false, 60));
 
-            Position(ui.StartButton.gameObject, 0.58f, 0.08f, 0.95f, 0.16f);
-            Position(ui.BackButton.gameObject, 0.05f, 0.08f, 0.2f, 0.16f);
+            // Bottom right commits, bottom left retreats. Nothing overlaps the list or the
+            // detail panel, both of which stop at 0.80.
+            Position(ui.StartButton.gameObject, 0.62f, 0.05f, 0.95f, 0.13f);
+            Position(ui.BackButton.gameObject, 0.05f, 0.05f, 0.22f, 0.13f);
+            ui.BackButton.gameObject.name = "BackButton";
+        }
+
+        /// <summary>
+        /// Pushes a stretched rect in from its own edges. Positive numbers always move inward,
+        /// which <c>offsetMax</c> alone does not - it is measured outward and needs negating,
+        /// and getting that backwards is how a label ends up wider than the panel holding it.
+        /// </summary>
+        private static void Inset(GameObject go, float left, float top, float right, float bottom)
+        {
+            var rect = go.GetComponent<RectTransform>();
+            if (rect == null) return;
+            rect.offsetMin = new Vector2(left, bottom);
+            rect.offsetMax = new Vector2(-right, -top);
         }
 
         private static void WireJournal(JournalController journal, Transform root)
@@ -485,6 +970,8 @@ namespace CatchIfYouCan.UI
             var contentRect = content.GetComponent<RectTransform>();
             contentRect.offsetMax = new Vector2(0, -80);
 
+            var closeButton = CreateButton(panel.transform, "CLOSE", null, false, 44);
+
             journal.BindRuntime(
                 slidePanel: panel.GetComponent<RectTransform>(),
                 tabButtons: new[]
@@ -496,12 +983,12 @@ namespace CatchIfYouCan.UI
                     CreateButton(tabs.transform, "OBJECTIVES", null, false, 40)
                 },
                 contentParent: content.transform,
-                closeButton: CreateButton(panel.transform, "CLOSE", null, false, 44));
+                closeButton: closeButton);
 
             if (journal.GetComponent<JournalAudio>() == null)
                 journal.gameObject.AddComponent<JournalAudio>();
 
-            Position(journal.CloseButton.gameObject, 0.02f, 0.02f, 0.2f, 0.08f);
+            Position(closeButton.gameObject, 0.02f, 0.02f, 0.2f, 0.08f);
         }
 
         private static void WirePause(PauseMenuUI pause, Transform root)
@@ -525,7 +1012,7 @@ namespace CatchIfYouCan.UI
 
         private static void WireSettings(SettingsUI settings, Transform root)
         {
-            var title = CreateText(root, "Title", "SETTINGS", 40, TextAnchor.UpperCenter, true);
+            var title = CreateText(root, "Title", "SETTINGS", 40, TextAnchor.UpperCenter, true, UITheme.FontRole.Title);
             Position(title.gameObject, 0.1f, 0.88f, 0.9f, 0.98f);
 
             var tabs = CreatePanel(root, "Tabs", false);
@@ -547,15 +1034,17 @@ namespace CatchIfYouCan.UI
             scroll.content = inner.GetComponent<RectTransform>();
             scroll.horizontal = false;
 
+            var closeButton = CreateButton(root, "CLOSE", null, false, 48);
+
             settings.BindRuntime(
                 gameplayTab: CreateButton(tabs.transform, "GAMEPLAY", null, false, 40),
                 graphicsTab: CreateButton(tabs.transform, "GRAPHICS", null, false, 40),
                 audioTab: CreateButton(tabs.transform, "AUDIO", null, false, 40),
                 accessibilityTab: CreateButton(tabs.transform, "ACCESSIBILITY", null, false, 40),
                 contentParent: inner.transform,
-                closeButton: CreateButton(root, "CLOSE", null, false, 48));
+                closeButton: closeButton);
 
-            Position(settings.CloseButton.gameObject, 0.4f, 0.02f, 0.6f, 0.1f);
+            Position(closeButton.gameObject, 0.4f, 0.02f, 0.6f, 0.1f);
         }
 
         private static void WireMissionResult(MissionResultUI ui, Transform root)
@@ -564,7 +1053,7 @@ namespace CatchIfYouCan.UI
             var panel = CreatePanel(root, "Panel", false);
             Position(panel, 0.25f, 0.15f, 0.75f, 0.85f);
             ui.BindRuntime(
-                titleText: CreateText(panel.transform, "Title", "MISSION COMPLETE", 44, TextAnchor.UpperCenter, true),
+                titleText: CreateText(panel.transform, "Title", "MISSION COMPLETE", 44, TextAnchor.UpperCenter, true, UITheme.FontRole.Title),
                 breakdownText: CreateText(panel.transform, "Breakdown", "", 22, TextAnchor.UpperLeft),
                 continueButton: CreateButton(panel.transform, "CONTINUE", null, true));
             Position(ui.BreakdownText.gameObject, 0.05f, 0.2f, 0.95f, 0.75f);
@@ -573,7 +1062,7 @@ namespace CatchIfYouCan.UI
 
         private static void WireEquipmentShop(EquipmentShopUI shop, Transform root)
         {
-            var title = CreateText(root, "Title", "EQUIPMENT", 40, TextAnchor.UpperCenter, true);
+            var title = CreateText(root, "Title", "EQUIPMENT", 40, TextAnchor.UpperCenter, true, UITheme.FontRole.Title);
             Position(title.gameObject, 0.1f, 0.88f, 0.9f, 0.98f);
 
             var cats = CreatePanel(root, "Categories", false);
@@ -611,7 +1100,7 @@ namespace CatchIfYouCan.UI
             loading.BindRuntime(
                 progressSlider: CreateSlider(root, "Progress", 0, 1, 0),
                 tipText: CreateText(root, "Tip", "Loading...", 24, TextAnchor.MiddleCenter),
-                logoText: CreateText(root, "Logo", "CATCH IF YOU CAN", 48, TextAnchor.UpperCenter, true));
+                logoText: CreateText(root, "Logo", "CATCH IF YOU CAN", 48, TextAnchor.UpperCenter, true, UITheme.FontRole.Title));
             Position(loading.ProgressSlider.gameObject, 0.15f, 0.35f, 0.85f, 0.42f);
             Position(loading.TipText.gameObject, 0.1f, 0.22f, 0.9f, 0.32f);
             Position(loading.LogoText.gameObject, 0.1f, 0.55f, 0.9f, 0.7f);
@@ -625,7 +1114,7 @@ namespace CatchIfYouCan.UI
             icon.GetComponent<Image>().color = UITheme.Primary;
             ui.BindRuntime(
                 handIcon: icon.GetComponent<Image>(),
-                promptText: CreateText(root, "Prompt", "", 24, TextAnchor.MiddleCenter));
+                promptText: CreateText(root, "Prompt", "", 24, TextAnchor.MiddleCenter, false, UITheme.FontRole.Header));
             Position(ui.RootRect != null ? ui.RootRect.gameObject : root.gameObject, 0.35f, 0.08f, 0.65f, 0.16f);
         }
 
@@ -635,8 +1124,8 @@ namespace CatchIfYouCan.UI
             var panel = CreatePanel(root, "Panel", false);
             Position(panel, 0.2f, 0.3f, 0.8f, 0.7f);
             ui.BindRuntime(
-                titleText: CreateText(panel.transform, "Title", "ENTITY DISCOVERED", 48, TextAnchor.UpperCenter, true),
-                nameText: CreateText(panel.transform, "Name", "", 36, TextAnchor.MiddleCenter, true),
+                titleText: CreateText(panel.transform, "Title", "ENTITY DISCOVERED", 48, TextAnchor.UpperCenter, true, UITheme.FontRole.Title),
+                nameText: CreateText(panel.transform, "Name", "", 36, TextAnchor.MiddleCenter, true, UITheme.FontRole.Header),
                 descText: CreateText(panel.transform, "Desc", "", 20, TextAnchor.LowerCenter));
         }
 
@@ -644,7 +1133,7 @@ namespace CatchIfYouCan.UI
         {
             Position(root.gameObject, 0.05f, 0.55f, 0.45f, 0.95f);
             ui.BindRuntime(
-                cameraNameText: CreateText(root, "CamName", "CAM 01", 24, TextAnchor.UpperLeft, true),
+                cameraNameText: CreateText(root, "CamName", "CAM 01", 24, TextAnchor.UpperLeft, true, UITheme.FontRole.Header),
                 prevButton: CreateButton(root, "PREV", null, false, 40),
                 nextButton: CreateButton(root, "NEXT", null, false, 40),
                 nightVisionToggle: CreateToggle(root, "Night Vision", false),
@@ -659,7 +1148,7 @@ namespace CatchIfYouCan.UI
         private static void WireDebugMenu(DebugMenuUI ui, Transform root)
         {
             Position(root.gameObject, 0.02f, 0.02f, 0.35f, 0.55f);
-            var layout = root.AddComponent<VerticalLayoutGroup>();
+            var layout = root.gameObject.AddComponent<VerticalLayoutGroup>();
             layout.spacing = 4;
             layout.padding = new RectOffset(8, 8, 8, 8);
             ui.BindRuntime(

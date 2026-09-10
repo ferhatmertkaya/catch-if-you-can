@@ -19,7 +19,7 @@ namespace CatchIfYouCan.Audio
             if (fearSystem == null)
                 fearSystem = GetComponent<FearSystem>();
             if (roomTone == null)
-                roomTone = FindFirstObjectByType<RoomToneController>();
+                roomTone = FindAnyObjectByType<RoomToneController>();
         }
 
         private void OnEnable()

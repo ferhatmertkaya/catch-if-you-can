@@ -22,15 +22,46 @@ namespace CatchIfYouCan.Audio
 
         private void Start()
         {
+            RefreshListener();
+        }
+
+        private bool _listenerAutoResolved;
+
+        /// <summary>
+        /// Finds the ear to measure from, and keeps looking until it finds the real one.
+        ///
+        /// This used to latch Camera.main once in Start. These controllers are installed
+        /// before the player is spawned, so that latch bound the audio to whatever camera
+        /// the scene carried at boot - in the lobby, the menu camera - and never let go.
+        /// A listener assigned by hand in the inspector is left alone.
+        /// </summary>
+        private void RefreshListener()
+        {
+            if (listener != null && !_listenerAutoResolved)
+                return;
+
+            var resolved = Core.LocalPlayerService.ResolveListenerTransform();
+            if (resolved != null)
+            {
+                listener = resolved;
+                _listenerAutoResolved = true;
+                return;
+            }
+
             if (listener == null)
             {
-                var cam = Camera.main;
-                listener = cam != null ? cam.transform : transform;
+                listener = transform;
+                _listenerAutoResolved = true;
             }
         }
 
         private void Update()
         {
+            // Keeps looking until a player registers a real listener; after that
+            // ResolveListenerTransform returns it and this settles.
+            if (_listenerAutoResolved)
+                RefreshListener();
+
             _timer -= Time.deltaTime;
             if (_timer > 0f) return;
             _timer = updateInterval;
@@ -56,7 +87,7 @@ namespace CatchIfYouCan.Audio
         {
             _listenerZone = null;
             if (listener == null) return;
-            var zones = FindObjectsByType<RoomAudioZone>(FindObjectsSortMode.None);
+            var zones = FindObjectsByType<RoomAudioZone>();
             for (int i = 0; i < zones.Length; i++)
             {
                 if (zones[i] != null && zones[i].ContainsPoint(listener.position))
@@ -129,7 +160,7 @@ namespace CatchIfYouCan.Audio
 
         private float? FindPortalAttenuation(RoomAudioZone listenerZone, RoomAudioZone sourceZone)
         {
-            var portals = FindObjectsByType<AudioPortal>(FindObjectsSortMode.None);
+            var portals = FindObjectsByType<AudioPortal>();
             for (int i = 0; i < portals.Length; i++)
             {
                 var p = portals[i];
@@ -146,7 +177,7 @@ namespace CatchIfYouCan.Audio
 
         private float FindPortalCutoff(RoomAudioZone listenerZone, RoomAudioZone sourceZone)
         {
-            var portals = FindObjectsByType<AudioPortal>(FindObjectsSortMode.None);
+            var portals = FindObjectsByType<AudioPortal>();
             for (int i = 0; i < portals.Length; i++)
             {
                 var p = portals[i];
@@ -160,7 +191,7 @@ namespace CatchIfYouCan.Audio
 
         private RoomAudioZone FindZoneForPoint(Vector3 point)
         {
-            var zones = FindObjectsByType<RoomAudioZone>(FindObjectsSortMode.None);
+            var zones = FindObjectsByType<RoomAudioZone>();
             for (int i = 0; i < zones.Length; i++)
             {
                 if (zones[i] != null && zones[i].ContainsPoint(point))

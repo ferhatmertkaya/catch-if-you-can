@@ -10,7 +10,7 @@ namespace CatchIfYouCan.Ghost
             return new[]
             {
                 Create(
-                    "the_wanderer",
+                    GhostIds.Wanderer,
                     "THE WANDERER",
                     EvidenceType.EMFSurge,
                     EvidenceType.FreezingTemperature,
@@ -27,7 +27,7 @@ namespace CatchIfYouCan.Ghost
                     strengths: "Hard to pin to one room.",
                     weaknesses: "Predictable movement patterns."),
                 Create(
-                    "the_whisper",
+                    GhostIds.Whisper,
                     "THE WHISPER",
                     EvidenceType.EVPResponse,
                     EvidenceType.ParabolicAnomaly,
@@ -44,7 +44,7 @@ namespace CatchIfYouCan.Ghost
                     strengths: "Strong audio deception.",
                     weaknesses: "Low physical aggression."),
                 Create(
-                    "the_watcher",
+                    GhostIds.Watcher,
                     "THE WATCHER",
                     EvidenceType.GhostOrb,
                     EvidenceType.UVTraces,
@@ -61,7 +61,7 @@ namespace CatchIfYouCan.Ghost
                     strengths: "Excellent awareness of player position.",
                     weaknesses: "Slow to hunt."),
                 Create(
-                    "the_mimicer",
+                    GhostIds.Mimicer,
                     "THE MIMICER",
                     EvidenceType.EVPResponse,
                     EvidenceType.EMFSurge,
@@ -78,7 +78,7 @@ namespace CatchIfYouCan.Ghost
                     strengths: "Creates false leads.",
                     weaknesses: "Reveals itself under sustained recording."),
                 Create(
-                    "the_hollow",
+                    GhostIds.Hollow,
                     "THE HOLLOW",
                     EvidenceType.FreezingTemperature,
                     EvidenceType.GhostOrb,
@@ -95,11 +95,17 @@ namespace CatchIfYouCan.Ghost
                     strengths: "Strong temperature evidence.",
                     weaknesses: "Slow manifestation."),
                 Create(
-                    "the_knocker",
+                    GhostIds.Knocker,
                     "THE KNOCKER",
                     EvidenceType.ParabolicAnomaly,
                     EvidenceType.UVTraces,
-                    EvidenceType.EMFSurge,
+                    // Was EMFSurge. No ghost in the roster exhibited PhysicalDisturbance, so
+                    // that evidence type could never be confirmed against any entity in the
+                    // game however good the device observing it was - the validator checks the
+                    // ghost's own profile, and no profile contained it. A ghost named for
+                    // knocking and moving things is where it belongs. Verified: all ten
+                    // evidence triples stay distinct, so every ghost is still identifiable.
+                    EvidenceType.PhysicalDisturbance,
                     aggression: 0.75f,
                     curiosity: 0.35f,
                     activity: 0.8f,
@@ -112,7 +118,7 @@ namespace CatchIfYouCan.Ghost
                     strengths: "High hunt frequency.",
                     weaknesses: "Loud and easy to track."),
                 Create(
-                    "the_shadeborn",
+                    GhostIds.Shadeborn,
                     "THE SHADEBORN",
                     EvidenceType.SpectralGrid,
                     EvidenceType.GhostOrb,
@@ -129,7 +135,7 @@ namespace CatchIfYouCan.Ghost
                     strengths: "Visual evidence in low light.",
                     weaknesses: "Weakened in well-lit areas."),
                 Create(
-                    "the_static",
+                    GhostIds.Static,
                     "THE STATIC",
                     EvidenceType.EMFSurge,
                     EvidenceType.EVPResponse,
@@ -146,7 +152,7 @@ namespace CatchIfYouCan.Ghost
                     strengths: "Disables equipment quickly.",
                     weaknesses: "EMF spikes reveal location."),
                 Create(
-                    "the_crawler",
+                    GhostIds.Crawler,
                     "THE CRAWLER",
                     EvidenceType.UVTraces,
                     EvidenceType.SpectralGrid,
@@ -163,7 +169,7 @@ namespace CatchIfYouCan.Ghost
                     strengths: "Fast hunts.",
                     weaknesses: "Limited vertical reach."),
                 Create(
-                    "the_weeping_one",
+                    GhostIds.WeepingOne,
                     "THE WEEPING ONE",
                     EvidenceType.ParabolicAnomaly,
                     EvidenceType.EVPResponse,

@@ -22,7 +22,50 @@ namespace CatchIfYouCan.UI
 
         private void OnEnable()
         {
+            if (RefuseOnARootCanvas())
+                return;
+
             ApplySafeArea();
+        }
+
+        /// <summary>
+        /// Says so, loudly, when this fitter has been put somewhere it cannot work.
+        ///
+        /// <para>
+        /// A root Canvas drives its own RectTransform: it rewrites the anchors and offsets to
+        /// the whole screen every frame, so the ones written below are overwritten before
+        /// anything is drawn. A fitter here does not fail - it silently does nothing, and the
+        /// notch is only found on a device, months later, by somebody who can see the
+        /// screen and has no reason to suspect the component that is sitting right there
+        /// claiming to have handled it.
+        /// </para>
+        ///
+        /// <para>
+        /// The fix is always the same: put the fitter on a stretched CHILD of the canvas and
+        /// parent the content to that. <c>TouchHudFactory</c> already does exactly this, which
+        /// is why the on-screen controls respect the safe area and the screens built by
+        /// <c>RuntimeUIFactory.BuildCompleteUI</c> do not.
+        /// </para>
+        ///
+        /// <para>
+        /// It disables itself rather than running an Update that can never have an effect.
+        /// That is behaviour-neutral: it was already doing nothing.
+        /// </para>
+        /// </summary>
+        private bool RefuseOnARootCanvas()
+        {
+            var canvas = GetComponent<Canvas>();
+            if (canvas == null || !canvas.isRootCanvas)
+                return false;
+
+            Debug.LogError(
+                "[CIYC] SafeAreaFitter on '" + name + "' is on a root Canvas, whose " +
+                "RectTransform the canvas drives, so it can never apply the safe area. Put it " +
+                "on a stretched child and parent the content to that - see TouchHudFactory. " +
+                "Disabling it so it does not look like the safe area is handled.", this);
+
+            enabled = false;
+            return true;
         }
 
         private void Update()

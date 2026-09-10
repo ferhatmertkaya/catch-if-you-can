@@ -34,21 +34,80 @@ namespace CatchIfYouCan.Ghost
 
         private void Start()
         {
-            var playerObj = GameObject.FindGameObjectWithTag("Player");
-            if (playerObj != null)
+            // The ghost is spawned before the player in the investigation bootstrap, so
+            // this can legitimately find nothing here. Re-resolved on demand rather than
+            // leaving the ghost permanently unable to perceive anyone.
+            BindPlayer();
+        }
+
+        [Tooltip("Seconds between re-checking which player is nearest. A ghost does not need " +
+                 "to re-decide who it is looking at sixty times a second, and eight players " +
+                 "make that a real cost rather than a theoretical one.")]
+        [SerializeField, Min(0.05f)] private float targetRefreshInterval = 0.25f;
+
+        private float _targetTimer;
+
+        /// <summary>
+        /// Picks whoever is nearest out of everyone in the house.
+        ///
+        /// <para>
+        /// This used to bind <c>LocalPlayerService.RootTransform</c> once and keep it forever.
+        /// That service holds exactly one player - the one on this machine - so with a second
+        /// player in the house the ghost would roam toward the host, hunt the host and treat
+        /// everybody else as furniture. In single player the registry holds exactly one entry
+        /// and the answer is identical to what it was.
+        /// </para>
+        /// </summary>
+        private bool BindPlayer()
+        {
+            _targetTimer -= Time.deltaTime;
+            if (_player != null && _targetTimer > 0f)
+                return true;
+
+            _targetTimer = targetRefreshInterval;
+
+            var nearest = Player.PlayerPresence.Nearest(eyePoint != null
+                ? eyePoint.position
+                : transform.position);
+
+            if (nearest == null)
+                return _player != null;
+
+            if (_player != nearest.transform)
             {
-                _player = playerObj.transform;
+                _player = nearest.transform;
                 LastKnownPlayerPosition = _player.position;
             }
+
+            return true;
         }
 
         private void Update()
         {
-            if (_player == null) return;
+            // Perception is a host decision: it feeds hunting, investigating and who gets
+            // killed. A client running it would reach its own conclusions about its own local
+            // player and act on them.
+            if (!Core.SessionAuthority.CanSimulateGhost)
+                return;
+
+            // Retried until a player exists, so a ghost spawned first is not blind for the
+            // rest of the mission.
+            if (!BindPlayer()) return;
 
             UpdateLineOfSight();
             UpdateHuntConfirmation();
             PollNoise();
+        }
+
+        /// <summary>
+        /// Where the ghost sees from. Asked for as a method because the factory used to reach
+        /// in and set the private field by reflection - which compiles, reviews clean, and
+        /// fails silently the next time somebody renames the field.
+        /// </summary>
+        public void SetEyePoint(Transform eye)
+        {
+            if (eye != null)
+                eyePoint = eye;
         }
 
         public void SetPlayer(Transform player)

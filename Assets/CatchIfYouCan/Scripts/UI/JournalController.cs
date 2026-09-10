@@ -35,6 +35,9 @@ namespace CatchIfYouCan.UI
         private Vector2 _shownPosition;
         private bool _open;
 
+        /// <summary>True while the journal panel is open (slid in).</summary>
+        public bool IsOpen => _open;
+
         public void BindRuntime(RectTransform slidePanel, Button[] tabButtons, Transform contentParent, Button closeButton)
         {
             this.slidePanel = slidePanel;

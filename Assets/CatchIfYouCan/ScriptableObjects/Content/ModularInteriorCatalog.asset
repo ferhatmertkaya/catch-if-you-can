@@ -1,0 +1,68 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: f143c34be97e1810f23c1b2a0558bb10, type: 3}
+  m_Name: ModularInteriorCatalog
+  m_EditorClassIdentifier: Assembly-CSharp::CatchIfYouCan.Content.ModularInteriorCatalog
+  PackRootFolder: Assets/HQ Modular House
+  PackDisplayName: HQ Modular House Interior Pack
+  Modules:
+  - Role: 2
+    Categories: 
+    Variants:
+    - {fileID: 1669127523924518, guid: 7d4ee864f23ef5f4ca099cf110f3d605, type: 3}
+    ModuleSize: {x: 0, y: 0, z: 0}
+  - Role: 3
+    Categories: 
+    Variants:
+    - {fileID: 1344754602766918, guid: f47d59529d2f53c48a9f80f5c11946c6, type: 3}
+    ModuleSize: {x: 0, y: 0, z: 0}
+  - Role: 4
+    Categories: 
+    Variants:
+    - {fileID: 1062060072871768, guid: 834edc2f701b31446b5dd6636acd6ec9, type: 3}
+    ModuleSize: {x: 0, y: 0, z: 0}
+  WallSurface:
+    Material: {fileID: 2100000, guid: 782694d20b0947a459c671c2a1015119, type: 2}
+    AuthoredAcrossMetres: {x: 2.6415362, y: 2.6830776}
+  FloorSurface:
+    Material: {fileID: 2100000, guid: ed1f10638cb5abc4e9fd23c341f5c75b, type: 2}
+    AuthoredAcrossMetres: {x: 2.6415362, y: 2.6415362}
+  CeilingSurface:
+    Material: {fileID: 2100000, guid: ab2a92eb898207d40b6dd52927f2514f, type: 2}
+    AuthoredAcrossMetres: {x: 2.6415362, y: 2.6415362}
+  WallTuning:
+    Replacement: {fileID: 0}
+    MetresPerTile: 0
+  FloorTuning:
+    Replacement: {fileID: 0}
+    MetresPerTile: 4
+  CeilingTuning:
+    Replacement: {fileID: 2100000, guid: bfbf298e0a264f88b618b3369b6622b3, type: 2}
+    MetresPerTile: 1.42
+  DoorLeafMaterial: {fileID: 2100000, guid: 51d73995330e74c7e9ee835bfc36582e, type: 2}
+  TrimMaterial: {fileID: 2100000, guid: 736551a4ca30444d8a349f3cf44a34ed, type: 2}
+  GlassMaterial: {fileID: 2100000, guid: e479663be9444643a0f8aca5f22d3178, type: 2}
+  DoorInsert:
+    Prefab: {fileID: 1344754602766918, guid: f47d59529d2f53c48a9f80f5c11946c6, type: 3}
+    KeepMaterials:
+    - blue
+    - door detail
+    - brown
+    - door base
+    LocalOffset: {x: 0, y: 0, z: 0}
+    LocalEuler: {x: 0, y: 0, z: 0}
+  WindowInsert:
+    Prefab: {fileID: 1062060072871768, guid: 834edc2f701b31446b5dd6636acd6ec9, type: 3}
+    KeepMaterials:
+    - Steklo
+    LocalOffset: {x: 0, y: 0, z: 0}
+    LocalEuler: {x: 0, y: 0, z: 0}

@@ -36,3 +36,50 @@ ExportedObj/
 .consulo/
 *.AppSettings
 .DS_Store
+
+# Tools/DeterminismHarness: build output is generated, but the project file is
+# hand-written and must be tracked (Unity's *.csproj rule above would hide it).
+Tools/**/bin/
+Tools/**/obj/
+!Tools/DeterminismHarness/DeterminismHarness.csproj
+
+# Meshy's plugin and its import scratch folder, and Unity's template tutorial
+# folder. The folders themselves were never committed, so committing their .meta
+# files left three orphans pointing at nothing.
+Assets/MeshyImports/
+Assets/MeshyImports.meta
+Assets/ai.meshy/
+Assets/ai.meshy.meta
+Assets/TutorialInfo/
+Assets/TutorialInfo.meta
+
+# Gekaufte Asset-Packs: zu gross fuer Git
+/Assets/HQ Modular House Interior/
+
+# Unity-Absturzprotokolle
+mono_crash.mem.*.blob
+
+# Local Unity Asset Store pack
+/Assets/HQ Modular House/
+/Assets/HQ Modular House.meta
+
+# Gekaufter Portal-Pack (Knife Entertainment, HDRP). Wird NICHT eingecheckt: Asset-Store-Lizenz,
+# und eine Referenz dorthin loest nur auf genau einem Rechner auf. Der Portal-Adapter kopiert die
+# Bilder, die das Spiel wirklich braucht, nach Assets/CatchIfYouCan/Resources/Portal/.
+/Assets/Knife/
+/Assets/Knife.meta
+
+# Gekaufter Friedhofs-Pack (Hivemind, Fantasy Cemetery). Wird NICHT eingecheckt, aus denselben
+# zwei Gruenden wie die anderen: Asset-Store-Lizenz pro Platz, und die LFS-Nutzlast liegt schon
+# ueber GitHubs freiem Kontingent.
+#
+# Dazu ein dritter, der hier besonders zaehlt: der Ordner heisst HDRP(Default). Ein HDRP-Material
+# in einem URP-Projekt findet seinen Shader nicht und wird magenta gezeichnet - genau das Bild,
+# das gerade in 03_Investigation zu sehen ist. Es einzuchecken wuerde den Fehler verteilen statt
+# ihn zu beheben.
+/Assets/Hivemind/
+/Assets/Hivemind.meta
+
+# Beipack des Friedhofs-Pakets: ein Ordner mit einer Werbe-Verknuepfung, kein Projektinhalt.
+/Assets/!GET_MORE_ASSETS_FOR_FREE/
+/Assets/!GET_MORE_ASSETS_FOR_FREE.meta

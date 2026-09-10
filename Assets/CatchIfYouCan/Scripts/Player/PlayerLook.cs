@@ -3,28 +3,95 @@ using CatchIfYouCan.Input;
 
 namespace CatchIfYouCan.Player
 {
+    /// <summary>
+    /// Turns look input into yaw on the player and pitch on the camera.
+    ///
+    /// <para>
+    /// The split matters: yaw goes on the player root so the character, its collider and its
+    /// facing all turn together, while pitch stays on this transform alone. Pitching the body
+    /// would tip the capsule and lean the visible character over every time you glanced at the
+    /// floor.
+    /// </para>
+    ///
+    /// <para>
+    /// Input arrives as a delta, never an absolute position, so lifting a thumb and putting it
+    /// down elsewhere contributes nothing and the view does not jump.
+    /// </para>
+    /// </summary>
     public class PlayerLook : MonoBehaviour
     {
         [SerializeField] private Transform playerBody;
-        [SerializeField] private float sensitivity = 1.2f;
+
+        [Header("Sensitivity")]
+        [Tooltip("Degrees of yaw per reference pixel of drag. At 0.28 a 500 px thumb swipe - a " +
+                 "comfortable one on a 1080p landscape phone - turns about 140 degrees.")]
+        [SerializeField] private float sensitivityX = 0.28f;
+
+        [Tooltip("Degrees of pitch per reference pixel. Held at about 0.8 of the yaw figure: " +
+                 "the pitch range is only 155 degrees end to end, so matching horizontal would " +
+                 "make the whole range too easy to cross by accident.")]
+        [SerializeField] private float sensitivityY = 0.22f;
+
         [SerializeField] private bool invertY;
-        [SerializeField] private float minPitch = -85f;
-        [SerializeField] private float maxPitch = 85f;
+
+        [Header("Feel")]
+        [Tooltip("Seconds of smoothing. Whatever is not applied this frame is carried to the " +
+                 "next, so smoothing changes when the rotation arrives but never how much of it " +
+                 "does. Zero disables it entirely.")]
+        [SerializeField, Range(0f, 0.12f)] private float lookSmoothing = 0.02f;
+
+        [Header("Limits")]
+        [Tooltip("How far up the view may tilt, in degrees below zero. 75 is steep - the ceiling " +
+                 "and the top corners of a room are all comfortably inside it - and stops short " +
+                 "of the last few degrees before vertical, where the horizon leaves the screen " +
+                 "entirely and a yaw turn reads as the world spinning about the player's nose.")]
+        [SerializeField] private float minPitch = -75f;
+
+        [SerializeField] private float maxPitch = 80f;
+
         [SerializeField] private bool allowLook = true;
 
         private MobileInputController _input;
         private float _pitch;
 
+        // Rotation that has arrived but not yet been applied. Draining a buffer rather than
+        // smoothing towards a target is what keeps the smoothing honest: SmoothDamp chases a
+        // per-frame delta that drops back to zero the moment the thumb stops, so it never
+        // catches up and quietly swallows part of every short swipe.
+        private Vector2 _pending;
+
         public bool AllowLook
         {
             get => allowLook;
-            set => allowLook = value;
+            set
+            {
+                allowLook = value;
+                if (!value)
+                {
+                    // Drop anything still queued, otherwise re-enabling look replays the last
+                    // flick as a lurch.
+                    _pending = Vector2.zero;
+                }
+            }
         }
 
+        /// <summary>Yaw sensitivity. Kept for callers that only tune one axis.</summary>
         public float Sensitivity
         {
-            get => sensitivity;
-            set => sensitivity = Mathf.Max(0.01f, value);
+            get => sensitivityX;
+            set => sensitivityX = Mathf.Max(0.01f, value);
+        }
+
+        public float SensitivityX
+        {
+            get => sensitivityX;
+            set => sensitivityX = Mathf.Max(0.01f, value);
+        }
+
+        public float SensitivityY
+        {
+            get => sensitivityY;
+            set => sensitivityY = Mathf.Max(0.01f, value);
         }
 
         public bool InvertY
@@ -32,6 +99,17 @@ namespace CatchIfYouCan.Player
             get => invertY;
             set => invertY = value;
         }
+
+        /// <summary>
+        /// Current pitch in degrees, POSITIVE looking down.
+        ///
+        /// <para>
+        /// It is applied as <c>Quaternion.Euler(_pitch, 0, 0)</c>, and a positive Euler X in Unity
+        /// tips the nose down. This line said "negative looking down" for the life of the project
+        /// and the sign is the one thing about a pitch anybody reads a summary for.
+        /// </para>
+        /// </summary>
+        public float Pitch => _pitch;
 
         private void Start()
         {
@@ -43,19 +121,37 @@ namespace CatchIfYouCan.Player
 
         private void LateUpdate()
         {
-            if (!allowLook || _input == null)
+            if (!allowLook)
                 return;
 
-            Vector2 lookDelta = _input.LookDelta * sensitivity;
-            if (lookDelta.sqrMagnitude < 0.0001f)
-                return;
+            if (_input == null)
+            {
+                _input = MobileInputController.Instance;
+                if (_input == null)
+                    return;
+            }
 
-            float yaw = lookDelta.x;
-            float pitchDelta = invertY ? lookDelta.y : -lookDelta.y;
+            Vector2 raw = _input.LookDelta;
+            _pending += new Vector2(raw.x * sensitivityX, raw.y * sensitivityY);
+
+            // Exponential drain, so the rate is the same whatever the frame rate. The delta is
+            // already per-frame, so it is deliberately NOT multiplied by deltaTime again here;
+            // doing that is what turns a working look into one that barely moves.
+            Vector2 step = lookSmoothing > 0f
+                ? _pending * (1f - Mathf.Exp(-Time.deltaTime / lookSmoothing))
+                : _pending;
+
+            _pending -= step;
+            if (_pending.sqrMagnitude < 0.000001f)
+                _pending = Vector2.zero;
+
+            if (step.sqrMagnitude < 0.0000001f)
+                return;
 
             if (playerBody != null)
-                playerBody.Rotate(Vector3.up, yaw, Space.World);
+                playerBody.Rotate(Vector3.up, step.x, Space.World);
 
+            float pitchDelta = invertY ? step.y : -step.y;
             _pitch = Mathf.Clamp(_pitch + pitchDelta, minPitch, maxPitch);
             transform.localRotation = Quaternion.Euler(_pitch, 0f, 0f);
         }
@@ -67,6 +163,7 @@ namespace CatchIfYouCan.Player
 
             _pitch = Mathf.Clamp(pitch, minPitch, maxPitch);
             transform.localRotation = Quaternion.Euler(_pitch, 0f, 0f);
+            _pending = Vector2.zero;
         }
     }
 }

@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using CatchIfYouCan.Interaction;
+using CatchIfYouCan.Procedural.Deterministic;
 using UnityEngine;
 
 namespace CatchIfYouCan.Procedural
@@ -8,63 +9,125 @@ namespace CatchIfYouCan.Procedural
     {
         public static readonly Vector3 DefaultRoomSize = new Vector3(6f, 3f, 6f);
         private const float WallThickness = 0.2f;
-        private const float DoorWidth = 1.2f;
-        private const float DoorHeight = 2.2f;
+        // The SAME opening the modular path cuts. These were 1.20 x 2.20 while
+        // ModularRoomBuilder used 1.25 x 2.60, so the development fallback taught a different
+        // building scale than the production path - and a fallback that looks right at the
+        // wrong size is worse than one that looks obviously provisional.
+        private const float DoorWidth = ModularRoomBuilder.DoorWidth;
+        private const float DoorHeight = ModularRoomBuilder.DoorHeight;
+
+        /// <summary>
+        /// One texture tile per metre of surface. That is the convention the authored room
+        /// materials already use - MAT_Room_Wall carries a scale of 5.3 across the 5.3 m wall
+        /// it was made for - so a generated 6 m wall wants 6, not the 1 a cube's UVs give it.
+        /// </summary>
+        private const float TilesPerMetre = 1f;
 
         private static Material _wallMaterial;
         private static Material _floorMaterial;
         private static Material _ceilingMaterial;
         private static Material _trimMaterial;
 
-        public static GameObject CreateRoom(
-            RoomCategory category,
-            Vector3 worldPosition,
-            IEnumerable<SocketDirection> doorDirections,
-            IEnumerable<SocketDirection> openDirections,
-            int nodeId,
-            Transform parent)
+        private static bool _surfacesConfigured;
+        private static bool _untexturedReported;
+
+        private static readonly int BaseMapId = Shader.PropertyToID("_BaseMap");
+        private static readonly int BumpMapId = Shader.PropertyToID("_BumpMap");
+        private static readonly int MainTexId = Shader.PropertyToID("_MainTex");
+
+        /// <summary>
+        /// Tiled variants, keyed by the material they came from and the tiling they carry.
+        ///
+        /// <para>
+        /// A cube's UVs run 0..1 per face whatever its size, so one shared material stretches a
+        /// single wallpaper tile across a whole wall. Per-renderer tiling needs per-renderer
+        /// material state; a MaterialPropertyBlock would give it and break SRP batching for
+        /// every surface in the house. Rooms come in a handful of sizes, so a variant per
+        /// distinct tiling is a handful of materials that batch normally.
+        /// </para>
+        /// </summary>
+        private static readonly Dictionary<Material, Dictionary<long, Material>> _tiled =
+            new Dictionary<Material, Dictionary<long, Material>>();
+
+        /// <summary>
+        /// Supplies the room shell's materials. Called by the generator from the content
+        /// catalog before it builds anything; null leaves the flat stand-in colours in place.
+        /// </summary>
+        public static void ConfigureSurfaces(Material wall, Material floor, Material ceiling,
+                                             Material trim)
+        {
+            if (wall != null) _wallMaterial = wall;
+            if (floor != null) _floorMaterial = floor;
+            if (ceiling != null) _ceilingMaterial = ceiling;
+            if (trim != null) _trimMaterial = trim;
+
+            _surfacesConfigured = wall != null || floor != null || ceiling != null || trim != null;
+
+            if (_surfacesConfigured || _untexturedReported)
+                return;
+
+            _untexturedReported = true;
+            Core.CIYCLog.Warn(
+                "[CIYC][House] Der InvestigationContentCatalog nennt keine Raum-Materialien, " +
+                "also bekommen die Ersatzraeume nur Farbflaechen ohne Textur. Das sieht auf " +
+                "dem Bildschirm genauso aus wie eine gescheiterte Migration, ist aber etwas " +
+                "anderes: Wall/Floor/Ceiling/Trim Material in " +
+                "Resources/CatchIfYouCan/InvestigationContentCatalog.asset setzen.");
+        }
+
+        /// <summary>A fresh process has cached nothing. Unity keeps statics across play mode.</summary>
+        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+        private static void ResetSurfaceCache()
+        {
+            _tiled.Clear();
+            _wallMaterial = null;
+            _floorMaterial = null;
+            _ceilingMaterial = null;
+            _trimMaterial = null;
+            _surfacesConfigured = false;
+            _untexturedReported = false;
+        }
+
+        /// <summary>
+        /// Builds a room for an authoritative <see cref="LayoutRoom"/>.
+        ///
+        /// Wall, door and socket decisions all come from the layout's door/open masks in a
+        /// frozen cardinal order. The previous version walked a HashSet to decide which
+        /// walls to seal - unspecified enumeration order deciding geometry.
+        /// </summary>
+        public static GameObject CreateRoom(LayoutRoom room, Vector3 worldPosition, Transform parent)
         {
             EnsureMaterials();
 
-            var roomRoot = new GameObject($"Room_{category}_{nodeId}");
+            var roomRoot = new GameObject($"Room_{room.Category}_{room.RoomId}");
             roomRoot.transform.SetParent(parent, false);
             roomRoot.transform.position = worldPosition;
 
-            var size = DefaultRoomSize;
+            var size = new Vector3(
+                Quantize.Metres(room.SizeMm.X),
+                Quantize.Metres(room.SizeMm.Y),
+                Quantize.Metres(room.SizeMm.Z));
+
             BuildFloor(roomRoot.transform, size);
             BuildCeiling(roomRoot.transform, size);
 
-            var doorSet = new HashSet<SocketDirection>();
-            if (doorDirections != null)
+            for (int d = 0; d < Directions.Cardinal.Length; d++)
             {
-                foreach (var dir in doorDirections)
-                    doorSet.Add(dir);
+                var dir = Directions.Cardinal[d];
+                BuildWall(roomRoot.transform, size, dir, room.HasDoor(dir));
             }
 
-            var openSet = new HashSet<SocketDirection>();
-            if (openDirections != null)
+            for (int d = 0; d < Directions.Cardinal.Length; d++)
             {
-                foreach (var dir in openDirections)
-                    openSet.Add(dir);
-            }
-
-            BuildWall(roomRoot.transform, size, SocketDirection.North, doorSet.Contains(SocketDirection.North));
-            BuildWall(roomRoot.transform, size, SocketDirection.South, doorSet.Contains(SocketDirection.South));
-            BuildWall(roomRoot.transform, size, SocketDirection.East, doorSet.Contains(SocketDirection.East));
-            BuildWall(roomRoot.transform, size, SocketDirection.West, doorSet.Contains(SocketDirection.West));
-
-            foreach (var openDir in openSet)
-            {
-                if (!doorSet.Contains(openDir))
-                    SealOpenWall(roomRoot.transform, size, openDir);
+                var dir = Directions.Cardinal[d];
+                if (room.IsOpen(dir) && !room.HasDoor(dir))
+                    SealOpenWall(roomRoot.transform, size, dir);
             }
 
             var module = roomRoot.AddComponent<RoomModule>();
-            module.Configure(category, new Bounds(Vector3.up * (size.y * 0.5f), size), nodeId);
+            module.Configure(room.Category, new Bounds(Vector3.up * (size.y * 0.5f), size), room.RoomId);
 
-            CreateLightSocket(roomRoot.transform, size);
-            CreateDoorSockets(roomRoot.transform, size, doorSet);
-            CreateInteriorSockets(roomRoot.transform, size, category);
+            CreateSocketsFromLayout(roomRoot.transform, module, room);
 
             module.CollectSockets();
             return roomRoot;
@@ -72,20 +135,92 @@ namespace CatchIfYouCan.Procedural
 
         private static void EnsureMaterials()
         {
-            if (_wallMaterial != null)
-                return;
+            // Only what ConfigureSurfaces did not supply. Filling the gaps one by one rather
+            // than testing the wall alone: a catalog that names three of the four used to leave
+            // the fourth null and that surface silently kept Unity's built-in default, which is
+            // a Built-in-pipeline shader and draws magenta under URP.
+            if (_wallMaterial == null)
+                _wallMaterial = CreateMaterial(new Color(0.78f, 0.76f, 0.72f));
 
-            _wallMaterial = CreateMaterial(new Color(0.78f, 0.76f, 0.72f));
-            _floorMaterial = CreateMaterial(new Color(0.35f, 0.28f, 0.22f));
-            _ceilingMaterial = CreateMaterial(new Color(0.9f, 0.9f, 0.88f));
-            _trimMaterial = CreateMaterial(new Color(0.55f, 0.52f, 0.48f));
+            if (_floorMaterial == null)
+                _floorMaterial = CreateMaterial(new Color(0.35f, 0.28f, 0.22f));
+
+            if (_ceilingMaterial == null)
+                _ceilingMaterial = CreateMaterial(new Color(0.9f, 0.9f, 0.88f));
+
+            if (_trimMaterial == null)
+                _trimMaterial = CreateMaterial(new Color(0.55f, 0.52f, 0.48f));
+        }
+
+        /// <summary>
+        /// The tiled variant of <paramref name="source"/> for a box of this local scale.
+        ///
+        /// <para>
+        /// The thinnest axis is the one the visible faces face along, so the other two are the
+        /// ones the texture spans: a floor is thin in Y and spans X by Z, a north wall is thin
+        /// in Z and spans X by Y. The thin faces get the same tiling and are a 20 cm edge, which
+        /// nobody reads as stretched.
+        /// </para>
+        /// </summary>
+        private static Material Surface(Material source, Vector3 localScale)
+        {
+            if (source == null)
+                return null;
+
+            float x = Mathf.Abs(localScale.x);
+            float y = Mathf.Abs(localScale.y);
+            float z = Mathf.Abs(localScale.z);
+
+            float u, v;
+            if (y <= x && y <= z)       { u = x; v = z; }   // floor / ceiling
+            else if (x <= y && x <= z)  { u = z; v = y; }   // east / west wall
+            else                        { u = x; v = y; }   // north / south wall
+
+            return TiledVariant(source, u * TilesPerMetre, v * TilesPerMetre);
+        }
+
+        private static Material TiledVariant(Material source, float tilesU, float tilesV)
+        {
+            // Quantised to quarter tiles, so two walls that differ by a millimetre share one
+            // material instead of minting a second.
+            int qu = Mathf.Clamp(Mathf.RoundToInt(tilesU * 4f), 1, 8192);
+            int qv = Mathf.Clamp(Mathf.RoundToInt(tilesV * 4f), 1, 8192);
+            long key = ((long)qu << 32) | (uint)qv;
+
+            if (!_tiled.TryGetValue(source, out Dictionary<long, Material> byTiling))
+            {
+                byTiling = new Dictionary<long, Material>();
+                _tiled[source] = byTiling;
+            }
+
+            // The null test is not paranoia: these are unreferenced assets between missions and
+            // Resources.UnloadUnusedAssets destroys them, leaving a fake-null entry behind.
+            if (byTiling.TryGetValue(key, out Material cached) && cached != null)
+                return cached;
+
+            var scale = new Vector2(qu * 0.25f, qv * 0.25f);
+            var variant = new Material(source)
+            {
+                name = source.name + "_Tiled_" + scale.x.ToString("0.##") + "x" +
+                       scale.y.ToString("0.##")
+            };
+
+            if (variant.HasProperty(BaseMapId)) variant.SetTextureScale(BaseMapId, scale);
+            if (variant.HasProperty(BumpMapId)) variant.SetTextureScale(BumpMapId, scale);
+            if (variant.HasProperty(MainTexId)) variant.SetTextureScale(MainTexId, scale);
+
+            byTiling[key] = variant;
+            return variant;
         }
 
         private static Material CreateMaterial(Color color)
         {
-            var shader = Shader.Find("Standard");
+            // Standard used to be tried first. It is a Built-in Render Pipeline shader and
+            // it always resolves, so this room was magenta under URP in the editor as well as
+            // on the device - the URP branch below it was never once reached.
+            var shader = Art.CiycShaders.FindLit();
             if (shader == null)
-                shader = Shader.Find("Universal Render Pipeline/Lit");
+                return null;
 
             var mat = new Material(shader);
             mat.color = color;
@@ -94,17 +229,21 @@ namespace CatchIfYouCan.Procedural
 
         private static void BuildFloor(Transform parent, Vector3 size)
         {
-            var floor = CreatePrimitive(PrimitiveType.Cube, parent, "Floor", _floorMaterial);
+            var scale = new Vector3(size.x, WallThickness, size.z);
+            var floor = CreatePrimitive(PrimitiveType.Cube, parent, "Floor",
+                                        Surface(_floorMaterial, scale));
             floor.transform.localPosition = new Vector3(0f, -WallThickness * 0.5f, 0f);
-            floor.transform.localScale = new Vector3(size.x, WallThickness, size.z);
+            floor.transform.localScale = scale;
             TagEnvironment(floor);
         }
 
         private static void BuildCeiling(Transform parent, Vector3 size)
         {
-            var ceiling = CreatePrimitive(PrimitiveType.Cube, parent, "Ceiling", _ceilingMaterial);
+            var scale = new Vector3(size.x, WallThickness, size.z);
+            var ceiling = CreatePrimitive(PrimitiveType.Cube, parent, "Ceiling",
+                                          Surface(_ceilingMaterial, scale));
             ceiling.transform.localPosition = new Vector3(0f, size.y + WallThickness * 0.5f, 0f);
-            ceiling.transform.localScale = new Vector3(size.x, WallThickness, size.z);
+            ceiling.transform.localScale = scale;
             TagEnvironment(ceiling);
         }
 
@@ -145,7 +284,8 @@ namespace CatchIfYouCan.Procedural
 
         private static void BuildSolidWall(Transform parent, string name, Vector3 position, Vector3 scale)
         {
-            var wall = CreatePrimitive(PrimitiveType.Cube, parent, name, _wallMaterial);
+            var wall = CreatePrimitive(PrimitiveType.Cube, parent, name,
+                                       Surface(_wallMaterial, scale));
             wall.transform.localPosition = position;
             wall.transform.localScale = scale;
             TagEnvironment(wall);
@@ -185,7 +325,8 @@ namespace CatchIfYouCan.Procedural
                     headerScale.z = DoorWidth;
                 headerScale.y = headerHeight;
 
-                var header = CreatePrimitive(PrimitiveType.Cube, parent, "DoorHeader", _trimMaterial);
+                var header = CreatePrimitive(PrimitiveType.Cube, parent, "DoorHeader",
+                                             Surface(_trimMaterial, headerScale));
                 header.transform.localPosition = wallCenter + Vector3.up * (DoorHeight + headerHeight * 0.5f - roomSize.y * 0.5f);
                 header.transform.localScale = headerScale;
                 TagEnvironment(header);
@@ -215,59 +356,88 @@ namespace CatchIfYouCan.Procedural
             }
         }
 
-        private static void CreateDoorSockets(Transform parent, Vector3 size, HashSet<SocketDirection> doorDirections)
+        /// <summary>
+        /// Creates every socket the layout says this room owns, at the positions
+        /// RoomSocketLayout defines. That type is the single source of truth: Stage A used
+        /// the same offsets to plan prop placement, so the built scene and the logical
+        /// layout agree by construction rather than by two copies of the same constants.
+        /// </summary>
+        private static void CreateSocketsFromLayout(Transform parent, RoomModule module, LayoutRoom room)
         {
-            foreach (var direction in doorDirections)
-            {
-                var socketGo = new GameObject($"Socket_Door_{direction}");
-                socketGo.transform.SetParent(parent, false);
-                socketGo.transform.localPosition = GetWallCenter(size, direction) + Vector3.up * (DoorHeight * 0.5f);
-                socketGo.transform.localRotation = Quaternion.LookRotation(RoomSocket.DirectionToLocalVector(direction), Vector3.up);
+            var slots = new List<SocketSlot>(10);
+            RoomSocketLayout.CollectSlots(room.Category, room.DoorMask, slots);
 
-                var socket = socketGo.AddComponent<RoomSocket>();
-                socket.Initialize(parent.GetComponent<RoomModule>(), SocketType.Door, direction);
+            for (int i = 0; i < slots.Count; i++)
+            {
+                var slot = slots[i];
+                var offset = RoomSocketLayout.LocalSocketOffset(slot, room.SizeMm);
+                var localPos = new Vector3(
+                    Quantize.Metres(offset.X),
+                    Quantize.Metres(offset.Y),
+                    Quantize.Metres(offset.Z));
+
+                if (slot == SocketSlot.Light)
+                {
+                    CreateRoomLight(parent, module, localPos, room.Category);
+                    continue;
+                }
+
+                var type = SocketSlots.TypeOf(slot);
+                var direction = DirectionForSlot(slot);
+                var socketGo = CreateSocket(parent, module, type, direction, localPos);
+
+                if (slot == SocketSlot.Hide)
+                    socketGo.AddComponent<HideSpot>();
             }
         }
 
-        private static void CreateLightSocket(Transform parent, Vector3 size)
+        private static SocketDirection DirectionForSlot(SocketSlot slot)
+        {
+            switch (slot)
+            {
+                case SocketSlot.DoorNorth: return SocketDirection.North;
+                case SocketSlot.DoorEast: return SocketDirection.East;
+                case SocketSlot.DoorSouth: return SocketDirection.South;
+                case SocketSlot.DoorWest: return SocketDirection.West;
+                case SocketSlot.PropA: return SocketDirection.North;
+                case SocketSlot.PropB: return SocketDirection.South;
+                case SocketSlot.Evidence: return SocketDirection.East;
+                case SocketSlot.GhostInteract: return SocketDirection.West;
+                case SocketSlot.Hide: return SocketDirection.South;
+                default: return SocketDirection.North;
+            }
+        }
+
+        private static void CreateRoomLight(Transform parent, RoomModule module, Vector3 localPos, RoomCategory category)
         {
             var lightGo = new GameObject("RoomLight");
             lightGo.transform.SetParent(parent, false);
-            lightGo.transform.localPosition = new Vector3(0f, size.y - 0.25f, 0f);
+            lightGo.transform.localPosition = localPos;
 
             var light = lightGo.AddComponent<Light>();
             light.type = LightType.Point;
             light.range = 8f;
-            light.intensity = categoryLightIntensity(parent.name);
+            light.intensity = CategoryLightIntensity(category);
             light.color = new Color(1f, 0.95f, 0.85f);
 
             var socketGo = new GameObject("Socket_Light");
             socketGo.transform.SetParent(lightGo.transform, false);
             var socket = socketGo.AddComponent<RoomSocket>();
-            socket.Initialize(parent.GetComponent<RoomModule>(), SocketType.Light, SocketDirection.Up);
+            socket.Initialize(module, SocketType.Light, SocketDirection.Up);
         }
 
-        private static float categoryLightIntensity(string roomName)
+        private static float CategoryLightIntensity(RoomCategory category)
         {
-            if (roomName.Contains("Bathroom") || roomName.Contains("Kitchen"))
-                return 1.35f;
-            if (roomName.Contains("Basement") || roomName.Contains("Attic"))
-                return 0.75f;
-            return 1.1f;
-        }
-
-        private static void CreateInteriorSockets(Transform parent, Vector3 size, RoomCategory category)
-        {
-            var module = parent.GetComponent<RoomModule>();
-            CreateSocket(parent, module, SocketType.Prop, SocketDirection.North, new Vector3(0f, 0f, size.z * 0.2f));
-            CreateSocket(parent, module, SocketType.Prop, SocketDirection.South, new Vector3(0.8f, 0f, -size.z * 0.25f));
-            CreateSocket(parent, module, SocketType.Evidence, SocketDirection.East, new Vector3(size.x * 0.15f, 1f, 0.4f));
-            CreateSocket(parent, module, SocketType.GhostInteract, SocketDirection.West, new Vector3(-size.x * 0.1f, 0f, 0f));
-
-            if (ShouldHaveHideSpot(category))
+            switch (category)
             {
-                var hideGo = CreateSocket(parent, module, SocketType.Hide, SocketDirection.South, new Vector3(-1.5f, 0f, -1.5f));
-                hideGo.AddComponent<HideSpot>();
+                case RoomCategory.Bathroom:
+                case RoomCategory.Kitchen:
+                    return 1.35f;
+                case RoomCategory.Basement:
+                case RoomCategory.Attic:
+                    return 0.75f;
+                default:
+                    return 1.1f;
             }
         }
 
@@ -279,22 +449,6 @@ namespace CatchIfYouCan.Procedural
             var socket = socketGo.AddComponent<RoomSocket>();
             socket.Initialize(module, type, direction);
             return socketGo;
-        }
-
-        private static bool ShouldHaveHideSpot(RoomCategory category)
-        {
-            switch (category)
-            {
-                case RoomCategory.Bedroom:
-                case RoomCategory.KidsRoom:
-                case RoomCategory.Office:
-                case RoomCategory.Storage:
-                case RoomCategory.Garage:
-                case RoomCategory.Basement:
-                    return true;
-                default:
-                    return false;
-            }
         }
 
         private static Vector3 GetWallCenter(Vector3 size, SocketDirection direction)
@@ -316,9 +470,13 @@ namespace CatchIfYouCan.Procedural
             var go = GameObject.CreatePrimitive(type);
             go.name = name;
             go.transform.SetParent(parent, false);
-            var renderer = go.GetComponent<Renderer>();
-            if (renderer != null && material != null)
-                renderer.sharedMaterial = material;
+
+            // Through the one shared rule. GameObject.CreatePrimitive arrives carrying Unity's
+            // built-in default material, which is a Built-in-pipeline shader and draws solid
+            // magenta under URP - so skipping the assignment does not produce a plain surface,
+            // it produces the loudest possible wrong one. Art.PrimitiveSurface switches the
+            // renderer off and says what was missing.
+            Art.PrimitiveSurface.Apply(go, material, "room surface for " + name);
             return go;
         }
 
@@ -328,15 +486,19 @@ namespace CatchIfYouCan.Procedural
             go.layer = LayerMask.NameToLayer("Default");
         }
 
-        public static GameObject CreateFallbackProp(string propName, Vector3 size, Material material)
-        {
-            var go = GameObject.CreatePrimitive(PrimitiveType.Cube);
-            go.name = propName;
-            go.transform.localScale = size;
-            var renderer = go.GetComponent<Renderer>();
-            if (renderer != null)
-                renderer.sharedMaterial = material != null ? material : _trimMaterial ?? CreateMaterial(new Color(0.45f, 0.42f, 0.38f));
-            return go;
-        }
+        // ---- CreateFallbackProp ist ENTFERNT ------------------------------------------------
+        //
+        // Sie baute einen Wuerfel im dunklen Trim-Material fuer jede geplante Moebelplatzierung,
+        // fuer die es keine PropDefinition gab - und weil der Content-Katalog seit dem Entfernen
+        // der Kenney-Inhalte leer ist (CLAUDE.md Fehler 14) und ContentSnapshotFactory bei leeren
+        // Katalogen einen eingebauten Ersatz-Snapshot liefert, war das JEDE. Der Aufrufer gab
+        // dabei nicht einmal die geplante Groesse mit: "definition == null" fiel auf
+        // Vector3.one, also stand in jedem Raum ein 1-m-Wuerfel pro geplantem Moebelstueck.
+        //
+        // Das ist der grosse dunkle Block. Ein Platzhalter, der wie fertiger Inhalt aussieht,
+        // ist genau der Fehler, den dieses Projekt schon dreimal gemacht hat, und die Methode
+        // bleibt deshalb nicht als unbenutzte Einladung stehen. Eingerichtet wird durch
+        // Furnishing.RoomFurnisher, aus echten Moebel-Prefabs; fehlt eines, bleibt die Stelle
+        // leer und wird gemeldet.
     }
 }
