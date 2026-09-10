@@ -192,6 +192,23 @@ namespace CatchIfYouCan.Equipment
             return result.Rotation * Quaternion.Euler(90f, 0f, 0f);
         }
 
+        /// <summary>
+        /// The head that carries the lens, and the projection hanging off it.
+        ///
+        /// <para>
+        /// <b>Adopt before building.</b> <see cref="HeldEquipmentBase.BuildCarried"/> takes over
+        /// the visual a clone already carries rather than making a second one, and everything
+        /// below the visual has to follow the same rule or the fix is only half done. This
+        /// method did not: it ran <c>new GameObject("ProjectorHead")</c> unconditionally, so
+        /// every clone - and every projector in the game is a clone of one live template -
+        /// arrived with the template's ProjectorHead, projection and volume ALREADY under its
+        /// adopted visual, and then got a second set built beside them. The stale pair is inert
+        /// (a projection that was never switched on carries a disabled renderer across the copy)
+        /// which is precisely why it never announced itself: nothing was drawn twice, nothing
+        /// errored, and the device simply carried a dead twin of its own effect. Mistake 30, one
+        /// level below where it was fixed.
+        /// </para>
+        /// </summary>
         protected override void BuildCarried()
         {
             if (CarriedRoot != null)
@@ -199,12 +216,25 @@ namespace CatchIfYouCan.Equipment
 
             base.BuildCarried();
 
-            var head = new GameObject("ProjectorHead");
-            head.transform.SetParent(CarriedRoot, false);
-            head.transform.localPosition = new Vector3(0f, CarriedLength, 0f);
+            // Found by COMPONENT, which is the one thing Instantiate brings across - a name
+            // survives too, but a name is not identity and this project has been bitten by
+            // trusting one before.
+            _projection = GetComponentInChildren<SpectralGridProjection>(true);
+            if (_projection != null)
+            {
+                Transform host = _projection.transform;
+                _head = host.parent != null ? host.parent : host;
+            }
+            else
+            {
+                var head = new GameObject("ProjectorHead");
+                head.transform.SetParent(CarriedRoot, false);
+                head.transform.localPosition = new Vector3(0f, CarriedLength, 0f);
 
-            _head = head.transform;
-            _projection = SpectralGridProjection.Attach(_head);
+                _head = head.transform;
+                _projection = SpectralGridProjection.Attach(_head);
+            }
+
             _projection?.Configure(projectionRange, projectionAngle);
             _projection?.SetRunning(false);
         }

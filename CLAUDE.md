@@ -156,38 +156,42 @@ place that number lives; everything else derives it.
   ceiling, which from inside the game is not a floating object but an item that never
   spawned. Marked with a COMPONENT, because that is the one thing a clone brings with it;
   marked GetComponent-first, because this runs on the template and on every clone of it.
-  And the field is DENSE, SIGN-FREE and OCCLUDED: a cell is 360/density degrees on both axes,
-  so the density floor is what separates a laser matrix from a scattering - at 144 the dots
-  stand 13 cm apart on a wall 3 m away and under a thousand are in view, at 240 it is 8 cm and
-  about 2400, and it costs nothing per pixel because the shader evaluates a formula rather than
-  a list; the halo is clamped inside its own cell rather than promised to fit, two independent
-  sliders multiplying to 1.35 of a cell at their ends; the grazing term takes the ABSOLUTE dot
-  product, because the normal comes from ddx/ddy of a reconstructed position and the
-  orientation of that cross product follows the platform's screen-space Y - signed and
-  inverted, every surface facing the lens is dimmed while the ones facing away stay full, which
-  is "too weak" on some platforms and not others; and a wall between the lens and a surface
-  takes its dots away through a screen-space march that FAILS OPEN - all four unsure branches
-  stay lit, one number switches it off, and it sits below the dot mask so only the pixels that
-  carry a dot pay for it - and it ships OFF, because a screen-space test can only ask what
-  the CAMERA sees at a point, and for a probe hanging in mid-air metres from the lit
-  surface that is often a nearer surface with nothing to do with the lens: a FALSE
-  occluder, which removes a dot that should be there. Contact-shadow techniques keep
-  their rays centimetres long for that reason; this one is as long as the range, so
-  turned up it can blanket the field, and an invisible projector is this device's oldest
-  bug. Real per-dot occlusion needs a cube shadow map from the lens, which is neither
-  affordable on a phone nor verifiable without an editor. And there is a STAGED bisect
-  behind one number - magenta volume, reconstructed world position, solid green in range,
-  the bare angular grid, dots without occlusion, dots with it forced on - because six
-  explanations for "it says PROJECTING and the screen is black" need six different
-  fixes, and one play session should name the stage instead of one session per guess. It
-  ships at 0 in the shader AND in the C#: a diagnostic that runs while somebody plays
-  does not diagnose, it creates (mistake 23). And the tuning values REACH the renderer: they
-  were pushed once at switch-on and never again, so an Inspector edit during Play moved a
-  number that arrived nowhere - which is how a six-stage bisect came back with six
-  identical stages, all of them stage 0. A control that cannot move what it names is worse
-  than no control, because it manufactures evidence. Switch-on also reports whether the
-  CAMERA stands inside the volume, because that decides which faces of the box are drawn
-  and it is the one fact a screenshot of an invisible effect cannot show. 97 checks.
+  And the shader is CUT BACK to what a camera has confirmed, which is nothing: it has never once
+  been observed drawing a pixel, so the occlusion march, the glow halo and the ddx/ddy grazing
+  term are gone from the shader AND from the C#, and a check keeps them off until the rung below
+  them is proven. Turned off is not the same as gone: a slider nobody moves is still a line every
+  later reader takes for tested, and one that pushes into a uniform the shader no longer declares
+  writes nowhere and says nothing. What is left is a LADDER of four rungs behind one number -
+  magenta over the whole volume, the reconstructed world position, solid green in range, the bare
+  angular grid - with stage 0 the finished dots. Each rung `return`s ABOVE the work the next one
+  needs, and the guard reads the line numbers rather than trusting the order, because a rung that
+  sits below the thing it bisects goes dark for a reason further along and hands the reader a
+  FALSE finding instead of none. The magenta rung is the first statement in the fragment shader,
+  nothing above it but the stage read itself. There is deliberately no rung for the finished dots:
+  it would have no branch of its own, fall through to stage 0, and answer a question nobody asked -
+  so the shader, the Inspector and the number of implemented branches must all name the same count.
+  Culling is OFF, one fewer thing that has to be right before a pixel appears, and the blend stays
+  additive even for the magenta rung: blend state comes from the MATERIAL and this device drives
+  everything through a MaterialPropertyBlock, so a per-instance alpha blend would mean mutating a
+  shared Resources material - and `One One` on (1, 0, 1) is brighter against a dark room than
+  0.75 alpha, not dimmer. The density STARTS at 144 rather than 240, because a fine grid that is
+  wrong is a green wash while a coarse one that is wrong is legible, and it costs nothing per
+  pixel either way. Every property the C# pushes is declared by the shader and every one the
+  shader declares is pushed, checked from the real `_block.Set` calls rather than from the
+  `PropertyToID` lines - having the id proves nothing, and the first version of that check stayed
+  green when the push was deleted. It ships at 0 in the shader AND in the C#: a diagnostic that
+  runs while somebody plays does not diagnose, it creates (mistake 23). And the tuning values
+  REACH the renderer: they were pushed once at switch-on and never again, so an Inspector edit
+  during Play moved a number that arrived nowhere - which is how a six-stage bisect came back with
+  six identical stages, all of them stage 0. A control that cannot move what it names is worse
+  than no control, because it manufactures evidence. And the device carries ONE of everything: a
+  clone adopts the ProjectorHead, the projection and the volume it already came with rather than
+  building a second set beside them - the inherited set is inert, which is exactly why it never
+  announced itself - and the count is reported from the DEVICE rather than from the component,
+  which can only ever find its own children and would report a clean 1 while a second projection
+  hung next door. Switch-on also reports whether the CAMERA stands inside the volume, which no
+  longer decides what is drawn but still separates "the volume is nowhere near the viewer" from
+  "the volume is all around the viewer and still draws nothing". 100 checks.
 - `Scripts/check_multiplayer_architecture.sh` — the deterministic assembly stays
   engine-free, gameplay never reaches a Relay API, remote players never read
   local input, ghost decisions stay host-only, online capacity has exactly one
@@ -1177,6 +1181,50 @@ Repeating one of these is the most likely way to break something.
    weil man ihm glaubt. Verwandt mit Fehler 23 (das Werkzeug wurde zum Fehler) und mit 43 (der
    Waechter log ueber das Projekt) - dreimal jetzt hat die Messvorrichtung gelogen, nicht das
    Gemessene.
+
+45. **Vier Erklaerungen fuer denselben Shader, und keine davon war gemessen.** Der
+   DOTS-Shader ist in dieser Sitzung zum dritten Mal umgebaut worden, und beim Nachzaehlen
+   stand fest: er hat noch NIE einen Pixel gezeichnet - nicht bei 51c76f2, nicht bei db070a6,
+   nicht bei c3ad2d8, und von seinem Vorgaenger sagt Fehler 33 dasselbe. Darauf lagen
+   inzwischen ein Verdeckungsmarsch, ein Halo und ein Streifwinkel-Term aus ddx/ddy: drei
+   Schichten, von denen keine je eine Kamera gesehen hatte, auf einer Grundlage, die auch
+   keine gesehen hatte. Jede einzelne war fuer sich verteidigbar, und genau das ist die
+   Falle - eine unbestaetigte Schicht hat keine Gegner, sie hat nur noch keine Zeugen.
+   Ausgeschaltet reicht dabei nicht. `occlusionStrength = 0f` stand voreingestellt auf aus und
+   war trotzdem eine Zeile, die jeder spaetere Leser fuer erprobt haelt, und ein `SetFloat` auf
+   ein Uniform, das der Shader nicht mehr deklariert, schreibt ins Leere und sagt nichts -
+   dieselbe Stille wie Fehler 44, nur eine Ebene tiefer. Also WEG, in beiden Dateien, mit einer
+   Pruefung, die sie draussen haelt, bis die Stufe darunter bestaetigt ist.
+   Und die Diagnose selbst braucht eine Ordnung. Eine Sprosse, die UNTER dem sitzt, was sie
+   halbieren soll, wird aus einem Grund weiter hinten dunkel und liefert dann einen FALSCHEN
+   Befund statt gar keinem. Der Waechter liest deshalb die Zeilennummern und vergleicht sie,
+   statt der Reihenfolge zu glauben; die Magenta-Sprosse ist die erste Anweisung im Fragment-
+   Shader, und ueber ihr steht nichts ausser dem Lesen der Stufe. Eine Sprosse ohne eigenen
+   Zweig gibt es nicht mehr: Stufe 5 fiel auf Stufe 0 durch und haette jedem, der sie waehlt,
+   die Antwort auf eine andere Frage gegeben.
+   Die teuerste Lehre steckt aber im Waechter, nicht im Shader. Die Paritaetspruefung - jedes
+   Property, das C# schiebt, ist im Shader deklariert und umgekehrt - las zuerst die
+   `Shader.PropertyToID`-Zeilen. Eine Id zu HABEN beweist nicht, dass geschoben wird: beim
+   Zahntest blieb sie gruen, nachdem der `SetFloat`-Aufruf geloescht war. Sie liest jetzt die
+   echten `_block.Set`-Aufrufe. Ein Waechter, dessen Name mehr behauptet als seine Frage misst,
+   ist ein leeres Versprechen, das man erst bemerkt, wenn man sich darauf verlassen hat.
+
+46. **Ein Klon, der seinen eigenen Kopf zweimal bekam.** `HeldEquipmentBase.BuildCarried`
+   uebernimmt seit Fehler 30 das Visual, das ein Klon schon mitbringt, statt ein zweites zu
+   bauen. `SpectralGridProjector.BuildCarried` rief danach unbedingt
+   `new GameObject("ProjectorHead")`. Jeder Projektor im Spiel ist ein Klon einer lebenden
+   Vorlage, also kam jeder mit einem geerbten Kopf samt Projektion und Zeichenvolumen an - und
+   bekam ein zweites Paar daneben gebaut.
+   Es hat sich nie gemeldet, und zwar aus dem denkbar unguenstigsten Grund: das geerbte Paar
+   ist STUMM. Ein nie eingeschalteter `MeshRenderer` kommt ausgeschaltet ueber die Kopie, und
+   `_running` ist ein privates Feld, das die Kopie gar nicht mitbringt. Also nichts doppelt
+   gezeichnet, nichts heller, keine Fehlermeldung - nur ein totes Duplikat des eigenen Effekts,
+   das in jeder Suche nach "warum zeichnet das nichts" als Treffer auftaucht und keiner ist.
+   Ein Korrektur, die an einer Stelle angebracht wird, gilt fuer alles darunter mit: das Visual
+   war repariert, und der Kopf, der daran haengt, nicht. Und die Zaehlung dazu muss vom GERAET
+   ausgehen. Von der Komponente aus gezaehlt findet sie nur ihre eigenen Kinder und meldet eine
+   saubere 1, waehrend die zweite Projektion nebenan haengt - eine Zahl, die genau das nicht
+   sehen kann, wofuer sie da ist.
 
 ## Unity Editor availability
 

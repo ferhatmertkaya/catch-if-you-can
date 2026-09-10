@@ -44,24 +44,18 @@ namespace CatchIfYouCan.Equipment
 
         [Tooltip("How many dot cells go the whole way round the device. Elevation gets half " +
                  "as many, spanning half the angle, which makes a cell square: 360/density " +
-                 "degrees on both axes. 240 is a 1.5 degree cell - dots about 8 cm apart on a " +
-                 "surface 3 m away, roughly 2400 of them inside a 90x60 degree view, and 28800 " +
-                 "over the whole sphere. It costs nothing per pixel: the shader evaluates a " +
-                 "formula, not a list of dots, so density is free and only aliasing limits it.")]
-        [SerializeField, Range(16f, 320f)] private float density = 240f;
+                 "degrees on both axes. 144 is a 2.5 degree cell - dots about 13 cm apart on a " +
+                 "surface 3 m away and under a thousand of them inside a 90x60 degree view. " +
+                 "It STARTS here rather than at 240 because a coarse grid that is wrong is " +
+                 "legible and a fine one that is wrong is a green wash: at 240 a mapping error " +
+                 "and a correct field look the same from across a room. It costs nothing per " +
+                 "pixel either way - the shader evaluates a formula, not a list of dots - so " +
+                 "the number is a legibility decision, not a performance one.")]
+        [SerializeField, Range(16f, 320f)] private float density = 144f;
 
         [Tooltip("Size of one dot within its cell. Past about 0.3 they merge into the " +
                  "continuous green wash this is not supposed to be.")]
         [SerializeField, Range(0.02f, 0.45f)] private float dotSize = 0.16f;
-
-        [Tooltip("How far the soft halo around a dot reaches, as a multiple of the dot itself. " +
-                 "Kept below 3 so that dotSize x this stays under half a cell and neighbouring " +
-                 "dots cannot run into one another however bright they are.")]
-        [SerializeField, Range(1f, 3f)] private float glowRadius = 2.2f;
-
-        [Tooltip("How bright that halo is against the dot's core. A little reads as laser " +
-                 "light; a lot reads as fog.")]
-        [SerializeField, Range(0f, 1f)] private float glowStrength = 0.35f;
 
         [Tooltip("Brightness of a dot. This is the only brightness there is - there is no " +
                  "light in this effect, so it cannot flood a room however high it goes.")]
@@ -76,43 +70,19 @@ namespace CatchIfYouCan.Equipment
                  "strength across most of a room and fades them over the last stretch.")]
         [SerializeField, Range(0.05f, 1f)] private float fadeStart = 0.55f;
 
-        [Tooltip("Extra punch within a metre of the lens, where the reference pattern is at " +
-                 "its densest and brightest.")]
-        [SerializeField, Range(0f, 4f)] private float nearBoost = 1.2f;
-
-        [Tooltip("A short fade right at the lens, so standing on the device is not a wall of " +
-                 "light.")]
-        [SerializeField, Range(0f, 1f)] private float nearFade = 0.12f;
-
-        [Tooltip("How hard to drop the pattern on surfaces that are edge-on to the lens, which " +
-                 "is what makes it wrap convincingly across a corner. 0 disables it.")]
-        [SerializeField, Range(0f, 1f)] private float facingStrength = 0.7f;
-
-        [Header("Occlusion")]
-        [Tooltip("How completely a wall between the lens and a surface takes that surface's " +
-                 "dots away. OFF by default: the test is a screen-space march, and a screen-" +
-                 "space test can only ask what the CAMERA sees at a point. For a probe hanging " +
-                 "in mid-air metres from the lit surface that is often some nearer surface with " +
-                 "nothing to do with the lens - a false occluder, which removes a dot that " +
-                 "should be there. Turned up it can blanket the whole field, and a projector " +
-                 "with too few shadows is a far smaller bug than an invisible one.")]
-        [SerializeField, Range(0f, 1f)] private float occlusionStrength = 0f;
-
-        [Tooltip("How far in front of a marched point a surface has to be before it counts as " +
-                 "blocking, in metres. Too small and a surface shadows itself; too large and " +
-                 "thin occluders are missed. Missing one is the safe direction.")]
-        [SerializeField, Range(0.005f, 0.5f)] private float occlusionBias = 0.05f;
-
         [Header("Diagnosis")]
-        [Tooltip("A staged bisect for 'it says it is running and nothing is on screen'. " +
-                 "0 = the game. 1 = magenta over the whole volume (is the pass running at " +
-                 "all?). 2 = the reconstructed world position as colour (is the depth texture " +
-                 "right?). 3 = solid green within range (is the lens where the shader thinks?). " +
-                 "4 = the angular grid with no dot test (is the mapping sane?). 5 = the finished " +
-                 "dots with occlusion forced OFF. 6 = the same with it forced fully ON - dots at " +
-                 "5 and none at 6 is the occlusion eating its own field. Ships at 0, and a guard " +
-                 "keeps it there.")]
-        [SerializeField, Range(0, 6)] private int debugStage = 0;
+        [Tooltip("A ladder for 'it says it is running and nothing is on screen', climbed one " +
+                 "rung at a time. 0 = the game, the finished dots. 1 = MAGENTA over the whole " +
+                 "volume, before anything is sampled or reconstructed - does this pass " +
+                 "rasterise at all? 2 = the reconstructed world position as colour - is the " +
+                 "depth texture readable? 3 = solid green on every surface within range - did " +
+                 "the lens arrive? 4 = the angular grid with no dot test - is the mapping " +
+                 "sane? Each rung returns ABOVE the work the next one needs, so no rung can be " +
+                 "taken down by a failure further along, and every rung offered here has a " +
+                 "branch of its own - one that fell through to stage 0 would answer a question " +
+                 "nobody asked. Ships at 0, and a guard keeps it there: a diagnostic that runs " +
+                 "while somebody plays does not diagnose, it creates (mistake 23).")]
+        [SerializeField, Range(0, 4)] private int debugStage = 0;
 
         [Header("Emitter")]
         [Tooltip("Where the lens sits relative to the device's pivot, in its own space. +Y is " +
@@ -140,13 +110,6 @@ namespace CatchIfYouCan.Equipment
         private static readonly int RangeId = Shader.PropertyToID("_Range");
         private static readonly int IntensityId = Shader.PropertyToID("_Intensity");
         private static readonly int FadeStartId = Shader.PropertyToID("_FadeStart");
-        private static readonly int NearBoostId = Shader.PropertyToID("_NearBoost");
-        private static readonly int NearFadeId = Shader.PropertyToID("_NearFade");
-        private static readonly int FacingId = Shader.PropertyToID("_FacingStrength");
-        private static readonly int GlowRadiusId = Shader.PropertyToID("_GlowRadius");
-        private static readonly int GlowStrengthId = Shader.PropertyToID("_GlowStrength");
-        private static readonly int OcclusionId = Shader.PropertyToID("_OcclusionStrength");
-        private static readonly int OcclusionBiasId = Shader.PropertyToID("_OcclusionBias");
         private static readonly int DebugModeId = Shader.PropertyToID("_DebugMode");
         private static readonly int OriginId = Shader.PropertyToID("_OriginWS");
         private static readonly int AxisXId = Shader.PropertyToID("_AxisXWS");
@@ -169,6 +132,15 @@ namespace CatchIfYouCan.Equipment
         {
             if (head == null)
                 return null;
+
+            // Adopt before building, here as well as at the call site. A head that came across
+            // on a clone already carries one of these, and a second would be a second volume
+            // drawing the same pattern on top of the first. Defence in depth is worth one
+            // GetComponentInChildren on a path that runs once per item: this is the shape that
+            // produced mistakes 27 and 30, and both times the cost of finding it was a session.
+            var existing = head.GetComponentInChildren<SpectralGridProjection>(true);
+            if (existing != null)
+                return existing;
 
             var go = new GameObject("SpectralGridProjection");
             go.transform.SetParent(head, false);
@@ -234,8 +206,8 @@ namespace CatchIfYouCan.Equipment
                 return;
 
             // The tuning values were pushed ONCE, at switch-on, and never again. Everything
-            // below the lens - density, dot size, intensity, the occlusion dial, the debug
-            // stage - therefore sat in the renderer at whatever it was when G was pressed, and
+            // below the lens - density, dot size, intensity, the debug stage - therefore sat in
+            // the renderer at whatever it was when G was pressed, and
             // an Inspector edit during Play changed a number that reached nothing. That is not
             // a small thing: it is why a six-stage bisect came back with all six stages
             // identical. They were all stage 0. A control that cannot move what it names is
@@ -426,13 +398,6 @@ namespace CatchIfYouCan.Equipment
             _block.SetFloat(RangeId, projectionRange);
             _block.SetFloat(IntensityId, intensity);
             _block.SetFloat(FadeStartId, fadeStart);
-            _block.SetFloat(NearBoostId, nearBoost);
-            _block.SetFloat(NearFadeId, nearFade);
-            _block.SetFloat(FacingId, facingStrength);
-            _block.SetFloat(GlowRadiusId, glowRadius);
-            _block.SetFloat(GlowStrengthId, glowStrength);
-            _block.SetFloat(OcclusionId, occlusionStrength);
-            _block.SetFloat(OcclusionBiasId, occlusionBias);
             _block.SetFloat(DebugModeId, debugStage);
 
             _renderer.SetPropertyBlock(_block);
@@ -481,7 +446,6 @@ namespace CatchIfYouCan.Equipment
                 " dotSize=" + dotSize.ToString("F2") +
                 " cellDegrees=" + (360f / Mathf.Max(1f, Mathf.Round(density))).ToString("F2") +
                 " intensity=" + intensity.ToString("F1") +
-                " occlusion=" + occlusionStrength.ToString("F2") +
                 " material=" + (_renderer != null && _renderer.sharedMaterial != null
                     ? _renderer.sharedMaterial.name : "NULL") +
                 " renderer=" + (_renderer != null && _renderer.enabled) +
@@ -519,19 +483,18 @@ namespace CatchIfYouCan.Equipment
                     " material=" + (mat != null ? mat.name : "NULL") +
                     " shader=" + (mat != null && mat.shader != null ? mat.shader.name : "NONE") +
                     " shaderSupported=" + (mat != null && mat.shader != null && mat.shader.isSupported) +
-                    " occlusion=" + occlusionStrength.ToString("F2") +
                     " debugStage=" + debugStage;
             }
 
             Core.CIYCLog.Info(volume);
 
-            // Whether the camera stands INSIDE the box decides which faces of it are drawn, and
-            // that is the one fact nobody can read off a screenshot of an invisible effect. The
-            // pass culls FRONT faces, which is correct both ways round: from inside, the
-            // surfaces facing the viewer are the box's back faces, so they survive and cover the
-            // screen; from outside, the near faces are culled and the far ones cover the box's
-            // silhouette exactly once. Culling BACK would draw nothing at all from inside, which
-            // is why this line exists rather than an argument about it.
+            // Whether the camera stands INSIDE the box is the one fact nobody can read off a
+            // screenshot of an invisible effect, and it used to decide which faces were drawn.
+            // The pass culls NOTHING now, so it no longer decides anything - which is the point:
+            // one fewer thing that has to be right before a single pixel appears. The line stays
+            // because it still separates "the volume is nowhere near the viewer" from "the
+            // volume is all around the viewer and still draws nothing", and those are different
+            // afternoons.
             Camera cam = Camera.main;
             if (cam == null || _renderer == null)
             {
@@ -547,7 +510,8 @@ namespace CatchIfYouCan.Equipment
                     " position=" + eye.ToString("F2") +
                     " volumeContainsCamera=" + inside +
                     " cameraMaskIncludesVolume=" + masked +
-                    " cullMode=Front (correct " + (inside ? "for a camera inside" : "for a camera outside") + ")");
+                    " cullMode=Off (the camera is " + (inside ? "INSIDE" : "outside") + " the volume, " +
+                    "and with culling off that no longer changes what is drawn)");
 
                 if (!masked)
                 {
@@ -571,29 +535,73 @@ namespace CatchIfYouCan.Equipment
                 Core.CIYCLog.Info(block);
             }
 
-            if (volumes.Length > 1)
-            {
-                // Named, not counted. "2" sends the reader looking for a second projector;
-                // the PATHS say whether it is a duplicated volume, a stray marked renderer or
-                // the device's own model caught by the marker.
-                var names = new System.Text.StringBuilder();
-                for (int i = 0; i < volumes.Length; i++)
-                {
-                    if (volumes[i] == null)
-                        continue;
-                    if (names.Length > 0)
-                        names.Append(" | ");
-                    Transform t = volumes[i].transform;
-                    names.Append(t.name);
-                    if (t.parent != null)
-                        names.Append(" (under ").Append(t.parent.name).Append(')');
-                }
+            ReportDuplicates(volumes);
+        }
 
-                Core.CIYCLog.Error("[CIYC][DOTS][ERROR] unexpectedVolumeCount=" + volumes.Length +
-                                   " expected=1 - a second volume was built on a clone that " +
-                                   "already had one, so the pattern is drawn twice. They are: " +
-                                   names);
+        /// <summary>
+        /// How many of each of these there are under the DEVICE, which is a different question
+        /// from how many are under this component.
+        ///
+        /// <para>
+        /// Every item reaches the world as an <c>Instantiate</c> of a live template, so the
+        /// clone arrives carrying whatever the template built - a ProjectorHead, a projection, a
+        /// volume - while every private field that pointed at them is null. A build step that
+        /// reads one of those fields as "nothing here yet" then builds a SECOND set beside the
+        /// first (mistakes 27 and 30). Two coincident copies of one effect do not look like two
+        /// of anything; on an additive pass they look like one effect at double brightness, and
+        /// on a dead one they look like nothing at all. So they are COUNTED, from the device
+        /// rather than from here - counting from here can only ever find this component's own
+        /// children and would report a clean 1 while a second projection sat next door.
+        /// </para>
+        /// </summary>
+        private void ReportDuplicates(MeshRenderer[] volumesUnderThis)
+        {
+            // The device, not the scene root: the item spends half its life parented into the
+            // player's hand, and counting from there would sweep the whole rig.
+            Component device = GetComponentInParent<SpectralGridProjector>();
+            Transform scope = device != null ? device.transform : transform;
+
+            var projections = scope.GetComponentsInChildren<SpectralGridProjection>(true);
+            var volumes = scope.GetComponentsInChildren<EffectVolume>(true);
+
+            Core.CIYCLog.Info(
+                "[CIYC][DOTS][COUNT] scope=" + scope.name +
+                " projectionCountUnderProjector=" + projections.Length +
+                " volumeCountUnderProjector=" + volumes.Length +
+                " renderersUnderThisProjection=" + volumesUnderThis.Length +
+                " expected=1/1/1");
+
+            if (projections.Length == 1 && volumes.Length == 1 && volumesUnderThis.Length == 1)
+                return;
+
+            // Named, not counted. "2" sends the reader looking for a second projector; the PATHS
+            // say whether it is a duplicated volume, a stray marked renderer or the device's own
+            // model caught by the marker.
+            Core.CIYCLog.Error("[CIYC][DOTS][ERROR] duplicate projection machinery on this " +
+                               "device: projections=" + Describe(projections) +
+                               " volumes=" + Describe(volumes) +
+                               " renderersUnderThisProjection=" + Describe(volumesUnderThis));
+        }
+
+        private static string Describe(Component[] parts)
+        {
+            if (parts == null || parts.Length == 0)
+                return "(none)";
+
+            var names = new System.Text.StringBuilder();
+            for (int i = 0; i < parts.Length; i++)
+            {
+                if (parts[i] == null)
+                    continue;
+                if (names.Length > 0)
+                    names.Append(" | ");
+                Transform t = parts[i].transform;
+                names.Append(t.name);
+                if (t.parent != null)
+                    names.Append(" (under ").Append(t.parent.name).Append(')');
             }
+
+            return names.Length > 0 ? names.ToString() : "(none)";
         }
 #endif
 

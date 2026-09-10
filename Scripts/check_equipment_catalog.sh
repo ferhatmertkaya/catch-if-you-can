@@ -904,6 +904,8 @@ if [ ! -f "$PROJ" ]; then
   fail "SpectralGridProjection.cs existiert"
 else
   pcode=$(sed 's://.*::' "$PROJ" | grep -v '^[[:space:]]*\*')
+  PROJECTOR="$SGP"
+  prcode=$([ -f "$PROJECTOR" ] && sed 's://.*::' "$PROJECTOR" | grep -v '^[[:space:]]*\*' || true)
 
   # 1. Es gibt ueberhaupt etwas, das zeichnet.
   if printf '%s' "$pcode" | grep -qE 'AddComponent<MeshRenderer>\(\)'; then
@@ -972,10 +974,42 @@ else
     fail "ein geklonter Projektor bekommt kein zweites Volumen"
   fi
 
-  if printf '%s' "$pcode" | grep -qE 'unexpectedVolumeCount='; then
-    ok "ein Projektor mit zwei Volumen meldet sich"
+  # Und er zaehlt vom GERAET aus, nicht von sich selbst. Von sich selbst aus findet er nur
+  # seine eigenen Kinder und meldet eine saubere 1, waehrend eine zweite Projektion nebenan
+  # haengt - genau der Fall, den `BuildCarried` jahrelang gebaut hat.
+  if printf '%s' "$pcode" | grep -qE 'projectionCountUnderProjector=' \
+     && printf '%s' "$pcode" | grep -qE 'volumeCountUnderProjector=' \
+     && printf '%s' "$pcode" | grep -qE 'GetComponentInParent<SpectralGridProjector>'; then
+    ok "ein Projektor mit zwei Volumen meldet sich, vom Geraet aus gezaehlt"
   else
-    fail "ein Projektor mit zwei Volumen meldet sich"
+    fail "ein Projektor mit zwei Volumen meldet sich, vom Geraet aus gezaehlt"
+  fi
+
+  # Und er BAUT auch keine zweite. Jedes Ausruestungsstueck erreicht die Welt als Klon, und
+  # `BuildCarried` legte bis eben unbedingt einen neuen ProjectorHead an - der Klon trug also
+  # den geerbten samt Projektion und Volumen UND bekam ein zweites Paar daneben. Das geerbte
+  # Paar ist stumm (ein nie eingeschalteter Renderer kommt ausgeschaltet mit), weshalb es sich
+  # nie gemeldet hat. Fehler 30, eine Ebene unter der Stelle, an der er behoben wurde.
+  if [ -f "$PROJECTOR" ]; then
+    built=$(printf '%s\n' "$prcode" | sed -n '/protected override void BuildCarried/,/^        }$/p')
+    adoptline=$(printf '%s\n' "$built" | { grep -n 'GetComponentInChildren<SpectralGridProjection>' || true; } | head -1 | cut -d: -f1)
+    newline=$(printf '%s\n' "$built" | { grep -n 'new GameObject("ProjectorHead")' || true; } | head -1 | cut -d: -f1)
+    if [ -n "$adoptline" ] && [ -n "$newline" ] && [ "$adoptline" -lt "$newline" ]; then
+      ok "ein geklonter Projektor uebernimmt seinen Kopf, statt einen zweiten zu bauen"
+    else
+      fail "ein geklonter Projektor uebernimmt seinen Kopf, statt einen zweiten zu bauen (adopt=$adoptline new=$newline)"
+    fi
+  else
+    fail "ein geklonter Projektor uebernimmt seinen Kopf, statt einen zweiten zu bauen"
+  fi
+
+  # Dieselbe Regel in Attach, das den Kopf bekommt und nicht weiss, woher er stammt.
+  if printf '%s' "$pcode" \
+     | sed -n '/public static SpectralGridProjection Attach/,/^        }$/p' \
+     | grep -qE 'GetComponentInChildren<SpectralGridProjection>'; then
+    ok "Attach uebernimmt eine vorhandene Projektion, statt eine zweite anzuhaengen"
+  else
+    fail "Attach uebernimmt eine vorhandene Projektion, statt eine zweite anzuhaengen"
   fi
 
   # 9. Nichts alloziert je Frame. Der Property-Block wird einmal angelegt und danach nur noch
@@ -1072,86 +1106,149 @@ else
 fi
 
 
-# ------------------------------------------------ the field is dense, sign-free and occluded
+# ------------------------------------------------ the minimal rebuild, and the ladder in it
+#
+# The shader was cut back to the shortest path from a fragment to a green dot. The occlusion
+# march, the glow halo and the ddx/ddy grazing term are GONE - three layers no camera had ever
+# confirmed, stacked on a base nobody had confirmed either, on a shader that has never once been
+# observed drawing a pixel. What replaces them is a five-rung ladder, and the checks below guard
+# the ladder rather than the layers: order, parity and reachability, which are the three things
+# no compiler runs in CI to catch (mistake 16).
 
-# 24. The pattern is a dense laser MATRIX, not a scattering. A cell is 360/density degrees on
-#     both axes, so density 144 puts dots 13 cm apart on a wall 3 m away and under a thousand
-#     of them in view - which reads as sparse, not as the reference. 240 is a 1.5 degree cell:
-#     8 cm at 3 m, ~2400 in a 90x60 degree view. Checked as a FLOOR rather than an equality,
-#     because tuning it up is the whole point of a slider and a guard that goes red on a
-#     legitimate tune is a false alarm nobody believes twice (mistake 26).
+# 24. The pattern STARTS coarse. A cell is 360/density degrees on both axes, so 144 is a 2.5
+#     degree cell - 13 cm apart on a wall 3 m away, under a thousand in view. The old guard
+#     demanded 200+ and that was the wrong direction: at 240 a mapping error and a correct
+#     field look identical from across a room, so a fine grid that is wrong is a green wash
+#     while a coarse one that is wrong is legible. Checked as a CEILING now, with the slider's
+#     top end left free - tuning it up once it is right is the whole point of a slider.
 if [ -f "$PROJ" ]; then
   dens=$(printf '%s' "$pcode" \
          | sed -n 's/.*private float density = \([0-9.]*\)f.*/\1/p' | head -1)
-  if [ -n "$dens" ] && awk "BEGIN{exit !($dens >= 200)}"; then
-    ok "the dot grid is dense enough to read as a laser matrix (density=$dens)"
+  if [ -n "$dens" ] && awk "BEGIN{exit !($dens >= 96 && $dens <= 144)}"; then
+    ok "the dot grid starts coarse enough to be legible when it is wrong (density=$dens)"
   else
-    fail "the dot grid is dense enough to read as a laser matrix (density='$dens', wanted >= 200)"
+    fail "the dot grid starts coarse enough to be legible when it is wrong (density='$dens', wanted 96..144)"
   fi
 else
-  fail "the dot grid is dense enough to read as a laser matrix"
+  fail "the dot grid starts coarse enough to be legible when it is wrong"
 fi
 
-# 25. The halo cannot merge neighbouring dots. _DotSize and _GlowRadius are independent sliders
-#     whose top ends multiply to 1.35 of a cell, so the separation has to be enforced in the
-#     shader rather than promised in a comment.
-if [ -f "$SHDR" ] && printf '%s' "$scode" | grep -qE 'min\(_DotSize \* _GlowRadius, 0\.49\)'; then
-  ok "the dot halo is clamped inside its own cell"
-else
-  fail "the dot halo is clamped inside its own cell"
-fi
-
-# 26. The grazing term is SIGN-FREE. The normal comes from ddx/ddy of a reconstructed position
-#     and the orientation of that cross product follows the platform's screen-space Y, which
-#     this shader cannot know. Taken signed and inverted, every surface FACING the lens is
-#     dimmed to (1 - strength) while the ones facing away stay at full - "the dots are too
-#     weak", on some platforms and not others. abs() removes the question.
-if [ -f "$SHDR" ] && printf '%s' "$scode" | grep -qE 'abs\(dot\(normal, dir\)\)'; then
-  ok "the grazing falloff does not depend on a screen-space sign convention"
-else
-  fail "the grazing falloff does not depend on a screen-space sign convention"
-fi
-
-# 27. A wall between the lens and a surface takes its dots away - and the test that decides it
-#     FAILS OPEN. Every branch that cannot answer continues the march instead of counting a
-#     block, and one number switches the whole thing off. The opposite failure shadows
-#     everything, and an invisible DOTS projector is the bug this device has shipped twice.
+# 25. Nothing unproven has crept back. These three came off because no camera had confirmed the
+#     rung below them; a NEGATIVE check is the only thing that keeps them off, because each one
+#     is individually reasonable and re-adding it costs nobody an argument. They come back when
+#     a camera has said the dots draw, and this check is what has to be deleted to do it.
 if [ -f "$SHDR" ]; then
-  # To the function's OWN closing brace, at its own indentation. A loose /}$/ ends the range
-  # at the for-loop's brace four lines early, and everything after it - the return that carries
-  # the switch - then reads as absent. A guard that measures a truncated extract is a guard
-  # that reports on code it never saw.
-  occ=$(printf '%s\n' "$scode" | sed -n '/^            float ProjectorOcclusion/,/^            }$/p')
-  # Counted anywhere in the function, not only on its own line: the sky test's two arms sit
-  # inline behind #if UNITY_REVERSED_Z, and a guard that misses them undercounts the very
-  # branches it exists to protect.
-  opens=$(printf '%s\n' "$occ" | grep -oE '\bcontinue;' | wc -l | tr -d ' ')
-  if printf '%s' "$occ" | grep -qE 'return 1\.0 - blocked \* strength;' \
-     && [ "$opens" -ge 4 ]; then
-    ok "the occlusion march is switchable and fails open ($opens unsure branches stay lit)"
+  regrown=""
+  if printf '%s' "$scode" | grep -qE '_OcclusionStrength|ProjectorOcclusion'; then regrown="$regrown occlusion"; fi
+  if printf '%s' "$scode" | grep -qE '_GlowRadius|_GlowStrength'; then regrown="$regrown glow"; fi
+  if printf '%s' "$scode" | grep -qE 'ddx\(|ddy\('; then regrown="$regrown screen-space-normal"; fi
+  if [ -z "$regrown" ]; then
+    ok "the unproven layers stay off until a camera has confirmed the one below them"
   else
-    # FOUR, not "some": a step behind the camera, a step off the screen, and the two arms of
-    # the reversed-Z sky test. Three would pass while one of them had been turned into a
-    # block, which is the one direction this must never drift.
-    fail "the occlusion march is switchable and fails open (unsure branches=$opens, wanted >= 4)"
+    fail "the unproven layers stay off until a camera has confirmed the one below them (back:$regrown)"
   fi
 else
-  fail "the occlusion march is switchable and fails open"
+  fail "the unproven layers stay off until a camera has confirmed the one below them"
 fi
 
-# 28. And it is paid for only where a dot actually is. The march is ten depth taps; run on every
-#     in-range pixel it would be ten times the cost of the whole effect, so it sits BELOW the
-#     dot mask's early-out, where roughly a tenth of pixels reach it.
+# 26. THE LADDER IS ORDERED, and every rung returns ABOVE the work the next one needs. That is
+#     the whole value of it: a rung that sits below the thing it is meant to bisect goes dark
+#     for a reason further along, and the reader then has a false finding rather than none -
+#     which has already cost this project one session and six of them (mistake 44). So the
+#     positions are read out of the file and compared, rather than trusted.
 if [ -f "$SHDR" ]; then
-  maskline=$(printf '%s\n' "$scode" | grep -n 'if (dotMask <= 0\.002)' | head -1 | cut -d: -f1)
-  callline=$(printf '%s\n' "$scode" | grep -n 'ProjectorOcclusion(worldPos' | head -1 | cut -d: -f1)
-  if [ -n "$maskline" ] && [ -n "$callline" ] && [ "$maskline" -lt "$callline" ]; then
-    ok "the occlusion march runs only on pixels that carry a dot"
+  n() { printf '%s\n' "$scode" | { grep -n "$1" || true; } | head -1 | cut -d: -f1; }
+  l_frag=$(n 'half4 frag(Varyings input)')
+  l_s1=$(n 'if (stage == 1)')
+  l_depth=$(n 'SampleSceneDepth(screenUV)')
+  l_s2=$(n 'if (stage == 2)')
+  l_origin=$(n '_OriginWS.xyz')
+  l_s3=$(n 'if (stage == 3)')
+  l_axis=$(n '_AxisXWS.xyz')
+  l_s4=$(n 'if (stage == 4)')
+  l_dot=$(n 'float dotMask')
+  if [ -n "$l_frag" ] && [ -n "$l_s1" ] && [ -n "$l_depth" ] && [ -n "$l_s2" ] \
+     && [ -n "$l_origin" ] && [ -n "$l_s3" ] && [ -n "$l_axis" ] && [ -n "$l_s4" ] \
+     && [ -n "$l_dot" ] \
+     && [ "$l_s1" -lt "$l_depth" ] && [ "$l_depth" -lt "$l_s2" ] \
+     && [ "$l_s2" -lt "$l_origin" ] && [ "$l_origin" -lt "$l_s3" ] \
+     && [ "$l_s3" -lt "$l_axis" ] && [ "$l_axis" -lt "$l_s4" ] \
+     && [ "$l_s4" -lt "$l_dot" ]; then
+    ok "each diagnostic rung returns above the work the next rung needs"
   else
-    fail "the occlusion march runs only on pixels that carry a dot (mask=$maskline call=$callline)"
+    fail "each diagnostic rung returns above the work the next rung needs (frag=$l_frag s1=$l_s1 depth=$l_depth s2=$l_s2 origin=$l_origin s3=$l_s3 axis=$l_axis s4=$l_s4 dot=$l_dot)"
   fi
 else
-  fail "the occlusion march runs only on pixels that carry a dot"
+  fail "each diagnostic rung returns above the work the next rung needs"
+fi
+
+# 27. And rung 1 is the FIRST thing the fragment shader does. It answers "does this pass
+#     rasterise at all", so anything above it can take the answer away and make a live pass
+#     read as a dead one. Nothing but the stage read itself may come first.
+if [ -f "$SHDR" ]; then
+  # From the opening brace of frag to the magenta return, comments already stripped.
+  pre=$(printf '%s\n' "$scode" | sed -n '/half4 frag(Varyings input)/,/if (stage == 1)/p' \
+        | grep -vE 'half4 frag|^[[:space:]]*\{[[:space:]]*$|if \(stage == 1\)' \
+        | grep -vE '^[[:space:]]*$' \
+        | grep -vE 'int stage = \(int\)round\(_DebugMode\);' || true)
+  if [ -z "$pre" ]; then
+    ok "the magenta rung is the first statement in the fragment shader"
+  else
+    fail "the magenta rung is the first statement in the fragment shader (before it: $(printf '%s' "$pre" | tr '\n' ';'))"
+  fi
+else
+  fail "the magenta rung is the first statement in the fragment shader"
+fi
+
+# 28. THE C# AND THE SHADER NAME THE SAME PROPERTIES, in both directions. This is the check that
+#     would have caught the whole class rather than one instance of it: a SetFloat into a
+#     uniform the shader no longer declares writes nowhere and says nothing, and a uniform
+#     nothing pushes sits at whatever the authored material happens to hold. Both are silent,
+#     both survive review, and both look on screen exactly like "the effect does not work" -
+#     which is how a slider that moved nothing produced six false findings.
+if [ -f "$SHDR" ] && [ -f "$PROJ" ]; then
+  # What C# actually PUSHES - not what it has an id for. Reading the PropertyToID lines alone
+  # proves the id exists, which is a weaker claim than this check's name: deleting the
+  # SetFloat while leaving the id behind kept it green on the first tooth test. So each id is
+  # mapped to its property name and then required to appear in a real _block.Set... call.
+  pushed=$(printf '%s\n' "$pcode" \
+           | sed -n 's/.*int \([A-Za-z0-9_]*\) = Shader\.PropertyToID("\([A-Za-z_][A-Za-z0-9_]*\)").*/\1 \2/p' \
+           | while read -r idvar propname; do
+               if printf '%s\n' "$pcode" | grep -qE "_block\.Set[A-Za-z]+\([[:space:]]*$idvar[[:space:]]*,"; then
+                 printf '%s\n' "$propname"
+               fi
+             done | sort -u)
+  # What the shader declares: the Properties block plus the uniforms outside the CBUFFER.
+  declared=$( { printf '%s\n' "$scode" \
+                  | sed -n '/^    Properties$/,/^    }$/p' \
+                  | sed -n 's/^[[:space:]]*\(\[[A-Za-z]*\][[:space:]]*\)\?\(_[A-Za-z0-9_]*\)[[:space:]]*(.*/\2/p'
+                printf '%s\n' "$scode" \
+                  | sed -n 's/^[[:space:]]*float4[[:space:]]*\(_[A-Za-z0-9_]*\);.*/\1/p'; } | sort -u)
+  onlypush=$(comm -23 <(printf '%s\n' "$pushed") <(printf '%s\n' "$declared") | tr '\n' ' ')
+  onlydecl=$(comm -13 <(printf '%s\n' "$pushed") <(printf '%s\n' "$declared") | tr '\n' ' ')
+  if [ -z "$(printf '%s' "$onlypush$onlydecl" | tr -d ' ')" ]; then
+    ok "every property the C# pushes is declared by the shader, and every one it declares is pushed"
+  else
+    fail "every property the C# pushes is declared by the shader, and every one it declares is pushed (pushed-only:$onlypush declared-only:$onlydecl)"
+  fi
+else
+  fail "every property the C# pushes is declared by the shader, and every one it declares is pushed"
+fi
+
+# 29. And the two agree on HOW MANY rungs there are. An Inspector that offers a stage the shader
+#     does not implement falls through to the full effect and reads as "that stage is broken" -
+#     which is a false finding about working code, and the expensive direction (mistake 26).
+if [ -f "$SHDR" ] && [ -f "$PROJ" ]; then
+  sh_top=$(printf '%s' "$scode" | sed -n 's/.*_DebugMode[^R]*Range(0,[[:space:]]*\([0-9]*\)).*/\1/p' | head -1)
+  cs_top=$(printf '%s' "$pcode" | sed -n 's/.*Range(0,[[:space:]]*\([0-9]*\))\][[:space:]]*private int debugStage.*/\1/p' | head -1)
+  impl=$(printf '%s\n' "$scode" | { grep -cE 'if \(stage == [0-9]+\)' || true; })
+  if [ -n "$sh_top" ] && [ "$sh_top" = "$cs_top" ] && [ "$impl" -eq "$sh_top" ]; then
+    ok "the shader and the Inspector offer the same $sh_top diagnostic rungs, and all of them exist"
+  else
+    fail "the shader and the Inspector offer the same diagnostic rungs (shader=$sh_top cs=$cs_top implemented=$impl)"
+  fi
+else
+  fail "the shader and the Inspector offer the same diagnostic rungs"
 fi
 
 # ---------------------------------------------------- an effect is not a body
@@ -1237,16 +1334,19 @@ else
 fi
 
 
-# 29. Die Verdeckung wird AUS ausgeliefert, und das ist eine Entscheidung. Der Marsch ist ein
-#     SCREEN-SPACE-Test: er kann nur fragen, was die KAMERA an einer Stelle sieht, und fuer
-#     einen Punkt, der meterweit von der beleuchteten Flaeche in der Luft haengt, ist das oft
-#     eine naehere Flaeche, die mit der Linse nichts zu tun hat - ein falscher Verdecker, der
-#     einen Punkt loescht, den es geben muesste. Aufgedreht kann er das ganze Feld zudecken,
-#     und ein unsichtbarer DOTS-Projektor ist der aelteste Fehler dieses Geraets.
-if [ -f "$PROJ" ] && printf '%s' "$pcode" | grep -qE 'private float occlusionStrength = 0f'; then
-  ok "die Verdeckung ist voreingestellt AUS, weil ein Screen-Space-Test falsch verdecken kann"
+# 29. Die Verdeckung ist WEG - auch aus dem C#. Sie stand voreingestellt auf aus, und ein
+#     Regler, den niemand aufdreht, ist trotzdem eine Zeile, die jeder Leser fuer erprobt
+#     haelt. Der Marsch ist ein SCREEN-SPACE-Test: er kann nur fragen, was die KAMERA an einer
+#     Stelle sieht, und fuer einen Punkt, der meterweit von der beleuchteten Flaeche in der
+#     Luft haengt, ist das oft eine naehere Flaeche, die mit der Linse nichts zu tun hat - ein
+#     falscher Verdecker, der einen Punkt loescht, den es geben muesste. Er kommt zurueck, wenn
+#     eine Kamera bestaetigt hat, dass ueberhaupt Punkte gezeichnet werden, und nicht davor.
+#     Geprueft wird hier das C#: der Shader hat seine eigene Pruefung (25), und ein Feld, das
+#     ins Leere pusht, ist genau die Stille, an der eine Sitzung verlorenging (Fehler 44).
+if [ -f "$PROJ" ] && ! printf '%s' "$pcode" | grep -qE 'occlusionStrength|occlusionBias|glowRadius|glowStrength|facingStrength|nearBoost|nearFade'; then
+  ok "die unbestaetigten Regler sind auch aus dem C# verschwunden, nicht nur abgedreht"
 else
-  fail "die Verdeckung ist voreingestellt AUS, weil ein Screen-Space-Test falsch verdecken kann"
+  fail "die unbestaetigten Regler sind auch aus dem C# verschwunden, nicht nur abgedreht"
 fi
 
 # 30. Und die Stufendiagnose steht auf 0 - in C# UND im Shader. Eine davon eingeschaltet
@@ -1254,10 +1354,10 @@ fi
 #     jemand spielt, diagnostiziert nicht mehr, sondern erzeugt (Fehler 23).
 dbg_cs=0
 dbg_sh=0
-if [ -f "$PROJ" ] && printf '%s' "$pcode" | grep -qE 'Range\(0, 6\)\] private int debugStage = 0'; then
+if [ -f "$PROJ" ] && printf '%s' "$pcode" | grep -qE 'Range\(0, 4\)\] private int debugStage = 0'; then
   dbg_cs=1
 fi
-if [ -f "$SHDR" ] && printf '%s' "$scode" | grep -qE '_DebugMode \("Debug Stage \(0 = off\)", Range\(0, 6\)\) = 0'; then
+if [ -f "$SHDR" ] && printf '%s' "$scode" | grep -qE '_DebugMode \("Debug Stage \(0 = off\)", Range\(0, 4\)\) = 0'; then
   dbg_sh=1
 fi
 if [ "$dbg_cs" -eq 1 ] && [ "$dbg_sh" -eq 1 ]; then
