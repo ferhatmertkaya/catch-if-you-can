@@ -231,17 +231,20 @@ namespace CatchIfYouCan.Equipment
         /// How strongly the field falls on a world point, 0 to 1, where 0 means outside it.
         ///
         /// <para>
-        /// The same cone the shader draws, in the same frame - the device head's +Y is the axis
-        /// it throws along - so what this reports and what the player sees cannot disagree. The
-        /// two falloff terms are the two the shader has: the field dims with distance, and it
-        /// dims towards the rim. A shape at the far edge of the throw catches a handful of
-        /// points and reads near zero, which is the honest answer.
+        /// <b>This is NOT the shape the shader draws, and the difference is deliberate.</b> The
+        /// projection is a full sphere about the lens; this test is a 70-degree cone along the
+        /// device head's +Y. So the EVIDENCE volume is narrower than the LIT volume, and a ghost
+        /// standing in dots on a side wall is visible to the player without being counted. That
+        /// is an evidence-contract decision rather than a rendering one - widening it changes
+        /// what this device can prove - so it is written down here rather than quietly matched
+        /// to whatever the shader happens to light. See <see cref="Configure"/>.
         /// </para>
         ///
         /// <para>
-        /// Linear in distance where the shader squares it. The square is a look - it keeps the
-        /// last third of the throw visually dim - and a measurement should not inherit a
-        /// rendering choice.
+        /// The falloff is linear in distance and towards the rim. The shader's is neither: it
+        /// holds full strength across most of the range and then rolls off over the last
+        /// stretch. A measurement should not inherit a rendering curve, so these do not track
+        /// each other and are not meant to.
         /// </para>
         /// </summary>
         public float FieldStrengthAt(Vector3 worldPoint)

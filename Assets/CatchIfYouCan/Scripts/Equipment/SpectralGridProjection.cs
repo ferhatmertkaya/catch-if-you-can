@@ -43,13 +43,25 @@ namespace CatchIfYouCan.Equipment
         [SerializeField] private Color dotColor = new Color(0.224f, 1f, 0.290f, 1f);
 
         [Tooltip("How many dot cells go the whole way round the device. Elevation gets half " +
-                 "as many, spanning half the angle - so this squared over two is the number of " +
-                 "dots on the sphere.")]
-        [SerializeField, Range(16f, 320f)] private float density = 144f;
+                 "as many, spanning half the angle, which makes a cell square: 360/density " +
+                 "degrees on both axes. 240 is a 1.5 degree cell - dots about 8 cm apart on a " +
+                 "surface 3 m away, roughly 2400 of them inside a 90x60 degree view, and 28800 " +
+                 "over the whole sphere. It costs nothing per pixel: the shader evaluates a " +
+                 "formula, not a list of dots, so density is free and only aliasing limits it.")]
+        [SerializeField, Range(16f, 320f)] private float density = 240f;
 
         [Tooltip("Size of one dot within its cell. Past about 0.3 they merge into the " +
                  "continuous green wash this is not supposed to be.")]
-        [SerializeField, Range(0.02f, 0.45f)] private float dotSize = 0.14f;
+        [SerializeField, Range(0.02f, 0.45f)] private float dotSize = 0.16f;
+
+        [Tooltip("How far the soft halo around a dot reaches, as a multiple of the dot itself. " +
+                 "Kept below 3 so that dotSize x this stays under half a cell and neighbouring " +
+                 "dots cannot run into one another however bright they are.")]
+        [SerializeField, Range(1f, 3f)] private float glowRadius = 2.2f;
+
+        [Tooltip("How bright that halo is against the dot's core. A little reads as laser " +
+                 "light; a lot reads as fog.")]
+        [SerializeField, Range(0f, 1f)] private float glowStrength = 0.35f;
 
         [Tooltip("Brightness of a dot. This is the only brightness there is - there is no " +
                  "light in this effect, so it cannot flood a room however high it goes.")]
@@ -72,10 +84,22 @@ namespace CatchIfYouCan.Equipment
                  "light.")]
         [SerializeField, Range(0f, 1f)] private float nearFade = 0.12f;
 
-        [Tooltip("How hard to drop the pattern on surfaces facing away from the lens. This is " +
-                 "the only occlusion there is: real per-dot shadowing would cost a shadow map " +
-                 "per frame. 0 disables it.")]
+        [Tooltip("How hard to drop the pattern on surfaces that are edge-on to the lens, which " +
+                 "is what makes it wrap convincingly across a corner. 0 disables it.")]
         [SerializeField, Range(0f, 1f)] private float facingStrength = 0.7f;
+
+        [Header("Occlusion")]
+        [Tooltip("How completely a wall between the lens and a surface takes that surface's " +
+                 "dots away. The test is a screen-space march and is built to fail OPEN: every " +
+                 "way it can be unsure leaves the dot lit, never the other way round. 0 removes " +
+                 "it entirely and costs nothing - use that if it ever misbehaves, because a " +
+                 "projector with too few shadows is a far smaller bug than an invisible one.")]
+        [SerializeField, Range(0f, 1f)] private float occlusionStrength = 1f;
+
+        [Tooltip("How far in front of a marched point a surface has to be before it counts as " +
+                 "blocking, in metres. Too small and a surface shadows itself; too large and " +
+                 "thin occluders are missed. Missing one is the safe direction.")]
+        [SerializeField, Range(0.005f, 0.5f)] private float occlusionBias = 0.05f;
 
         [Header("Emitter")]
         [Tooltip("Where the lens sits relative to the device's pivot, in its own space. +Y is " +
@@ -105,6 +129,10 @@ namespace CatchIfYouCan.Equipment
         private static readonly int NearBoostId = Shader.PropertyToID("_NearBoost");
         private static readonly int NearFadeId = Shader.PropertyToID("_NearFade");
         private static readonly int FacingId = Shader.PropertyToID("_FacingStrength");
+        private static readonly int GlowRadiusId = Shader.PropertyToID("_GlowRadius");
+        private static readonly int GlowStrengthId = Shader.PropertyToID("_GlowStrength");
+        private static readonly int OcclusionId = Shader.PropertyToID("_OcclusionStrength");
+        private static readonly int OcclusionBiasId = Shader.PropertyToID("_OcclusionBias");
         private static readonly int OriginId = Shader.PropertyToID("_OriginWS");
         private static readonly int AxisXId = Shader.PropertyToID("_AxisXWS");
         private static readonly int AxisYId = Shader.PropertyToID("_AxisYWS");
@@ -352,6 +380,10 @@ namespace CatchIfYouCan.Equipment
             _block.SetFloat(NearBoostId, nearBoost);
             _block.SetFloat(NearFadeId, nearFade);
             _block.SetFloat(FacingId, facingStrength);
+            _block.SetFloat(GlowRadiusId, glowRadius);
+            _block.SetFloat(GlowStrengthId, glowStrength);
+            _block.SetFloat(OcclusionId, occlusionStrength);
+            _block.SetFloat(OcclusionBiasId, occlusionBias);
 
             _renderer.SetPropertyBlock(_block);
         }
@@ -397,7 +429,9 @@ namespace CatchIfYouCan.Equipment
                 " density=" + Mathf.Round(density).ToString("F0") +
                 " cellsOnSphere=" + cells +
                 " dotSize=" + dotSize.ToString("F2") +
+                " cellDegrees=" + (360f / Mathf.Max(1f, Mathf.Round(density))).ToString("F2") +
                 " intensity=" + intensity.ToString("F1") +
+                " occlusion=" + occlusionStrength.ToString("F2") +
                 " material=" + (_renderer != null && _renderer.sharedMaterial != null
                     ? _renderer.sharedMaterial.name : "NULL") +
                 " renderer=" + (_renderer != null && _renderer.enabled);

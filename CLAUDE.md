@@ -147,7 +147,19 @@ place that number lives; everything else derives it.
   ceiling, which from inside the game is not a floating object but an item that never
   spawned. Marked with a COMPONENT, because that is the one thing a clone brings with it;
   marked GetComponent-first, because this runs on the template and on every clone of it.
-  85 checks.
+  And the field is DENSE, SIGN-FREE and OCCLUDED: a cell is 360/density degrees on both axes,
+  so the density floor is what separates a laser matrix from a scattering - at 144 the dots
+  stand 13 cm apart on a wall 3 m away and under a thousand are in view, at 240 it is 8 cm and
+  about 2400, and it costs nothing per pixel because the shader evaluates a formula rather than
+  a list; the halo is clamped inside its own cell rather than promised to fit, two independent
+  sliders multiplying to 1.35 of a cell at their ends; the grazing term takes the ABSOLUTE dot
+  product, because the normal comes from ddx/ddy of a reconstructed position and the
+  orientation of that cross product follows the platform's screen-space Y - signed and
+  inverted, every surface facing the lens is dimmed while the ones facing away stay full, which
+  is "too weak" on some platforms and not others; and a wall between the lens and a surface
+  takes its dots away through a screen-space march that FAILS OPEN - all four unsure branches
+  stay lit, one number switches it off, and it sits below the dot mask so only the pixels that
+  carry a dot pay for it. 90 checks.
 - `Scripts/check_multiplayer_architecture.sh` — the deterministic assembly stays
   engine-free, gameplay never reaches a Relay API, remote players never read
   local input, ghost decisions stay host-only, online capacity has exactly one

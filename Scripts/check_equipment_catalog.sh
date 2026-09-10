@@ -1044,6 +1044,88 @@ else
 fi
 
 
+# ------------------------------------------------ the field is dense, sign-free and occluded
+
+# 24. The pattern is a dense laser MATRIX, not a scattering. A cell is 360/density degrees on
+#     both axes, so density 144 puts dots 13 cm apart on a wall 3 m away and under a thousand
+#     of them in view - which reads as sparse, not as the reference. 240 is a 1.5 degree cell:
+#     8 cm at 3 m, ~2400 in a 90x60 degree view. Checked as a FLOOR rather than an equality,
+#     because tuning it up is the whole point of a slider and a guard that goes red on a
+#     legitimate tune is a false alarm nobody believes twice (mistake 26).
+if [ -f "$PROJ" ]; then
+  dens=$(printf '%s' "$pcode" \
+         | sed -n 's/.*private float density = \([0-9.]*\)f.*/\1/p' | head -1)
+  if [ -n "$dens" ] && awk "BEGIN{exit !($dens >= 200)}"; then
+    ok "the dot grid is dense enough to read as a laser matrix (density=$dens)"
+  else
+    fail "the dot grid is dense enough to read as a laser matrix (density='$dens', wanted >= 200)"
+  fi
+else
+  fail "the dot grid is dense enough to read as a laser matrix"
+fi
+
+# 25. The halo cannot merge neighbouring dots. _DotSize and _GlowRadius are independent sliders
+#     whose top ends multiply to 1.35 of a cell, so the separation has to be enforced in the
+#     shader rather than promised in a comment.
+if [ -f "$SHDR" ] && printf '%s' "$scode" | grep -qE 'min\(_DotSize \* _GlowRadius, 0\.49\)'; then
+  ok "the dot halo is clamped inside its own cell"
+else
+  fail "the dot halo is clamped inside its own cell"
+fi
+
+# 26. The grazing term is SIGN-FREE. The normal comes from ddx/ddy of a reconstructed position
+#     and the orientation of that cross product follows the platform's screen-space Y, which
+#     this shader cannot know. Taken signed and inverted, every surface FACING the lens is
+#     dimmed to (1 - strength) while the ones facing away stay at full - "the dots are too
+#     weak", on some platforms and not others. abs() removes the question.
+if [ -f "$SHDR" ] && printf '%s' "$scode" | grep -qE 'abs\(dot\(normal, dir\)\)'; then
+  ok "the grazing falloff does not depend on a screen-space sign convention"
+else
+  fail "the grazing falloff does not depend on a screen-space sign convention"
+fi
+
+# 27. A wall between the lens and a surface takes its dots away - and the test that decides it
+#     FAILS OPEN. Every branch that cannot answer continues the march instead of counting a
+#     block, and one number switches the whole thing off. The opposite failure shadows
+#     everything, and an invisible DOTS projector is the bug this device has shipped twice.
+if [ -f "$SHDR" ]; then
+  # To the function's OWN closing brace, at its own indentation. A loose /}$/ ends the range
+  # at the for-loop's brace four lines early, and everything after it - the return that carries
+  # the switch - then reads as absent. A guard that measures a truncated extract is a guard
+  # that reports on code it never saw.
+  occ=$(printf '%s\n' "$scode" | sed -n '/^            float ProjectorOcclusion/,/^            }$/p')
+  # Counted anywhere in the function, not only on its own line: the sky test's two arms sit
+  # inline behind #if UNITY_REVERSED_Z, and a guard that misses them undercounts the very
+  # branches it exists to protect.
+  opens=$(printf '%s\n' "$occ" | grep -oE '\bcontinue;' | wc -l | tr -d ' ')
+  if printf '%s' "$occ" | grep -qE 'return 1\.0 - blocked \* _OcclusionStrength;' \
+     && [ "$opens" -ge 4 ]; then
+    ok "the occlusion march is switchable and fails open ($opens unsure branches stay lit)"
+  else
+    # FOUR, not "some": a step behind the camera, a step off the screen, and the two arms of
+    # the reversed-Z sky test. Three would pass while one of them had been turned into a
+    # block, which is the one direction this must never drift.
+    fail "the occlusion march is switchable and fails open (unsure branches=$opens, wanted >= 4)"
+  fi
+else
+  fail "the occlusion march is switchable and fails open"
+fi
+
+# 28. And it is paid for only where a dot actually is. The march is ten depth taps; run on every
+#     in-range pixel it would be ten times the cost of the whole effect, so it sits BELOW the
+#     dot mask's early-out, where roughly a tenth of pixels reach it.
+if [ -f "$SHDR" ]; then
+  maskline=$(printf '%s\n' "$scode" | grep -n 'if (dotMask <= 0\.002)' | head -1 | cut -d: -f1)
+  callline=$(printf '%s\n' "$scode" | grep -n 'ProjectorOcclusion(worldPos' | head -1 | cut -d: -f1)
+  if [ -n "$maskline" ] && [ -n "$callline" ] && [ "$maskline" -lt "$callline" ]; then
+    ok "the occlusion march runs only on pixels that carry a dot"
+  else
+    fail "the occlusion march runs only on pixels that carry a dot (mask=$maskline call=$callline)"
+  fi
+else
+  fail "the occlusion march runs only on pixels that carry a dot"
+fi
+
 # ---------------------------------------------------- an effect is not a body
 #
 # The DOTS projector draws its dots by giving a fragment shader pixels to run on: the mesh
