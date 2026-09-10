@@ -493,6 +493,47 @@ done
   || fail "every ApplyModel call names a model and a material that exist" \
        "found only $checked_paths call(s); the three finished items are the flashlight, the UV light and the projector"
 
+# ---- der Fackelplatz liegt AUSSERHALB des Dreierfeldes -------------------------------------
+#
+# _slots fasst die drei Ermittlungsplaetze. Der ausgewaehlte Index wird gegen
+# SelectableSlotCount geprueft, und das sind VIER, weil die Fackel einen eigenen Platz mit
+# Index 3 hat. Das Feld mit diesem Index anzusprechen warf IndexOutOfRangeException - bei
+# jedem Druck auf die Fackeltaste, bei SelectTorch, und beim automatischen Rueckfall auf die
+# Fackel, wenn die Tasche leer ist. Genau das tut die Lobby beim Start, wenn sie dem Spieler
+# die Fackel aus der Hand nimmt.
+#
+# Und der Schaden war nicht "es passiert nichts": geworfen wurde NACH der Zuweisung und NACH
+# EquipSelected(), die Ausnahme verliess also AddItem und InteractivePickup.Interact und liess
+# den Rest des Aufhebens liegen. Jeder andere Zugriff in der Datei geht ueber GetSlot, das die
+# Fackel kennt.
+INV="Assets/CatchIfYouCan/Scripts/Player/PlayerInventory.cs"
+if [ -f "$INV" ]; then
+  # Jede rohe _slots[...]-Indizierung muss durch SlotCount begrenzt sein. Der ausgewaehlte
+  # Index ist es nicht.
+  if ! sed 's://.*::' "$INV" | grep -qE '_slots\[_selectedIndex\]'; then
+    ok "der ausgewaehlte Index indiziert das Dreierfeld nicht roh"
+  else
+    fail "der ausgewaehlte Index indiziert das Dreierfeld nicht roh"
+    printf '        _selectedIndex laeuft bis SelectableSlotCount (4), _slots hat SlotCount (3)\n'
+  fi
+
+  if sed 's://.*::' "$INV" | grep -qE 'OnSlotChanged\?\.Invoke\(_selectedIndex, GetSlot\(_selectedIndex\)\)'; then
+    ok "der Fackelplatz wird ueber GetSlot gelesen, das ihn kennt"
+  else
+    fail "der Fackelplatz wird ueber GetSlot gelesen, das ihn kennt"
+  fi
+
+  # Und die drei Konstanten stehen weiter in dem Verhaeltnis, das die Pruefung oben annimmt.
+  if sed 's://.*::' "$INV" | grep -qE 'TorchSlotIndex = SlotCount' &&
+     sed 's://.*::' "$INV" | grep -qE 'SelectableSlotCount = SlotCount \+ 1'; then
+    ok "der Fackelplatz liegt genau hinter den drei Ermittlungsplaetzen"
+  else
+    fail "der Fackelplatz liegt genau hinter den drei Ermittlungsplaetzen"
+  fi
+else
+  fail "PlayerInventory.cs nicht gefunden"
+fi
+
 # ---- ein Klon baut nicht ein zweites Mal --------------------------------------------------
 #
 # Jedes Ausruestungsstueck erreicht die Welt als KLON: EquipmentRuntimeFactory haelt je Id eine

@@ -638,6 +638,20 @@ namespace CatchIfYouCan.Equipment
 
             var previous = LifecycleState;
             LifecycleState = next;
+
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+            // Every state change, at the ONE place they all pass through. "The model simply
+            // disappeared and nobody knows which state owns it" is the failure this answers,
+            // and it answers it for every item rather than for one that got special-cased.
+            Core.CIYCLog.Info("[CIYC][EquipState] " +
+                              (definition != null ? definition.Id : name) + ": " +
+                              previous + " -> " + next +
+                              " (visual " + (CarriedRoot != null ? "present" : "MISSING") +
+                              ", parent " + (transform.parent != null ? transform.parent.name : "<scene root>") +
+                              ", local pos " + transform.localPosition.ToString("F3") +
+                              ", local scale " + transform.localScale.ToString("F2") + ")");
+#endif
+
             OnLifecycleStateChanged(previous, next);
         }
 

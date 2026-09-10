@@ -93,7 +93,11 @@ place that number lives; everything else derives it.
   art nobody has made yet, and a CLONE adopts the visual it already carries instead of
   building a second on top of it - every item reaches the world as a clone, and
   Instantiate copies the GameObject while dropping the auto-property that pointed at it,
-  which is the one state the build guard reads as "nothing built yet". 47 checks.
+  which is the one state the build guard reads as "nothing built yet", and the TORCH
+  slot sits outside the three-slot array while the selected index is validated against
+  four, so indexing the array with it threw on every torch selection - after the assign
+  and after the equip, so the exception escaped through AddItem and abandoned the rest
+  of the pickup. 50 checks.
 - `Scripts/check_multiplayer_architecture.sh` — the deterministic assembly stays
   engine-free, gameplay never reaches a Relay API, remote players never read
   local input, ghost decisions stay host-only, online capacity has exactly one
@@ -833,6 +837,22 @@ Repeating one of these is the most likely way to break something.
    KOMPONENTE ueberlebt die Kopie. Und ein sichtbares, totes Objekt meldet sich nie von selbst:
    `EquipmentSpawnDiagnostic` laeuft jetzt bei jedem Spawn die ganze Kette ab und nennt das
    fehlende Glied.
+
+31. **Ein Index, der bis vier zaehlt, in einem Feld mit drei Plaetzen.** `_slots` fasst die drei
+   Ermittlungsplaetze; `SelectSlot` prueft den gewuenschten Index gegen `SelectableSlotCount`,
+   und das sind VIER, weil die Fackel einen eigenen Platz mit Index 3 hat. Die letzte Zeile der
+   Methode las dann `_slots[_selectedIndex]` - also `_slots[3]` in einem Feld der Laenge drei.
+   IndexOutOfRangeException, bei jedem Druck auf die Fackeltaste, bei `SelectTorch`, und beim
+   automatischen Rueckfall auf die Fackel, wenn die Tasche leer ist. Genau das tut die Lobby
+   beim Start, wenn sie dem Spieler die Fackel aus der Hand nimmt.
+   Der Schaden war nicht "es passiert nichts". Geworfen wurde NACH `_selectedIndex = index` und
+   NACH `EquipSelected()`, die Ausnahme verliess also `AddItem` und
+   `InteractivePickup.Interact` und liess den Rest des Aufhebens liegen - mit halb gesetztem
+   Zustand. Von aussen sah das aus wie "aufgehoben, aber weder in der Tasche noch in der Hand",
+   und dieselbe Beschreibung passt auf ein Dutzend anderer Ursachen. Jeder andere Zugriff in
+   derselben Datei geht ueber `GetSlot`, das die Fackel kennt; diese eine Zeile ging daran
+   vorbei. Ein Sonderplatz, der nur an EINER Stelle nicht mitgedacht wird, ist genau so viel
+   wert wie gar keiner.
 
 ## Unity Editor availability
 

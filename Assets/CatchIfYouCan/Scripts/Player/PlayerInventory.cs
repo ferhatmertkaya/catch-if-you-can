@@ -111,7 +111,20 @@ namespace CatchIfYouCan.Player
             _selectedIndex = index;
             EquipSelected();
             GameEvents.EquipmentChanged();
-            OnSlotChanged?.Invoke(_selectedIndex, _slots[_selectedIndex]);
+            // GetSlot, not _slots[...]. The array holds the three INVESTIGATION slots;
+            // _selectedIndex is validated against SelectableSlotCount, which is four, because
+            // the torch has a place of its own at index 3. Indexing the array with it threw
+            // IndexOutOfRangeException every single time the torch slot was selected - from the
+            // torch HUD button, from SelectTorch, and from the automatic fall-back to the torch
+            // when the bag is empty, which is exactly what the lobby does when it takes the
+            // torch out of the player's hands at startup.
+            //
+            // It threw AFTER _selectedIndex was written and AFTER EquipSelected() ran, so the
+            // damage was not "nothing happened": the equip had already happened and the
+            // exception then escaped through AddItem and InteractivePickup.Interact, abandoning
+            // the rest of the pickup. Every other read in this file goes through GetSlot, which
+            // knows about the torch; this one line did not.
+            OnSlotChanged?.Invoke(_selectedIndex, GetSlot(_selectedIndex));
             return true;
         }
 
@@ -147,6 +160,18 @@ namespace CatchIfYouCan.Player
 
                 _slots[i] = item;
                 OnSlotChanged?.Invoke(i, item);
+
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+                // What actually happened, in one line, at the moment it happened. "It vanished
+                // and I do not know which state owns it" is the failure this prevents.
+                CIYCLog.Info("[CIYC][Pickup] '" +
+                             (item.Definition != null ? item.Definition.Id : "<no definition>") +
+                             "' (" + (item.Definition != null ? item.Definition.DisplayName : item.name) +
+                             ") accepted into slot " + i + " of " + SlotCount +
+                             "; selected slot is " + _selectedIndex +
+                             (_selectedIndex == i ? " (this one - equipping)" : " (elsewhere - holstering)") +
+                             "; torch slot is " + TorchSlotIndex + ".");
+#endif
 
                 // Straight into a slot the player is not holding: stow it, do not unequip it.
                 // Unequip unparents to world space, which for an item entering a bag means
