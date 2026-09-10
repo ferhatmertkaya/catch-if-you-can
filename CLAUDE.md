@@ -362,7 +362,17 @@ place that number lives; everything else derives it.
   anything that threw in front of that line left a positioned, visible object carrying
   no collider and no pickup component at all, which is what "the model is there and
   looking at it does nothing" was; every runtime item is a pickup by construction now.
-  297 checks.
+  And it does not LIE about the project, in either direction: this file runs under
+  `pipefail` and asks its questions as `printf | grep <quiet>`, and a quiet grep stops
+  reading the moment it matches - the pipe closes under printf, printf ends with "write
+  error: Broken pipe", and pipefail then reports a FAILED pipeline for a pattern that was
+  FOUND. Whether it happens is a race between how fast printf writes and how early the
+  match is, which is why one commit passed here and failed on the runner. It lies both
+  ways, and the second is the worse one: plain, a found pattern reads as absent (false
+  RED); negated, a found pattern reads as absent and the check PASSES (false GREEN), and
+  nineteen checks in this file had that shape. So the idiom is banned rather than tuned -
+  every grep here reads to the end of its input - and the ban is itself a check, over every
+  guard that sets pipefail rather than only this one. 298 checks.
 
 - `Scripts/check_editor_menu.sh` — the editor menu stays legible, and the purchased architecture has ONE scale. The game scale is the measured ratio 2.95 / 3.92 in one place, with no tool carrying its own copy; the decision is made on effective world scale rather than `localScale`, because a vendor piece at localScale 1 inside a corrected wrapper IS already corrected and its own field says otherwise; an already-corrected ancestor is recognised and a second application is a named verdict rather than a silent pass; architecture is told from props by FOLDER, since a filename classifier caught 3 of 105 in a pack that numbers its prefabs and calls its glass Steklo; an undecidable piece is reported ambiguous rather than guessed, because a chair may already be at real-world size and shrinking one that was right is invisible; the portal is excluded, its opening being a gameplay dimension; the migration audits before it can apply and converts only original-size pieces; and the correction goes on a CIYC wrapper with nothing applied back to the purchased package. Also the menu itself: Fifty-one commands sit in
   seven named groups with none hiding in another root menu, every one carries a risk tag saying
@@ -1101,6 +1111,31 @@ Repeating one of these is the most likely way to break something.
    KOMPONENTE (`EffectVolume`), weil eine Komponente das Einzige ist, was `Instantiate`
    mitbringt: jedes Ausruestungsstueck erreicht die Welt als Klon, und ein Name, ein Tag oder ein
    privates Feld waere beim Klon weg (Fehler 30).
+
+43. **Ein Waechter, der ROT meldete, weil sein eigenes `printf` gestorben ist.** CI meldete
+   `check_ui_and_portal.sh` mit 296 von 297, und die eine rote Zeile - "eine Wand aus mehreren
+   Modulen zaehlt zusammen" - war auf jeder lokalen Maschine gruen, auf demselben Commit, auch
+   in einem frisch ausgecheckten Arbeitsbaum. Gleicher Inhalt, zwei Urteile.
+   Die Ursache stand eine Zeile ueber dem FAIL im Log und niemand haette sie gesucht:
+     Scripts/check_ui_and_portal.sh: line 941: printf: write error: Broken pipe
+   Das Skript laeuft unter `set -o pipefail` und stellt seine Fragen als
+   `printf '%s' "$code" | grep -q MUSTER`. Ein `grep -q` hoert in dem Moment auf zu lesen, in
+   dem es trifft; die Pipe schliesst sich unter dem `printf`, das noch schreibt, und `pipefail`
+   nimmt den Fehler des ERSTEN Glieds als Ergebnis der ganzen Pipeline. Also: Muster GEFUNDEN,
+   Pipeline FEHLGESCHLAGEN. Ob es passiert, ist ein Wettlauf zwischen der Schreibgeschwindigkeit
+   und der Position des Treffers - lokal gewinnt `printf`, auf dem Runner verlor es. Mit einer
+   grossen Zeichenkette ist es in 200 von 200 Laeufen reproduzierbar.
+   Es luegt in BEIDE Richtungen, und die zweite ist die teurere. `if ... | grep -q` macht aus
+   einem gefundenen Muster ein fehlendes: falsch ROT. `if ! ... | grep -q` macht aus einem
+   gefundenen Muster ein fehlendes und laesst die Pruefung damit BESTEHEN: falsch GRUEN. In
+   dieser einen Datei hatten neunzehn Pruefungen die zweite Form - stillschweigend gruen, seit
+   sie geschrieben wurden, ohne dass irgendwer es haette bemerken koennen.
+   Zwei Lehren. Ein falsches ROT kostet eine Sitzung (Fehler 26); ein falsches GRUEN kostet die
+   Pruefung. Und die erste Erklaerung fuer "auf CI rot, lokal gruen" war schon einmal geraten
+   worden: der Kommentar oben in dieser Datei schrieb dieselbe Sprunghaftigkeit "unter Last
+   verlorenen Forks" zu und baute einen Cache mit Wiederholungen dagegen. Das war eine
+   Behauptung ueber Code, die niemand nachgemessen hatte (Fehler 33) - die Zeile im Log nennt
+   den Mechanismus, und der ist weder Last noch Zufall, sondern SIGPIPE.
 
 ## Unity Editor availability
 

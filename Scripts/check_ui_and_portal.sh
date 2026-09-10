@@ -36,6 +36,41 @@ bad ()  { FAIL=$((FAIL+1)); printf '  FAIL  %s\n' "$1"; [ $# -gt 1 ] && printf '
 # pressure some of them simply fail, and a check whose pipeline failed reports the code as
 # broken. That is what made this guard fail on a different, random check each run while the
 # project underneath it never changed.
+# ---- and the guards do not lie about the project, in EITHER direction ----------------------
+#
+# This file runs under `set -o pipefail`, and it asks its questions as
+# `printf '%s' "$code" | grep <quiet flag> PATTERN`. Those two do not get on. A quiet grep
+# stops reading the moment it matches, the pipe closes under the producer, and printf ends
+# with "write error: Broken pipe" - so pipefail reports a FAILED pipeline for a pattern that
+# was FOUND. Whether it happens is a race between how fast printf writes and how early the
+# match is, which is why the same commit passed on one machine and failed on a runner.
+#
+# It lies in both directions, and the second is the dangerous one:
+#   `if   ... | grep <quiet> PAT`  -> a found pattern reads as absent  -> false RED
+#   `if ! ... | grep <quiet> PAT`  -> a found pattern reads as absent  -> false GREEN
+# There are nineteen of the second shape in this file. A guard that quietly passes is worth
+# less than no guard at all, so the idiom is banned rather than tuned: reading to the end of
+# the input costs microseconds on files this size and removes the race entirely.
+#
+# The pattern below is written with a character class so this check cannot match its own
+# source and report itself.
+banned=0
+for guard in "$ROOT"/Scripts/check_*.sh; do
+  [ -f "$guard" ] || continue
+  grep -E >/dev/null 'set -o pipefail' "$guard" || continue
+  hits=$(grep -cE '\| *grep -[q]' "$guard" || true)
+  if [ "$hits" -gt 0 ]; then
+    banned=$((banned + hits))
+    printf '        %s has %s early-exiting grep(s) in a pipeline\n' "$(basename "$guard")" "$hits"
+  fi
+done
+if [ "$banned" -eq 0 ]; then
+  ok "kein frueh abbrechendes grep in einer pipefail-Pipeline (weder falsch ROT noch falsch GRUEN)"
+else
+  bad "kein frueh abbrechendes grep in einer pipefail-Pipeline (weder falsch ROT noch falsch GRUEN)" \
+      "unter pipefail meldet eine Pipeline FEHLGESCHLAGEN, obwohl das Muster gefunden wurde"
+fi
+
 CODE_CACHE_DIR="${TMPDIR:-/tmp}/ciyc_guard_cache_$$"
 mkdir -p "$CODE_CACHE_DIR"
 
@@ -86,32 +121,32 @@ T="$UI/UITheme.cs"
 if [ ! -f "$T" ]; then
   bad "UITheme.cs exists" "expected $T"
 else
-  grep -qE 'BackgroundDark[[:space:]]*=[[:space:]]*Hex\("#000000"\)' "$T" \
+  grep -E >/dev/null  'BackgroundDark[[:space:]]*=[[:space:]]*Hex\("#000000"\)' "$T" \
     && ok "background is pure black" \
     || bad "background is pure black" "UITheme.BackgroundDark must be #000000"
 
-  grep -qE 'TextPrimary[[:space:]]*=[[:space:]]*Hex\("#FFFFFF"\)' "$T" \
+  grep -E >/dev/null  'TextPrimary[[:space:]]*=[[:space:]]*Hex\("#FFFFFF"\)' "$T" \
     && ok "primary text is white" \
     || bad "primary text is white" "UITheme.TextPrimary must be #FFFFFF"
 
   if grep -E '^[[:space:]]*public static readonly Color Border[[:space:]]*=' "$T" \
-       | grep -qiE '#(19D77B|57FF68|2E7A4B)'; then
+       | grep -iE >/dev/null  '#(19D77B|57FF68|2E7A4B)'; then
     bad "the default border is neutral" "UITheme.Border must not be a brand green"
   else
     ok "the default border is neutral"
   fi
 
-  grep -qE 'Overlay[[:space:]]*=[[:space:]]*new Color\(0f, 0f, 0f,' "$T" \
+  grep -E >/dev/null  'Overlay[[:space:]]*=[[:space:]]*new Color\(0f, 0f, 0f,' "$T" \
     && ok "the menu overlay is neutral black" \
     || bad "the menu overlay is neutral black" "UITheme.Overlay must not be tinted green"
 
   # The declaration, not the name: a comment saying "fadeDuration is zero" is not the fix.
-  grep -qE '^[[:space:]]*colors\.fadeDuration[[:space:]]*=[[:space:]]*0f;' "$T" \
+  grep -E >/dev/null  '^[[:space:]]*colors\.fadeDuration[[:space:]]*=[[:space:]]*0f;' "$T" \
     && ok "buttons react on the same frame (fadeDuration = 0)" \
     || bad "buttons react on the same frame (fadeDuration = 0)" \
            "UITheme.ApplyButtonColors must assign colors.fadeDuration = 0f"
 
-  if code "$T" | grep -qE 'normalColor[[:space:]]*=.*(Primary|Secondary)'; then
+  if code "$T" | grep -E >/dev/null  'normalColor[[:space:]]*=.*(Primary|Secondary)'; then
     bad "no button is filled with brand green" "ApplyButtonColors sets a green normalColor"
   else
     ok "no button is filled with brand green"
@@ -121,7 +156,7 @@ fi
 # ---- 7: the factory does not fill a button with the accent -------------------------------
 
 F="$UI/RuntimeUIFactory.cs"
-if code "$F" | grep -qE 'img\.color[[:space:]]*=[[:space:]]*primary[[:space:]]*\?[[:space:]]*UITheme\.Secondary'; then
+if code "$F" | grep -E >/dev/null  'img\.color[[:space:]]*=[[:space:]]*primary[[:space:]]*\?[[:space:]]*UITheme\.Secondary'; then
   bad "CreateButton uses a dark surface" "a primary button is filled with UITheme.Secondary"
 else
   ok "CreateButton uses a dark surface"
@@ -150,8 +185,8 @@ done
 # ---- 11-12: one owner suspends the gameplay HUD -------------------------------------------
 
 G="$UI/MenuInputGate.cs"
-if [ -f "$G" ] && grep -qE 'public static void Push\(string owner\)' "$G" \
-                 && grep -qE 'public static void Pop\(string owner\)' "$G"; then
+if [ -f "$G" ] && grep -E >/dev/null  'public static void Push\(string owner\)' "$G" \
+                 && grep -E >/dev/null  'public static void Pop\(string owner\)' "$G"; then
   ok "MenuInputGate declares Push and Pop"
 else
   bad "MenuInputGate declares Push and Pop" "expected $G"
@@ -162,7 +197,7 @@ for f in $(grep -rl "SetHudVisible(false)\|SetInputEnabled(false)" --include=*.c
              "$ROOT/Assets/CatchIfYouCan" 2>/dev/null); do
   case "$f" in
     */MenuInputGate.cs|*/PlayerSpawner.cs) ;;
-    *) if code "$f" | grep -qE 'Set(HudVisible|InputEnabled)\(false\)'; then
+    *) if code "$f" | grep -E >/dev/null  'Set(HudVisible|InputEnabled)\(false\)'; then
          OFFENDERS="$OFFENDERS $f"
        fi ;;
   esac
@@ -176,12 +211,12 @@ fi
 # ---- 13-16: START INVESTIGATION opens the doorway -----------------------------------------
 
 M="$UI/MissionSelectUI.cs"
-code "$M" | grep -qE 'LobbyPortal\.TryOpenForMission\(' \
+code "$M" | grep -E >/dev/null  'LobbyPortal\.TryOpenForMission\(' \
   && ok "START INVESTIGATION asks the portal to open" \
   || bad "START INVESTIGATION asks the portal to open" \
          "MissionSelectUI must reach LobbyPortal, not SceneLoader, in the lobby"
 
-code "$M" | grep -qE 'LobbyPortal\.Instance != null' \
+code "$M" | grep -E >/dev/null  'LobbyPortal\.Instance != null' \
   && ok "the direct scene load is reached only without a portal" \
   || bad "the direct scene load is reached only without a portal" \
          "the LoadInvestigation path must be behind a portal-absent test"
@@ -189,7 +224,7 @@ code "$M" | grep -qE 'LobbyPortal\.Instance != null' \
 P="$ENV/LobbyPortal.cs"
 MISSING=""
 for S in Inactive MissionSelected Opening Open Entering Loading Closed; do
-  grep -qE "^[[:space:]]*$S,?[[:space:]]*$" "$P" 2>/dev/null || MISSING="$MISSING $S"
+  grep -E >/dev/null  "^[[:space:]]*$S,?[[:space:]]*$" "$P" 2>/dev/null || MISSING="$MISSING $S"
 done
 if [ -n "$MISSING" ]; then
   bad "LobbyPortalState carries all seven states" "missing:$MISSING"
@@ -198,7 +233,7 @@ else
 fi
 
 # The refusal itself, not a <see cref> to it.
-grep -qE 'CIYCLog\.Error\(LogTag \+ "Mission selected but portal controller missing' "$P" 2>/dev/null \
+grep -E >/dev/null  'CIYCLog\.Error\(LogTag \+ "Mission selected but portal controller missing' "$P" 2>/dev/null \
   && ok "a missing portal controller is reported, not silent" \
   || bad "a missing portal controller is reported, not silent" \
          "LobbyPortal.TryOpenForMission must log the error, not return quietly"
@@ -206,7 +241,7 @@ grep -qE 'CIYCLog\.Error\(LogTag \+ "Mission selected but portal controller miss
 # ---- 17: the portal is actually in the lobby ----------------------------------------------
 
 GUID="$(grep -E '^guid:' "$P.meta" 2>/dev/null | awk '{print $2}')"
-if [ -n "$GUID" ] && grep -q "$GUID" "$SCENE" 2>/dev/null; then
+if [ -n "$GUID" ] && grep >/dev/null  "$GUID" "$SCENE" 2>/dev/null; then
   ok "the lobby scene carries a LobbyPortal"
 else
   bad "the lobby scene carries a LobbyPortal" \
@@ -217,7 +252,7 @@ fi
 
 for f in "$P" "$G" "$ART/PortalSurface.cs"; do
   N="$(basename "$f")"
-  if code "$f" | grep -qE '(GameObject\.Find|FindAnyObjectByType|FindObjectsByType)'; then
+  if code "$f" | grep -E >/dev/null  '(GameObject\.Find|FindAnyObjectByType|FindObjectsByType)'; then
     bad "$N does not search the scene" "a Find call in a per-frame path is a per-frame sweep"
   else
     ok "$N does not search the scene"
@@ -233,7 +268,7 @@ done
 # suspended, because MenuInputGate hides the player's TouchHUD and that joystick was not
 # part of it.
 
-if code "$F" | grep -qE 'AddComponent<(MobileInputController|VirtualJoystick)>'; then
+if code "$F" | grep -E >/dev/null  'AddComponent<(MobileInputController|VirtualJoystick)>'; then
   bad "RuntimeUIFactory builds no movement input" \
       "the HUD screen is building a second controller or joystick again"
 else
@@ -271,7 +306,7 @@ fi
 # ---- V7: one transition fade -------------------------------------------------------------
 
 TF="$UI/TransitionFade.cs"
-if [ -f "$TF" ] && grep -qE 'public const int SortingOrder = 500;' "$TF"; then
+if [ -f "$TF" ] && grep -E >/dev/null  'public const int SortingOrder = 500;' "$TF"; then
   ok "TransitionFade owns the transition overlay"
 else
   bad "TransitionFade owns the transition overlay" "expected $TF"
@@ -293,25 +328,25 @@ fi
 # ---- V7: the portal shows the real mission world ------------------------------------------
 
 P7="$ENV/LobbyPortal.cs"
-if code "$P7" | grep -qE 'ReferenceApartment'; then
+if code "$P7" | grep -E >/dev/null  'ReferenceApartment'; then
   bad "the portal destination is the mission world" \
       "LobbyPortal still builds a ReferenceApartment as its destination"
 else
   ok "the portal destination is the mission world"
 fi
 
-code "$P7" | grep -qE 'MissionWorldLoader\.PrepareAsync\(' \
+code "$P7" | grep -E >/dev/null  'MissionWorldLoader\.PrepareAsync\(' \
   && ok "the portal prepares the mission world" \
   || bad "the portal prepares the mission world" "LobbyPortal must call MissionWorldLoader"
 
 W="$ROOT/Assets/CatchIfYouCan/Scripts/Missions/MissionWorldLoader.cs"
-code "$W" | grep -qE 'LoadSceneAsync\(sceneName, LoadSceneMode\.Additive\)' \
+code "$W" | grep -E >/dev/null  'LoadSceneAsync\(sceneName, LoadSceneMode\.Additive\)' \
   && ok "the mission world is loaded additively" \
   || bad "the mission world is loaded additively" "expected an additive load in MissionWorldLoader"
 
 # One seed. The world loader must never roll its own - the seed belongs to MissionRuntime,
 # rolled once in MissionManager.StartInvestigation before the portal opened.
-if code "$W" | grep -qE 'SessionSeedSource\.Next\(|SeedManager\.SetSeed\('; then
+if code "$W" | grep -E >/dev/null  'SessionSeedSource\.Next\(|SeedManager\.SetSeed\('; then
   bad "the mission world rolls no seed of its own" \
       "MissionWorldLoader must read MissionRuntime.Seed, never roll one"
 else
@@ -321,7 +356,7 @@ fi
 B="$ROOT/Assets/CatchIfYouCan/Scripts/Procedural/InvestigationBootstrap.cs"
 MISSINGMODE=""
 for M in Immediate Deferred; do
-  grep -qE "^[[:space:]]*$M,?[[:space:]]*$" "$B" 2>/dev/null || MISSINGMODE="$MISSINGMODE $M"
+  grep -E >/dev/null  "^[[:space:]]*$M,?[[:space:]]*$" "$B" 2>/dev/null || MISSINGMODE="$MISSINGMODE $M"
 done
 if [ -n "$MISSINGMODE" ]; then
   bad "InvestigationBootstrap has both start modes" "missing:$MISSINGMODE"
@@ -333,21 +368,21 @@ fi
 # would make it live - the player, the ghost, the objectives and the audio all belong to
 # ActivateSequence, on the far side of the threshold.
 if sed -n '/private bool PrepareWorld()/,/^        }$/p' "$B" \
-     | grep -qE '(SpawnPlayer|SpawnGhost|WireSystems|InstallAudio|PlayIntro)\('; then
+     | grep -E >/dev/null  '(SpawnPlayer|SpawnGhost|WireSystems|InstallAudio|PlayIntro)\('; then
   bad "a prepared world is not a running one" \
       "PrepareWorld starts gameplay; the ghost would hunt while the player is in the lobby"
 else
   ok "a prepared world is not a running one"
 fi
 
-code "$W" | grep -qE 'AudioListener' \
+code "$W" | grep -E >/dev/null  'AudioListener' \
   && ok "the loaded world's audio listener is silenced" \
   || bad "the loaded world's audio listener is silenced" \
          "two enabled AudioListeners is a warning nobody reads"
 
 # ---- V7: the loadout reaches the player's hands --------------------------------------------
 
-code "$B" | grep -qE 'MissionEquipmentInstaller\.InstallLoadout\(' \
+code "$B" | grep -E >/dev/null  'MissionEquipmentInstaller\.InstallLoadout\(' \
   && ok "the mission installs its loadout" \
   || bad "the mission installs its loadout" \
          "a loadout that is only data leaves every item but the torch unreachable"
@@ -356,7 +391,7 @@ E="$ROOT/Assets/CatchIfYouCan/Scripts/Equipment/EquipmentManager.cs"
 MISSINGKIT=""
 for K in Flashlight EmfDetector UvLight Thermometer; do
   sed -n '/public void GiveStarterLoadout/,/^        }$/p' "$E" \
-    | grep -q "EquipmentIds.$K" || MISSINGKIT="$MISSINGKIT $K"
+    | grep >/dev/null  "EquipmentIds.$K" || MISSINGKIT="$MISSINGKIT $K"
 done
 if [ -n "$MISSINGKIT" ]; then
   bad "the starter loadout carries the four slice items" "missing:$MISSINGKIT"
@@ -370,12 +405,12 @@ fi
 # had nowhere to go and was dropped on the floor of a log line.
 
 INV="$ROOT/Assets/CatchIfYouCan/Scripts/Player/PlayerInventory.cs"
-grep -qE 'public const int SlotCount = 3;' "$INV" \
+grep -E >/dev/null  'public const int SlotCount = 3;' "$INV" \
   && ok "there are still three investigation slots" \
   || bad "there are still three investigation slots" \
          "SlotCount is what the HUD selector, the pickup rules and replication count on"
 
-grep -qE 'public const int TorchSlotIndex = SlotCount;' "$INV" \
+grep -E >/dev/null  'public const int TorchSlotIndex = SlotCount;' "$INV" \
   && ok "the torch has a dedicated place outside the three" \
   || bad "the torch has a dedicated place outside the three" \
          "expected PlayerInventory.TorchSlotIndex"
@@ -396,7 +431,7 @@ fi
 
 # The installer must look at the torch's place too, or it hands out a second torch.
 code "$ROOT/Assets/CatchIfYouCan/Scripts/Equipment/MissionEquipmentInstaller.cs" \
-  | grep -qE 'PlayerInventory\.SelectableSlotCount' \
+  | grep -E >/dev/null  'PlayerInventory\.SelectableSlotCount' \
   && ok "the installer sees the torch's dedicated place" \
   || bad "the installer sees the torch's dedicated place" \
          "it would not recognise the torch already in the player's hand"
@@ -404,7 +439,7 @@ code "$ROOT/Assets/CatchIfYouCan/Scripts/Equipment/MissionEquipmentInstaller.cs"
 # ---- V7.1: nothing is silently discarded ---------------------------------------------------
 
 MI="$ROOT/Assets/CatchIfYouCan/Scripts/Equipment/MissionEquipmentInstaller.cs"
-code "$MI" | grep -qE 'CIYCLog\.(Info|Warn|Error)\(LogTag \+ "Loadout installed' \
+code "$MI" | grep -E >/dev/null  'CIYCLog\.(Info|Warn|Error)\(LogTag \+ "Loadout installed' \
   && ok "an item that does not fit is named, not dropped" \
   || bad "an item that does not fit is named, not dropped" \
          "the installer must report what it could not carry"
@@ -414,7 +449,7 @@ code "$MI" | grep -qE 'CIYCLog\.(Info|Warn|Error)\(LogTag \+ "Loadout installed'
 MM="$UI/MainMenuModeController.cs"
 MISSINGENTRY=""
 for M in Cinematic DirectLobby; do
-  grep -qE "^[[:space:]]*$M,?[[:space:]]*$" "$MM" 2>/dev/null || MISSINGENTRY="$MISSINGENTRY $M"
+  grep -E >/dev/null  "^[[:space:]]*$M,?[[:space:]]*$" "$MM" 2>/dev/null || MISSINGENTRY="$MISSINGENTRY $M"
 done
 if [ -n "$MISSINGENTRY" ]; then
   bad "the menu has both entry modes" "missing:$MISSINGENTRY"
@@ -422,19 +457,19 @@ else
   ok "the menu has both entry modes"
 fi
 
-grep -qE 'PendingEntryMode = MainMenuEntryMode\.Cinematic;' "$MM" \
+grep -E >/dev/null  'PendingEntryMode = MainMenuEntryMode\.Cinematic;' "$MM" \
   && ok "the entry mode resets itself after it is read" \
   || bad "the entry mode resets itself after it is read" \
          "a direct entry that failed would leave a cold boot skipping its own intro"
 
-code "$UI/MissionResultUI.cs" | grep -qE 'PendingEntryMode = MainMenuEntryMode\.DirectLobby' \
+code "$UI/MissionResultUI.cs" | grep -E >/dev/null  'PendingEntryMode = MainMenuEntryMode\.DirectLobby' \
   && ok "finishing a mission returns to the lobby directly" \
   || bad "finishing a mission returns to the lobby directly" \
          "MissionResultUI must state the intent before loading the menu scene"
 
 # The direct route must not run the cinematic's music, phone or tap-to-start sequence.
 if sed -n '/private IEnumerator DirectRoutine()/,/^        }$/p' "$MM" \
-     | grep -qE '(FadeOutMenuMusic|FadeOutCinematicSources|TransitionRoutine)\('; then
+     | grep -E >/dev/null  '(FadeOutMenuMusic|FadeOutCinematicSources|TransitionRoutine)\('; then
   bad "the direct route replays no cinematic" "DirectRoutine runs the cinematic sequence"
 else
   ok "the direct route replays no cinematic"
@@ -443,7 +478,7 @@ fi
 # ---- V7.1: one world, generated once --------------------------------------------------------
 
 B71="$ROOT/Assets/CatchIfYouCan/Scripts/Procedural/InvestigationBootstrap.cs"
-code "$B71" | grep -qE '_generatedFor' \
+code "$B71" | grep -E >/dev/null  '_generatedFor' \
   && ok "a mission cannot be generated twice" \
   || bad "a mission cannot be generated twice" \
          "a second generation means the preview and the played world only happen to match"
@@ -451,19 +486,19 @@ code "$B71" | grep -qE '_generatedFor' \
 # ---- V7.1: the portal camera can never become the player's ----------------------------------
 
 PS="$ART/PortalSurface.cs"
-if code "$PS" | grep -qE 'AddComponent<AudioListener>|tag = "MainCamera"'; then
+if code "$PS" | grep -E >/dev/null  'AddComponent<AudioListener>|tag = "MainCamera"'; then
   bad "the portal camera is not a gameplay camera" \
       "it must carry no AudioListener and never claim the MainCamera tag"
 else
   ok "the portal camera is not a gameplay camera"
 fi
 
-code "$PS" | grep -qE 'go\.tag = "Untagged"' \
+code "$PS" | grep -E >/dev/null  'go\.tag = "Untagged"' \
   && ok "the portal camera is explicitly untagged" \
   || bad "the portal camera is explicitly untagged" \
          "an untagged second camera is what stops Camera.main finding it"
 
-code "$PS" | grep -qE 'LocalPlayerService\.Register' \
+code "$PS" | grep -E >/dev/null  'LocalPlayerService\.Register' \
   && bad "the portal camera never registers as the local view" \
      "PortalSurface must not touch LocalPlayerService registration" \
   || ok "the portal camera never registers as the local view"
@@ -492,7 +527,7 @@ done
 # is actually invariant is that the breach comes from a signed field whose edge noise can move,
 # so the three masks below it stay derivable from one number; the naked rectangle stays forbidden
 # on its own line below.
-if grep -qE 'float2 e = c / fit;' "$SHADER" && grep -qE 'float oval = length\(e\);' "$SHADER"; then
+if grep -E >/dev/null  'float2 e = c / fit;' "$SHADER" && grep -E >/dev/null  'float oval = length\(e\);' "$SHADER"; then
   ok "the breach is a normalised radial field"
 else
   bad "the breach is a normalised radial field" \
@@ -500,7 +535,7 @@ else
       "on the boundary"
 fi
 
-if grep -qE 'min\(IN\.uv, *1\.0 *- *IN\.uv\)' "$SHADER"; then
+if grep -E >/dev/null  'min\(IN\.uv, *1\.0 *- *IN\.uv\)' "$SHADER"; then
   bad "the naked rectangular field is gone" \
       "min(uv, 1-uv) is a clean frame; the breach must be torn"
 else
@@ -509,7 +544,7 @@ fi
 
 # The edge has to be broken by noise, or it is a neat cut rather than something that came
 # through the wall.
-if grep -q '_TearAmount' "$SHADER" && grep -qE 'ragged *\* *_TearAmount' "$SHADER"; then
+if grep >/dev/null  '_TearAmount' "$SHADER" && grep -E >/dev/null  'ragged *\* *_TearAmount' "$SHADER"; then
   ok "the breach edge is torn by noise"
 else
   bad "the breach edge is torn by noise" "a straight-edged hole is a doorway, not a breach"
@@ -517,8 +552,8 @@ fi
 
 # CLOSED MEANS NO HOLE. A collapsed box still measures zero distance at its own centre, so
 # without an explicit gate one pixel burns on a wall that is supposed to be whole.
-if grep -qE 'float +gate *= *smoothstep\(0\.0, *0\.02, *open\)' "$SHADER" &&
-   grep -qE 'alpha *=.*\* *gate' "$SHADER"; then
+if grep -E >/dev/null  'float +gate *= *smoothstep\(0\.0, *0\.02, *open\)' "$SHADER" &&
+   grep -E >/dev/null  'alpha *=.*\* *gate' "$SHADER"; then
   ok "a closed portal draws nothing at all"
 else
   bad "a closed portal draws nothing at all" \
@@ -527,7 +562,7 @@ fi
 
 # Two noise layers on DIFFERENT frequencies. Identical frequencies read as one repeating
 # pattern, which is the thing procedural energy is supposed to avoid.
-if grep -q '_NoiseScale' "$SHADER" && grep -q '_SecondaryNoiseScale' "$SHADER"; then
+if grep >/dev/null  '_NoiseScale' "$SHADER" && grep >/dev/null  '_SecondaryNoiseScale' "$SHADER"; then
   ok "the energy uses two independent noise layers"
 else
   bad "the energy uses two independent noise layers" \
@@ -539,27 +574,27 @@ fi
 for prop in _CoreColor _EnergyColor _OuterColor _CoreIntensity _EnergyIntensity _RimWidth \
             _RimSoftness _NoiseStrength _NoiseSpeed _SecondaryNoiseSpeed _DistortionStrength \
             _RotationSpeed _PulseSpeed _PulseStrength _Opacity; do
-  grep -q "$prop" "$SHADER" || bad "the shader exposes $prop" "artistic control must be serialized"
+  grep >/dev/null  "$prop" "$SHADER" || bad "the shader exposes $prop" "artistic control must be serialized"
 done
 ok "every named energy control is a shader property"
 
 # URP only. A Built-in or HDRP shader reached from here draws solid magenta under URP, which
 # is CLAUDE.md mistake 2.
-if grep -qE 'RenderPipeline"="UniversalPipeline' "$SHADER"; then
+if grep -E >/dev/null  'RenderPipeline"="UniversalPipeline' "$SHADER"; then
   ok "the portal shader declares the universal pipeline"
 else
   bad "the portal shader declares the universal pipeline" \
       "without the tag URP will not pick this SubShader"
 fi
 
-if grep -qE 'Shader\.Find\("(Standard|Particles/|HDRenderPipeline|Hidden/)' "$SHADER" "$FX" "$ART/PortalSurface.cs" "$ENV/LobbyPortal.cs" 2>/dev/null; then
+if grep -E >/dev/null  'Shader\.Find\("(Standard|Particles/|HDRenderPipeline|Hidden/)' "$SHADER" "$FX" "$ART/PortalSurface.cs" "$ENV/LobbyPortal.cs" 2>/dev/null; then
   bad "no built-in or HDRP shader is reached for" "a built-in shader under URP is magenta"
 else
   ok "no built-in or HDRP shader is reached for"
 fi
 
 # The material carries the authored defaults AND keeps the shader out of the stripper.
-if grep -q '_EnergyColor' "$MAT" && grep -q '_CoreColor' "$MAT"; then
+if grep >/dev/null  '_EnergyColor' "$MAT" && grep >/dev/null  '_CoreColor' "$MAT"; then
   ok "MAT_Portal carries the authored energy colours"
 else
   bad "MAT_Portal carries the authored energy colours" \
@@ -584,7 +619,7 @@ fi
 
 # Two fades, not one. The destination has to be able to be black behind a burning rim while
 # the world is still being prepared - that is the whole "react on the press frame" promise.
-code "$ART/PortalSurface.cs" | grep -qE 'public void SetViewOpacity\(' \
+code "$ART/PortalSurface.cs" | grep -E >/dev/null  'public void SetViewOpacity\(' \
   && ok "the destination fades independently of the opening" \
   || bad "the destination fades independently of the opening" \
          "one opacity means the rim cannot burn over an unready world"
@@ -592,21 +627,21 @@ code "$ART/PortalSurface.cs" | grep -qE 'public void SetViewOpacity\(' \
 # Allocation policy. A RenderTexture or a Material created inside LateUpdate is a per-frame
 # leak, and this file runs LateUpdate on every frame the portal is visible.
 PERFRAME="$(code "$ART/PortalSurface.cs" | sed -n '/private void LateUpdate/,/^        }/p')"
-if printf '%s' "$PERFRAME" | grep -qE 'new RenderTexture|new Material'; then
+if printf '%s' "$PERFRAME" | grep -E >/dev/null  'new RenderTexture|new Material'; then
   bad "no buffer or material is allocated per frame" \
       "LateUpdate must reuse the texture and the material it already has"
 else
   ok "no buffer or material is allocated per frame"
 fi
 
-if printf '%s' "$PERFRAME" | grep -qE 'FindObjectOfType|FindObjectsOfType|GameObject\.Find'; then
+if printf '%s' "$PERFRAME" | grep -E >/dev/null  'FindObjectOfType|FindObjectsOfType|GameObject\.Find'; then
   bad "the portal does not search the scene per frame" "cache the camera, do not find it"
 else
   ok "the portal does not search the scene per frame"
 fi
 
 FXUPDATE="$(code "$FX" | sed -n '/private void Update/,/^        }/p')"
-if printf '%s' "$FXUPDATE" | grep -qE 'new Material|new GameObject|AddComponent'; then
+if printf '%s' "$FXUPDATE" | grep -E >/dev/null  'new Material|new GameObject|AddComponent'; then
   bad "the portal effects allocate nothing per frame" \
       "particle systems are configured once and driven by their emission rate"
 else
@@ -615,23 +650,23 @@ fi
 
 # The portal camera stays off when it cannot be seen. Without this the far world is rendered
 # a second time every frame the player is anywhere in the lobby.
-code "$ART/PortalSurface.cs" | grep -qE 'TestPlanesAABB' \
+code "$ART/PortalSurface.cs" | grep -E >/dev/null  'TestPlanesAABB' \
   && ok "the portal camera is culled when the opening is off screen" \
   || bad "the portal camera is culled when the opening is off screen" \
          "a second full render must not run while the opening is behind the player"
 
-code "$ART/PortalSurface.cs" | grep -qE '_style\.renderDistance' \
+code "$ART/PortalSurface.cs" | grep -E >/dev/null  '_style\.renderDistance' \
   && ok "the portal camera is distance-gated" \
   || bad "the portal camera is distance-gated" "render distance must be honoured"
 
 # One system, scaled - not three portals. The quality fraction is the project's shared
 # convention; a private tier enum here would be a parallel quality system.
-code "$STYLE" | grep -qE 'QualitySettings\.GetQualityLevel\(\)' \
+code "$STYLE" | grep -E >/dev/null  'QualitySettings\.GetQualityLevel\(\)' \
   && ok "portal quality derives from the project's own quality level" \
   || bad "portal quality derives from the project's own quality level" \
          "do not invent a second tier system for the portal"
 
-if code "$STYLE" | grep -qE 'enum +QualityTier|enum +PortalQuality'; then
+if code "$STYLE" | grep -E >/dev/null  'enum +QualityTier|enum +PortalQuality'; then
   bad "the portal declares no parallel quality tiers" \
       "PLATFORM_QUALITY_TIERS.md: one system, scalable, not three portals"
 else
@@ -639,14 +674,14 @@ else
 fi
 
 # Failure is seen, not merely logged, and it leaves nothing armed behind it.
-code "$ENV/LobbyPortal.cs" | grep -qE 'private IEnumerator DestabiliseRoutine\(\)' \
+code "$ENV/LobbyPortal.cs" | grep -E >/dev/null  'private IEnumerator DestabiliseRoutine\(\)' \
   && ok "a failed preparation visibly destabilises the portal" \
   || bad "a failed preparation visibly destabilises the portal" \
          "hiding the surface silently is indistinguishable from a button that did nothing"
 
 DESTAB="$(code "$ENV/LobbyPortal.cs" | sed -n '/private IEnumerator DestabiliseRoutine/,/^        }$/p')"
-if printf '%s' "$DESTAB" | grep -qE '_threshold\.enabled = false' &&
-   printf '%s' "$DESTAB" | grep -qE 'MenuInputGate\.Pop'; then
+if printf '%s' "$DESTAB" | grep -E >/dev/null  '_threshold\.enabled = false' &&
+   printf '%s' "$DESTAB" | grep -E >/dev/null  'MenuInputGate\.Pop'; then
   ok "a collapsed portal leaves no live trigger and no held input"
 else
   bad "a collapsed portal leaves no live trigger and no held input" \
@@ -667,9 +702,9 @@ esac
 # a rectangular emitter puts sparks in the corners where there is no edge and thins them along
 # the sides where the wall is actually broken. Circle with zero radius thickness is the contour;
 # a non-zero thickness fills the disc and fires particles through the middle of the view.
-if code "$FX" | grep -qE 'ParticleSystemShapeType\.Circle' &&
-   code "$FX" | grep -qE 'shape\.radiusThickness = 0f' &&
-   code "$FX" | grep -qE 'shape\.scale'; then
+if code "$FX" | grep -E >/dev/null  'ParticleSystemShapeType\.Circle' &&
+   code "$FX" | grep -E >/dev/null  'shape\.radiusThickness = 0f' &&
+   code "$FX" | grep -E >/dev/null  'shape\.scale'; then
   ok "particles emit on the breach edge, not through the view"
 else
   bad "particles emit on the breach edge, not through the view" \
@@ -677,16 +712,16 @@ else
 fi
 
 for system in Sparks EnergyStreaks AmbientWisps; do
-  code "$FX" | grep -q "\"$system\"" \
+  code "$FX" | grep >/dev/null  "\"$system\"" \
     && ok "the portal builds $system" \
     || bad "the portal builds $system" "the brief names sparks, streaks and wisps"
 done
 
-code "$FX" | grep -qE 'trails\.enabled = true' \
+code "$FX" | grep -E >/dev/null  'trails\.enabled = true' \
   && ok "the streaks carry trails" \
   || bad "the streaks carry trails" "a discharge without a trail is a dot"
 
-code "$FX" | grep -qE 'GradientAlphaKey\(0f, 1f\)' \
+code "$FX" | grep -E >/dev/null  'GradientAlphaKey\(0f, 1f\)' \
   && ok "particles fade on alpha rather than popping at zero size" \
   || bad "particles fade on alpha rather than popping at zero size"
 
@@ -698,7 +733,7 @@ else
   bad "the portal adds exactly one real-time light" "found $LIGHTS"
 fi
 
-if code "$FX" | grep -qE 'LightShadows\.None'; then
+if code "$FX" | grep -E >/dev/null  'LightShadows\.None'; then
   ok "the portal light casts no shadows"
 else
   bad "the portal light casts no shadows" "a shadowed doorway light is the frame's most expensive object"
@@ -713,7 +748,7 @@ else
 fi
 
 # The diagnostic exists, reports the pieces, and is not per frame.
-code "$ENV/LobbyPortal.cs" | grep -qE 'private void ReportOpening\(\)' \
+code "$ENV/LobbyPortal.cs" | grep -E >/dev/null  'private void ReportOpening\(\)' \
   && ok "the portal reports its state once when it opens" \
   || bad "the portal reports its state once when it opens"
 
@@ -756,7 +791,7 @@ fi
 
 LP="$ENV/LobbyPortal.cs"
 
-if code "$LP" | grep -qE 'LoadInvestigation\(|SceneLoader\.Instance'; then
+if code "$LP" | grep -E >/dev/null  'LoadInvestigation\(|SceneLoader\.Instance'; then
   bad "the portal never loads the investigation by itself" \
       "any scene load reachable without a crossing is an automatic teleport"
 else
@@ -771,8 +806,8 @@ else
   bad "entry commits from exactly one call site" "found $COMMITS"
 fi
 
-if code "$LP" | grep -qE 'private void LateUpdate\(\)' &&
-   code "$LP" | grep -qE 'Vector3\.Dot\(probe - planePoint, planeNormal\)'; then
+if code "$LP" | grep -E >/dev/null  'private void LateUpdate\(\)' &&
+   code "$LP" | grep -E >/dev/null  'Vector3\.Dot\(probe - planePoint, planeNormal\)'; then
   ok "entry is decided by a plane-side crossing test"
 else
   bad "entry is decided by a plane-side crossing test" \
@@ -781,7 +816,7 @@ fi
 
 # The sign must actually change. Without this the test is just "is on the far side", which a
 # player standing beyond the doorway satisfies forever.
-if code "$LP" | grep -qE 'if \(previous <= 0f \|\| side > 0f\)'; then
+if code "$LP" | grep -E >/dev/null  'if \(previous <= 0f \|\| side > 0f\)'; then
   ok "the crossing needs the side sign to change"
 else
   bad "the crossing needs the side sign to change" \
@@ -789,14 +824,14 @@ else
 fi
 
 # Walking beside the frame is not entry.
-if code "$LP" | grep -qE 'apertureTolerance' && code "$LP" | grep -qE 'Mathf\.Abs\(across\)'; then
+if code "$LP" | grep -E >/dev/null  'apertureTolerance' && code "$LP" | grep -E >/dev/null  'Mathf\.Abs\(across\)'; then
   ok "the crossing is bounded by the aperture"
 else
   bad "the crossing is bounded by the aperture" "brushing past the jamb would count"
 fi
 
 # No trigger component survives that could commit entry behind the test's back.
-if code "$LP" | grep -qE 'OnTriggerEnter|class LobbyPortalThreshold'; then
+if code "$LP" | grep -E >/dev/null  'OnTriggerEnter|class LobbyPortalThreshold'; then
   bad "no trigger volume can commit entry" \
       "OnTriggerEnter fires on touch, which is the bug this replaced"
 else
@@ -804,7 +839,7 @@ else
 fi
 
 # Entry requires a finished destination, checked at the crossing rather than assumed.
-if code "$LP" | grep -qE 'CanBeEntered' && code "$LP" | grep -qE 'MissionWorldLoader\.WorldReady'; then
+if code "$LP" | grep -E >/dev/null  'CanBeEntered' && code "$LP" | grep -E >/dev/null  'MissionWorldLoader\.WorldReady'; then
   ok "entry requires a prepared destination"
 else
   bad "entry requires a prepared destination" "crossing into a half-built world is a race"
@@ -812,7 +847,7 @@ fi
 
 # Open must mean "waiting for the player", so the state machine needs somewhere else to sit
 # while the world is still building.
-if grep -qE '^\s+PreparingDestination,' "$LP"; then
+if grep -E >/dev/null  '^\s+PreparingDestination,' "$LP"; then
   ok "a charging portal has its own state"
 else
   bad "a charging portal has its own state" \
@@ -821,7 +856,7 @@ fi
 
 # A refused crossing gives the controls back rather than stranding the player behind a gate.
 REFUSE="$(code "$LP" | sed -n '/private void BeginInvestigation/,/^        }$/p')"
-if printf '%s' "$REFUSE" | grep -qE 'MenuInputGate\.Pop'; then
+if printf '%s' "$REFUSE" | grep -E >/dev/null  'MenuInputGate\.Pop'; then
   ok "a refused crossing returns the player's controls"
 else
   bad "a refused crossing returns the player's controls" \
@@ -831,14 +866,14 @@ fi
 # ---- V9.1: the handover cannot leave the screen covered -------------------------------------
 BOOT="$ROOT/Assets/CatchIfYouCan/Scripts/Procedural/InvestigationBootstrap.cs"
 
-if code "$BOOT" | grep -qE 'fadeOverlay != null && fadeOverlay\.alpha > 0'; then
+if code "$BOOT" | grep -E >/dev/null  'fadeOverlay != null && fadeOverlay\.alpha > 0'; then
   ok "the intro overlay is cleared whatever happens"
 else
   bad "the intro overlay is cleared whatever happens" \
       "PrepareWorld sets it opaque; a skipped fade leaves a black sheet over a working world"
 fi
 
-if code "$BOOT" | grep -qE 'private void ReportEntry\(\)'; then
+if code "$BOOT" | grep -E >/dev/null  'private void ReportEntry\(\)'; then
   ok "entry reports its own state once"
 else
   bad "entry reports its own state once" "a black screen with no report says nothing"
@@ -903,7 +938,7 @@ fi
 PROBE="$ART/PortalProbeRoom.cs"
 if [ -f "$PROBE" ]; then
   # It must sit far outside the playable world, or it becomes scenery somebody can reach.
-  if code "$PROBE" | grep -qE 'new Vector3\(0f, -[0-9]{3}'; then
+  if code "$PROBE" | grep -E >/dev/null  'new Vector3\(0f, -[0-9]{3}'; then
     ok "the probe room is built far outside the playable world"
   else
     bad "the probe room is built far outside the playable world" \
@@ -912,9 +947,9 @@ if [ -f "$PROBE" ]; then
 
   # Entry must still demand a real prepared world, so binding the probe cannot make the
   # threshold enterable.
-  if code "$ENV/LobbyPortal.cs" | grep -qE 'CanBeEntered =>' &&
+  if code "$ENV/LobbyPortal.cs" | grep -E >/dev/null  'CanBeEntered =>' &&
      code "$ENV/LobbyPortal.cs" | sed -n '/public bool CanBeEntered/,/;/p' \
-       | grep -qE 'MissionWorldLoader\.WorldReady'; then
+       | grep -E >/dev/null  'MissionWorldLoader\.WorldReady'; then
     ok "showing the probe room cannot make the portal enterable"
   else
     bad "showing the probe room cannot make the portal enterable" \
@@ -938,10 +973,10 @@ fi
 # faellt einzeln durch - und mit ihm die ganze Wand, obwohl sie da steht. Der Test gehoert auf die
 # SUMME der Teile, sonst ist eine gebaute Wand von einer fehlenden nicht zu unterscheiden.
 LPW="$(code "$ENV/LobbyPortal.cs")"
-if printf '%s' "$LPW" | grep -qE 'private void CollectWallParts\(\)' &&
-   printf '%s' "$LPW" | grep -qE 'private float MeasureCoveredWidth\(' &&
+if printf '%s' "$LPW" | grep -E >/dev/null  'private void CollectWallParts\(\)' &&
+   printf '%s' "$LPW" | grep -E >/dev/null  'private float MeasureCoveredWidth\(' &&
    ! printf '%s' "$LPW" | sed -n '/private void CollectWallParts/,/^        }$/p' \
-       | grep -qE 'width[[:space:]]*<[[:space:]]*style\.openingSize\.x'; then
+       | grep -E >/dev/null  'width[[:space:]]*<[[:space:]]*style\.openingSize\.x'; then
   ok "eine Wand aus mehreren Modulen zaehlt zusammen"
 else
   bad "eine Wand aus mehreren Modulen zaehlt zusammen" \
@@ -953,7 +988,7 @@ fi
 # stuende links und rechts der Tuer Ersatzwand in der Breite EINES Moduls, und der Rest der Wand
 # waere abgeschaltet und offen.
 if printf '%s' "$LPW" | sed -n '/private void EnsureWallAperture/,/^        }$/p' \
-     | grep -qE 'for \(int i = 0; i < _wallParts\.Count; i\+\+\)'; then
+     | grep -E >/dev/null  'for \(int i = 0; i < _wallParts\.Count; i\+\+\)'; then
   ok "die Apertur wird nach allen Wandteilen bemessen, nicht nach einem"
 else
   bad "die Apertur wird nach allen Wandteilen bemessen, nicht nach einem" \
@@ -997,10 +1032,10 @@ else
   writes=""
   for call in 'EditorUtility.SetDirty' 'AssetDatabase.SaveAssets' 'AssetDatabase.CreateAsset' \
               'Undo\.' 'DestroyImmediate' 'Object.Instantiate' 'SetActive'; do
-    code "$PROBE" | grep -qE "$call" && writes="$writes $call"
+    code "$PROBE" | grep -E >/dev/null  "$call" && writes="$writes $call"
   done
   # Und es traegt insbesondere nicht selbst ein, was es messen soll.
-  code "$PROBE" | grep -qE 'wallCollider[[:space:]]*=' && writes="$writes wallCollider="
+  code "$PROBE" | grep -E >/dev/null  'wallCollider[[:space:]]*=' && writes="$writes wallCollider="
   if [ -n "$writes" ]; then
     bad "das Messwerkzeug aendert nichts" "gefunden:$writes"
   else
@@ -1009,12 +1044,12 @@ else
 
   # CLAUDE.md Fehler 4: Reflection in fremde private Felder kompiliert, liest sich sauber und
   # faellt beim naechsten Umbenennen still um. Das Portal sagt die drei Zahlen selbst zu.
-  if code "$PROBE" | grep -qE 'BindingFlags|GetField\(|GetProperty\(' ; then
+  if code "$PROBE" | grep -E >/dev/null  'BindingFlags|GetField\(|GetProperty\(' ; then
     bad "das Messwerkzeug liest das Portal ueber oeffentliche Zusagen" \
         "Reflection in private Felder - beim naechsten Umbenennen still falsch"
-  elif code "$PROBE" | grep -qE 'portal\.OpeningSize' \
-    && code "$PROBE" | grep -qE 'portal\.MaxWallThickness' \
-    && code "$PROBE" | grep -qE 'portal\.AssignedWallCollider'; then
+  elif code "$PROBE" | grep -E >/dev/null  'portal\.OpeningSize' \
+    && code "$PROBE" | grep -E >/dev/null  'portal\.MaxWallThickness' \
+    && code "$PROBE" | grep -E >/dev/null  'portal\.AssignedWallCollider'; then
     ok "das Messwerkzeug liest das Portal ueber oeffentliche Zusagen"
   else
     bad "das Messwerkzeug liest das Portal ueber oeffentliche Zusagen" \
@@ -1024,7 +1059,7 @@ else
   # Der entscheidende Punkt. MainMenu_Lobby ist in der Datei AUS; zur Laufzeit ist sie AN,
   # bevor das Portal aufgeht. Ein Suchlauf ohne inaktive Objekte meldet den Raum als leer
   # und beschreibt damit genau den einen Moment nicht, um den es geht.
-  if code "$PROBE" | grep -qE 'FindObjectsInactive\.Include'; then
+  if code "$PROBE" | grep -E >/dev/null  'FindObjectsInactive\.Include'; then
     ok "das Messwerkzeug sieht auch ausgeschaltete Objekte"
   else
     bad "das Messwerkzeug sieht auch ausgeschaltete Objekte" \
@@ -1034,9 +1069,9 @@ else
 
   # Dieselben drei Tests, nicht ungefaehr dieselben. Ein Werkzeug, das grosszuegiger misst
   # als ResolveWall, meldet eine Wand, die das Portal dann ablehnt.
-  if code "$PROBE" | grep -qE 'thickness[[:space:]]*<=[[:space:]]*maxThickness' \
-     && code "$PROBE" | grep -qE 'height[[:space:]]*>=[[:space:]]*opening\.y' \
-     && code "$PROBE" | grep -qE 'spanned[[:space:]]*>=[[:space:]]*opening\.x'; then
+  if code "$PROBE" | grep -E >/dev/null  'thickness[[:space:]]*<=[[:space:]]*maxThickness' \
+     && code "$PROBE" | grep -E >/dev/null  'height[[:space:]]*>=[[:space:]]*opening\.y' \
+     && code "$PROBE" | grep -E >/dev/null  'spanned[[:space:]]*>=[[:space:]]*opening\.x'; then
     ok "das Messwerkzeug misst wie das Portal: je Teil, Breite zusammen"
   else
     bad "das Messwerkzeug misst wie das Portal: je Teil, Breite zusammen" \
@@ -1047,8 +1082,8 @@ je Collider gemessen meldet es eine fehlende Wand, die in Wahrheit aus Modulen b
   # Auf einem inaktiven Objekt kann Collider.bounds eine leere Box liefern, und eine leere Box
   # schneidet nichts. Ungeprueft liest sich das als 'da ist nichts' - dasselbe Ergebnis wie
   # eine fehlende Wand, mit einer voellig anderen Ursache.
-  if code "$PROBE" | grep -qE 'MeasuredBounds' \
-     && code "$PROBE" | grep -qE 'b\.size[[:space:]]*!=[[:space:]]*Vector3\.zero'; then
+  if code "$PROBE" | grep -E >/dev/null  'MeasuredBounds' \
+     && code "$PROBE" | grep -E >/dev/null  'b\.size[[:space:]]*!=[[:space:]]*Vector3\.zero'; then
     ok "ein leeres Collider-Bounds gilt nicht als 'nichts da'"
   else
     bad "ein leeres Collider-Bounds gilt nicht als 'nichts da'" \
@@ -1074,8 +1109,8 @@ else
   # Gegen die Konstanten, aus denen der Spieler wirklich gebaut wird. Ein Messwuerfel in der
   # Szene waere eine zweite Quelle fuer dieselbe Zahl - und sobald beide auseinanderlaufen,
   # wird der Raum auf den Wuerfel skaliert, waehrend der Spieler die Konstante behaelt.
-  if code "$SCALEAUDIT" | grep -qE 'PlayerFactory\.CapsuleHeight' \
-     && code "$SCALEAUDIT" | grep -qE 'PlayerFactory\.EyeHeight'; then
+  if code "$SCALEAUDIT" | grep -E >/dev/null  'PlayerFactory\.CapsuleHeight' \
+     && code "$SCALEAUDIT" | grep -E >/dev/null  'PlayerFactory\.EyeHeight'; then
     ok "der Massstab wird gegen die Spielerkonstanten gerechnet"
   else
     bad "der Massstab wird gegen die Spielerkonstanten gerechnet" \
@@ -1084,7 +1119,7 @@ else
   fi
 
   # Ziel geteilt durch gemessen. Kein Literal, das wie ein Faktor aussieht.
-  if code "$SCALEAUDIT" | grep -qE 'Targets\[i\][[:space:]]*/[[:space:]]*r\.ClearHeight'; then
+  if code "$SCALEAUDIT" | grep -E >/dev/null  'Targets\[i\][[:space:]]*/[[:space:]]*r\.ClearHeight'; then
     ok "der Faktor ist ein Verhaeltnis, kein geratener Wert"
   else
     bad "der Faktor ist ein Verhaeltnis, kein geratener Wert" \
@@ -1094,7 +1129,7 @@ else
   writes=""
   for call in 'EditorUtility.SetDirty' 'AssetDatabase.SaveAssets' 'Undo\.' 'DestroyImmediate' \
               'SetParent' 'localScale[[:space:]]*=' 'SetActive'; do
-    code "$SCALEAUDIT" | grep -qE "$call" && writes="$writes $call"
+    code "$SCALEAUDIT" | grep -E >/dev/null  "$call" && writes="$writes $call"
   done
   if [ -n "$writes" ]; then
     bad "das Massstabswerkzeug aendert nichts" "gefunden:$writes"
@@ -1104,7 +1139,7 @@ else
 
   # Ohne Boden UND Decke gibt es keine lichte Hoehe. Eine geratene legt den ganzen Raum daneben,
   # und zwar gleichmaessig, was am schwersten zu sehen ist.
-  if code "$SCALEAUDIT" | grep -qE 'KEINE LICHTE HOEHE MESSBAR'; then
+  if code "$SCALEAUDIT" | grep -E >/dev/null  'KEINE LICHTE HOEHE MESSBAR'; then
     ok "eine nicht messbare lichte Hoehe wird nicht geraten"
   else
     bad "eine nicht messbare lichte Hoehe wird nicht geraten" \
@@ -1113,8 +1148,8 @@ else
 
   # Und es sagt die eine Folge, die niemand erwartet: die Oeffnung des Portals ist in Metern
   # festgelegt und skaliert NICHT mit, die Wand aber schon.
-  if code "$SCALEAUDIT" | grep -qE 'ReportPortal' \
-     && code "$SCALEAUDIT" | grep -qE 'OpeningSize'; then
+  if code "$SCALEAUDIT" | grep -E >/dev/null  'ReportPortal' \
+     && code "$SCALEAUDIT" | grep -E >/dev/null  'OpeningSize'; then
     ok "der Raum-Massstab nennt die Folge fuer das Portal"
   else
     bad "der Raum-Massstab nennt die Folge fuer das Portal" \
@@ -1141,8 +1176,8 @@ if [ ! -f "$MEAS" ] || [ ! -f "$APPLY" ]; then
   bad "die Szene wird nicht selbst gespeichert" "Datei fehlt"
   bad "was neben dem Raum stehen bleibt, wird genannt und nicht bewegt" "Datei fehlt"
 else
-  if code "$APPLY" | grep -qE 'HQRoomMeasurement\.Measure' \
-     && code "$EDT/HQRoomScaleAudit.cs" | grep -qE 'HQRoomMeasurement\.Measure'; then
+  if code "$APPLY" | grep -E >/dev/null  'HQRoomMeasurement\.Measure' \
+     && code "$EDT/HQRoomScaleAudit.cs" | grep -E >/dev/null  'HQRoomMeasurement\.Measure'; then
     ok "Messung und Anwendung teilen sich eine Implementierung"
   else
     bad "Messung und Anwendung teilen sich eine Implementierung" \
@@ -1151,7 +1186,7 @@ else
 
   # Ziel geteilt durch gemessen, als Quotient im Code. Ein getipptes 0.7526 haette keine
   # Herkunft mehr, sobald eine der beiden Zahlen sich aendert.
-  if code "$APPLY" | grep -qE 'TargetClearHeight[[:space:]]*/[[:space:]]*ExpectedClearHeight'; then
+  if code "$APPLY" | grep -E >/dev/null  'TargetClearHeight[[:space:]]*/[[:space:]]*ExpectedClearHeight'; then
     ok "der angewendete Faktor ist abgeleitet, nicht getippt"
   else
     bad "der angewendete Faktor ist abgeleitet, nicht getippt" \
@@ -1159,7 +1194,7 @@ else
   fi
 
   # Ein Faktor gilt nur fuer die Messung, aus der er stammt.
-  if code "$APPLY" | grep -qE 'drift[[:space:]]*>[[:space:]]*PreconditionTolerance'; then
+  if code "$APPLY" | grep -E >/dev/null  'drift[[:space:]]*>[[:space:]]*PreconditionTolerance'; then
     ok "ein veraenderter Raum bricht die Skalierung ab"
   else
     bad "ein veraenderter Raum bricht die Skalierung ab" \
@@ -1168,13 +1203,13 @@ else
 
   # Zweimal angewendet quadriert er sich: 0.7526 wird 0.5664, und der Raum ist dann halb so
   # hoch wie gewollt statt drei Viertel.
-  if code "$APPLY" | grep -qE 'ABGEBROCHEN.*gibt es schon'; then
+  if code "$APPLY" | grep -E >/dev/null  'ABGEBROCHEN.*gibt es schon'; then
     ok "zweimal skalieren wird abgelehnt"
   else
     bad "zweimal skalieren wird abgelehnt" "ein zweiter Lauf quadriert den Faktor"
   fi
 
-  if code "$APPLY" | grep -qE 'Undo\.SetTransformParent'; then
+  if code "$APPLY" | grep -E >/dev/null  'Undo\.SetTransformParent'; then
     ok "das Umhaengen wird nachgemessen statt behauptet"
   else
     bad "das Umhaengen wird nachgemessen statt behauptet" \
@@ -1182,7 +1217,7 @@ else
         "wie es geprueft zu haben"
   fi
 
-  if code "$APPLY" | grep -qE 'NICHT von Hand korrigiert'; then
+  if code "$APPLY" | grep -E >/dev/null  'NICHT von Hand korrigiert'; then
     ok "eine Verschiebung wird gemeldet, nicht von Hand korrigiert"
   else
     bad "eine Verschiebung wird gemeldet, nicht von Hand korrigiert" \
@@ -1191,8 +1226,8 @@ else
 
   # Kein "fertig" ohne Nachmessung. Das ist die eine Zusage, die der Auftrag ausdruecklich
   # verlangt hat.
-  if code "$APPLY" | grep -qE 'NICHT ERREICHT' \
-     && code "$APPLY" | grep -qE 'heightMiss[[:space:]]*<=[[:space:]]*ResultTolerance'; then
+  if code "$APPLY" | grep -E >/dev/null  'NICHT ERREICHT' \
+     && code "$APPLY" | grep -E >/dev/null  'heightMiss[[:space:]]*<=[[:space:]]*ResultTolerance'; then
     ok "das Ergebnis wird nachgemessen, nicht behauptet"
   else
     bad "das Ergebnis wird nachgemessen, nicht behauptet" \
@@ -1211,7 +1246,7 @@ else
         "verzerrt sie gegeneinander"
   fi
 
-  if code "$APPLY" | grep -qE 'EditorSceneManager\.SaveScene'; then
+  if code "$APPLY" | grep -E >/dev/null  'EditorSceneManager\.SaveScene'; then
     bad "die Szene wird nicht selbst gespeichert" \
         "das Ergebnis gehoert angesehen, bevor es in der Datei steht"
   else
@@ -1219,8 +1254,8 @@ else
   fi
 
   # Der Raum schrumpft, was darin steht nicht. Das ist die Folge, die im Auftrag fehlt.
-  if code "$APPLY" | grep -qE 'ReportStrandedAnchors' \
-     && code "$APPLY" | grep -qE 'NICHTS DAVON WURDE ANGEWENDET'; then
+  if code "$APPLY" | grep -E >/dev/null  'ReportStrandedAnchors' \
+     && code "$APPLY" | grep -E >/dev/null  'NICHTS DAVON WURDE ANGEWENDET'; then
     ok "was neben dem Raum stehen bleibt, wird genannt und nicht bewegt"
   else
     bad "was neben dem Raum stehen bleibt, wird genannt und nicht bewegt" \
@@ -1242,8 +1277,8 @@ if [ ! -f "$BAKER" ]; then
   bad "das Eintragen laeuft ueber eine gepruefte Zusage" "Datei fehlt"
   bad "die Canvas wird auch ausgeschaltet gefunden" "Datei fehlt"
 else
-  if code "$BAKER" | grep -qE 'LabelName[[:space:]]*=' \
-     && code "$BAKER" | grep -qE 'TAP ANYWHERE TO START'; then
+  if code "$BAKER" | grep -E >/dev/null  'LabelName[[:space:]]*=' \
+     && code "$BAKER" | grep -E >/dev/null  'TAP ANYWHERE TO START'; then
     ok "ein Werkzeug baut die Branding-Canvas vollstaendig"
   else
     bad "ein Werkzeug baut die Branding-Canvas vollstaendig" \
@@ -1252,14 +1287,14 @@ else
 
   # Das Projekt kapselt TextMeshPro hinter TMP_PRESENT und hat dafuer EINEN Bauer. Die
   # Verzweigung ein zweites Mal zu schreiben ist der Zwei-Taschenlampen-Fehler.
-  if code "$BAKER" | grep -qE 'RuntimeUIFactory\.CreateText'; then
+  if code "$BAKER" | grep -E >/dev/null  'RuntimeUIFactory\.CreateText'; then
     ok "die TAP-Beschriftung kommt vom Textbauer des Projekts"
   else
     bad "die TAP-Beschriftung kommt vom Textbauer des Projekts" \
         "die TextMeshPro-oder-Legacy-Entscheidung gehoert an die eine Stelle, die sie schon trifft"
   fi
 
-  if code "$BAKER" | grep -qE 'EditorSetCinematicUiRoots'; then
+  if code "$BAKER" | grep -E >/dev/null  'EditorSetCinematicUiRoots'; then
     ok "der Eintrag in cinematicUiRoots wird mitgesetzt"
   else
     bad "der Eintrag in cinematicUiRoots wird mitgesetzt" \
@@ -1268,10 +1303,10 @@ else
 
   # Weder Reflection noch eine SerializedProperty nach Zeichenkette: beide kompilieren nach
   # einem Umbenennen weiter und tun lautlos nichts (Fehler 4).
-  if code "$BAKER" | grep -qE 'BindingFlags|FindProperty\('; then
+  if code "$BAKER" | grep -E >/dev/null  'BindingFlags|FindProperty\('; then
     bad "das Eintragen laeuft ueber eine gepruefte Zusage" \
         "ein nach Zeichenkette gesuchtes Feld ueberlebt jedes Umbenennen und tut dann nichts"
-  elif code "$BAKER" | grep -qE 'controller\.EditorCinematicUiRoots'; then
+  elif code "$BAKER" | grep -E >/dev/null  'controller\.EditorCinematicUiRoots'; then
     ok "das Eintragen laeuft ueber eine gepruefte Zusage"
   else
     bad "das Eintragen laeuft ueber eine gepruefte Zusage" \
@@ -1282,7 +1317,7 @@ else
   # GameObject.Find ueberspringt inaktive Objekte - und eine Canvas, die beim Uebergang
   # ausgeschaltet und dann gespeichert wurde, ist genau das. Gefunden wird sie damit nicht,
   # also stuende die neue neben der alten.
-  if code "$BAKER" | grep -qE 'GameObject\.Find\('; then
+  if code "$BAKER" | grep -E >/dev/null  'GameObject\.Find\('; then
     bad "die Canvas wird auch ausgeschaltet gefunden" \
         "GameObject.Find ueberspringt inaktive Objekte; die Canvas wuerde doppelt gebaut"
   else
@@ -1293,7 +1328,7 @@ fi
 split=""
 for obj in Lobby_Wall_North_Left Lobby_Wall_North_Right Lobby_Wall_North_Header \
            Lobby_Wall_North_Fill Lobby_DoorJamb_Left Lobby_DoorJamb_Right Lobby_DoorLintel; do
-  grep -qE "^  m_Name: $obj\$" "$SCENE" && split="$split $obj"
+  grep -E >/dev/null  "^  m_Name: $obj\$" "$SCENE" && split="$split $obj"
 done
 if [ -n "$split" ]; then
   bad "die Nordwand ist nicht wieder in Teile zerlegt" "noch da:$split"
@@ -1324,7 +1359,7 @@ fi
 # koennte.
 window_keeps=""
 for obj in Lobby_WindowMoonlight Lobby_Window_Blocker Lobby_Exterior; do
-  grep -qE "^  m_Name: $obj\$" "$SCENE" || window_keeps="$window_keeps $obj"
+  grep -E >/dev/null  "^  m_Name: $obj\$" "$SCENE" || window_keeps="$window_keeps $obj"
 done
 if [ -z "$window_keeps" ]; then
   ok "das Fenster der Lobby ist unangetastet"
@@ -1333,7 +1368,7 @@ else
       "beim Aufraeumen darf das Fenster nicht mitgehen; fehlt:$window_keeps"
 fi
 
-if code "$ENV/LobbyPortal.cs" | grep -qE 'EnsureWallPlug|_wallPlug|wallPlugDepth'; then
+if code "$ENV/LobbyPortal.cs" | grep -E >/dev/null  'EnsureWallPlug|_wallPlug|wallPlugDepth'; then
   bad "kein Laufzeit-Flicken mehr in der Wand" \
       "die Wand ist durchgezogen; ein zweites Quad davor ist nur Z-Fighting"
 else
@@ -1347,8 +1382,8 @@ fi
 # Collider. _wallSolid kann nur eines davon sein; die anderen blieben stehen, und der Spieler
 # lief in eine unsichtbare Wand, obwohl die Tuer sichtbar offen war - genau das, was das Loch in
 # der Kollision seit jeher verhindern soll.
-if code "$ENV/LobbyPortal.cs" | grep -qE 'private void CollectExtraWallColliders\(\)' &&
-   code "$ENV/LobbyPortal.cs" | grep -qE '_wallExtra\[i\]\.enabled = !open'; then
+if code "$ENV/LobbyPortal.cs" | grep -E >/dev/null  'private void CollectExtraWallColliders\(\)' &&
+   code "$ENV/LobbyPortal.cs" | grep -E >/dev/null  '_wallExtra\[i\]\.enabled = !open'; then
   ok "das Portal schaltet JEDES Collider in seiner Oeffnung ab, nicht nur eines"
 else
   bad "das Portal schaltet JEDES Collider in seiner Oeffnung ab, nicht nur eines" \
@@ -1359,8 +1394,8 @@ fi
 # Physikabfrage je Bild fuer eine Lobby, die sich zwischen zwei Oeffnungen nicht umbaut.
 APER="$(code "$ENV/LobbyPortal.cs" | sed -n '/private void EnsureWallAperture/,/^        }$/p')"
 UPD="$(code "$ENV/LobbyPortal.cs" | sed -n '/private void Update()/,/^        }$/p')"
-if printf '%s' "$APER" | grep -qE 'CollectExtraWallColliders\(\)' &&
-   ! printf '%s' "$UPD" | grep -qE 'OverlapBox'; then
+if printf '%s' "$APER" | grep -E >/dev/null  'CollectExtraWallColliders\(\)' &&
+   ! printf '%s' "$UPD" | grep -E >/dev/null  'OverlapBox'; then
   ok "die Nebencollider werden einmal gesammelt, nicht pro Frame"
 else
   bad "die Nebencollider werden einmal gesammelt, nicht pro Frame" \
@@ -1371,7 +1406,7 @@ fi
 # laesst den Spieler beim Durchgehen durch die Welt fallen - dieselbe Klasse Fehler wie die
 # unsichtbare Wand, nur nach unten.
 COLL="$(code "$ENV/LobbyPortal.cs" | sed -n '/private void CollectExtraWallColliders/,/^        }$/p')"
-if printf '%s' "$COLL" | grep -qE 'c\.bounds\.center\.y < transform\.position\.y'; then
+if printf '%s' "$COLL" | grep -E >/dev/null  'c\.bounds\.center\.y < transform\.position\.y'; then
   ok "ein Boden unter der Schwelle wird nicht mit abgeschaltet"
 else
   bad "ein Boden unter der Schwelle wird nicht mit abgeschaltet" \
@@ -1386,8 +1421,8 @@ fi
 # zweiter Weg durch dieselbe Kette, und der eine, der seltener laeuft, ist der, der kaputt geht.
 TR="$(code "$BOOT" | sed -n '/private void BuildTestRoom/,/^        }$/p')"
 
-if printf '%s' "$TR" | grep -qE 'new GeneratedHouse' &&
-   printf '%s' "$TR" | grep -qE '_generatedHouse\.Entrance = instance;'; then
+if printf '%s' "$TR" | grep -E >/dev/null  'new GeneratedHouse' &&
+   printf '%s' "$TR" | grep -E >/dev/null  '_generatedHouse\.Entrance = instance;'; then
   ok "der Testraum ist ein Haus mit einem Raum, kein Sonderfall in der Kette"
 else
   bad "der Testraum ist ein Haus mit einem Raum, kein Sonderfall in der Kette" \
@@ -1397,8 +1432,8 @@ fi
 # In der Szene der MISSION. `new GameObject` landet in der AKTIVEN Szene, und waehrend das Portal
 # vorbereitet, ist das die Lobby - der Raum haette an einem Lobby-Objekt gehangen und waere mit
 # ihr entladen worden (CLAUDE.md Fehler 17).
-if printf '%s' "$TR" | grep -qE 'root\.transform\.SetParent\(parent, false\)' &&
-   printf '%s' "$TR" | grep -qE 'worldRoot != null \? worldRoot : transform'; then
+if printf '%s' "$TR" | grep -E >/dev/null  'root\.transform\.SetParent\(parent, false\)' &&
+   printf '%s' "$TR" | grep -E >/dev/null  'worldRoot != null \? worldRoot : transform'; then
   ok "der Testraum wird in die Szene der Mission gehaengt, nicht in die aktive"
 else
   bad "der Testraum wird in die Szene der Mission gehaengt, nicht in die aktive" \
@@ -1406,7 +1441,7 @@ else
 fi
 
 # Er ist Stage B von Anfang bis Ende: kein Generierungsstrom, kein Layout, kein Hash.
-if ! printf '%s' "$TR" | grep -qE 'CiycRandom|LayoutHash|GenerateHouse'; then
+if ! printf '%s' "$TR" | grep -E >/dev/null  'CiycRandom|LayoutHash|GenerateHouse'; then
   ok "der Testraum beruehrt weder Generierungsstrom noch Layout-Hash"
 else
   bad "der Testraum beruehrt weder Generierungsstrom noch Layout-Hash" \
@@ -1416,7 +1451,7 @@ fi
 # Und er steht WEIT weg von der Lobby. Beide Szenen sind waehrend der Vorbereitung geladen, und
 # eine Physikabfrage ist global ueber alle geladenen Szenen: zwei Raeume, die sich ueberlappen,
 # sind zwei Boeden untereinander.
-if code "$BOOT" | grep -qE 'testRoomPosition = new Vector3\(0f, 0f, -1[0-9][0-9]f\)'; then
+if code "$BOOT" | grep -E >/dev/null  'testRoomPosition = new Vector3\(0f, 0f, -1[0-9][0-9]f\)'; then
   ok "der Testraum steht weit ab von der Lobby"
 else
   bad "der Testraum steht weit ab von der Lobby" \
@@ -1426,8 +1461,8 @@ fi
 # ---- der Rueckweg ist die Route, die es schon gibt --------------------------------------------
 RET="$ROOT/Assets/CatchIfYouCan/Scripts/Interaction/LobbyReturnPoint.cs"
 
-if code "$RET" | grep -qE 'PendingEntryMode = MainMenuEntryMode\.DirectLobby' &&
-   code "$RET" | grep -qE 'SceneLoader\.Instance\.LoadMainMenu\(\)'; then
+if code "$RET" | grep -E >/dev/null  'PendingEntryMode = MainMenuEntryMode\.DirectLobby' &&
+   code "$RET" | grep -E >/dev/null  'SceneLoader\.Instance\.LoadMainMenu\(\)'; then
   ok "der Rueckweg benutzt die vorhandene Route in die Lobby"
 else
   bad "der Rueckweg benutzt die vorhandene Route in die Lobby" \
@@ -1436,7 +1471,7 @@ fi
 
 # E, kein Trigger. Ein Trigger vor einem Rueckweg heisst, dass jeder Schritt rueckwaerts die
 # Szene wechselt - und die Nordwand ist genau die, vor der man nach dem Durchgang steht.
-if code "$RET" | grep -qE 'IInteractable' && ! code "$RET" | grep -qE 'OnTriggerEnter'; then
+if code "$RET" | grep -E >/dev/null  'IInteractable' && ! code "$RET" | grep -E >/dev/null  'OnTriggerEnter'; then
   ok "der Rueckweg ist eine Interaktion, kein Trigger"
 else
   bad "der Rueckweg ist eine Interaktion, kein Trigger" \
@@ -1445,7 +1480,7 @@ fi
 
 # Einmal. Zweimal druecken waehrend des Ladens ist ein zweiter Ladevorgang auf eine Szene, die
 # es schon nicht mehr gibt.
-if code "$RET" | grep -qE 'if \(_leaving\)' && code "$RET" | grep -qE '_leaving = true;'; then
+if code "$RET" | grep -E >/dev/null  'if \(_leaving\)' && code "$RET" | grep -E >/dev/null  '_leaving = true;'; then
   ok "der Rueckweg feuert genau einmal"
 else
   bad "der Rueckweg feuert genau einmal" \
@@ -1454,7 +1489,7 @@ fi
 
 # Und ohne SceneLoader wird die Absicht ZURUECKGENOMMEN, statt bei irgendeinem spaeteren
 # Ladevorgang ein Intro zu ueberspringen, das niemand ueberspringen wollte.
-if code "$RET" | grep -qE 'PendingEntryMode = MainMenuEntryMode\.Cinematic;'; then
+if code "$RET" | grep -E >/dev/null  'PendingEntryMode = MainMenuEntryMode\.Cinematic;'; then
   ok "ein gescheiterter Rueckweg nimmt seine Absicht zurueck"
 else
   bad "ein gescheiterter Rueckweg nimmt seine Absicht zurueck" \
@@ -1464,7 +1499,7 @@ fi
 # Das leuchtende Panel geht durch die eine gemeinsame Regel: ohne Shader wird der Renderer
 # abgeschaltet statt Unitys eingebautes Standardmaterial zu zeichnen, das unter URP magenta ist.
 RP="$(code "$BOOT" | sed -n '/private void BuildReturnPortal/,/^        }$/p')"
-if printf '%s' "$RP" | grep -qE 'Art\.PrimitiveSurface\.Apply\('; then
+if printf '%s' "$RP" | grep -E >/dev/null  'Art\.PrimitiveSurface\.Apply\('; then
   ok "das Rueckweg-Panel kann nicht magenta werden"
 else
   bad "das Rueckweg-Panel kann nicht magenta werden" \
@@ -1476,8 +1511,8 @@ PWT="$ROOT/Assets/CatchIfYouCan/Editor/LobbyPortalWallTool.cs"
 
 # Eine Wandnormale hat ZWEI Richtungen, und die falsche dreht das Portal nach draussen. Welche
 # Seite innen ist, sagt der Spawnpunkt des Spielers - gemessen, nicht angenommen.
-if code "$PWT" | grep -qE 'FindInScene\("Lobby_PlayerSpawn"\)' &&
-   code "$PWT" | grep -qE 'Vector3\.Dot\(spawn\.position - world\.center, normal\) < 0f'; then
+if code "$PWT" | grep -E >/dev/null  'FindInScene\("Lobby_PlayerSpawn"\)' &&
+   code "$PWT" | grep -E >/dev/null  'Vector3\.Dot\(spawn\.position - world\.center, normal\) < 0f'; then
   ok "die Innenseite der Portalwand wird am Spawnpunkt gemessen"
 else
   bad "die Innenseite der Portalwand wird am Spawnpunkt gemessen" \
@@ -1485,7 +1520,7 @@ else
 fi
 
 # Und ein Boden ist keine Wand. Die duennste Achse einer Bodenplatte ist die HOEHE.
-if code "$PWT" | grep -qE 'if \(thin == 1\)'; then
+if code "$PWT" | grep -E >/dev/null  'if \(thin == 1\)'; then
   ok "ein Boden oder eine Decke wird als Portalwand abgelehnt"
 else
   bad "ein Boden oder eine Decke wird als Portalwand abgelehnt" \
@@ -1498,8 +1533,8 @@ BUILD="$(code "$LIB" | sed -n '/private void Build()/,/^        }$/p')"
 
 # useExistingModel baut nichts und instanziiert nichts - sonst stuenden zwei Bretter am selben
 # Fleck, und das zweite verdeckt das erste gerade so weit, dass es wie ein Materialfehler aussieht.
-if printf '%s' "$BUILD" | grep -qE 'if \(useExistingModel\)' &&
-   printf '%s' "$BUILD" | grep -qE 'EnsureTriggerAroundModel\(\);'; then
+if printf '%s' "$BUILD" | grep -E >/dev/null  'if \(useExistingModel\)' &&
+   printf '%s' "$BUILD" | grep -E >/dev/null  'EnsureTriggerAroundModel\(\);'; then
   ok "ein vorhandenes Brettmodell bekommt weder Platzhalter noch ein zweites Prefab"
 else
   bad "ein vorhandenes Brettmodell bekommt weder Platzhalter noch ein zweites Prefab" \
@@ -1510,8 +1545,8 @@ fi
 # zurueckgerechnet: BoxCollider.center und .size sind lokal, eine Weltgroesse dort waere durch
 # die Skalierung des Objekts ein zweites Mal skaliert (CLAUDE.md Fehler 12).
 TRIG="$(code "$LIB" | sed -n '/private void EnsureTriggerAroundModel/,/^        }$/p')"
-if printf '%s' "$TRIG" | grep -qE 'transform\.InverseTransformPoint\(world\.center\)' &&
-   printf '%s' "$TRIG" | grep -qE 'lossyScale'; then
+if printf '%s' "$TRIG" | grep -E >/dev/null  'transform\.InverseTransformPoint\(world\.center\)' &&
+   printf '%s' "$TRIG" | grep -E >/dev/null  'lossyScale'; then
   ok "der Interaktionskoerper des Bretts wird in dessen eigenen Raum zurueckgerechnet"
 else
   bad "der Interaktionskoerper des Bretts wird in dessen eigenen Raum zurueckgerechnet" \
@@ -1519,7 +1554,7 @@ else
 fi
 
 # Bringt das Modell schon einen Collider mit, wird keiner dazugebaut.
-if printf '%s' "$TRIG" | grep -qE 'if \(GetComponentInChildren<Collider>\(\) != null\)'; then
+if printf '%s' "$TRIG" | grep -E >/dev/null  'if \(GetComponentInChildren<Collider>\(\) != null\)'; then
   ok "ein Modell mit eigenem Collider bekommt keinen zweiten"
 else
   bad "ein Modell mit eigenem Collider bekommt keinen zweiten" \
@@ -1528,7 +1563,7 @@ fi
 
 # Und das Werkzeug legt keine zweite Komponente an: zwei waeren zwei Zugaenge zu demselben Panel.
 BMT="$ROOT/Assets/CatchIfYouCan/Editor/LobbyBoardMoveTool.cs"
-if code "$BMT" | grep -qE 'target\.GetComponent<LobbyInvestigationBoard>\(\) != null'; then
+if code "$BMT" | grep -E >/dev/null  'target\.GetComponent<LobbyInvestigationBoard>\(\) != null'; then
   ok "das Umzugswerkzeug legt kein zweites Ermittlungsbrett an"
 else
   bad "das Umzugswerkzeug legt kein zweites Ermittlungsbrett an" \
@@ -1548,7 +1583,7 @@ SHADER="$ROOT/Assets/CatchIfYouCan/Shaders/Portal.shader"
 # 1. The image is sampled where the fragment is on screen, not where it is on the quad.
 #    Sampling the mesh UV instead gives a texture pasted flat on the surface: it does not
 #    shift with the head, which is the whole illusion.
-if grep -q 'ComputeScreenPos' "$SHADER" && grep -qE 'screenPos\.xy */ *max\(.*screenPos\.w' "$SHADER"; then
+if grep >/dev/null  'ComputeScreenPos' "$SHADER" && grep -E >/dev/null  'screenPos\.xy */ *max\(.*screenPos\.w' "$SHADER"; then
   ok "the destination is sampled in screen space, not by the quad's own UV"
 else
   bad "the destination is sampled in screen space, not by the quad's own UV" \
@@ -1559,7 +1594,7 @@ fi
 #    image as if it covered the screen, so a buffer rendered at a different aspect is
 #    stretched - and ResolveTextureSize clamps the width, so the two can disagree.
 if code "$SURF" | tr -d '\n' | tr -s ' ' \
-     | grep -qE '_portalCamera\.aspect = _textureHeight > 0'; then
+     | grep -E >/dev/null  '_portalCamera\.aspect = _textureHeight > 0'; then
   ok "the portal camera's aspect comes from the buffer it renders into"
 else
   bad "the portal camera's aspect comes from the buffer it renders into" \
@@ -1571,7 +1606,7 @@ fi
 #    that - so the side has to be derived from where the camera actually is. Assumed, it is a
 #    coin flip, and the losing side clips the whole room away and leaves the sky: a black
 #    interior behind a lit rim, which is exactly what was reported.
-if code "$SURF" | grep -qE 'Mathf\.Sign\(Vector3\.Dot\(normal, cameraPosition - point\)\)'; then
+if code "$SURF" | grep -E >/dev/null  'Mathf\.Sign\(Vector3\.Dot\(normal, cameraPosition - point\)\)'; then
   ok "the oblique clip side is derived from the camera, not assumed"
 else
   bad "the oblique clip side is derived from the camera, not assumed" \
@@ -1581,7 +1616,7 @@ fi
 # The offset that lifts the plane off the destination wall has to follow the DERIVED normal.
 # Following the raw one shaves the offset off the room instead of off the wall on the
 # flipped case, which is the same bug wearing a 2 cm hat.
-if code "$SURF" | grep -qE 'offsetPoint = point \+ kept \* clipPlaneOffset'; then
+if code "$SURF" | grep -E >/dev/null  'offsetPoint = point \+ kept \* clipPlaneOffset'; then
   ok "the clip-plane offset follows the derived normal"
 else
   bad "the clip-plane offset follows the derived normal" \
@@ -1591,7 +1626,7 @@ fi
 # The projection must be reset before it is skewed: CalculateObliqueMatrix reads the camera's
 # CURRENT projection, so skewing an already-skewed matrix compounds every frame.
 if code "$SURF" | tr -d '\n' | tr -s ' ' \
-     | grep -qE 'ResetProjectionMatrix\(\); .*projectionMatrix = _portalCamera\.CalculateObliqueMatrix'; then
+     | grep -E >/dev/null  'ResetProjectionMatrix\(\); .*projectionMatrix = _portalCamera\.CalculateObliqueMatrix'; then
   ok "the projection is reset before it is made oblique"
 else
   bad "the projection is reset before it is made oblique" \
@@ -1604,7 +1639,7 @@ fi
 # GameObject churns the hierarchy through OnDisable/OnEnable every time the player looks
 # away, and it is also how a second camera ends up rendering on a frame its pose was never
 # written for.
-if code "$SURF" | grep -qE '_portalCamera\.gameObject\.SetActive'; then
+if code "$SURF" | grep -E >/dev/null  '_portalCamera\.gameObject\.SetActive'; then
   bad "the portal camera is gated by its component, not by its GameObject" \
       "SetActive on the camera object churns the hierarchy and decouples the render from the pose"
 else
@@ -1614,7 +1649,7 @@ fi
 # It is enabled at the END of LateUpdate, after the pose, the aspect and the oblique plane are
 # all written - so the frame Unity draws is the frame that was set up, never a stale one.
 if code "$SURF" | tr -d '\n' | tr -s ' ' \
-     | grep -qE 'CalculateObliqueMatrix\(_clipPlane\); _portalCamera\.enabled = true;'; then
+     | grep -E >/dev/null  'CalculateObliqueMatrix\(_clipPlane\); _portalCamera\.enabled = true;'; then
   ok "the camera is enabled only after the pose and the clip plane are written"
 else
   bad "the camera is enabled only after the pose and the clip plane are written" \
@@ -1623,7 +1658,7 @@ fi
 
 # Nothing that makes a camera the player's may be on it. An AudioListener in particular gives
 # the scene two, and Unity then picks one at random and warns about it forever.
-if code "$SURF" | grep -qE 'AddComponent<AudioListener>|AddComponent<Player'; then
+if code "$SURF" | grep -E >/dev/null  'AddComponent<AudioListener>|AddComponent<Player'; then
   bad "the portal camera carries nothing that makes it the player's" \
       "no AudioListener, no PlayerLook, no input or HUD component belongs on it"
 else
@@ -1632,8 +1667,8 @@ fi
 
 # The orientation convention is checked, not compensated for in a dozen places. One rule -
 # local +Z out of the visible surface - and a destination that breaks it is named.
-if code "$SURF" | grep -q 'refuseOnOrientationMismatch' \
-   && code "$SURF" | grep -qE 'Vector3\.Dot\(destination\.forward,'; then
+if code "$SURF" | grep >/dev/null  'refuseOnOrientationMismatch' \
+   && code "$SURF" | grep -E >/dev/null  'Vector3\.Dot\(destination\.forward,'; then
   ok "the source/destination orientation convention is validated"
 else
   bad "the source/destination orientation convention is validated" \
@@ -1642,8 +1677,8 @@ fi
 
 # The far room is re-rendered on a cadence the quality level chooses, so a phone can pay for
 # it half as often. Zero means every frame; the check is that the seam exists at all.
-if code "$ART/PortalStyle.cs" | grep -qE 'public float RefreshInterval\(\)' \
-   && code "$SURF" | grep -qE '_style\.RefreshInterval\(\)'; then
+if code "$ART/PortalStyle.cs" | grep -E >/dev/null  'public float RefreshInterval\(\)' \
+   && code "$SURF" | grep -E >/dev/null  '_style\.RefreshInterval\(\)'; then
   ok "the portal view has a render cadence the quality level drives"
 else
   bad "the portal view has a render cadence the quality level drives" \
@@ -1653,7 +1688,7 @@ fi
 # The far room must stay readable. The distortion is confined to the edge by the shader, and
 # capped in magnitude by the range on the field rather than by whoever drags the slider.
 if code "$ART/PortalStyle.cs" | tr -d '\n' | tr -s ' ' \
-     | grep -qE '\[Range\(0f, 0\.01[0-5]f\)\] public float viewDistortionStrength'; then
+     | grep -E >/dev/null  '\[Range\(0f, 0\.01[0-5]f\)\] public float viewDistortionStrength'; then
   ok "the view distortion is capped at 1.5% of the screen"
 else
   bad "the view distortion is capped at 1.5% of the screen" \
@@ -1661,7 +1696,7 @@ else
 fi
 
 # The bend is weighted to the boundary. Applied flat it drags the middle of the opening too.
-if grep -qE 'bend = saturate\(1\.0 - view\)' "$SHADER"; then
+if grep -E >/dev/null  'bend = saturate\(1\.0 - view\)' "$SHADER"; then
   ok "the view distortion falls to zero toward the centre"
 else
   bad "the view distortion falls to zero toward the centre" \
@@ -1670,7 +1705,7 @@ fi
 
 # Unity's own projection data decides the render-target flip, not a platform name. A
 # hand-written per-platform branch is how the portal ends up upside down on exactly one API.
-if grep -qE '#if +UNITY_(STANDALONE|IOS|ANDROID|EDITOR_WIN|EDITOR_OSX)' "$SHADER"; then
+if grep -E >/dev/null  '#if +UNITY_(STANDALONE|IOS|ANDROID|EDITOR_WIN|EDITOR_OSX)' "$SHADER"; then
   bad "no hand-coded per-platform flip in the portal shader" \
       "ComputeScreenPos already carries _ProjectionParams.x, which is the convention data"
 else
@@ -1678,8 +1713,8 @@ else
 fi
 
 # Debug output exists and is off unless asked for.
-if code "$SURF" | grep -qE 'private bool debugReadout' \
-   && code "$SURF" | grep -qE 'if \(!debugReadout\)'; then
+if code "$SURF" | grep -E >/dev/null  'private bool debugReadout' \
+   && code "$SURF" | grep -E >/dev/null  'if \(!debugReadout\)'; then
   ok "the portal debug readout exists and is opt-in"
 else
   bad "the portal debug readout exists and is opt-in" \
@@ -1687,7 +1722,7 @@ else
 fi
 
 # No recursion. One portal seen through another is not needed and doubles the cost silently.
-if code "$SURF" | grep -qE 'maxRecursion|recursionDepth|RenderRecursive'; then
+if code "$SURF" | grep -E >/dev/null  'maxRecursion|recursionDepth|RenderRecursive'; then
   bad "the portal does not render recursively" \
       "production default is one pass; recursion doubles the cost per level"
 else
@@ -1726,9 +1761,9 @@ fi
 # room's floor being too high. The anchor is a CHILD of the arrival point, which is what keeps
 # it the prepared world's and not some other one's - so both halves are checked.
 if code "$ENV/LobbyPortal.cs" \
-     | grep -qE 'ResolveViewAnchor\(_pendingWorld\.MissionEntryAnchor\)' &&
-   code "$ENV/LobbyPortal.cs" | grep -qE '_viewAnchor\.SetParent\(arrival, *false\)' &&
-   ! code "$ENV/LobbyPortal.cs" | grep -qE '_pendingWorld\.ArrivalPoint'; then
+     | grep -E >/dev/null  'ResolveViewAnchor\(_pendingWorld\.MissionEntryAnchor\)' &&
+   code "$ENV/LobbyPortal.cs" | grep -E >/dev/null  '_viewAnchor\.SetParent\(arrival, *false\)' &&
+   ! code "$ENV/LobbyPortal.cs" | grep -E >/dev/null  '_pendingWorld\.ArrivalPoint'; then
   ok "the portal is aimed at the prepared world the player will enter"
 else
   bad "the portal is aimed at the prepared world the player will enter" \
@@ -1737,7 +1772,7 @@ fi
 
 # One seed, one generation. The loader reuses the prepared bootstrap when the mission is the
 # same object; rolling again would give the player a different house than the one on show.
-if code "$MWL" | grep -qE 'ReferenceEquals\(InvestigationBootstrap\.Prepared\.Mission, mission\)'; then
+if code "$MWL" | grep -E >/dev/null  'ReferenceEquals\(InvestigationBootstrap\.Prepared\.Mission, mission\)'; then
   ok "a prepared world is reused rather than regenerated"
 else
   bad "a prepared world is reused rather than regenerated" \
@@ -1745,7 +1780,7 @@ else
 fi
 
 # The world is prepared ADDITIVELY, behind the lobby, with the player still standing in it.
-if code "$MWL" | grep -qE 'LoadSceneAsync\([^,]+, *LoadSceneMode\.Additive\)'; then
+if code "$MWL" | grep -E >/dev/null  'LoadSceneAsync\([^,]+, *LoadSceneMode\.Additive\)'; then
   ok "the mission world is prepared additively behind the lobby"
 else
   bad "the mission world is prepared additively behind the lobby" \
@@ -1753,8 +1788,8 @@ else
 fi
 
 # Nothing in the portal may start a timer that ends in a handover. Entry is the player's.
-if code "$ENV/LobbyPortal.cs" | grep -qE '(^|[^.])\bInvoke\("' \
-   || code "$ENV/LobbyPortal.cs" | grep -qE 'InvokeRepeating\('; then
+if code "$ENV/LobbyPortal.cs" | grep -E >/dev/null  '(^|[^.])\bInvoke\("' \
+   || code "$ENV/LobbyPortal.cs" | grep -E >/dev/null  'InvokeRepeating\('; then
   bad "no timer can hand the player over" \
       "world-ready or animation-complete must never mean 'therefore teleport'"
 else
@@ -1763,8 +1798,8 @@ fi
 
 # A preparation that fails has a state of its own. Reporting it as Inactive - which is also
 # what a doorway nobody asked anything of reports - makes a failure invisible.
-if code "$ENV/LobbyPortal.cs" | grep -qE '^ *Failed,' \
-   && code "$ENV/LobbyPortal.cs" | grep -qE 'SetState\(LobbyPortalState\.Failed\)'; then
+if code "$ENV/LobbyPortal.cs" | grep -E >/dev/null  '^ *Failed,' \
+   && code "$ENV/LobbyPortal.cs" | grep -E >/dev/null  'SetState\(LobbyPortalState\.Failed\)'; then
   ok "a failed preparation has a state of its own"
 else
   bad "a failed preparation has a state of its own" \
@@ -1782,7 +1817,7 @@ fi
 
 for view in "$SURF" "$ART/MirrorCorner.cs"; do
   vname="$(basename "$view" .cs)"
-  if code "$view" | grep -qE 'SecondaryViewBudget\.MayRender\('; then
+  if code "$view" | grep -E >/dev/null  'SecondaryViewBudget\.MayRender\('; then
     ok "$vname asks the shared budget before rendering"
   else
     bad "$vname asks the shared budget before rendering" \
@@ -1792,8 +1827,8 @@ done
 
 # The budget comes from the project's one quality signal. A parallel tier enum can disagree
 # with the buffer sizes and the particle rates, and then nothing is describable.
-if code "$BUDGET" | grep -qE 'PortalStyle\.QualityFraction01\(\)' \
-   && ! code "$BUDGET" | grep -qE 'enum +[A-Za-z]*Tier'; then
+if code "$BUDGET" | grep -E >/dev/null  'PortalStyle\.QualityFraction01\(\)' \
+   && ! code "$BUDGET" | grep -E >/dev/null  'enum +[A-Za-z]*Tier'; then
   ok "the frame budget derives from the project's own quality level"
 else
   bad "the frame budget derives from the project's own quality level" \
@@ -1802,8 +1837,8 @@ fi
 
 # The buffer ladder has named ends. Defining the bottom as half the top means raising the
 # desktop buffer silently raises the phone's.
-if code "$ART/PortalStyle.cs" | grep -qE 'public int minViewResolution *(=|;)' \
-   && ! code "$SURF" | grep -qE 'resolution \* 0\.5f'; then
+if code "$ART/PortalStyle.cs" | grep -E >/dev/null  'public int minViewResolution *(=|;)' \
+   && ! code "$SURF" | grep -E >/dev/null  'resolution \* 0\.5f'; then
   ok "the view buffer ladder has named ends, not a halved top"
 else
   bad "the view buffer ladder has named ends, not a halved top" \
@@ -1818,8 +1853,8 @@ BOOT="$ROOT/Assets/CatchIfYouCan/Scripts/Procedural/InvestigationBootstrap.cs"
 # Oeffnungsroutine haelt das fuer eine fehlgeschlagene Vorbereitung und laesst die Tuer nach
 # gut einer Sekunde zusammenfallen, mit dem Diagnoseraum darin. Er kam vom Van, und ohne Van
 # gab es keinen. Also gibt es jetzt immer einen.
-if code "$BOOT" | grep -qE 'private void EnsureFallbackArrival\(\)' \
-   && code "$BOOT" | grep -qE '_van\.PlayerSpawnPoint : _fallbackArrival'; then
+if code "$BOOT" | grep -E >/dev/null  'private void EnsureFallbackArrival\(\)' \
+   && code "$BOOT" | grep -E >/dev/null  '_van\.PlayerSpawnPoint : _fallbackArrival'; then
   ok "es gibt immer einen Ankunftspunkt, auch ohne Van"
 else
   bad "es gibt immer einen Ankunftspunkt, auch ohne Van" \
@@ -1840,7 +1875,7 @@ fi
 # Shader-Eigenschaft wird nur gesetzt, wenn der echte Portal-Shader gefunden wurde; wurde er
 # es nicht, laeuft das Ersatzmaterial und zeichnet ein undurchsichtiges Viereck von der
 # Groesse der Oeffnung mitten in die Wand. Das sah aus wie eine Tuer und war auch eine.
-if code "$ART/PortalSurface.cs" | grep -qE '_surfaceRenderer\.enabled = _open > 0\.001f'; then
+if code "$ART/PortalSurface.cs" | grep -E >/dev/null  '_surfaceRenderer\.enabled = _open > 0\.001f'; then
   ok "ein geschlossenes Portal schaltet seinen Renderer ab"
 else
   bad "ein geschlossenes Portal schaltet seinen Renderer ab" \
@@ -1848,7 +1883,7 @@ else
 fi
 
 # Und der Ausgangszustand ist ZU. Eine Wand ist zu, bis jemand sie aufreisst.
-if code "$ART/PortalSurface.cs" | grep -qE 'private float _open;'; then
+if code "$ART/PortalSurface.cs" | grep -E >/dev/null  'private float _open;'; then
   ok "die Portalflaeche faengt geschlossen an"
 else
   bad "die Portalflaeche faengt geschlossen an" \
@@ -1956,7 +1991,7 @@ SHADER="$ROOT/Assets/CatchIfYouCan/Shaders/Portal.shader"
 ART_BLOCK="$(sed -n '/#ifdef _PORTAL_TEXTURED/,/#endif/p' "$SHADER")"
 
 if [ -n "$ART_BLOCK" ]; then
-  if printf '%s' "$ART_BLOCK" | grep -qE '^\s*(float2? +)?(box|oval|fit|gate|alpha|open|ragged|rd|r) *='; then
+  if printf '%s' "$ART_BLOCK" | grep -E >/dev/null  '^\s*(float2? +)?(box|oval|fit|gate|alpha|open|ragged|rd|r) *='; then
     bad "purchased artwork cannot move the breach" \
         "the artwork block assigns a silhouette term; a pack must change the look, not the hole"
   else
@@ -1972,7 +2007,7 @@ fi
 OUTSIDE="$(grep -n 'SAMPLE_TEXTURE2D(_EnergyTex\|SAMPLE_TEXTURE2D(_MaskTex' "$SHADER" | wc -l | tr -d ' ')"
 INSIDE="$(printf '%s' "$ART_BLOCK" | grep -c 'SAMPLE_TEXTURE2D(_EnergyTex\|SAMPLE_TEXTURE2D(_MaskTex' | tr -d ' ')"
 if [ "$OUTSIDE" = "$INSIDE" ] && [ "$INSIDE" -gt 0 ] &&
-   grep -q 'shader_feature_local_fragment _PORTAL_TEXTURED' "$SHADER"; then
+   grep >/dev/null  'shader_feature_local_fragment _PORTAL_TEXTURED' "$SHADER"; then
   ok "the purchased-artwork samplers are compiled out when unused"
 else
   bad "the purchased-artwork samplers are compiled out when unused" \
@@ -1983,7 +2018,7 @@ fi
 # energy slot empty the shader samples the default black, multiplies the energy by it, and the
 # portal goes dark - which reads as a broken portal rather than an unconfigured one.
 if code "$ART/PortalStyle.cs" \
-     | grep -qE 'ArtworkActive *=> *usePurchasedArtwork *&& *energyTexture != null'; then
+     | grep -E >/dev/null  'ArtworkActive *=> *usePurchasedArtwork *&& *energyTexture != null'; then
   ok "adopting with no texture keeps the procedural portal"
 else
   bad "adopting with no texture keeps the procedural portal" \
@@ -1995,8 +2030,8 @@ fi
 # anything REFERENCED inside it is a missing asset everywhere else - CLAUDE.md mistake 15.
 ADAPTER="$ROOT/Assets/CatchIfYouCan/Editor/PurchasedPortalAdapter.cs"
 if [ -f "$ADAPTER" ]; then
-  if code "$ADAPTER" | grep -qE 'DestinationFolder *= *"Assets/CatchIfYouCan/' &&
-     code "$ADAPTER" | grep -qE 'AssetDatabase\.CopyAsset\('; then
+  if code "$ADAPTER" | grep -E >/dev/null  'DestinationFolder *= *"Assets/CatchIfYouCan/' &&
+     code "$ADAPTER" | grep -E >/dev/null  'AssetDatabase\.CopyAsset\('; then
     ok "the portal adapter copies the pack's artwork into the project"
   else
     bad "the portal adapter copies the pack's artwork into the project" \
@@ -2006,8 +2041,8 @@ if [ -f "$ADAPTER" ]; then
   # The pack path is data, never a literal the tool falls back to mid-scan. A tool that
   # silently scans somewhere other than the path it was given reports on the wrong folder,
   # which this project has already shipped once.
-  if code "$ADAPTER" | grep -qE 'ScannedPath *= *folder' &&
-     ! code "$ADAPTER" | grep -qE 'folder *\+ *"/(interior|Portal|Shaders|Textures)"'; then
+  if code "$ADAPTER" | grep -E >/dev/null  'ScannedPath *= *folder' &&
+     ! code "$ADAPTER" | grep -E >/dev/null  'folder *\+ *"/(interior|Portal|Shaders|Textures)"'; then
     ok "the portal adapter scans exactly the path it was given"
   else
     bad "the portal adapter scans exactly the path it was given" \
@@ -2026,23 +2061,23 @@ fi
 #
 # Both halves are needed and neither is sufficient. A texture on an opaque material is still a
 # rectangle; additive blending with no texture is a brighter rectangle.
-if code "$FX" | grep -qE 'private void ConfigureAdditive\(Material' &&
-   code "$FX" | grep -qE 'ConfigureAdditive\(material\);'; then
+if code "$FX" | grep -E >/dev/null  'private void ConfigureAdditive\(Material' &&
+   code "$FX" | grep -E >/dev/null  'ConfigureAdditive\(material\);'; then
   ok "the particle material is configured, not left at the shader defaults"
 else
   bad "the particle material is configured, not left at the shader defaults" \
       "a freshly constructed URP particle material is opaque and untextured"
 fi
 
-if code "$FX" | grep -qE 'material\.SetFloat\("_Surface", *1f\)' &&
-   code "$FX" | grep -qE 'material\.SetFloat\("_DstBlend", *\(float\)UnityEngine\.Rendering\.BlendMode\.One\)'; then
+if code "$FX" | grep -E >/dev/null  'material\.SetFloat\("_Surface", *1f\)' &&
+   code "$FX" | grep -E >/dev/null  'material\.SetFloat\("_DstBlend", *\(float\)UnityEngine\.Rendering\.BlendMode\.One\)'; then
   ok "the sparks are transparent and additive"
 else
   bad "the sparks are transparent and additive" \
       "without _Surface AND the blend factors the material renders opaque whatever it says"
 fi
 
-if code "$FX" | grep -qE 'material\.SetTexture\("_BaseMap", *SparkSprite\(\)\)'; then
+if code "$FX" | grep -E >/dev/null  'material\.SetTexture\("_BaseMap", *SparkSprite\(\)\)'; then
   ok "the sparks are given something to draw"
 else
   bad "the sparks are given something to draw" \
@@ -2051,8 +2086,8 @@ fi
 
 # The sprite is generated, so it must also be released. A Texture2D built at runtime is not
 # collected with the GameObject that referenced it.
-if code "$FX" | grep -qE 'private Texture2D SparkSprite\(\)' &&
-   code "$FX" | sed -n '/private void OnDestroy/,/^        }$/p' | grep -qE 'Destroy\(_sparkSprite\)'; then
+if code "$FX" | grep -E >/dev/null  'private Texture2D SparkSprite\(\)' &&
+   code "$FX" | sed -n '/private void OnDestroy/,/^        }$/p' | grep -E >/dev/null  'Destroy\(_sparkSprite\)'; then
   ok "the generated spark sprite is released"
 else
   bad "the generated spark sprite is released" \
@@ -2062,7 +2097,7 @@ fi
 # Ticking a purchased spark image in without one assigned must not clear the generated dot: an
 # empty slot is the untextured square this whole path exists to remove.
 ADAPTER="$ROOT/Assets/CatchIfYouCan/Editor/PurchasedPortalAdapter.cs"
-if [ -f "$ADAPTER" ] && code "$ADAPTER" | grep -qE 'if \(spark != null\)'; then
+if [ -f "$ADAPTER" ] && code "$ADAPTER" | grep -E >/dev/null  'if \(spark != null\)'; then
   ok "a pack with no spark image leaves the generated dot alone"
 else
   bad "a pack with no spark image leaves the generated dot alone" \
@@ -2077,9 +2112,9 @@ fi
 # work was the material's on PortalSurface, and editing a material is editing the copy: the
 # next PushStyle overwrites it. An artistic control you cannot turn while looking at the thing
 # is not a control.
-if code "$ENV/LobbyPortal.cs" | grep -qE 'private void OnValidate\(\)' &&
+if code "$ENV/LobbyPortal.cs" | grep -E >/dev/null  'private void OnValidate\(\)' &&
    code "$ENV/LobbyPortal.cs" | sed -n '/private void OnValidate/,/^        }$/p' \
-     | grep -qE 'surface\.ApplyStyle\(style\)'; then
+     | grep -E >/dev/null  'surface\.ApplyStyle\(style\)'; then
   ok "the portal style can be edited while the game runs"
 else
   bad "the portal style can be edited while the game runs" \
@@ -2087,8 +2122,8 @@ else
 fi
 
 # ...and the size specifically, which needs geometry re-derived rather than a property written.
-if code "$SURF" | grep -qE 'public void Rebuild\(\)' &&
-   code "$SURF" | sed -n '/public void SetOpening/,/^        }$/p' | grep -qE 'Rebuild\(\);'; then
+if code "$SURF" | grep -E >/dev/null  'public void Rebuild\(\)' &&
+   code "$SURF" | sed -n '/public void SetOpening/,/^        }$/p' | grep -E >/dev/null  'Rebuild\(\);'; then
   ok "the opening can be resized after it is built"
 else
   bad "the opening can be resized after it is built" \
@@ -2100,9 +2135,9 @@ fi
 # player cannot see.
 REBUILD="$(code "$SURF" | sed -n '/public void Rebuild()/,/^        }$/p')"
 MISSING=""
-printf '%s' "$REBUILD" | grep -qE 'mesh\.RecalculateBounds\(\)' || MISSING="$MISSING mesh-bounds"
-printf '%s' "$REBUILD" | grep -qE '_planePoint = _surface\.position' || MISSING="$MISSING plane"
-printf '%s' "$REBUILD" | grep -qE '_openingBounds = _surfaceRenderer\.bounds' || MISSING="$MISSING cull-bounds"
+printf '%s' "$REBUILD" | grep -E >/dev/null  'mesh\.RecalculateBounds\(\)' || MISSING="$MISSING mesh-bounds"
+printf '%s' "$REBUILD" | grep -E >/dev/null  '_planePoint = _surface\.position' || MISSING="$MISSING plane"
+printf '%s' "$REBUILD" | grep -E >/dev/null  '_openingBounds = _surfaceRenderer\.bounds' || MISSING="$MISSING cull-bounds"
 if [ -z "$MISSING" ]; then
   ok "a resize re-derives the mesh, the plane and the bounds together"
 else
@@ -2114,10 +2149,10 @@ fi
 # The glow was cut off in a straight line across the top, because the quad WAS the opening and
 # the outer spill reaches about 1.65x the oval's radius. The margin is what gives it somewhere
 # to go, and the same margin has to divide _Fit or the hole comes out the wrong size.
-if code "$STYLE" | grep -qE 'public Vector2 QuadSize\(\)' &&
-   code "$STYLE" | grep -qE 'public Vector2 ResolveFit\(\)' &&
-   code "$SURF" | grep -qE '_style\.QuadSize\(\)' &&
-   code "$SURF" | grep -qE '_style\.ResolveFit\(\)'; then
+if code "$STYLE" | grep -E >/dev/null  'public Vector2 QuadSize\(\)' &&
+   code "$STYLE" | grep -E >/dev/null  'public Vector2 ResolveFit\(\)' &&
+   code "$SURF" | grep -E >/dev/null  '_style\.QuadSize\(\)' &&
+   code "$SURF" | grep -E >/dev/null  '_style\.ResolveFit\(\)'; then
   ok "the drawn quad is larger than the opening, and _Fit divides by the same margin"
 else
   bad "the drawn quad is larger than the opening, and _Fit divides by the same margin" \
@@ -2175,8 +2210,8 @@ fi
 # that low makes the far floor ride up into the opening - reported, reasonably, as "the room
 # behind the portal is too high". CLAUDE.md mistake 13, in geometry.
 VA="$(code "$ENV/LobbyPortal.cs" | sed -n '/private Transform ResolveViewAnchor/,/^        }$/p')"
-if printf '%s' "$VA" | grep -qE 'style\.openingSize\.y \* 0\.5f' &&
-   printf '%s' "$VA" | grep -qE '_viewAnchor\.SetParent\(arrival, *false\)'; then
+if printf '%s' "$VA" | grep -E >/dev/null  'style\.openingSize\.y \* 0\.5f' &&
+   printf '%s' "$VA" | grep -E >/dev/null  '_viewAnchor\.SetParent\(arrival, *false\)'; then
   ok "the view anchor is raised to the portal's own height"
 else
   bad "the view anchor is raised to the portal's own height" \
@@ -2184,7 +2219,7 @@ else
 fi
 
 # The arrival point itself must NOT be moved: the player's feet still belong on the floor.
-if printf '%s' "$VA" | grep -qE '^\s*arrival\.(position|localPosition|Translate)'; then
+if printf '%s' "$VA" | grep -E >/dev/null  '^\s*arrival\.(position|localPosition|Translate)'; then
   bad "the arrival point itself is left alone" \
       "moving it up would spawn the player inside the ceiling of the far room"
 else
@@ -2197,8 +2232,8 @@ fi
 # 3.6 x 0.3 - and its collider stayed whole, so the player walked into a wall they could see
 # through. A portal you cannot step into is a screen.
 LP="$ENV/LobbyPortal.cs"
-if code "$LP" | grep -qE 'private void EnsureWallAperture\(\)' &&
-   code "$LP" | sed -n '/private void SetState(/,/^        }$/p' | grep -qE 'SetWallOpen\('; then
+if code "$LP" | grep -E >/dev/null  'private void EnsureWallAperture\(\)' &&
+   code "$LP" | sed -n '/private void SetState(/,/^        }$/p' | grep -E >/dev/null  'SetWallOpen\('; then
   ok "the opening is cut out of the wall's collision"
 else
   bad "the opening is cut out of the wall's collision" \
@@ -2208,7 +2243,7 @@ fi
 # The RENDERER is not touched. One wall, one mesh: a second quad in front of it is z-fighting,
 # which is the runtime patch this portal already had once and had removed.
 AP="$(code "$LP" | sed -n '/private void EnsureWallAperture/,/^        }$/p')"
-if printf '%s' "$AP" | grep -qE 'MeshRenderer|MeshFilter|sharedMesh|\.material'; then
+if printf '%s' "$AP" | grep -E >/dev/null  'MeshRenderer|MeshFilter|sharedMesh|\.material'; then
   bad "cutting the collision leaves the wall's geometry alone" \
       "the hole is physics only; touching the mesh brings the z-fighting patch back"
 else
@@ -2218,7 +2253,7 @@ fi
 # Closed is the resting state. A wall with a hole in it that no portal is holding open is a bug
 # you fall through, so only Open and Entering may open it.
 if code "$LP" | sed -n '/private void SetState(/,/^        }$/p' \
-     | grep -qE 'SetWallOpen\(next == LobbyPortalState\.Open \|\| next == LobbyPortalState\.Entering\)'; then
+     | grep -E >/dev/null  'SetWallOpen\(next == LobbyPortalState\.Open \|\| next == LobbyPortalState\.Entering\)'; then
   ok "the wall is solid again whenever the portal is not open"
 else
   bad "the wall is solid again whenever the portal is not open" \
@@ -2227,7 +2262,7 @@ fi
 
 # The aperture is unparented so a scale on the portal cannot multiply its box sizes - CLAUDE.md
 # mistake 12 - which means it does not go with this object and has to be destroyed by hand.
-if code "$LP" | sed -n '/private void OnDestroy/,/^        }$/p' | grep -qE 'Destroy\(_aperture\)'; then
+if code "$LP" | sed -n '/private void OnDestroy/,/^        }$/p' | grep -E >/dev/null  'Destroy\(_aperture\)'; then
   ok "the unparented aperture is destroyed with the portal"
 else
   bad "the unparented aperture is destroyed with the portal" \
@@ -2236,7 +2271,7 @@ fi
 
 # The wall is found by looking, never by name. A hard-coded object name that stops resolving
 # fails silently and forever, which this repository has done three times.
-if code "$LP" | grep -qE 'Lobby_Wall|"Wall_North"'; then
+if code "$LP" | grep -E >/dev/null  'Lobby_Wall|"Wall_North"'; then
   bad "the wall is found by geometry, not by name" \
       "a name that stops resolving is CLAUDE.md mistakes 3 and 10"
 else
@@ -2249,7 +2284,7 @@ fi
 # inside it as a FRACTION - so the glow grew with the opening while the part you could walk
 # through stayed the fraction of an opening nobody had updated. A portal 4.7 m wide with a
 # breach still 1.4 m wide, and both numbers looked deliberate.
-if code "$STYLE" | grep -qE 'breachHalfSize'; then
+if code "$STYLE" | grep -E >/dev/null  'breachHalfSize'; then
   bad "the opening size has exactly one source" \
       "breachHalfSize is a second size that can disagree with openingSize"
 else
@@ -2258,7 +2293,7 @@ fi
 
 # ...and the shader's fit is derived from the margin alone, never from a second authored size.
 if code "$STYLE" | sed -n '/public Vector2 ResolveFit()/,/^        }$/p' \
-     | grep -qE 'return new Vector2\(1f / scale, 1f / scale\);'; then
+     | grep -E >/dev/null  'return new Vector2\(1f / scale, 1f / scale\);'; then
   ok "the shader breach is the opening, not a fraction of it"
 else
   bad "the shader breach is the opening, not a fraction of it" \
@@ -2270,13 +2305,13 @@ fi
 LP="$ENV/LobbyPortal.cs"
 MISSING=""
 code "$STYLE" | sed -n '/public Vector2 QuadSize()/,/^        }$/p' \
-  | grep -qE 'openingSize\.x\)? \* scale' || MISSING="$MISSING quad"
+  | grep -E >/dev/null  'openingSize\.x\)? \* scale' || MISSING="$MISSING quad"
 code "$LP" | sed -n '/private void EnsureWallAperture/,/^        }$/p' \
-  | grep -qE 'style\.openingSize\.x \* 0\.5f' || MISSING="$MISSING wall-hole"
-code "$LP" | grep -qE 'halfWidth = style\.openingSize\.x \* 0\.5f \* apertureTolerance' \
+  | grep -E >/dev/null  'style\.openingSize\.x \* 0\.5f' || MISSING="$MISSING wall-hole"
+code "$LP" | grep -E >/dev/null  'halfWidth = style\.openingSize\.x \* 0\.5f \* apertureTolerance' \
   || MISSING="$MISSING crossing"
 code "$LP" | sed -n '/private void EnsureThreshold/,/^        }$/p' \
-  | grep -qE '_threshold\.size = new Vector3\(style\.openingSize\.x, style\.openingSize\.y' \
+  | grep -E >/dev/null  '_threshold\.size = new Vector3\(style\.openingSize\.x, style\.openingSize\.y' \
   || MISSING="$MISSING threshold"
 if [ -z "$MISSING" ]; then
   ok "quad, collision hole, crossing test and threshold all read openingSize"
@@ -2287,7 +2322,7 @@ fi
 
 # The threshold must not carry its own width and height. That was a third opening size, and it
 # was still 1.2 x 2.4 while the portal was 4.7 wide.
-if code "$LP" | grep -qE 'entryTriggerSize'; then
+if code "$LP" | grep -E >/dev/null  'entryTriggerSize'; then
   bad "the threshold volume has no size of its own" \
       "a trigger that is not the size of the hole is a third opening size"
 else
@@ -2299,14 +2334,14 @@ fi
 # A serialized value ALWAYS beats a code default, which is why editing PortalStyle.cs changed
 # nothing here: 01_MainMenu.unity said 1.06 and went on saying it. An orphaned breachHalfSize
 # left in the scene is the same trap set for the next person.
-if grep -qE '^\s*breachHalfSize:' "$SCENE"; then
+if grep -E >/dev/null  '^\s*breachHalfSize:' "$SCENE"; then
   bad "the lobby scene carries no orphaned breach size" \
       "a serialized field the code dropped is dead weight that reads as configuration"
 else
   ok "the lobby scene carries no orphaned breach size"
 fi
 
-if grep -qE '^\s*entryTriggerSize:' "$SCENE"; then
+if grep -E >/dev/null  '^\s*entryTriggerSize:' "$SCENE"; then
   bad "the lobby scene carries no orphaned trigger size" \
       "entryTriggerSize was replaced by entryTriggerDepth"
 else
@@ -2320,16 +2355,16 @@ fi
 # hierarchy at the fixed step. Before any sync, OverlapBox returns nothing, so the portal
 # reported "no wall collider found" about a wall that was plainly there and had never moved.
 LP="$ENV/LobbyPortal.cs"
-if code "$LP" | sed -n '/private void Awake/,/^        }$/p' | grep -qE 'EnsureWallAperture\(\)'; then
+if code "$LP" | sed -n '/private void Awake/,/^        }$/p' | grep -E >/dev/null  'EnsureWallAperture\(\)'; then
   bad "the wall is cut after physics exists, not in Awake" \
       "a physics query in Awake runs against an unsynced physics scene and finds nothing"
 else
   ok "the wall is cut after physics exists, not in Awake"
 fi
 
-if code "$LP" | sed -n '/private void Start/,/^        }$/p' | grep -qE 'EnsureWallAperture\(\)' &&
+if code "$LP" | sed -n '/private void Start/,/^        }$/p' | grep -E >/dev/null  'EnsureWallAperture\(\)' &&
    code "$LP" | sed -n '/private void CollectWallParts/,/^        }$/p' \
-     | grep -qE 'Physics\.SyncTransforms\(\)'; then
+     | grep -E >/dev/null  'Physics\.SyncTransforms\(\)'; then
   ok "the wall query syncs the physics scene first"
 else
   bad "the wall query syncs the physics scene first" \
@@ -2341,8 +2376,8 @@ fi
 # it is measured across the parts together, because a wall built from modules never passes it one
 # module at a time.
 RW="$(code "$LP" | sed -n '/private void CollectWallParts/,/^        }$/p')"
-if printf '%s' "$RW" | grep -qE 'thickness > maxWallThickness' &&
-   printf '%s' "$RW" | grep -qE 'height < style\.openingSize\.y'; then
+if printf '%s' "$RW" | grep -E >/dev/null  'thickness > maxWallThickness' &&
+   printf '%s' "$RW" | grep -E >/dev/null  'height < style\.openingSize\.y'; then
   ok "the wall is recognised by shape, not by size alone"
 else
   bad "the wall is recognised by shape, not by size alone" \
@@ -2351,7 +2386,7 @@ fi
 
 # ...and the width IS still demanded, only of the assembled wall. Dropping it entirely would let
 # a single strip of trim count as the wall the opening is cut into.
-if printf '%s' "$RW" | grep -qE 'covered \+ WallSpanTolerance < style\.openingSize\.x'; then
+if printf '%s' "$RW" | grep -E >/dev/null  'covered \+ WallSpanTolerance < style\.openingSize\.x'; then
   ok "the assembled wall still has to span the opening"
 else
   bad "the assembled wall still has to span the opening" \
@@ -2360,8 +2395,8 @@ fi
 
 # A failed resolve has to say what it DID see, or the next report is "it says there is no wall"
 # with nothing to act on - which is exactly how this one arrived.
-if printf '%s' "$RW" | grep -qE 'Colliders overlapping it' &&
-   printf '%s' "$RW" | grep -qE 'seen\.Append'; then
+if printf '%s' "$RW" | grep -E >/dev/null  'Colliders overlapping it' &&
+   printf '%s' "$RW" | grep -E >/dev/null  'seen\.Append'; then
   ok "a failed wall resolve names the colliders it rejected"
 else
   bad "a failed wall resolve names the colliders it rejected" \
@@ -2370,9 +2405,9 @@ fi
 
 # The report TESTS the one claim that matters instead of asserting it.
 RA="$(code "$LP" | sed -n '/private void ReportAperture/,/^        }$/p')"
-if printf '%s' "$RA" | grep -qE 'Physics\.CheckBox' &&
-   printf '%s' "$RA" | grep -qE 'centerBlocked=' &&
-   printf '%s' "$RA" | grep -qE 'passable='; then
+if printf '%s' "$RA" | grep -E >/dev/null  'Physics\.CheckBox' &&
+   printf '%s' "$RA" | grep -E >/dev/null  'centerBlocked=' &&
+   printf '%s' "$RA" | grep -E >/dev/null  'passable='; then
   ok "the portal reports a measured passability, not a claimed one"
 else
   bad "the portal reports a measured passability, not a claimed one" \
@@ -2390,7 +2425,7 @@ MWL="$ROOT/Assets/CatchIfYouCan/Scripts/Missions/MissionWorldLoader.cs"
 LP="$ENV/LobbyPortal.cs"
 
 if code "$LP" | sed -n '/private void BeginInvestigation/,/^        }$/p' \
-     | grep -qE 'MissionWorldLoader\.EnterSeamlessAsync\('; then
+     | grep -E >/dev/null  'MissionWorldLoader\.EnterSeamlessAsync\('; then
   ok "the crossing takes the seamless path"
 else
   bad "the crossing takes the seamless path" \
@@ -2398,7 +2433,7 @@ else
 fi
 
 if code "$LP" | sed -n '/private void BeginInvestigation/,/^        }$/p' \
-     | grep -qE 'MissionWorldLoader\.EnterAsync\('; then
+     | grep -E >/dev/null  'MissionWorldLoader\.EnterAsync\('; then
   bad "the crossing does not take the loading path" \
       "the prepared-world route must never reach the fade-and-respawn path"
 else
@@ -2409,10 +2444,10 @@ fi
 # rather than hoped for.
 SEAM="$(code "$MWL" | sed -n '/public static IEnumerator EnterSeamlessAsync/,/^        }$/p')"
 FORBIDDEN=""
-printf '%s' "$SEAM" | grep -qE 'FadeTo\(' && FORBIDDEN="$FORBIDDEN fade"
-printf '%s' "$SEAM" | grep -qE 'LoadScene|LoadSceneAsync' && FORBIDDEN="$FORBIDDEN scene-load"
-printf '%s' "$SEAM" | grep -qE 'PrepareAsync|GenerateHouse|PrepareWorld' && FORBIDDEN="$FORBIDDEN regenerate"
-printf '%s' "$SEAM" | grep -qE 'PlayerSpawner\.Despawn|PlayerSpawner\.Spawn' && FORBIDDEN="$FORBIDDEN respawn"
+printf '%s' "$SEAM" | grep -E >/dev/null  'FadeTo\(' && FORBIDDEN="$FORBIDDEN fade"
+printf '%s' "$SEAM" | grep -E >/dev/null  'LoadScene|LoadSceneAsync' && FORBIDDEN="$FORBIDDEN scene-load"
+printf '%s' "$SEAM" | grep -E >/dev/null  'PrepareAsync|GenerateHouse|PrepareWorld' && FORBIDDEN="$FORBIDDEN regenerate"
+printf '%s' "$SEAM" | grep -E >/dev/null  'PlayerSpawner\.Despawn|PlayerSpawner\.Spawn' && FORBIDDEN="$FORBIDDEN respawn"
 if [ -z "$FORBIDDEN" ]; then
   ok "the seamless crossing neither fades, reloads, regenerates nor respawns"
 else
@@ -2422,7 +2457,7 @@ fi
 
 # The SAME player walks through, moved by the rig's own Teleport - which zeroes the velocity,
 # and that velocity is the fall accumulator.
-if printf '%s' "$SEAM" | grep -qE 'motor\.Teleport\(finalPosition, mappedRotation\)'; then
+if printf '%s' "$SEAM" | grep -E >/dev/null  'motor\.Teleport\(finalPosition, mappedRotation\)'; then
   ok "the lobby player is carried through, not rebuilt"
 else
   bad "the lobby player is carried through, not rebuilt" \
@@ -2430,9 +2465,9 @@ else
 fi
 
 # The ground is PROVEN before anything is committed, and a miss refuses rather than drops.
-if printf '%s' "$SEAM" | grep -qE 'Physics\.RaycastAll\(probeFrom, Vector3\.down' &&
-   printf '%s' "$SEAM" | grep -qE 'failureReason=NO_GROUND_IN_DESTINATION' &&
-   printf '%s' "$SEAM" | grep -qE 'onResult\?\.Invoke\(false\)'; then
+if printf '%s' "$SEAM" | grep -E >/dev/null  'Physics\.RaycastAll\(probeFrom, Vector3\.down' &&
+   printf '%s' "$SEAM" | grep -E >/dev/null  'failureReason=NO_GROUND_IN_DESTINATION' &&
+   printf '%s' "$SEAM" | grep -E >/dev/null  'onResult\?\.Invoke\(false\)'; then
   ok "no ground under the arrival refuses the crossing"
 else
   bad "no ground under the arrival refuses the crossing" \
@@ -2442,9 +2477,9 @@ fi
 # A refusal gives the controls back. The player is standing in the lobby with a doorway in
 # front of them and no input; leaving them there is the worse half of the bug.
 if code "$LP" | sed -n '/private void OnSeamlessEntryResult/,/^        }$/p' \
-     | grep -qE 'MenuInputGate\.Pop' &&
+     | grep -E >/dev/null  'MenuInputGate\.Pop' &&
    code "$LP" | sed -n '/private void OnSeamlessEntryResult/,/^        }$/p' \
-     | grep -qE 'SetState\(LobbyPortalState\.Open\)'; then
+     | grep -E >/dev/null  'SetState\(LobbyPortalState\.Open\)'; then
   ok "a refused crossing returns the controls and reopens the doorway"
 else
   bad "a refused crossing returns the controls and reopens the doorway" \
@@ -2453,9 +2488,9 @@ fi
 
 # The pose is mapped through the SAME transform the camera is posed with, or the player arrives
 # half an opening's height from where the view they walked into said they would.
-if printf '%s' "$SEAM" | grep -qE 'destinationAnchor\.localToWorldMatrix \*' &&
-   printf '%s' "$SEAM" | grep -qE 'sourcePlane\.worldToLocalMatrix \*' &&
-   code "$LP" | grep -qE 'surface\.SurfacePlane'; then
+if printf '%s' "$SEAM" | grep -E >/dev/null  'destinationAnchor\.localToWorldMatrix \*' &&
+   printf '%s' "$SEAM" | grep -E >/dev/null  'sourcePlane\.worldToLocalMatrix \*' &&
+   code "$LP" | grep -E >/dev/null  'surface\.SurfacePlane'; then
   ok "the player is mapped through the portal pair, not snapped to a spawn point"
 else
   bad "the player is mapped through the portal pair, not snapped to a spawn point" \
@@ -2465,7 +2500,7 @@ fi
 # The curtain must not be raised on this route at all. It is a full-screen opaque CanvasGroup
 # set during PREPARATION, so by the time the player crosses it has been at 1 for seconds.
 IB="$ROOT/Assets/CatchIfYouCan/Scripts/Procedural/InvestigationBootstrap.cs"
-if code "$IB" | grep -qE 'fadeOverlay\.alpha = _seamlessEntry \? 0f : 1f'; then
+if code "$IB" | grep -E >/dev/null  'fadeOverlay\.alpha = _seamlessEntry \? 0f : 1f'; then
   ok "the prepared world raises no curtain"
 else
   bad "the prepared world raises no curtain" \
@@ -2483,7 +2518,7 @@ fi
 MWL="$ROOT/Assets/CatchIfYouCan/Scripts/Missions/MissionWorldLoader.cs"
 SEAM="$(code "$MWL" | sed -n '/public static IEnumerator EnterSeamlessAsync/,/^        }$/p')"
 
-if printf '%s' "$SEAM" | grep -qE 'SceneManager\.MoveGameObjectToScene\(playerRoot, missionScene\)'; then
+if printf '%s' "$SEAM" | grep -E >/dev/null  'SceneManager\.MoveGameObjectToScene\(playerRoot, missionScene\)'; then
   ok "the carried player is moved out of the lobby before it is unloaded"
 else
   bad "the carried player is moved out of the lobby before it is unloaded" \
@@ -2502,7 +2537,7 @@ fi
 
 # A parented player cannot be moved between scenes at all, so that is a refusal rather than a
 # silent destruction two lines later.
-if printf '%s' "$SEAM" | grep -qE 'failureReason=PLAYER_NOT_A_SCENE_ROOT'; then
+if printf '%s' "$SEAM" | grep -E >/dev/null  'failureReason=PLAYER_NOT_A_SCENE_ROOT'; then
   ok "a parented player refuses the crossing instead of being destroyed by it"
 else
   bad "a parented player refuses the crossing instead of being destroyed by it" \
@@ -2511,9 +2546,9 @@ fi
 
 # The handover counts the cameras that can actually reach Display 1 and shouts when that is
 # zero. A camera rendering into a texture - the portal's own - is not one of them.
-if code "$MWL" | grep -qE 'private static void LogHandoff' &&
-   code "$MWL" | grep -qE 'camera\.targetTexture == null && camera\.targetDisplay == 0' &&
-   code "$MWL" | grep -qE 'NO CAMERA CAN RENDER DISPLAY 1'; then
+if code "$MWL" | grep -E >/dev/null  'private static void LogHandoff' &&
+   code "$MWL" | grep -E >/dev/null  'camera\.targetTexture == null && camera\.targetDisplay == 0' &&
+   code "$MWL" | grep -E >/dev/null  'NO CAMERA CAN RENDER DISPLAY 1'; then
   ok "the handover counts the cameras that can render Display 1"
 else
   bad "the handover counts the cameras that can render Display 1" \
@@ -2522,7 +2557,7 @@ fi
 
 # The controls are given back explicitly, not by relying on the portal's OnDestroy firing in a
 # useful order while its scene is being torn down.
-if printf '%s' "$SEAM" | grep -qE 'MenuInputGate\.Pop\("LobbyPortal"\)'; then
+if printf '%s' "$SEAM" | grep -E >/dev/null  'MenuInputGate\.Pop\("LobbyPortal"\)'; then
   ok "the input gate is released by the handover itself"
 else
   bad "the input gate is released by the handover itself" \
@@ -2533,7 +2568,7 @@ fi
 # opening of a mission; on the portal route it is a title card dropped over a room the player is
 # already standing in - which is the "short loading animation" that outlives every other fade.
 IB="$ROOT/Assets/CatchIfYouCan/Scripts/Procedural/InvestigationBootstrap.cs"
-if code "$IB" | grep -qE '_introPresenter = _seamlessEntry \? null : CaseIntroPresenter\.Ensure'; then
+if code "$IB" | grep -E >/dev/null  '_introPresenter = _seamlessEntry \? null : CaseIntroPresenter\.Ensure'; then
   ok "no case card is presented over a seamless arrival"
 else
   bad "no case card is presented over a seamless arrival" \
@@ -2548,8 +2583,8 @@ fi
 IB="$ROOT/Assets/CatchIfYouCan/Scripts/Procedural/InvestigationBootstrap.cs"
 WIRE="$(code "$IB" | sed -n '/private void WirePlayerEquipment/,/^        }$/p')"
 
-if printf '%s' "$WIRE" | grep -qE 'if \(_seamlessEntry\)' &&
-   printf '%s' "$WIRE" | grep -qE 'MissionEquipmentInstaller\.InstallLoadout\('; then
+if printf '%s' "$WIRE" | grep -E >/dev/null  'if \(_seamlessEntry\)' &&
+   printf '%s' "$WIRE" | grep -E >/dev/null  'MissionEquipmentInstaller\.InstallLoadout\('; then
   ok "the mission installs a loadout only where there was no lobby to take one from"
 else
   bad "the mission installs a loadout only where there was no lobby to take one from" \
@@ -2568,7 +2603,7 @@ fi
 
 # The hand anchor is still wired on both routes - it is what holstered items hang from, and an
 # unwired anchor drops everything the player was carrying on the floor of a scene being unloaded.
-if printf '%s' "$WIRE" | grep -qE 'inventory\?\.SetHandAnchor\(handAnchor\)'; then
+if printf '%s' "$WIRE" | grep -E >/dev/null  'inventory\?\.SetHandAnchor\(handAnchor\)'; then
   ok "the hand anchor is wired on every route"
 else
   bad "the hand anchor is wired on every route" \
@@ -2577,8 +2612,8 @@ fi
 
 # Arriving empty-handed is allowed and indistinguishable from equipment lost in the handover, so
 # it is said out loud rather than discovered in a dark house.
-if code "$IB" | grep -qE 'private static void ReportCarriedEquipment' &&
-   code "$IB" | grep -qE 'Handoff\] EQUIPMENT carried='; then
+if code "$IB" | grep -E >/dev/null  'private static void ReportCarriedEquipment' &&
+   code "$IB" | grep -E >/dev/null  'Handoff\] EQUIPMENT carried='; then
   ok "what the player walked in with is reported"
 else
   bad "what the player walked in with is reported" \
@@ -2600,8 +2635,8 @@ done
 
 # The SAME object changes scene. Destroying and rebuilding it would reset battery, tier, on/off
 # state and ownership - every runtime value survives here by never being touched.
-if code "$OT" | grep -qE 'SceneManager\.MoveGameObjectToScene\(go, to\)' &&
-   ! code "$OT" | grep -qE 'Instantiate\(|Destroy\(go'; then
+if code "$OT" | grep -E >/dev/null  'SceneManager\.MoveGameObjectToScene\(go, to\)' &&
+   ! code "$OT" | grep -E >/dev/null  'Instantiate\(|Destroy\(go'; then
   ok "a crossing object is moved, never rebuilt"
 else
   bad "a crossing object is moved, never rebuilt" \
@@ -2610,8 +2645,8 @@ fi
 
 # Momentum survives. A thrown object has to keep going on the far side rather than stopping at
 # the plane, and its direction is expressed in the source portal's frame.
-if code "$OT" | grep -qE 'body\.linearVelocity = through\.MultiplyVector\(velocity\)' &&
-   code "$OT" | grep -qE 'body\.angularVelocity = through\.MultiplyVector\(spin\)'; then
+if code "$OT" | grep -E >/dev/null  'body\.linearVelocity = through\.MultiplyVector\(velocity\)' &&
+   code "$OT" | grep -E >/dev/null  'body\.angularVelocity = through\.MultiplyVector\(spin\)'; then
   ok "velocity and spin are rotated through the pair, not zeroed"
 else
   bad "velocity and spin are rotated through the pair, not zeroed" \
@@ -2619,8 +2654,8 @@ else
 fi
 
 # A CROSSING, not an overlap, and not a plane that extends past the hole.
-if code "$OT" | grep -qE 'if \(previous <= 0f \|\| side > 0f\)' &&
-   code "$OT" | grep -qE 'private bool InsideAperture'; then
+if code "$OT" | grep -E >/dev/null  'if \(previous <= 0f \|\| side > 0f\)' &&
+   code "$OT" | grep -E >/dev/null  'private bool InsideAperture'; then
   ok "objects cross on a sign change inside the opening"
 else
   bad "objects cross on a sign change inside the opening" \
@@ -2628,8 +2663,8 @@ else
 fi
 
 # Ping-pong suppression: an object straddling the plane must not bounce between scenes.
-if code "$OT" | grep -qE 'Time\.time - item\.LastTransferTime < CooldownSeconds' &&
-   code "$OT" | grep -qE 'duplicate-cross suppressed'; then
+if code "$OT" | grep -E >/dev/null  'Time\.time - item\.LastTransferTime < CooldownSeconds' &&
+   code "$OT" | grep -E >/dev/null  'duplicate-cross suppressed'; then
   ok "a straddling object is not carried twice"
 else
   bad "a straddling object is not carried twice" \
@@ -2638,8 +2673,8 @@ fi
 
 # Eligibility is DECLARED, never inferred from having a Rigidbody. Sweeping for bodies near the
 # opening eventually picks up lobby furniture, a particle, or the portal's own wall colliders.
-if code "$OT" | grep -qE 'PortalTransferable\.All' &&
-   ! code "$OT" | grep -qE 'FindObjectsByType<Rigidbody>|GetComponentsInChildren<Rigidbody>'; then
+if code "$OT" | grep -E >/dev/null  'PortalTransferable\.All' &&
+   ! code "$OT" | grep -E >/dev/null  'FindObjectsByType<Rigidbody>|GetComponentsInChildren<Rigidbody>'; then
   ok "only declared objects are carried"
 else
   bad "only declared objects are carried" \
@@ -2650,9 +2685,9 @@ fi
 # travels with the player and must not be carried a second time.
 HE="$ROOT/Assets/CatchIfYouCan/Scripts/Equipment/HeldEquipmentBase.cs"
 if code "$HE" | sed -n '/private void StartPhysics/,/^        }$/p' \
-     | grep -qE 'PortalTransferable\.Mark\(gameObject\)' &&
+     | grep -E >/dev/null  'PortalTransferable\.Mark\(gameObject\)' &&
    code "$HE" | sed -n '/protected void ReleasePhysics/,/^        }$/p' \
-     | grep -qE 'PortalTransferable\.Unmark\(gameObject\)'; then
+     | grep -E >/dev/null  'PortalTransferable\.Unmark\(gameObject\)'; then
   ok "an item is transferable only while it is in flight"
 else
   bad "an item is transferable only while it is in flight" \
@@ -2675,8 +2710,8 @@ fi
 # a scene test an object that has already gone through keeps being measured against the plane it
 # left - and its position in the destination world has nothing to do with that plane, so it
 # eventually reads as a second crossing and is carried again, from a place it is not.
-if code "$OT" | grep -qE 'Scene sourceScene = _sourcePlane\.gameObject\.scene' &&
-   code "$OT" | grep -qE 'item\.gameObject\.scene != sourceScene'; then
+if code "$OT" | grep -E >/dev/null  'Scene sourceScene = _sourcePlane\.gameObject\.scene' &&
+   code "$OT" | grep -E >/dev/null  'item\.gameObject\.scene != sourceScene'; then
   ok "a portal only carries objects from its own scene"
 else
   bad "a portal only carries objects from its own scene" \
@@ -2691,8 +2726,8 @@ fi
 # forever past a skybox, which is the mountain view and then the fall.
 IB="$ROOT/Assets/CatchIfYouCan/Scripts/Procedural/InvestigationBootstrap.cs"
 
-if code "$IB" | grep -qE 'public Transform MissionEntryAnchor => _missionEntry;' &&
-   code "$ENV/LobbyPortal.cs" | grep -qE '_pendingWorld\.MissionEntryAnchor'; then
+if code "$IB" | grep -E >/dev/null  'public Transform MissionEntryAnchor => _missionEntry;' &&
+   code "$ENV/LobbyPortal.cs" | grep -E >/dev/null  '_pendingWorld\.MissionEntryAnchor'; then
   ok "the portal opens onto the mission entry anchor"
 else
   bad "the portal opens onto the mission entry anchor" \
@@ -2702,7 +2737,7 @@ fi
 # ONE transform feeds the preview camera and the crossing. Two would let what is shown and what
 # is walked into diverge, which is the failure this whole flow exists to prevent.
 BINDS="$(code "$ENV/LobbyPortal.cs" | grep -c 'ResolveViewAnchor(_pendingWorld.MissionEntryAnchor)')"
-if [ "$BINDS" -ge 1 ] && ! code "$ENV/LobbyPortal.cs" | grep -qE 'SetDestination\([^)]*ArrivalPoint'; then
+if [ "$BINDS" -ge 1 ] && ! code "$ENV/LobbyPortal.cs" | grep -E >/dev/null  'SetDestination\([^)]*ArrivalPoint'; then
   ok "preview and entry cannot diverge"
 else
   bad "preview and entry cannot diverge" \
@@ -2714,8 +2749,8 @@ fi
 # Both halves: the room chain and the floor probe it delegates to. Scoping this to one method
 # made three checks fail when the probe moved into TryAnchorInRoom, with the invariant unchanged.
 EMA="$(code "$IB" | sed -n '/private void EnsureMissionEntryAnchor/,/private void SpawnGhost/p')"
-if printf '%s' "$EMA" | grep -qE 'Physics\.RaycastAll\(root \+ Vector3\.up \* 3f, Vector3\.down' &&
-   printf '%s' "$EMA" | grep -qE 'Physics\.SyncTransforms\(\)'; then
+if printf '%s' "$EMA" | grep -E >/dev/null  'Physics\.RaycastAll\(root \+ Vector3\.up \* 3f, Vector3\.down' &&
+   printf '%s' "$EMA" | grep -E >/dev/null  'Physics\.SyncTransforms\(\)'; then
   ok "the entry anchor is measured against real floor collision"
 else
   bad "the entry anchor is measured against real floor collision" \
@@ -2724,8 +2759,8 @@ fi
 
 # A miss leaves the anchor NULL, and null refuses the crossing. Placing it anyway would be the
 # fall with extra steps.
-if printf '%s' "$EMA" | grep -qE 'no mission entry ' &&
-   ! printf '%s' "$EMA" | grep -qE 'go\.transform\.position = root;'; then
+if printf '%s' "$EMA" | grep -E >/dev/null  'no mission entry ' &&
+   ! printf '%s' "$EMA" | grep -E >/dev/null  'go\.transform\.position = root;'; then
   ok "no floor under the entrance leaves the anchor null rather than guessed"
 else
   bad "no floor under the entrance leaves the anchor null rather than guessed" \
@@ -2742,8 +2777,8 @@ MWL="$ROOT/Assets/CatchIfYouCan/Scripts/Missions/MissionWorldLoader.cs"
 IB="$ROOT/Assets/CatchIfYouCan/Scripts/Procedural/InvestigationBootstrap.cs"
 SEAM="$(code "$MWL" | sed -n '/public static IEnumerator EnterSeamlessAsync/,/^        }$/p')"
 
-if printf '%s' "$SEAM" | grep -qE 'candidate\.collider\.gameObject\.scene != destinationScene' &&
-   printf '%s' "$SEAM" | grep -qE 'failureReason=NO_GROUND_IN_DESTINATION'; then
+if printf '%s' "$SEAM" | grep -E >/dev/null  'candidate\.collider\.gameObject\.scene != destinationScene' &&
+   printf '%s' "$SEAM" | grep -E >/dev/null  'failureReason=NO_GROUND_IN_DESTINATION'; then
   ok "the crossing only stands on ground in the destination scene"
 else
   bad "the crossing only stands on ground in the destination scene" \
@@ -2753,7 +2788,7 @@ fi
 # Both halves: the room chain and the floor probe it delegates to. Scoping this to one method
 # made three checks fail when the probe moved into TryAnchorInRoom, with the invariant unchanged.
 EMA="$(code "$IB" | sed -n '/private void EnsureMissionEntryAnchor/,/private void SpawnGhost/p')"
-if printf '%s' "$EMA" | grep -qE 'hits\[i\]\.collider\.gameObject\.scene != here'; then
+if printf '%s' "$EMA" | grep -E >/dev/null  'hits\[i\]\.collider\.gameObject\.scene != here'; then
   ok "the entry anchor only stands on ground in its own scene"
 else
   bad "the entry anchor only stands on ground in its own scene" \
@@ -2762,8 +2797,8 @@ fi
 
 # Nearest hit wins. RaycastAll does not sort, and standing on the roof of something is not
 # standing on the floor under it.
-if printf '%s' "$SEAM" | grep -qE 'candidate\.distance < ground\.distance' &&
-   printf '%s' "$EMA" | grep -qE 'hits\[i\]\.distance < floor\.distance'; then
+if printf '%s' "$SEAM" | grep -E >/dev/null  'candidate\.distance < ground\.distance' &&
+   printf '%s' "$EMA" | grep -E >/dev/null  'hits\[i\]\.distance < floor\.distance'; then
   ok "the nearest valid surface is chosen, not the first one returned"
 else
   bad "the nearest valid surface is chosen, not the first one returned" \
@@ -2778,8 +2813,8 @@ fi
 # and the cause is a room without a floor rather than anything in the portal itself.
 #
 # The anchor therefore tries EVERY room, entrance first, instead of the entrance alone.
-if printf '%s' "$EMA" | grep -qE '_generatedHouse\.Rooms\[i\]' &&
-   printf '%s' "$EMA" | grep -qE 'candidates\.Add\(_generatedHouse\.Entrance\)'; then
+if printf '%s' "$EMA" | grep -E >/dev/null  '_generatedHouse\.Rooms\[i\]' &&
+   printf '%s' "$EMA" | grep -E >/dev/null  'candidates\.Add\(_generatedHouse\.Entrance\)'; then
   ok "the entry anchor tries every room, entrance first"
 else
   bad "the entry anchor tries every room, entrance first" \
@@ -2788,8 +2823,8 @@ fi
 
 # A total failure is still a refusal, and it names what it tried - "the portal closed again" is
 # not a report anybody can act on.
-if printf '%s' "$EMA" | grep -qE 'No room in the generated house has a floor' &&
-   printf '%s' "$EMA" | grep -qE 'Tried:'; then
+if printf '%s' "$EMA" | grep -E >/dev/null  'No room in the generated house has a floor' &&
+   printf '%s' "$EMA" | grep -E >/dev/null  'Tried:'; then
   ok "a failed anchor names every room it rejected"
 else
   bad "a failed anchor names every room it rejected" \
@@ -2812,7 +2847,7 @@ fi
 #     would have arrived in a room and then fallen through the world.
 GEN="$ROOT/Assets/CatchIfYouCan/Scripts/Procedural/ProceduralHouseGenerator.cs"
 
-if code "$GEN" | tr '\n' ' ' | tr -s ' ' | grep -qE 'MoveGameObjectToScene\( ?houseRoot\.gameObject, gameObject\.scene\)'; then
+if code "$GEN" | tr '\n' ' ' | tr -s ' ' | grep -E >/dev/null  'MoveGameObjectToScene\( ?houseRoot\.gameObject, gameObject\.scene\)'; then
   ok "the generated house root is moved into the generator's own scene"
 else
   bad "the generated house root is moved into the generator's own scene" \
@@ -2821,7 +2856,7 @@ fi
 
 # Only a scene ROOT can be moved, and only one this class owns - a houseRoot wired in the
 # inspector is already inside a hierarchy and must be left alone.
-if code "$GEN" | tr '\n' ' ' | grep -qE 'houseRoot\.parent == null'; then
+if code "$GEN" | tr '\n' ' ' | grep -E >/dev/null  'houseRoot\.parent == null'; then
   ok "only an unparented root this class created is relocated"
 else
   bad "only an unparented root this class created is relocated" \
@@ -2831,7 +2866,7 @@ fi
 # Awake alone is not enough: it runs INSIDE AddComponent, before the caller has re-parented the
 # generator into the mission scene, so the scene it compared against then was the wrong one.
 if code "$GEN" | sed -n '/public GeneratedHouse Instantiate(HouseLayout layout)/,/ClearExisting();/p' \
-   | grep -qE 'EnsureRoots\(\);'; then
+   | grep -E >/dev/null  'EnsureRoots\(\);'; then
   ok "the scene of the house root is re-checked when a layout is built, not only in Awake"
 else
   bad "the scene of the house root is re-checked when a layout is built, not only in Awake" \
@@ -2865,8 +2900,8 @@ fi
 # for rooms that plainly had one, and the message could not distinguish "the ray hit nothing" from
 # "the ray hit the house, and the house is in the wrong scene". That ambiguity is what cost the
 # time, not the bug.
-if printf '%s' "$EMA" | grep -qE 'rejected as foreign' &&
-   printf '%s' "$EMA" | grep -qE 'gameObject\.scene\.name'; then
+if printf '%s' "$EMA" | grep -E >/dev/null  'rejected as foreign' &&
+   printf '%s' "$EMA" | grep -E >/dev/null  'gameObject\.scene\.name'; then
   ok "a rejected floor is named together with the scene that owns it"
 else
   bad "a rejected floor is named together with the scene that owns it" \
@@ -2890,8 +2925,8 @@ MOBILE="$ROOT/Assets/CatchIfYouCan/Scripts/Input/MobileInputController.cs"
 # Moment, in dem die Vorbereitung fertig war, wurde der durch einen ANDEREN Raum ersetzt. Das ist
 # der "lila Uebergang" und der "getauschte Raum" in einem: ein sichtbarer Wechsel zweier Welten,
 # an genau der Stelle, an der diese Klasse Kontinuitaet verspricht.
-if code "$LP" | grep -qE 'private bool showProbeRoomUntilWorldReady;' &&
-   ! code "$LP" | grep -qE 'showProbeRoomUntilWorldReady = true'; then
+if code "$LP" | grep -E >/dev/null  'private bool showProbeRoomUntilWorldReady;' &&
+   ! code "$LP" | grep -E >/dev/null  'showProbeRoomUntilWorldReady = true'; then
   ok "der Probe-Raum ist standardmaessig AUS"
 else
   bad "der Probe-Raum ist standardmaessig AUS" \
@@ -2899,7 +2934,7 @@ else
 "einen anderen ersetzt wird - der lila Uebergang, den er nicht verursachen soll"
 fi
 
-if grep -qE '^  showProbeRoomUntilWorldReady: 0$' "$SCENE"; then
+if grep -E >/dev/null  '^  showProbeRoomUntilWorldReady: 0$' "$SCENE"; then
   ok "und in der Szene ist er es auch"
 else
   bad "und in der Szene ist er es auch" \
@@ -2920,8 +2955,8 @@ if [ ! -f "$ATM" ]; then
   bad "der Staub ist begrenzt" "Datei fehlt"
   bad "ein fehlender Partikelshader gibt keinen Ersatz" "Datei fehlt"
 else
-  if code "$ATM" | grep -qE 'light\.type = LightType\.Point' &&
-     code "$ATM" | grep -qE 'private void BuildPractical\(Transform anchor\)'; then
+  if code "$ATM" | grep -E >/dev/null  'light\.type = LightType\.Point' &&
+     code "$ATM" | grep -E >/dev/null  'private void BuildPractical\(Transform anchor\)'; then
     ok "die Lobby bekommt warme Praktikale"
   else
     bad "die Lobby bekommt warme Praktikale" \
@@ -2930,14 +2965,14 @@ else
 
   # Genau EINES wirft Schatten. Sechs schattenwerfende Punktlichter in einem Raum sind sechs
   # Schattenkarten je Bild auf einem Telefon, fuer einen Unterschied, den niemand ansieht.
-  if code "$ATM" | grep -qE '_built\.Count == 0 \? LightShadows\.Soft : LightShadows\.None'; then
+  if code "$ATM" | grep -E >/dev/null  '_built\.Count == 0 \? LightShadows\.Soft : LightShadows\.None'; then
     ok "kein Praktikal wirft ueberfluessige Schatten"
   else
     bad "kein Praktikal wirft ueberfluessige Schatten" \
         "jedes weitere schattenwerfende Punktlicht ist eine Schattenkarte je Bild"
   fi
 
-  if code "$ATM" | grep -qE '"Lobby_DustParticles"'; then
+  if code "$ATM" | grep -E >/dev/null  '"Lobby_DustParticles"'; then
     ok "es gibt Staub in der Lobby"
   else
     bad "es gibt Staub in der Lobby" "erwartet ein Partikelsystem namens Lobby_DustParticles"
@@ -2946,8 +2981,8 @@ else
   # Dieselbe Lehre wie bei den Portalfunken: ein frisch gebautes URP-Partikelmaterial ist OPAK
   # auf der weissen Standardtextur, also ein weisses QUADRAT. Bei Staub faellt das am wenigsten
   # als Materialfehler auf - hunderte kleine weisse Quadrate liest man als Renderfehler.
-  if code "$ATM" | grep -qE 'material\.SetFloat\("_Surface", 1f\)' &&
-     code "$ATM" | grep -qE 'material\.SetTexture\("_BaseMap", DustSprite\(\)\)'; then
+  if code "$ATM" | grep -E >/dev/null  'material\.SetFloat\("_Surface", 1f\)' &&
+     code "$ATM" | grep -E >/dev/null  'material\.SetTexture\("_BaseMap", DustSprite\(\)\)'; then
     ok "das Staubmaterial ist konfiguriert, nicht auf den Shader-Voreinstellungen"
   else
     bad "das Staubmaterial ist konfiguriert, nicht auf den Shader-Voreinstellungen" \
@@ -2955,9 +2990,9 @@ else
   fi
 
   DUST="$(code "$ATM" | sed -n '/private void BuildDust/,/^        }$/p')"
-  if printf '%s' "$DUST" | grep -qE 'main\.maxParticles = dustMaxParticles;' &&
-     printf '%s' "$DUST" | grep -qE 'collision\.enabled = false;' &&
-     printf '%s' "$DUST" | grep -qE 'trails\.enabled = false;'; then
+  if printf '%s' "$DUST" | grep -E >/dev/null  'main\.maxParticles = dustMaxParticles;' &&
+     printf '%s' "$DUST" | grep -E >/dev/null  'collision\.enabled = false;' &&
+     printf '%s' "$DUST" | grep -E >/dev/null  'trails\.enabled = false;'; then
     ok "der Staub ist begrenzt"
   else
     bad "der Staub ist begrenzt" \
@@ -2966,8 +3001,8 @@ else
 
   # CLAUDE.md Fehler 2: Shader.Find("Standard") loest ueberall auf und zeichnet unter URP
   # magenta. Ein Raum voller magentafarbener Quadrate ist schlimmer als ein Raum ohne Staub.
-  if printf '%s' "$DUST" | grep -qE 'if \(shader == null\)' &&
-     ! printf '%s' "$DUST" | grep -qE 'Shader\.Find\('; then
+  if printf '%s' "$DUST" | grep -E >/dev/null  'if \(shader == null\)' &&
+     ! printf '%s' "$DUST" | grep -E >/dev/null  'Shader\.Find\('; then
     ok "ein fehlender Partikelshader gibt keinen Ersatz"
   else
     bad "ein fehlender Partikelshader gibt keinen Ersatz" \
@@ -2984,15 +3019,15 @@ if [ ! -f "$TBL" ]; then
   bad "die Gegenstaende werden ueber den vorhandenen Bauweg gebaut" "Datei fehlt"
   bad "der Tisch wird gemessen, nicht angenommen" "Datei fehlt"
 else
-  if code "$TBL" | grep -qE 'EquipmentDefinitionFactory\.All\(\)' &&
-     ! code "$TBL" | grep -qE 'EquipmentIds\.(Flashlight|EmfDetector|UvLight)'; then
+  if code "$TBL" | grep -E >/dev/null  'EquipmentDefinitionFactory\.All\(\)' &&
+     ! code "$TBL" | grep -E >/dev/null  'EquipmentIds\.(Flashlight|EmfDetector|UvLight)'; then
     ok "der Ausruestungstisch liest die vorhandenen Definitionen"
   else
     bad "der Ausruestungstisch liest die vorhandenen Definitionen" \
         "eine eigene Liste von Ids ist eine zweite Antwort auf dieselbe Frage"
   fi
 
-  if code "$TBL" | grep -qE 'MissionEquipmentInstaller\.BuildItem\('; then
+  if code "$TBL" | grep -E >/dev/null  'MissionEquipmentInstaller\.BuildItem\('; then
     ok "die Gegenstaende werden ueber den vorhandenen Bauweg gebaut"
   else
     bad "die Gegenstaende werden ueber den vorhandenen Bauweg gebaut" \
@@ -3002,8 +3037,8 @@ else
   # Der Lobbytisch wird zur Laufzeit von seiner Prop-Komponente gebaut. Jede hier
   # hingeschriebene Hoehe waere eine Annahme ueber ein Objekt, das es noch nicht gibt - und
   # elf Gegenstaende auf einer geratenen Hoehe sind elf Gegenstaende im Boden.
-  if code "$TBL" | grep -qE 'private static bool TryMeasureTop\(Transform root, out Bounds bounds\)' &&
-     code "$TBL" | grep -qE 'top\.max\.y \+ surfaceClearance'; then
+  if code "$TBL" | grep -E >/dev/null  'private static bool TryMeasureTop\(Transform root, out Bounds bounds\)' &&
+     code "$TBL" | grep -E >/dev/null  'top\.max\.y \+ surfaceClearance'; then
     ok "der Tisch wird gemessen, nicht angenommen"
   else
     bad "der Tisch wird gemessen, nicht angenommen" \
@@ -3018,8 +3053,8 @@ else
   # platziert; und elf unsichtbare Gegenstaende sehen genauso aus wie elf, die nie gebaut wurden.
   # Eine ratende Suche, die still "nichts" antwortet, ist schlimmer als gar keine Suche.
   SURF="$(code "$TBL" | sed -n '/private bool TryResolveSurface/,/^        }$/p')"
-  if printf '%s' "$SURF" | grep -qE 'return TryResolveFloor\(out top\);' &&
-     code "$TBL" | grep -qE 'private bool TryResolveFloor\(out Bounds top\)'; then
+  if printf '%s' "$SURF" | grep -E >/dev/null  'return TryResolveFloor\(out top\);' &&
+     code "$TBL" | grep -E >/dev/null  'private bool TryResolveFloor\(out Bounds top\)'; then
     ok "ohne Tisch liegt die Kiste auf dem Boden, statt nirgends"
   else
     bad "ohne Tisch liegt die Kiste auf dem Boden, statt nirgends" \
@@ -3035,8 +3070,8 @@ unterscheiden"
   # Invariante haelt dabei unveraendert: das ist genau das falsche ROT aus Fehler 26, und ein
   # falsches ROT ist teurer als eine fehlende Pruefung.
   FLOOR="$(code "$TBL" | sed -n '/private bool TryResolveFloor/,/private Transform ResolveSpawn/p')"
-  if printf '%s' "$FLOOR" | grep -qE 'Physics\.Raycast\(' &&
-     printf '%s' "$FLOOR" | grep -qE 'Physics\.SyncTransforms\(\)'; then
+  if printf '%s' "$FLOOR" | grep -E >/dev/null  'Physics\.Raycast\(' &&
+     printf '%s' "$FLOOR" | grep -E >/dev/null  'Physics\.SyncTransforms\(\)'; then
     ok "die Bodenhoehe wird gemessen, nicht auf null gesetzt"
   else
     bad "die Bodenhoehe wird gemessen, nicht auf null gesetzt" \
@@ -3047,7 +3082,7 @@ unterscheiden"
   # findet auch INNERHALB einer Wand den Boden darunter tadellos - der feste Seitenversatz lag
   # deshalb in der Wand, sichtbar von einer Seite und nicht erreichbar. Ein Kasten, der auf dem
   # Boden steht statt darin, ist das Einzige, was den Unterschied sieht.
-  if printf '%s' "$FLOOR" | grep -qE 'Physics\.OverlapBox\('; then
+  if printf '%s' "$FLOOR" | grep -E >/dev/null  'Physics\.OverlapBox\('; then
     ok "der Platz wird als frei nachgemessen, nicht angenommen"
   else
     bad "der Platz wird als frei nachgemessen, nicht angenommen" \
@@ -3058,9 +3093,9 @@ unterscheiden"
   # man erst merkt, wenn man dagegenlaeuft: der Spawn schaut in die Richtung, in die der Spieler
   # gehen soll, "vor dem Spawn" IST also die Tuer. Elf feste Objekte quer durch eine Tuer sind
   # eine Wand, und das Erste, was der Spieler tat, war nicht aus dem Raum zu kommen.
-  if printf '%s' "$FLOOR" | grep -qE 'spawn\.forward \*' &&
-     printf '%s' "$FLOOR" | grep -qE 'spawn\.right \*' &&
-     printf '%s' "$FLOOR" | grep -qE 'floorSideOffset'; then
+  if printf '%s' "$FLOOR" | grep -E >/dev/null  'spawn\.forward \*' &&
+     printf '%s' "$FLOOR" | grep -E >/dev/null  'spawn\.right \*' &&
+     printf '%s' "$FLOOR" | grep -E >/dev/null  'floorSideOffset'; then
     ok "die Kiste liegt neben dem Weg, nicht in der Tuer"
   else
     bad "die Kiste liegt neben dem Weg, nicht in der Tuer" \
@@ -3078,9 +3113,9 @@ unterscheiden"
   ERF2="$ROOT/Assets/CatchIfYouCan/Scripts/Equipment/EquipmentRuntimeFactory.cs"
   PT="$(code "$HEB2" | sed -n '/protected void BuildPickupTrigger/,/^        }$/p')"
 
-  if [ -f "$HEB2" ] && code "$HEB2" | grep -qE 'BuildDropCollider\(measured\);' &&
-     code "$HEB2" | grep -qE 'BuildPickupTrigger\(\);' &&
-     printf '%s' "$PT" | grep -qE 'isTrigger = true'; then
+  if [ -f "$HEB2" ] && code "$HEB2" | grep -E >/dev/null  'BuildDropCollider\(measured\);' &&
+     code "$HEB2" | grep -E >/dev/null  'BuildPickupTrigger\(\);' &&
+     printf '%s' "$PT" | grep -E >/dev/null  'isTrigger = true'; then
     ok "der Aufhebekoerper entsteht, wo das Visual entsteht"
   else
     bad "der Aufhebekoerper entsteht, wo das Visual entsteht" \
@@ -3090,9 +3125,9 @@ unterscheiden"
   # Gemessen am GEZEICHNETEN und in den eigenen Raum zurueckgerechnet: eine Weltgroesse in
   # einem BoxCollider wird ein zweites Mal skaliert (Fehler 12). Die Wurfkapsel taugt als Mass
   # nicht - sie ist ausgeschaltet, und Unity haelt deren bounds dann nicht nach.
-  if printf '%s' "$PT" | grep -qE 'GetComponentsInChildren<Renderer>\(true\)' &&
-     printf '%s' "$PT" | grep -qE 'lossyScale' &&
-     printf '%s' "$PT" | grep -qE 'InverseTransformPoint'; then
+  if printf '%s' "$PT" | grep -E >/dev/null  'GetComponentsInChildren<Renderer>\(true\)' &&
+     printf '%s' "$PT" | grep -E >/dev/null  'lossyScale' &&
+     printf '%s' "$PT" | grep -E >/dev/null  'InverseTransformPoint'; then
     ok "der Aufhebekoerper wird am Gezeichneten gemessen, in eigenem Raum"
   else
     bad "der Aufhebekoerper wird am Gezeichneten gemessen, in eigenem Raum" \
@@ -3101,9 +3136,9 @@ unterscheiden"
 
   # Und es gibt genau einen: kein zweiter beim erneuten Bauen, und der Lobbytisch legt keinen
   # eigenen mehr an - zwei Quellen fuer eine Sache sind Fehler 1.
-  if printf '%s' "$PT" | grep -qE 'if \(_pickupTrigger != null\)' &&
-     code "$HEB2" | grep -qE 'Object\.Destroy\(_pickupTrigger\)' &&
-     ! code "$TBL" | grep -qE 'AddComponent<BoxCollider>\(\)'; then
+  if printf '%s' "$PT" | grep -E >/dev/null  'if \(_pickupTrigger != null\)' &&
+     code "$HEB2" | grep -E >/dev/null  'Object\.Destroy\(_pickupTrigger\)' &&
+     ! code "$TBL" | grep -E >/dev/null  'AddComponent<BoxCollider>\(\)'; then
     ok "es gibt genau einen Aufhebekoerper, aus einer Quelle"
   else
     bad "es gibt genau einen Aufhebekoerper, aus einer Quelle" \
@@ -3114,8 +3149,8 @@ unterscheiden"
   # hinlegt. Ohne InteractivePickup loest GetComponentInParent<IInteractable> nichts auf, und
   # der Spieler sieht keinen Namen und keine Aufforderung.
   if [ -f "$ERF2" ] &&
-     code "$ERF2" | grep -qE 'AddComponent<Interaction\.InteractivePickup>\(\)' &&
-     code "$ERF2" | grep -qE 'pickup\.Configure\('; then
+     code "$ERF2" | grep -E >/dev/null  'AddComponent<Interaction\.InteractivePickup>\(\)' &&
+     code "$ERF2" | grep -E >/dev/null  'pickup\.Configure\('; then
     ok "jedes Laufzeitstueck ist durch Konstruktion aufhebbar"
   else
     bad "jedes Laufzeitstueck ist durch Konstruktion aufhebbar" \
@@ -3129,9 +3164,9 @@ unterscheiden"
   # was brach. Gefangen wird je Stueck, und laut: mit Id und Ausnahme, sonst steht in der
   # Konsole eine Zahl statt eines Namens.
   LOOP="$(code "$TBL" | sed -n '/for (int i = 0; i < definitions.Count; i++)/,/^            }$/p')"
-  if printf '%s' "$LOOP" | grep -qE 'catch \(System\.Exception' &&
-     printf '%s' "$LOOP" | grep -qE 'continue;' &&
-     printf '%s' "$LOOP" | grep -qE 'CIYCLog\.Error'; then
+  if printf '%s' "$LOOP" | grep -E >/dev/null  'catch \(System\.Exception' &&
+     printf '%s' "$LOOP" | grep -E >/dev/null  'continue;' &&
+     printf '%s' "$LOOP" | grep -E >/dev/null  'CIYCLog\.Error'; then
     ok "ein Stueck, das wirft, kostet nur sich selbst"
   else
     bad "ein Stueck, das wirft, kostet nur sich selbst" \
@@ -3156,7 +3191,7 @@ unterscheiden"
   # also pruefte er dann einen Sonderfall statt das Geraet. In dieser Datei baut genau eine
   # Stelle ein Ausruestungsstueck.
   if [ "$(code "$TBL" | grep -c 'MissionEquipmentInstaller\.BuildItem(')" = "1" ] &&
-     code "$TBL" | grep -qE 'Place\(testItem,'; then
+     code "$TBL" | grep -E >/dev/null  'Place\(testItem,'; then
     ok "das Testgeraet am Spawn geht durch denselben Bauweg wie die Kiste"
   else
     bad "das Testgeraet am Spawn geht durch denselben Bauweg wie die Kiste" \
@@ -3166,9 +3201,9 @@ unterscheiden"
   # Und es liegt am Spawn STATT auf dem Raster, nicht zusaetzlich. Zwei gleiche Geraete ein
   # paar Meter auseinander sind der Zustand, in dem "ist es gespawnt?" keine eine Antwort mehr
   # hat - und genau diese Frage ist der Grund, aus dem es das gibt.
-  if code "$TBL" | grep -qE 'testItem = d;' &&
+  if code "$TBL" | grep -E >/dev/null  'testItem = d;' &&
      printf '%s' "$(code "$TBL" | sed -n '/testItem = d;/,/^                    }$/p')" \
-       | grep -qE 'continue;'; then
+       | grep -E >/dev/null  'continue;'; then
     ok "das Testgeraet liegt am Spawn statt auf dem Raster, nicht zusaetzlich"
   else
     bad "das Testgeraet liegt am Spawn statt auf dem Raster, nicht zusaetzlich" \
@@ -3177,8 +3212,8 @@ unterscheiden"
 
   # Der Spawnpunkt wird beim Geschwister erfragt, das ihn schon verdrahtet hat - nicht ueber
   # einen Objektnamen, der still nicht mehr aufloest (CLAUDE.md Fehler 3 und 10).
-  if code "$TBL" | grep -qE 'atmosphere\.PlayerSpawn' &&
-     ! code "$TBL" | grep -qE 'GameObject\.Find|"Lobby_PlayerSpawn"'; then
+  if code "$TBL" | grep -E >/dev/null  'atmosphere\.PlayerSpawn' &&
+     ! code "$TBL" | grep -E >/dev/null  'GameObject\.Find|"Lobby_PlayerSpawn"'; then
     ok "der Spawnpunkt wird erfragt, nicht per Namen gesucht"
   else
     bad "der Spawnpunkt wird erfragt, nicht per Namen gesucht" \
@@ -3196,9 +3231,9 @@ fi
 PU="$ROOT/Assets/CatchIfYouCan/Scripts/Interaction/InteractivePickup.cs"
 DBG="$ROOT/Assets/CatchIfYouCan/Scripts/Development/DebugItemTools.cs"
 if [ -f "$PU" ] && [ -f "$DBG" ] &&
-   code "$PU" | grep -qE 'public string DescribeInteractability\(GameObject' &&
-   code "$DBG" | grep -qE 'DescribeInteractability\(' &&
-   code "$DBG" | grep -qE 'DescribeWhyNothing\(\)'; then
+   code "$PU" | grep -E >/dev/null  'public string DescribeInteractability\(GameObject' &&
+   code "$DBG" | grep -E >/dev/null  'DescribeInteractability\(' &&
+   code "$DBG" | grep -E >/dev/null  'DescribeWhyNothing\(\)'; then
   ok "eine abgelehnte Aufnahme benennt ihren Grund"
 else
   bad "eine abgelehnte Aufnahme benennt ihren Grund" \
@@ -3208,8 +3243,8 @@ fi
 # Und die Diagnose entscheidet nichts: DescribeInteractability wird nirgends als Bedingung
 # benutzt. Ein zweiter Weg zu "darf aufgehoben werden" waere Fehler 1 an der empfindlichsten
 # Stelle - die beiden gingen auseinander, und geglaubt wuerde die falsche.
-if ! code "$PU" | grep -qE 'if \(.*DescribeInteractability' &&
-   ! code "$DBG" | grep -qE 'if \(.*DescribeInteractability'; then
+if ! code "$PU" | grep -E >/dev/null  'if \(.*DescribeInteractability' &&
+   ! code "$DBG" | grep -E >/dev/null  'if \(.*DescribeInteractability'; then
   ok "die Absagediagnose entscheidet nichts, sie beschreibt nur"
 else
   bad "die Absagediagnose entscheidet nichts, sie beschreibt nur" \
@@ -3222,8 +3257,8 @@ fi
 # ruft Select() schon vom Tippen. Ueber den Eingabecontroller geroutet waere es ein zweiter Weg zu
 # demselben Aufruf, und die zwei gehen auseinander, sobald einer davon eine Regel bekommt.
 SEL="$ROOT/Assets/CatchIfYouCan/Scripts/UI/InventorySlotSelector.cs"
-if [ -f "$SEL" ] && code "$SEL" | grep -qE 'KeyCode\.Alpha1 \+ i' &&
-   code "$SEL" | grep -qE 'i < PlayerInventory\.SelectableSlotCount'; then
+if [ -f "$SEL" ] && code "$SEL" | grep -E >/dev/null  'KeyCode\.Alpha1 \+ i' &&
+   code "$SEL" | grep -E >/dev/null  'i < PlayerInventory\.SelectableSlotCount'; then
   ok "die Zahlenreihe waehlt einen Platz, die Fackel eingeschlossen"
 else
   bad "die Zahlenreihe waehlt einen Platz, die Fackel eingeschlossen" \
@@ -3231,7 +3266,7 @@ else
 fi
 
 # Und sie greift nicht durch ein offenes Menue hindurch.
-if [ -f "$SEL" ] && code "$SEL" | grep -qE 'MenuInputGate\.IsMenuOpen'; then
+if [ -f "$SEL" ] && code "$SEL" | grep -E >/dev/null  'MenuInputGate\.IsMenuOpen'; then
   ok "die Zahlenreihe ruht, solange ein Menue offen ist"
 else
   bad "die Zahlenreihe ruht, solange ein Menue offen ist" \
@@ -3239,7 +3274,7 @@ else
 fi
 
 # Und sie fasst die mobile Steuerung nicht an.
-if [ -f "$SEL" ] && ! code "$SEL" | grep -qE 'MobileInputController'; then
+if [ -f "$SEL" ] && ! code "$SEL" | grep -E >/dev/null  'MobileInputController'; then
   ok "die Zahlenreihe laesst die mobile Steuerung in Ruhe"
 else
   bad "die Zahlenreihe laesst die mobile Steuerung in Ruhe" \
@@ -3254,15 +3289,15 @@ else
   # Ein aufaddierter Euler-Winkel laeuft bei einem langen Zug ueber seine Grenze hinaus, und
   # dann steht das Blatt in der Wand: ein Loch zum Durchlaufen in einem Objekt, das genau das
   # verhindern soll.
-  if code "$DOOR" | grep -qE 'Mathf\.Clamp\(.*, 0f, maxAngle\)' &&
-     code "$DOOR" | grep -qE 'hinge\.localRotation = _restLocal \* Quaternion\.AngleAxis'; then
+  if code "$DOOR" | grep -E >/dev/null  'Mathf\.Clamp\(.*, 0f, maxAngle\)' &&
+     code "$DOOR" | grep -E >/dev/null  'hinge\.localRotation = _restLocal \* Quaternion\.AngleAxis'; then
     ok "die Tuer klemmt ihren Winkel, statt ihn aufzusummieren"
   else
     bad "die Tuer klemmt ihren Winkel, statt ihn aufzusummieren" \
         "aufaddiert laeuft das Blatt bei einem langen Zug in die Wand"
   fi
 
-  if code "$DOOR" | grep -qE '\[SerializeField\] private Transform hinge;'; then
+  if code "$DOOR" | grep -E >/dev/null  '\[SerializeField\] private Transform hinge;'; then
     ok "die Tuer dreht um ihr Scharnier, nicht um ihre Mitte"
   else
     bad "die Tuer dreht um ihr Scharnier, nicht um ihre Mitte" \
@@ -3273,9 +3308,9 @@ else
   # animiert, laesst also ein gezogenes Blatt in Ruhe - und glaubt danach weiter an den Winkel,
   # den sie zuletzt gerechnet hat. Ohne Abgleich springt das Blatt beim naechsten Tastendruck
   # von diesem veralteten Winkel zum Ziel, und auf dem Bildschirm hat das keine Ursache.
-  if code "$DOOR" | grep -qE 'swing\.SyncToAngle\(' &&
+  if code "$DOOR" | grep -E >/dev/null  'swing\.SyncToAngle\(' &&
      code "$ROOT/Assets/CatchIfYouCan/Scripts/Interaction/InteractiveDoor.cs" \
-       | grep -qE 'public void SyncToAngle\(float degrees\)'; then
+       | grep -E >/dev/null  'public void SyncToAngle\(float degrees\)'; then
     ok "die schwingende Tuer erfaehrt, wo das gezogene Blatt stehen geblieben ist"
   else
     bad "die schwingende Tuer erfaehrt, wo das gezogene Blatt stehen geblieben ist" \
@@ -3285,8 +3320,8 @@ else
   # Und beide bekommen DENSELBEN Grenzwinkel aus derselben Konstante. Zwei Antworten auf "wie
   # weit geht die Tuer auf" gehen genau dann auseinander, wenn jemand eine davon aendert.
   DF="$ROOT/Assets/CatchIfYouCan/Scripts/Procedural/ModularDoorFactory.cs"
-  if code "$DF" | grep -qE 'door\.Configure\(hinge\.transform, OpenAngle\);' &&
-     code "$DF" | grep -qE 'drag\.Configure\(hinge\.transform, 1, OpenAngle\);'; then
+  if code "$DF" | grep -E >/dev/null  'door\.Configure\(hinge\.transform, OpenAngle\);' &&
+     code "$DF" | grep -E >/dev/null  'drag\.Configure\(hinge\.transform, 1, OpenAngle\);'; then
     ok "gezogen und geschwungen teilen sich Scharnier und Grenzwinkel"
   else
     bad "gezogen und geschwungen teilen sich Scharnier und Grenzwinkel" \
@@ -3302,7 +3337,7 @@ fi
 touched=""
 for f in "$DOOR" "$DBG" "$ATM" "$TBL"; do
   [ -f "$f" ] || continue
-  code "$f" | grep -qE 'MobileInputController' && touched="$touched $(basename "$f")"
+  code "$f" | grep -E >/dev/null  'MobileInputController' && touched="$touched $(basename "$f")"
 done
 if [ -z "$touched" ]; then
   ok "nichts Neues greift in die mobile Steuerung"
@@ -3314,8 +3349,8 @@ fi
 # Fackel aus der Hand, also kann die Auswahl auf einem leeren Platz stehen, waehrend drei
 # Werkzeuge in der Tasche sind - X tat dann gar nichts, und "nichts passiert" liest sich als
 # kaputte Taste statt als leerer Platz.
-if [ -f "$DBG" ] && code "$DBG" | grep -qE 'i < PlayerInventory\.SelectableSlotCount' &&
-   code "$DBG" | grep -qE 'TryDropFromSlot\(index\)'; then
+if [ -f "$DBG" ] && code "$DBG" | grep -E >/dev/null  'i < PlayerInventory\.SelectableSlotCount' &&
+   code "$DBG" | grep -E >/dev/null  'TryDropFromSlot\(index\)'; then
   ok "Ablegen probiert jeden Platz, nicht nur den gewaehlten"
 else
   bad "Ablegen probiert jeden Platz, nicht nur den gewaehlten" \
@@ -3324,7 +3359,7 @@ fi
 
 # Und eine Absage nennt ihren Grund. Ein blankes false macht aus "darf nicht abgelegt werden",
 # "Platz ist leer" und "gehoert jemand anderem" dasselbe Achselzucken.
-if [ -f "$DBG" ] && code "$DBG" | grep -qE 'result\.Status'; then
+if [ -f "$DBG" ] && code "$DBG" | grep -E >/dev/null  'result\.Status'; then
   ok "eine verweigerte Ablage nennt ihren Grund"
 else
   bad "eine verweigerte Ablage nennt ihren Grund" \
@@ -3342,8 +3377,8 @@ fi
 # sondern als eines mit doppelter Helligkeit. Gesucht wird deshalb nach der Komponente, denn
 # die ueberlebt die Kopie - das Feld, das auf sie zeigte, nicht.
 PROJ="$ROOT/Assets/CatchIfYouCan/Scripts/Equipment/SpectralGridProjection.cs"
-if [ -f "$PROJ" ] && code "$PROJ" | grep -qE 'transform\.Find\(OriginChildName\)' &&
-   code "$PROJ" | grep -qE 'transform\.Find\(VolumeChildName\)'; then
+if [ -f "$PROJ" ] && code "$PROJ" | grep -E >/dev/null  'transform\.Find\(OriginChildName\)' &&
+   code "$PROJ" | grep -E >/dev/null  'transform\.Find\(VolumeChildName\)'; then
   ok "die Projektion uebersteht das Klonen ihrer Vorlage"
 else
   bad "die Projektion uebersteht das Klonen ihrer Vorlage" \
@@ -3353,7 +3388,7 @@ fi
 # Und die Debug-Bequemlichkeiten stehen nicht in einem ausgelieferten Build. Ein Debug-Text im
 # Bild und eine zweite Aufnehmen-Taste sind Werkzeuge, keine Steuerung.
 if [ -f "$DBG" ]; then
-  if head -1 "$DBG" | grep -qE '^#if UNITY_EDITOR \|\| DEVELOPMENT_BUILD$'; then
+  if head -1 "$DBG" | grep -E >/dev/null  '^#if UNITY_EDITOR \|\| DEVELOPMENT_BUILD$'; then
     ok "die Debug-Werkzeuge sind aus einem Auslieferungsbuild gezaeunt"
   else
     bad "die Debug-Werkzeuge sind aus einem Auslieferungsbuild gezaeunt" \
