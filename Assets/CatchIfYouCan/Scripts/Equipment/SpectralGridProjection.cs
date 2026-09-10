@@ -1,23 +1,44 @@
-using CatchIfYouCan.Art;
 using UnityEngine;
 
 namespace CatchIfYouCan.Equipment
 {
     /// <summary>
-    /// Draws the projector's field of points: one mesh, one material, no dots as objects.
+    /// The projector's field of points, as PROJECTED LIGHT: one spot light wearing a dot mask.
     ///
     /// <para>
-    /// The whole effect is a single cone rendered with
-    /// <c>CatchIfYouCan/SpectralGrid</c>. The points are computed in the fragment shader at the
-    /// world position of whatever surface is behind each pixel, so there is no dot anywhere in
-    /// the scene graph: no GameObject per dot, no MonoBehaviour per dot, nothing instantiated
-    /// or destroyed while it runs, and nothing to replicate over a network later but the
-    /// projector's own transform and whether it is on.
+    /// The dots belong to the surfaces they fall on. They follow perspective across a corner,
+    /// they stay put when the player walks, and they cost one light and one texture - no
+    /// GameObject per dot, nothing instantiated or destroyed while it runs, and nothing to
+    /// replicate over a network later but the projector's transform and whether it is on.
     /// </para>
     ///
     /// <para>
-    /// The cone is built once and reused. Range and angle are pushed through a property block
-    /// rather than a material instance, so twenty projectors in a house share one material.
+    /// <b>A SPOT rather than a point light</b>, because the device is screwed to a wall. A point
+    /// light is a sphere, so half of it is inside the masonry and the useful half still has to
+    /// be masked back to a cone. A spot IS that cone, it cannot spill behind the wall it is
+    /// mounted on, and its cookie is an ordinary 2D texture with no equirectangular mapping to
+    /// get wrong. The spherical cookie is generated and committed beside the spot one for the
+    /// point-light path, but what ships is the one whose behaviour is unambiguous.
+    /// </para>
+    ///
+    /// <para>
+    /// <b>What this replaced.</b> The projection used to be a cone mesh drawn with
+    /// <c>CatchIfYouCan/SpectralGrid</c>, which reconstructs each pixel's world position from
+    /// the depth buffer and computes the dots there. That is a real projection technique and it
+    /// is not a volume of dots hanging in the air - occlusion falls out of it for free, which
+    /// the cookie below does not get. It produced nothing on screen and I could not establish
+    /// why: the depth texture it needs IS enabled (CIYC_URP.asset, m_RequireDepthTexture: 1),
+    /// and its +Y throw axis matches the rest of the device. It is replaced rather than kept
+    /// alongside, because two things drawing the same dots is how this project ends up with two
+    /// flashlights. The shader and MAT_SpectralGrid are still in the project and still used by
+    /// the lighting lab; nothing here loads them any more.
+    /// </para>
+    ///
+    /// <para>
+    /// <b>The trade this makes.</b> Real-time shadows are off - a cookied spot with shadows is
+    /// not an effect on a phone, it is a slideshow - so the dots are not occluded by geometry
+    /// between the lens and the surface. Inside one room, which is the range this device works
+    /// at, that is not visible. It would be through a doorway.
     /// </para>
     /// </summary>
     [AddComponentMenu("Catch If You Can/Spectral Grid Projection")]
@@ -26,49 +47,35 @@ namespace CatchIfYouCan.Equipment
         [Header("Look")]
         [SerializeField] private Color dotColor = new Color(0.2f, 1f, 0.35f, 1f);
 
-        [Tooltip("How many points across the cone. Angular, so they spread with distance the " +
-                 "way a real projector's do.")]
-        [SerializeField, Range(4f, 128f)] private float density = 34f;
+        [Tooltip("Brightness of the projected dot field.")]
+        [SerializeField] private float lightIntensity = 14f;
 
-        [Tooltip("Size of one point within its cell, 0 to 0.5. Past about 0.35 they merge into " +
-                 "the continuous green floodlight this is not supposed to be.")]
-        [SerializeField, Range(0.02f, 0.45f)] private float dotSize = 0.22f;
+        [Tooltip("How far the lens sits in front of the device body, along the device's own " +
+                 "working axis, in metres. A light origin inside the wall is occluded by that " +
+                 "wall and lights nothing.")]
+        [SerializeField] private float lensForwardOffset = 0.06f;
 
-        [SerializeField, Range(0f, 8f)] private float intensity = 2.2f;
+        /// <summary>
+        /// The dot mask, by Resources path so it ships with the build.
+        ///
+        /// <para>
+        /// Authored at 1024 because that is the size it is used at: CIYC_URP.asset sets
+        /// m_AdditionalLightsCookieResolution to 2048, so a 2048 cookie is the entire atlas,
+        /// and a mask the importer has to downscale loses its dots to the filter.
+        /// </para>
+        /// </summary>
+        private const string CookieResourcePath = "Equipment/DOTS/T_DOTS_SpotCookie_1024";
 
-        [Tooltip("How soft the edge of the cone is, as a fraction of its radius.")]
-        [SerializeField, Range(0.01f, 0.9f)] private float edgeSoftness = 0.35f;
+        /// <summary>The child that carries the light, found by name when a clone already has it.</summary>
+        private const string ProjectorChildName = "SpectralGrid_Projector";
 
-        [Tooltip("Metres over which the field fades in at the lens, so standing on the " +
-                 "projector is not a wall of light.")]
-        [SerializeField, Range(0f, 2f)] private float nearFade = 0.25f;
-
-        [Header("Mesh")]
-        [Tooltip("Sides on the cone hull. This is the volume the shader runs inside, not the " +
-                 "shape you see, so it needs to be round enough not to clip the field - not " +
-                 "smooth.")]
-        [SerializeField, Range(8, 48)] private int coneSides = 20;
-
-        private MeshRenderer _renderer;
-        private MeshFilter _filter;
-        private MaterialPropertyBlock _block;
-        private Mesh _cone;
+        private Light _light;
 
         private float _range = 6f;
         private float _fullAngle = 70f;
-        private int _builtSides = -1;
-
-        private static readonly int DotColorId = Shader.PropertyToID("_DotColor");
-        private static readonly int DensityId = Shader.PropertyToID("_Density");
-        private static readonly int DotSizeId = Shader.PropertyToID("_DotSize");
-        private static readonly int RangeId = Shader.PropertyToID("_Range");
-        private static readonly int HalfAngleId = Shader.PropertyToID("_HalfAngle");
-        private static readonly int IntensityId = Shader.PropertyToID("_Intensity");
-        private static readonly int EdgeSoftnessId = Shader.PropertyToID("_EdgeSoftness");
-        private static readonly int NearFadeId = Shader.PropertyToID("_NearFade");
 
         /// <summary>
-        /// Attaches a projection to a device head. The volume is a child, so it inherits the
+        /// Attaches a projection to a device head. The light is a child, so it inherits the
         /// device's orientation and a wall-mounted projector throws into the room without
         /// anything having to work out which way that is.
         /// </summary>
@@ -82,57 +89,14 @@ namespace CatchIfYouCan.Equipment
             return go.AddComponent<SpectralGridProjection>();
         }
 
-        private void Awake()
-        {
-            // GetComponent FIRST, and this is not defensive tidiness - it is the whole bug.
-            //
-            // EquipmentRuntimeFactory builds each item once as a live template, which runs this
-            // Awake and leaves a MeshFilter and a MeshRenderer on the object. Every item the
-            // player gets is an Instantiate of that template, so the copy ALREADY carries both -
-            // and Renderer is [DisallowMultipleComponent], so AddComponent<MeshRenderer> on the
-            // copy returns NULL rather than a second one. The next line then dereferenced it.
-            //
-            // The exception came out of SetActive(true) inside MissionEquipmentInstaller, which
-            // reads as a problem with the installer or the table; it is neither. An Awake that
-            // assumes it has never run before is wrong for anything that is ever cloned, and
-            // every piece of equipment in this project is cloned.
-            _filter = gameObject.GetComponent<MeshFilter>();
-            if (_filter == null)
-                _filter = gameObject.AddComponent<MeshFilter>();
-
-            _renderer = gameObject.GetComponent<MeshRenderer>();
-            if (_renderer == null)
-                _renderer = gameObject.AddComponent<MeshRenderer>();
-
-            _renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
-            _renderer.receiveShadows = false;
-            _renderer.lightProbeUsage = UnityEngine.Rendering.LightProbeUsage.Off;
-            _renderer.reflectionProbeUsage = UnityEngine.Rendering.ReflectionProbeUsage.Off;
-
-            // The authored material, so its shader is referenced by an asset and survives a
-            // build. Asking Shader.Find for it directly is how a shader gets stripped and the
-            // effect quietly becomes nothing on a device.
-            var material = Resources.Load<Material>("Materials/MAT_SpectralGrid");
-            if (material == null)
-            {
-                Core.CIYCLog.Warn("No MAT_SpectralGrid under Resources/Materials; the spectral " +
-                                  "grid will not draw. Its shader is very likely not in this " +
-                                  "build either.");
-            }
-
-            _renderer.sharedMaterial = material;
-            _renderer.enabled = false;
-            _block = new MaterialPropertyBlock();
-        }
-
         /// <summary>Sets the shape of the field. Cheap; safe to call whenever it changes.</summary>
         public void Configure(float range, float fullAngleDegrees)
         {
             _range = Mathf.Max(0.1f, range);
             _fullAngle = Mathf.Clamp(fullAngleDegrees, 5f, 170f);
 
-            RebuildCone();
-            PushProperties();
+            EnsureProjectorLight();
+            ApplyShape();
         }
 
         /// <summary>
@@ -141,107 +105,148 @@ namespace CatchIfYouCan.Equipment
         /// </summary>
         public void SetRunning(bool running)
         {
-            if (_renderer != null)
-                _renderer.enabled = running && _renderer.sharedMaterial != null;
+            EnsureProjectorLight();
+            if (_light != null)
+                _light.enabled = running;
+
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+            if (running)
+                ReportProjection();
+#endif
         }
 
         /// <summary>
-        /// The hull the shader runs inside. Rebuilt only when its shape actually changes, which
-        /// in practice is once.
+        /// Builds the light once, and finds the one a CLONE already carries.
+        ///
+        /// <para>
+        /// Every piece of equipment in this project reaches the world as an
+        /// <c>Instantiate</c> of a live template, and <c>Instantiate</c> copies GameObjects and
+        /// components while dropping the private field that pointed at them. So on the clone
+        /// the child and its Light are already there and <c>_light</c> is null - and a
+        /// <c>new GameObject</c> here would hang a SECOND light on the same device. Two
+        /// coincident lights are not visibly two; they are one that is twice as bright, which
+        /// is mistakes 27 and 30 wearing a third face. The component is the identity that
+        /// survives the copy, so that is what is searched for.
+        /// </para>
         /// </summary>
-        private void RebuildCone()
+        private void EnsureProjectorLight()
         {
-            float halfAngle = _fullAngle * 0.5f * Mathf.Deg2Rad;
-            float radius = Mathf.Tan(halfAngle) * _range;
-
-            if (_cone != null && _builtSides == coneSides)
-            {
-                // Same topology, different size: scale rather than rebuild the mesh.
-                transform.localScale = Vector3.one;
-                ResizeCone(radius, _range);
+            if (_light != null)
                 return;
+
+            _light = GetComponentInChildren<Light>(true);
+
+            if (_light == null)
+            {
+                var host = new GameObject(ProjectorChildName);
+                host.transform.SetParent(transform, false);
+                _light = host.AddComponent<Light>();
             }
 
-            _builtSides = coneSides;
-            _cone = new Mesh { name = "SpectralGridCone" };
-            // Rebuilt only on a shape change, never per frame, so this allocation happens once.
-            _cone.MarkDynamic();
-            BuildCone(_cone, coneSides, radius, _range);
-            _filter.sharedMesh = _cone;
+            var t = _light.transform;
+
+            // Off the surface it is mounted on, along the axis it throws along. A light whose
+            // origin sits inside the wall is occluded by that wall and lights nothing in the
+            // room - indistinguishable from a light that never switched on.
+            t.localPosition = new Vector3(0f, lensForwardOffset, 0f);
+
+            // A Unity spot shines along its own +Z. This project's carried-transform convention
+            // is that an item's local +Y is its length and the direction it works along - the
+            // cone, the ghost-in-the-field test and the placement's quarter turn all use +Y -
+            // so the light is turned to look along +Y. Left at identity it throws sideways out
+            // of the device, which lights the wall it is bolted to and nothing else.
+            t.localRotation = Quaternion.LookRotation(Vector3.up, Vector3.forward);
+
+            _light.type = LightType.Spot;
+            _light.color = dotColor;
+            _light.intensity = lightIntensity;
+            _light.shadows = LightShadows.None;
+            _light.cookie = LoadCookie();
+            _light.enabled = false;
+
+            ApplyShape();
         }
 
-        private void ResizeCone(float radius, float height)
+        private void ApplyShape()
         {
-            BuildCone(_cone, _builtSides, radius, height);
-            _filter.sharedMesh = _cone;
+            if (_light == null)
+                return;
+
+            _light.range = Mathf.Max(0.5f, _range);
+            _light.spotAngle = Mathf.Clamp(_fullAngle, 5f, 170f);
         }
 
         /// <summary>
-        /// A cone from the origin along +Y - the axis every carried item in this project works
-        /// along - closed with a cap so the volume is watertight and the shader's front-face
-        /// cull cannot leak.
+        /// The generated cookie. A null here is an ERROR rather than a shrug: a cookie-less spot
+        /// is a plain green blob, which reads as a broken dot pattern rather than as a missing
+        /// texture, and those need different fixes.
         /// </summary>
-        private static void BuildCone(Mesh mesh, int sides, float radius, float height)
+        private Texture LoadCookie()
         {
-            int rim = Mathf.Max(3, sides);
-            var vertices = new Vector3[rim + 2];
-            vertices[0] = Vector3.zero;                       // apex, at the lens
-            vertices[rim + 1] = new Vector3(0f, height, 0f);  // centre of the far cap
-
-            for (int i = 0; i < rim; i++)
+            var cookie = Resources.Load<Texture2D>(CookieResourcePath);
+            if (cookie == null)
             {
-                float a = i / (float)rim * Mathf.PI * 2f;
-                vertices[i + 1] = new Vector3(Mathf.Cos(a) * radius, height, Mathf.Sin(a) * radius);
+                Core.CIYCLog.Error("[CIYC][DOTS][Projection] Resources.Load(\"" +
+                                   CookieResourcePath + "\") is NULL, so the spot has no dot " +
+                                   "mask and will project a plain green cone. Run " +
+                                   "Catch If You Can > 4. SPIELINHALT > Equipment > " +
+                                   "DOTS-Cookies erzeugen.");
             }
 
-            var triangles = new int[rim * 6];
-            int t = 0;
-            for (int i = 0; i < rim; i++)
+            return cookie;
+        }
+
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+        /// <summary>
+        /// One block, at switch-on, naming every value that can make a lit projector invisible.
+        /// </summary>
+        private void ReportProjection()
+        {
+            var t = _light != null ? _light.transform : transform;
+            string cookieName = _light != null && _light.cookie != null
+                ? _light.cookie.name : "null";
+            string cookieSize = _light != null && _light.cookie != null
+                ? _light.cookie.width + "x" + _light.cookie.height : "-";
+
+            string block =
+                "[CIYC][DOTS][Projection]" +
+                " componentAlive=" + (this != null) +
+                " projectionObject=" + (_light != null ? _light.gameObject.name : "<none>") +
+                " activeInHierarchy=" + (_light != null && _light.gameObject.activeInHierarchy) +
+                " lightExists=" + (_light != null) +
+                " lightCount=" + GetComponentsInChildren<Light>(true).Length +
+                " lightType=" + (_light != null ? _light.type.ToString() : "-") +
+                " lightEnabled=" + (_light != null && _light.enabled) +
+                " lightIntensity=" + (_light != null ? _light.intensity.ToString("F2") : "-") +
+                " lightRange=" + (_light != null ? _light.range.ToString("F2") : "-") +
+                " spotAngle=" + (_light != null ? _light.spotAngle.ToString("F1") : "-") +
+                " lightColor=" + (_light != null ? _light.color.ToString() : "-") +
+                " cookie=" + cookieName +
+                " cookieSize=" + cookieSize +
+                " cullingMask=" + (_light != null ? _light.cullingMask.ToString() : "-") +
+                // renderingLayerMask is deliberately NOT printed: this machine cannot reach
+                // the Unity docs to confirm the member exists on Light in 6000.5, and a stub
+                // that agrees with a guess is not verification (mistake 9). cullingMask above
+                // is the one that has always been there.
+                " worldPosition=" + t.position.ToString("F2") +
+                " throwDirection=" + t.forward.ToString("F2") +
+                " deviceAxis=" + transform.up.ToString("F2") +
+                " deviceRotation=" + transform.rotation.eulerAngles.ToString("F1");
+
+            bool broken = _light == null || !_light.enabled || _light.cookie == null;
+            if (broken)
             {
-                int a = i + 1;
-                int b = (i + 1) % rim + 1;
-
-                // Side
-                triangles[t++] = 0;
-                triangles[t++] = b;
-                triangles[t++] = a;
-
-                // Far cap
-                triangles[t++] = rim + 1;
-                triangles[t++] = a;
-                triangles[t++] = b;
+                Core.CIYCLog.Error(block + "  <- FAILED PROJECTION STATE");
             }
-
-            mesh.Clear();
-            mesh.vertices = vertices;
-            mesh.triangles = triangles;
-            mesh.RecalculateBounds();
+            else
+            {
+                // What this block cannot see: whether URP actually gave the light a slot in its
+                // additional-lights cookie atlas. A cookie that is assigned and not applied
+                // looks like a plain green cone, and no script-side value says so. If the cone
+                // is solid, check the URP asset's Light Cookies switch and atlas size.
+                Core.CIYCLog.Info(block);
+            }
         }
-
-        private void PushProperties()
-        {
-            if (_renderer == null)
-                return;
-
-            _block ??= new MaterialPropertyBlock();
-            _renderer.GetPropertyBlock(_block);
-
-            _block.SetColor(DotColorId, dotColor);
-            _block.SetFloat(DensityId, density);
-            _block.SetFloat(DotSizeId, dotSize);
-            _block.SetFloat(RangeId, _range);
-            _block.SetFloat(HalfAngleId, _fullAngle * 0.5f * Mathf.Deg2Rad);
-            _block.SetFloat(IntensityId, intensity);
-            _block.SetFloat(EdgeSoftnessId, edgeSoftness);
-            _block.SetFloat(NearFadeId, nearFade);
-
-            _renderer.SetPropertyBlock(_block);
-        }
-
-        private void OnDestroy()
-        {
-            if (_cone != null)
-                Destroy(_cone);
-        }
+#endif
     }
 }

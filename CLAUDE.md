@@ -116,7 +116,16 @@ place that number lives; everything else derives it.
   and G belongs to ONE device - the torch offers the press to a deployed device first
   and skips itself only when that device took it. A debug convenience may not share a
   key with a real control: the dev take/drop sat on X, so one press ran both paths and
-  threw the projector on the floor. 61 checks.
+  threw the projector on the floor. And the dots are projected LIGHT rather than a second
+  renderer: one spot wearing a generated dot mask as its cookie, pointed along the device's own
+  +Y working axis rather than a Unity spot's native +Z - left at identity it throws sideways out
+  of the device, into the wall it is bolted to, which looks exactly like a light that never
+  switched on - built once and FOUND on a clone rather than added a second time beside the one
+  Instantiate already copied, switched off with the device, shadowless, with the mask written
+  into all four channels because which one a cookie is sampled from is a per-pipeline detail
+  this machine cannot look up, imported linear and not as transparency, resolving to a file
+  that exists, reported as an ERROR when the projector is on and the light is not, and drawn by
+  exactly ONE thing - a cone mesh beside it would be the second flashlight. 78 checks.
 - `Scripts/check_multiplayer_architecture.sh` — the deterministic assembly stays
   engine-free, gameplay never reaches a Relay API, remote players never read
   local input, ghost decisions stay host-only, online capacity has exactly one
@@ -171,7 +180,11 @@ place that number lives; everything else derives it.
   state of its own instead of reporting itself as a doorway nobody asked anything of. And it
   bounds the lobby's cost: the mirror and the portal share one arbiter, both ask it before
   rendering, its budget comes from the project's own quality level, and the view buffer's
-  ladder has named ends rather than a halved top. And it reads the one thing no other
+  ladder has named ends rather than a halved top. And when it cannot read a file at all it
+  ABORTS instead of answering: its stripped-source cache was written with `|| true`, so a lost
+  fork left a zero-byte entry behind and every later check on that one file reported the code
+  as broken - eight red lines about a portal nobody had touched. A cache entry that could not
+  be produced is not a verdict about the project (mistake 26). And it reads the one thing no other
   check in this repository can: that every local in every shader is declared before it is
   used. HLSL does not hoist, so a use one line early is a compile error, and a shader that
   fails to compile is drawn magenta — indistinguishable on screen from mistake 2. It also
@@ -888,6 +901,38 @@ Repeating one of these is the most likely way to break something.
    und deshalb bei der Ueberlegung nicht mitgedacht werden. Und ein Schritt, der nur ueber einen
    Knopf erreichbar ist, den ein Bildschirm nicht baut, ist kein Schritt, sondern eine Sackgasse:
    das AIM ist ersatzlos weg, weil es keine Entscheidung trug.
+
+33. **Eine Erklaerung, die den Code beschuldigt hat, den sie nicht gelesen hatte.** Der
+   DOTS-Projektor zeigte beim Einschalten keinen einzigen Punkt, und die Ursache stand angeblich
+   fest: gebaut war ein Kegel-Mesh mit einem eigenen Shader, also zeichnete der Punkte INNERHALB
+   eines Volumens, also Punkte in der Luft, also nichts auf einer Wand. Das klang zwingend, es
+   passte zum Klassennamen, zum Mesh und zum Symptom - und es war falsch. `SpectralGrid.shader`
+   rekonstruiert je Pixel die Weltposition der Flaeche DAHINTER aus dem Tiefenpuffer und rechnet
+   die Punkte dort; das ist eine richtige Projektion, bei der die Verdeckung sogar geschenkt ist.
+   Die Erklaerung stand schon in zwei Dateien - im Kommentar der Klasse und im Kommentar eines
+   neuen Waechters - und waere als der aufgeschriebene Grund committed worden, den der naechste
+   Leser geerbt haette. Warum der Shader nichts zeigte, ist bis heute NICHT geklaert: die
+   Tiefentextur, die er braucht, ist eingeschaltet (`CIYC_URP.asset`, `m_RequireDepthTexture: 1`),
+   und seine +Y-Wurfachse passt zum Rest des Geraets. Die Lehre ist nicht "vorsichtiger
+   formulieren". Eine Begruendung, warum etwas nicht funktioniert, ist eine BEHAUPTUNG UEBER
+   CODE und wird spaeter gelesen wie jede andere - aus der Form des Drumherums abgeleitet ist
+   sie geraten, und geraten bleibt sie in dem Moment dauerhaft, in dem sie in einem Kommentar
+   steht.
+
+34. **Zwei Vorwaerts, die beide richtig sind.** Ein Unity-Spot leuchtet sein eigenes +Z entlang.
+   Die Trage-Konvention dieses Projekts ist +Y: der Kegel, `FieldStrengthAt`, die Vierteldrehung
+   in `OrientForPlacement` und der Kommentar daneben benutzen alle +Y als die Achse, an der ein
+   Geraet arbeitet. Das neue Projektionslicht bekam seinen Linsenversatz auf +Z und gar keine
+   Drehung - beides fuer sich richtig, zusammen 90 Grad daneben. Ein an die Wand geschraubter
+   Projektor haette seitwaerts aus sich heraus geleuchtet, in genau die Wand, an der er haengt.
+   Zu sehen gewesen waere: nichts. Also dasselbe Bild wie ein Licht, das nie angegangen ist, wie
+   eine fehlende Cookie-Textur und wie ein `SetRunning`, das niemand ruft - vier Ursachen, ein
+   Symptom, und keine davon meldet sich von selbst. Verwandt mit Fehler 24, wo drei Zeilen
+   einander recht gaben und keine davon der Zahl. Wo zwei Konventionen aufeinandertreffen, ist
+   die Umrechnung die Arbeit, und sie gehoert hingeschrieben statt weggelassen. Nebenbei aus
+   derselben Runde: eine Cookie wird in der GROESSE geschrieben, in der sie benutzt wird -
+   `CIYC_URP.asset` haelt den Cookie-Atlas auf 2048, eine 2048er Maske IST also der ganze Atlas,
+   und eine, die der Importer verkleinern muss, verliert ihre Punkte an den Filter.
 
 ## Unity Editor availability
 

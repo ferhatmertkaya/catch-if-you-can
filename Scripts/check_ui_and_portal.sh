@@ -39,12 +39,40 @@ bad ()  { FAIL=$((FAIL+1)); printf '  FAIL  %s\n' "$1"; [ $# -gt 1 ] && printf '
 CODE_CACHE_DIR="${TMPDIR:-/tmp}/ciyc_guard_cache_$$"
 mkdir -p "$CODE_CACHE_DIR"
 
+# The cache is written to a SIDE FILE and only moved into place once it has content, and a
+# strip that comes back empty from a non-empty file aborts the guard instead of answering.
+#
+# The `|| true` this replaces was the same bug one level up. If the sed|grep pipeline lost a
+# fork, the redirect had already created the cache file - empty - and every later check on
+# that file then read nothing and reported the code as broken. So the fix for "a random check
+# fails each run" produced its own version of it: not a different check each time any more,
+# but every check on ONE file at once, which reads even more like a real regression. A cache
+# entry that cannot be produced is not a verdict about the project (mistake 26).
 code () {
   local key
   key="$(printf '%s' "$1" | tr -c 'a-zA-Z0-9' '_')"
   local cached="$CODE_CACHE_DIR/$key"
-  if [ ! -f "$cached" ]; then
-    sed 's://.*::' "$1" | grep -v '^[[:space:]]*\*' > "$cached" || true
+  # Valid means present AND non-empty, unless the source itself is empty. A zero-byte cache
+  # entry is the poisoned state, so it is never trusted just because it exists.
+  if [ ! -f "$cached" ] || { [ ! -s "$cached" ] && [ -s "$1" ]; }; then
+    local attempt
+    for attempt in 1 2 3; do
+      sed 's://.*::' "$1" | grep -v '^[[:space:]]*\*' > "$cached.part" 2>/dev/null
+      if [ -s "$cached.part" ] || [ ! -s "$1" ]; then
+        mv -f "$cached.part" "$cached"
+        break
+      fi
+      rm -f "$cached.part"
+    done
+    if [ ! -f "$cached" ]; then
+      echo "GUARD ABORTED: could not strip comments from $1 after 3 attempts." >&2
+      echo "This is a failure of the guard, not of the project - do not read it as a" >&2
+      echo "code regression." >&2
+      # code() is always called inside $(...), so `exit` would end only that subshell and the
+      # guard would carry on answering checks it cannot answer. Signal the real shell.
+      kill -TERM $$ 2>/dev/null
+      exit 2
+    fi
   fi
   cat "$cached"
 }
@@ -3307,13 +3335,18 @@ fi
 # einmal als lebende Vorlage gebaut und danach geklont; Renderer ist [DisallowMultipleComponent],
 # also gibt AddComponent auf dem Klon NULL zurueck statt eines zweiten. Die Ausnahme kam aus
 # SetActive(true) im Installer und las sich wie ein Fehler des Installers - sie war keiner.
+#
+# Die Projektion ist inzwischen ein Spot mit Cookie statt eines Kegel-Meshes, also hat die
+# Falle ein neues Gesicht: das Licht haengt an einem KINDOBJEKT, und ein `new GameObject` auf
+# dem Klon haengt ein ZWEITES daneben. Zwei deckungsgleiche Lichter sieht man nicht als zwei,
+# sondern als eines mit doppelter Helligkeit. Gesucht wird deshalb nach der Komponente, denn
+# die ueberlebt die Kopie - das Feld, das auf sie zeigte, nicht.
 PROJ="$ROOT/Assets/CatchIfYouCan/Scripts/Equipment/SpectralGridProjection.cs"
-if [ -f "$PROJ" ] && code "$PROJ" | grep -qE 'gameObject\.GetComponent<MeshRenderer>\(\)' &&
-   code "$PROJ" | grep -qE 'gameObject\.GetComponent<MeshFilter>\(\)'; then
+if [ -f "$PROJ" ] && code "$PROJ" | grep -qE 'GetComponentInChildren<Light>\(true\)'; then
   ok "die Projektion uebersteht das Klonen ihrer Vorlage"
 else
   bad "die Projektion uebersteht das Klonen ihrer Vorlage" \
-      "AddComponent<MeshRenderer> auf einem Klon, der schon einen hat, gibt null zurueck"
+      "ein new GameObject haengt dem Klon ein zweites Licht an, das dort schon eines hat"
 fi
 
 # Und die Debug-Bequemlichkeiten stehen nicht in einem ausgelieferten Build. Ein Debug-Text im

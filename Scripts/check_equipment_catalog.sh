@@ -838,6 +838,201 @@ fi
 # Modells misst (TryMeasureLocal) und dass die erreichte Groesse gegen die gewuenschte
 # geprueft wird. Das sind die beiden Zeilen, die der Fehler damals gebrochen hat.
 
+# ------------------------------------------------------- die Projektion des DOTS-Projektors
+#
+# Die Projektion ist projiziertes LICHT: ein Spot mit einer Punkt-Maske als Cookie. Die Punkte
+# gehoeren den Flaechen, auf die sie fallen, laufen ueber eine Ecke mit der Perspektive mit und
+# bleiben liegen, wenn der Spieler geht - und das kostet ein Licht und eine Textur statt eines
+# GameObjects je Punkt.
+#
+# Davor stand hier ein Kegel-Mesh mit dem Shader CatchIfYouCan/SpectralGrid. Der ist KEIN
+# Volumen voller Punkte in der Luft: er rekonstruiert je Pixel die Weltposition der Flaeche
+# dahinter aus dem Tiefenpuffer und rechnet die Punkte dort - eine richtige Projektion, bei der
+# die Verdeckung sogar geschenkt ist. Warum er nichts gezeigt hat, ist NICHT geklaert; die
+# Tiefentextur, die er braucht, ist eingeschaltet (CIYC_URP.asset, m_RequireDepthTexture: 1),
+# und seine +Y-Wurfachse passt zum Rest des Geraets. Er ist ersetzt und nicht danebengestellt
+# worden, weil zwei Dinge, die dieselben Punkte zeichnen, der Weg zu zwei Taschenlampen sind.
+#
+# Jede Zeile hier deckt einen Zustand ab, in dem der Projektor eingeschaltet ist und trotzdem
+# nichts zu sehen ist - und die sehen alle gleich aus.
+
+PROJ="Assets/CatchIfYouCan/Scripts/Equipment/SpectralGridProjection.cs"
+GEN="Assets/CatchIfYouCan/Editor/DOTS/DotsCookieGenerator.cs"
+
+if [ ! -f "$PROJ" ]; then
+  fail "SpectralGridProjection.cs existiert"
+else
+  pcode=$(sed 's://.*::' "$PROJ" | grep -v '^[[:space:]]*\*')
+
+  # 1. Es gibt ueberhaupt ein Licht. Ohne das ist der Rest dieser Klasse Deko im Nebel.
+  if printf '%s' "$pcode" | grep -qE 'AddComponent<Light>\(\)'; then
+    ok "der Projektor baut ein echtes Licht"
+  else
+    fail "der Projektor baut ein echtes Licht - ein Kegel-Mesh wirft nichts auf eine Wand"
+  fi
+
+  # 2. Und zwar einen Spot. Ein Punktlicht ist eine Kugel, und das Geraet haengt an einer
+  #    Wand: die halbe Kugel steckt dann im Mauerwerk.
+  if printf '%s' "$pcode" | grep -qE '\.type[[:space:]]*=[[:space:]]*LightType\.Spot'; then
+    ok "das Projektionslicht ist ein Spot"
+  else
+    fail "das Projektionslicht ist ein Spot - eine Kugel an einer Wand leuchtet zur Haelfte hinein"
+  fi
+
+  # 3. Mit Cookie. Ein Spot ohne Cookie ist ein gruener Fleck, und das liest sich als
+  #    kaputtes Punktmuster statt als fehlende Textur.
+  if printf '%s' "$pcode" | grep -qE '\.cookie[[:space:]]*=[[:space:]]*LoadCookie\(\)'; then
+    ok "dem Projektionslicht wird die Cookie-Maske zugewiesen"
+  else
+    fail "dem Projektionslicht wird die Cookie-Maske zugewiesen"
+  fi
+
+  # 4. Der Cookie-Pfad zeigt auf eine Datei, die es gibt (Fehler 3 und 10). Ein Resources-Pfad
+  #    ins Leere gibt null zurueck und sagt nichts.
+  cookiepath=$(printf '%s' "$pcode" \
+    | grep -oE 'CookieResourcePath[[:space:]]*=[[:space:]]*"[^"]+"' \
+    | sed 's/.*"\(.*\)"/\1/')
+  if [ -z "$cookiepath" ]; then
+    fail "SpectralGridProjection nennt einen Cookie-Pfad"
+  elif [ -f "Assets/CatchIfYouCan/Resources/$cookiepath.png" ]; then
+    ok "der Cookie-Pfad '$cookiepath' loest auf eine vorhandene Datei auf"
+  else
+    fail "der Cookie-Pfad '$cookiepath' loest auf keine Datei unter Resources auf"
+  fi
+
+  # 5. Ein misslungener Zustand wird als ERROR gemeldet, nicht als Info. "0 von 0" in einer
+  #    Info-Zeile hat in diesem Projekt schon einmal eine Sitzung lang niemand gelesen
+  #    (Fehler 22).
+  if printf '%s' "$pcode" | grep -qE 'CIYCLog\.Error\(block'; then
+    ok "ein fehlgeschlagener Projektionszustand wird als Fehler gemeldet"
+  else
+    fail "ein fehlgeschlagener Projektionszustand wird als Fehler gemeldet"
+  fi
+
+  # 6. Das Licht entsteht einmal, nicht je Frame.
+  if printf '%s' "$pcode" | grep -qE 'if \(_light != null\)'; then
+    ok "das Projektionslicht wird einmal gebaut, nicht je Frame"
+  else
+    fail "das Projektionslicht wird einmal gebaut, nicht je Frame"
+  fi
+
+  # 7. Ausgeschaltet ist ausgeschaltet. Ein Licht, das nach SetRunning(false) weiterbrennt,
+  #    ist ein Projektor, den man nicht ausmachen kann.
+  if printf '%s' "$pcode" | grep -qE '_light\.enabled[[:space:]]*=[[:space:]]*running'; then
+    ok "SetRunning schaltet das Projektionslicht mit"
+  else
+    fail "SetRunning schaltet das Projektionslicht mit"
+  fi
+
+  # 8. Keine Echtzeitschatten. Ein Spot mit Schatten und 4096 Punkten ist auf einem Telefon
+  #    kein Effekt, sondern ein Standbild.
+  if printf '%s' "$pcode" | grep -qE '\.shadows[[:space:]]*=[[:space:]]*LightShadows\.None'; then
+    ok "das Projektionslicht wirft keine Echtzeitschatten"
+  else
+    fail "das Projektionslicht wirft keine Echtzeitschatten"
+  fi
+
+  # 9. Es leuchtet die Achse entlang, an der das Geraet arbeitet. Ein Unity-Spot strahlt sein
+  #    eigenes +Z entlang; die Trage-Konvention dieses Projekts ist +Y - der Kegel, der
+  #    Geist-im-Feld-Test und die Vierteldrehung beim Platzieren benutzen alle +Y. Auf
+  #    identity gelassen wirft das Licht seitwaerts aus dem Geraet heraus, also genau in die
+  #    Wand, an der es haengt.
+  if printf '%s' "$pcode" \
+       | grep -qE 'LookRotation\(Vector3\.up, Vector3\.forward\)'; then
+    ok "das Projektionslicht leuchtet die Arbeitsachse des Geraets entlang"
+  else
+    fail "das Projektionslicht leuchtet die Arbeitsachse des Geraets entlang (+Y, nicht +Z)"
+  fi
+
+  # 10. Und der Klon bekommt kein zweites Licht. Jedes Ausruestungsstueck erreicht die Welt als
+  #     Instantiate einer lebenden Vorlage: das Kindobjekt und sein Licht sind dann schon da,
+  #     das private Feld, das darauf zeigte, nicht. Zwei deckungsgleiche Lichter sieht niemand
+  #     als zwei, sondern als eines mit doppelter Helligkeit (Fehler 27 und 30).
+  if printf '%s' "$pcode" | grep -qE 'GetComponentInChildren<Light>\(true\)'; then
+    ok "ein geklonter Projektor bekommt kein zweites Licht"
+  else
+    fail "ein geklonter Projektor bekommt kein zweites Licht"
+  fi
+
+  # 11. Und es gibt genau EINE Sache, die die Punkte zeichnet. Ein Kegel-Mesh neben dem Licht
+  #     waere die zweite Taschenlampe aus Fehler 1.
+  if printf '%s' "$pcode" | grep -qE 'AddComponent<MeshRenderer>|MAT_SpectralGrid'; then
+    fail "nur eine Implementierung zeichnet die Punkte"
+  else
+    ok "nur eine Implementierung zeichnet die Punkte"
+  fi
+fi
+
+# 9. Nur die eine Cookie-Maske liegt unter Resources. Alles in diesem Ordner wandert in jeden
+#    Build, ob es jemand referenziert oder nicht - Quellmuster, Kugelkarte und Schachbrett sind
+#    Werkzeug und haben dort nichts zu suchen.
+shipped=$(find Assets/CatchIfYouCan/Resources -name 'T_DOTS_*.png' 2>/dev/null | wc -l | tr -d ' ')
+if [ "$shipped" = "1" ]; then
+  ok "genau eine DOTS-Textur liegt unter Resources"
+else
+  fail "genau eine DOTS-Textur liegt unter Resources (gefunden: $shipped)"
+fi
+
+# 10. Die ausgelieferte Maske hat vier Kanaele. PNG-Farbtyp steht im IHDR an Byte 25; 6 ist
+#     RGBA. Aus welchem Kanal eine Cookie gelesen wird, ist Pipeline-Sache, und diese Maschine
+#     kommt nicht an die Unity-Doku - also steht sie in allen vieren, statt einen zu raten.
+if [ -n "${cookiepath:-}" ] && [ -f "Assets/CatchIfYouCan/Resources/$cookiepath.png" ]; then
+  ctype=$(od -An -tu1 -j25 -N1 "Assets/CatchIfYouCan/Resources/$cookiepath.png" | tr -d ' ')
+  if [ "$ctype" = "6" ]; then
+    ok "die Cookie-Maske ist RGBA, traegt das Muster also in jedem Kanal"
+  else
+    fail "die Cookie-Maske ist RGBA (PNG-Farbtyp ist $ctype, erwartet 6)"
+  fi
+fi
+
+# 11. Und der Generator schreibt sie auch so: Hintergrund durchsichtig statt Color.black,
+#     dessen Alpha 1 ist und die ganze Maske im Alphakanal deckend machen wuerde.
+if [ ! -f "$GEN" ]; then
+  fail "der DOTS-Cookie-Generator existiert"
+else
+  gcode=$(sed 's://.*::' "$GEN" | grep -v '^[[:space:]]*\*')
+
+  if printf '%s' "$gcode" | grep -qE 'new Color\(v, v, v, v\)' \
+     && printf '%s' "$gcode" | grep -qE 'new Color\(0f, 0f, 0f, 0f\)'; then
+    ok "der Generator schreibt die Maske in alle vier Kanaele"
+  else
+    fail "der Generator schreibt die Maske in alle vier Kanaele"
+  fi
+
+  # 12. Er schreibt die Laufzeit-Cookie dorthin, wo die Laufzeit sie sucht.
+  if [ -n "${cookiepath:-}" ]; then
+    leaf=$(basename "$cookiepath")
+    if printf '%s' "$gcode" | grep -q "$leaf" \
+       && printf '%s' "$gcode" | grep -q "Resources/Equipment/DOTS"; then
+      ok "der Generator schreibt '$leaf' in den Ordner, aus dem die Laufzeit laedt"
+    else
+      fail "der Generator schreibt '$leaf' in den Ordner, aus dem die Laufzeit laedt"
+    fi
+  fi
+
+  # 13. Und er ist Editor-Werkzeug: nichts unter Scripts/ ruft ihn auf.
+  if grep -rqE 'DotsCookieGenerator' Assets/CatchIfYouCan/Scripts 2>/dev/null; then
+    fail "kein Laufzeit-Code ruft den Editor-Generator auf"
+  else
+    ok "kein Laufzeit-Code ruft den Editor-Generator auf"
+  fi
+fi
+
+# 14. Die Importeinstellungen der Maske. Beides ist stumm: als sRGB importiert stimmt die
+#     Gammakurve nicht, und alphaIsTransparency 1 laesst Unity die Farbe in das Schwarz
+#     hineinziehen - aus runden Punkten werden Woelkchen.
+cmeta="Assets/CatchIfYouCan/Resources/${cookiepath:-}.png.meta"
+if [ -n "${cookiepath:-}" ] && [ -f "$cmeta" ]; then
+  if grep -qE '^[[:space:]]*sRGBTexture: 0$' "$cmeta" \
+     && grep -qE '^[[:space:]]*alphaIsTransparency: 0$' "$cmeta"; then
+    ok "die Cookie-Maske wird linear und ohne Alpha-Transparenz importiert"
+  else
+    fail "die Cookie-Maske wird linear und ohne Alpha-Transparenz importiert"
+  fi
+else
+  fail "die Cookie-Maske hat eine .meta"
+fi
+
 printf '\npassed: %s   failed: %s\n\n' "$passed" "$failed"
 
 if [ "$failed" -gt 0 ]; then
