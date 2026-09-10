@@ -4009,7 +4009,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 4141145837840668, guid: b2be1d3b817d64a43b22d5e66bf1acc2, type: 3}
       propertyPath: m_LocalPosition.y
-      value: 0.598
+      value: 0.587
       objectReference: {fileID: 0}
     - target: {fileID: 4141145837840668, guid: b2be1d3b817d64a43b22d5e66bf1acc2, type: 3}
       propertyPath: m_LocalPosition.z
@@ -25610,6 +25610,7 @@ MonoBehaviour:
   surfaceClearance: 0.005
   spawnTestItemId: spectral_grid
   spawnTestDistance: 0.8
+  spawnTestHeight: 1.3
   takeTorchOutOfHands: 1
 --- !u!1001 &883233463
 PrefabInstance:
@@ -40835,7 +40836,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 4541692786195048, guid: 7d097ef4b06366d48b2b38e545d01ec6, type: 3}
       propertyPath: m_LocalPosition.y
-      value: 1.1975377
+      value: 1.131
       objectReference: {fileID: 0}
     - target: {fileID: 4541692786195048, guid: 7d097ef4b06366d48b2b38e545d01ec6, type: 3}
       propertyPath: m_LocalPosition.z
@@ -40868,6 +40869,14 @@ PrefabInstance:
     - target: {fileID: 4541692786195048, guid: 7d097ef4b06366d48b2b38e545d01ec6, type: 3}
       propertyPath: m_LocalEulerAnglesHint.z
       value: -4.583
+      objectReference: {fileID: 0}
+    - target: {fileID: 4853128131935128, guid: 7d097ef4b06366d48b2b38e545d01ec6, type: 3}
+      propertyPath: m_LocalPosition.x
+      value: -0.143
+      objectReference: {fileID: 0}
+    - target: {fileID: 4853128131935128, guid: 7d097ef4b06366d48b2b38e545d01ec6, type: 3}
+      propertyPath: m_LocalPosition.y
+      value: -0.385
       objectReference: {fileID: 0}
     m_RemovedComponents: []
     m_RemovedGameObjects: []
