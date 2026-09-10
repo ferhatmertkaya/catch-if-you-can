@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Öffnet das Projekt in Unity Hub / Unity (GUI-Pfad ohne Batchmode)
+# Opens the project in Unity Hub / Unity (GUI route, no batch mode).
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$SCRIPT_DIR"
@@ -8,7 +8,7 @@ echo "Projekt: $PROJECT_DIR"
 
 # Prefer Unity Hub add/open
 if [[ -d "/Applications/Unity Hub.app" ]]; then
-  echo "Öffne Unity Hub…"
+  echo "Opening Unity Hub..."
   open -a "Unity Hub" || true
 fi
 
@@ -31,7 +31,7 @@ if [[ -d "$HUB" ]]; then
 fi
 
 if [[ -n "$UNITY_APP" && -d "$UNITY_APP" ]]; then
-  echo "Öffne Projekt mit: $UNITY_APP"
+  echo "Opening the project with: $UNITY_APP"
   open -a "$UNITY_APP" --args -projectPath "$PROJECT_DIR" || true
 else
   echo "Kein Unity Editor gefunden."
@@ -41,10 +41,13 @@ fi
 
 cat <<EOF
 
-Danach in Unity:
-  1) Catch If You Can → Setup Project
-  2) Catch If You Can → Generate Placeholder Prefabs  (optional)
-  3) Catch If You Can → Build iOS
-  4) Ordner Builds/iOS in Xcode öffnen
+Then, in Unity:
+  1) Catch If You Can -> 5. BUILD -> iOS
+  2) Open the Builds/iOS folder in Xcode
+
+  Ghost visuals are build products and are not committed. If ghosts spawn as
+  placeholder capsules, run this once:
+     Catch If You Can -> 9. ENTWICKLER - DEBUG -> Migration
+                      -> Integrate External Assets
 
 EOF
