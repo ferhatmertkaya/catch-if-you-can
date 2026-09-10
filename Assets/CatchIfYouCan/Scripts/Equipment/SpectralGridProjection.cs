@@ -72,27 +72,29 @@ namespace CatchIfYouCan.Equipment
 
         [Header("Diagnosis")]
         [Tooltip("A ladder for 'it says it is running and nothing is on screen', climbed one " +
-                 "rung at a time. Every rung returns ABOVE the work the next one needs, and none " +
-                 "of them sits below an invisible early-out - sky reads BLUE and out-of-range " +
-                 "reads RED rather than as nothing, so one dead depth texture cannot black out " +
-                 "three rungs at once and read as three separate failures.\n\n" +
+                 "rung at a time. RENUMBERED: rung 2 is new and the old 2-5 have each moved up " +
+                 "by one.\n\n" +
                  "0 = the game, the finished dots.\n" +
-                 "1 = MAGENTA over the whole volume. Does this pass rasterise at all? CONFIRMED " +
-                 "in Unity.\n" +
-                 "2 = raw scene depth. A whole screen of flat blue means the depth texture is " +
-                 "not reaching this pass and nothing below can work; red stripes over the room " +
-                 "mean it is being read and varies.\n" +
-                 "3 = the reconstructed world position as colour. Bands GLUED to the walls as " +
-                 "you turn on the spot are correct; bands that SWIM with the view mean the " +
-                 "inverse view-projection is wrong.\n" +
-                 "4 = green within range, RED outside it. A green ball of room centred on the " +
-                 "device means the lens and the range both arrived; all red means the origin is " +
-                 "somewhere else.\n" +
-                 "5 = a coarse 20-degree angular chequerboard. Squares on the floor, the ceiling " +
-                 "and all four walls mean a sphere; squares in one direction only mean a cone.\n\n" +
-                 "Ships at 0, and a guard keeps it there: a diagnostic that runs while somebody " +
-                 "plays does not diagnose, it creates (mistake 23).")]
-        [SerializeField, Range(0, 5)] private int debugStage = 0;
+                 "1 = MAGENTA over the whole volume. Does this pass rasterise? CONFIRMED in " +
+                 "Unity.\n" +
+                 "2 = the screen UV as a red/green gradient. A smooth gradient means the UV is a " +
+                 "real screen coordinate; ONE FLAT COLOUR means every fragment reads the same " +
+                 "point, which would make the depth rung below look unbound when it is not. It " +
+                 "sits above the depth rung because sampling depth USES this UV.\n" +
+                 "3 = the RAW depth value with no sky classification at all. Whole view flat " +
+                 "BLUE = exactly 0 everywhere, so no depth texture is reaching this pass. Flat " +
+                 "GREEN = exactly 1 everywhere. Stripes over the room with blue only through the " +
+                 "window = real varying depth, which is correct.\n" +
+                 "4 = the reconstructed world position. Bands GLUED to the walls as you turn on " +
+                 "the spot are correct; bands that SWIM with the view mean the inverse " +
+                 "view-projection is wrong.\n" +
+                 "5 = green within range, RED outside. A green ball centred on the device means " +
+                 "the lens and range arrived; all red means the origin is elsewhere.\n" +
+                 "6 = a coarse 20-degree angular chequerboard. Squares on floor, ceiling and all " +
+                 "four walls mean a sphere; squares in one direction only mean a cone.\n\n" +
+                 "Every rung returns ABOVE the work the next needs, and none sits below an " +
+                 "invisible early-out. Ships at 0, and a guard keeps it there (mistake 23).")]
+        [SerializeField, Range(0, 6)] private int debugStage = 0;
 
         [Header("Emitter")]
         [Tooltip("Where the lens sits relative to the device's pivot, in its own space. +Y is " +
@@ -189,6 +191,7 @@ namespace CatchIfYouCan.Equipment
 
             if (running)
             {
+                RequestSceneDepth();
                 _propertiesDirty = false;
                 PushProperties();
                 PushOrigin();
@@ -435,6 +438,55 @@ namespace CatchIfYouCan.Equipment
             _renderer.SetPropertyBlock(_block);
         }
 
+        /// <summary>
+        /// Declares that this effect cannot work without a scene depth texture, on the cameras
+        /// that actually render to a display.
+        ///
+        /// <para>
+        /// The shader reconstructs every dot from the depth buffer, so without one it draws
+        /// nothing at all - not something wrong, NOTHING, which is indistinguishable from a dead
+        /// pass. <c>CIYC_URP.asset</c> already carries <c>m_RequireDepthTexture: 1</c> and all
+        /// three quality levels use it (their <c>customRenderPipeline</c> is 0), so the pipeline
+        /// asks for depth globally. What the pipeline setting cannot do is override a CAMERA that
+        /// says no - and the player's camera is created at RUNTIME by <c>PlayerRigBuilder</c>,
+        /// which adds a <c>UniversalAdditionalCameraData</c> and sets only
+        /// <c>renderPostProcessing</c> on it. Whatever that component's depth option defaults to
+        /// on a freshly added instance is the one link in this chain that cannot be read from any
+        /// file in this repository.
+        /// </para>
+        ///
+        /// <para>
+        /// So the requirement is declared HERE, by the thing that has it, through
+        /// <c>Camera.depthTextureMode</c> - a core engine property rather than a package one.
+        /// That choice is deliberate: URP 17.5.0's sources are not on this machine and
+        /// <c>docs.unity3d.com</c> answers 403, so the URP-specific property that backs the
+        /// camera's own Depth Texture dropdown cannot be verified to exist under that name in
+        /// this version. Writing an unverifiable symbol into a build would not fail this
+        /// effect - it would fail EVERY script in the project (mistake 9), and a dark projector
+        /// is a far smaller bug than a project that will not compile.
+        /// </para>
+        ///
+        /// <para>
+        /// Cameras with a <c>targetTexture</c> are skipped on purpose: the portal and the mirror
+        /// both render into buffers of their own and neither is the view this effect is seen in.
+        /// </para>
+        /// </summary>
+        private void RequestSceneDepth()
+        {
+            Camera[] cameras = Camera.allCameras;
+            if (cameras == null)
+                return;
+
+            for (int i = 0; i < cameras.Length; i++)
+            {
+                Camera cam = cameras[i];
+                if (cam == null || cam.targetTexture != null)
+                    continue;
+
+                cam.depthTextureMode |= DepthTextureMode.Depth;
+            }
+        }
+
 #if UNITY_EDITOR || DEVELOPMENT_BUILD
         /// <summary>
         /// One line, at switch-on. Never per frame: this runs from <see cref="SetRunning"/>,
@@ -546,6 +598,86 @@ namespace CatchIfYouCan.Equipment
             }
 
             ReportDuplicates(volumes);
+            ReportDepth();
+        }
+
+        /// <summary>
+        /// Whether a scene depth texture exists at all, and which camera would be producing it.
+        ///
+        /// <para>
+        /// This is the one question the shader's own rungs cannot fully answer. Rung 3 shows a
+        /// flat blue view when the sampled value is zero everywhere, and that has two causes with
+        /// one picture: the texture was never produced, or it was produced and this pass is not
+        /// being given it. <c>Shader.GetGlobalTexture</c> answers the first half from outside the
+        /// shader entirely - a null there means nothing produced it, and no amount of reading the
+        /// shader will ever say so.
+        /// </para>
+        ///
+        /// <para>
+        /// And it does NOT trust <c>Camera.main</c>. That is the camera tagged MainCamera, which
+        /// is not necessarily the camera the Game view is drawn by: this scene also runs a portal
+        /// camera and a mirror camera, and an Overlay camera in a stack renders through its Base.
+        /// Every camera without a <c>targetTexture</c> is listed with its depth ordering, so the
+        /// reader can see which one is on top rather than being told.
+        /// </para>
+        /// </summary>
+        private void ReportDepth()
+        {
+            // Read after a frame has rendered, so this is the texture the last frame actually
+            // had. Null is the finding; a size is the finding too.
+            Texture depth = Shader.GetGlobalTexture("_CameraDepthTexture");
+
+            var line = new System.Text.StringBuilder("[CIYC][DOTS][DEPTH]");
+            line.Append(" depthTextureAvailable=").Append(depth != null);
+            if (depth != null)
+                line.Append(" depthSize=").Append(depth.width).Append('x').Append(depth.height);
+            line.Append(" screenSize=").Append(Screen.width).Append('x').Append(Screen.height);
+
+            var pipeline = UnityEngine.Rendering.GraphicsSettings.currentRenderPipeline;
+            line.Append(" pipeline=").Append(pipeline != null ? pipeline.name : "NONE");
+            line.Append(" mainCamera=").Append(Camera.main != null ? Camera.main.name : "NULL");
+
+            Camera[] cameras = Camera.allCameras;
+            int displayCameras = 0;
+            if (cameras != null)
+            {
+                for (int i = 0; i < cameras.Length; i++)
+                {
+                    Camera cam = cameras[i];
+                    if (cam == null || cam.targetTexture != null)
+                        continue;
+
+                    displayCameras++;
+                    line.Append("\n  camera=").Append(cam.name)
+                        .Append(" depth=").Append(cam.depth.ToString("F1"))
+                        .Append(" targetDisplay=").Append(cam.targetDisplay)
+                        .Append(" isMainTagged=").Append(cam == Camera.main)
+                        .Append(" requestsDepth=")
+                        .Append((cam.depthTextureMode & DepthTextureMode.Depth) != 0);
+
+                    // GetComponent rather than the GetUniversalAdditionalCameraData()
+                    // extension: the extension needs a using this file does not carry, and a
+                    // plain GetComponent on a type three other files in this project already
+                    // name asks nothing new of the package.
+                    var data = cam.GetComponent<
+                        UnityEngine.Rendering.Universal.UniversalAdditionalCameraData>();
+                    line.Append(" renderType=")
+                        .Append(data != null ? data.renderType.ToString() : "NO_URP_DATA");
+                }
+            }
+
+            line.Append("\n  displayCameras=").Append(displayCameras);
+
+            if (depth == null)
+            {
+                Core.CIYCLog.Error(line + "\n  <- NO SCENE DEPTH TEXTURE. Every dot is " +
+                                   "reconstructed from it, so the projection can only draw " +
+                                   "nothing. This is upstream of the shader entirely.");
+            }
+            else
+            {
+                Core.CIYCLog.Info(line.ToString());
+            }
         }
 
         /// <summary>

@@ -161,10 +161,20 @@ place that number lives; everything else derives it.
   term are gone from the shader AND from the C#, and a check keeps them off until the rung below
   them is proven. Turned off is not the same as gone: a slider nobody moves is still a line every
   later reader takes for tested, and one that pushes into a uniform the shader no longer declares
-  writes nowhere and says nothing. What is left is a LADDER of five rungs behind one number -
-  magenta over the whole volume, the raw scene depth, the reconstructed world position, green in
-  range against RED outside it, and a coarse angular chequerboard - with stage 0 the finished
-  dots. Rung 1 is RUNTIME CONFIRMED: it draws, so the pass rasterises, the volume renders, the
+  writes nowhere and says nothing. What is left is a LADDER of six rungs behind one number -
+  magenta over the whole volume, the screen UV, the RAW depth value, the reconstructed world
+  position, green in range against RED outside it, and a coarse angular chequerboard - with stage
+  0 the finished dots. The UV rung sits ABOVE the depth rung because sampling depth USES the UV, so
+  a broken UV and an unbound texture make the same picture: every fragment reading one constant.
+  And the raw-depth rung classifies NOTHING - it reports the value, above the line that computes
+  "is this sky", because sky is an interpretation and an interpretation cannot be trusted to
+  report on the number it interprets: flat blue then means exactly 0 everywhere rather than the
+  sky test's opinion, which is the difference between a texture that was never produced and a
+  correct one full of sky. The effect also DECLARES its need for depth on every camera that
+  renders to a display rather than to a buffer, and REPORTS from outside the shader whether one
+  exists at all - the pipeline asset asks for depth globally and a camera can override that, and
+  the player's camera is built at RUNTIME, so the one link in the chain is the one no file in this
+  repository can read. Rung 1 is RUNTIME CONFIRMED: it draws, so the pass rasterises, the volume renders, the
   material resolves and the shader COMPILES (an uncompilable shader is drawn with Unity's magenta
   error shader, which cannot be invisible - so every earlier "nothing on screen" rules that out).
   Each rung `return`s ABOVE the work the next one needs, and the guard reads the line numbers
@@ -200,7 +210,7 @@ place that number lives; everything else derives it.
   which can only ever find its own children and would report a clean 1 while a second projection
   hung next door. Switch-on also reports whether the CAMERA stands inside the volume, which no
   longer decides what is drawn but still separates "the volume is nowhere near the viewer" from
-  "the volume is all around the viewer and still draws nothing". 101 checks.
+  "the volume is all around the viewer and still draws nothing". 104 checks.
 - `Scripts/check_multiplayer_architecture.sh` — the deterministic assembly stays
   engine-free, gameplay never reaches a Relay API, remote players never read
   local input, ghost decisions stay host-only, online capacity has exactly one

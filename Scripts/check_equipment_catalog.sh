@@ -1160,24 +1160,26 @@ if [ -f "$SHDR" ]; then
   n() { printf '%s\n' "$scode" | { grep -n "$1" || true; } | head -1 | cut -d: -f1; }
   l_frag=$(n 'half4 frag(Varyings input)')
   l_s1=$(n 'if (stage == 1)')
-  l_depth=$(n 'SampleSceneDepth(screenUV)')
+  l_uv=$(n 'float2 screenUV = input.screenPos')
   l_s2=$(n 'if (stage == 2)')
-  l_world=$(n 'ComputeWorldSpacePosition(screenUV')
+  l_rawdepth=$(n 'SampleSceneDepth(screenUV)')
   l_s3=$(n 'if (stage == 3)')
-  l_origin=$(n '_OriginWS.xyz')
+  l_world=$(n 'ComputeWorldSpacePosition(screenUV')
   l_s4=$(n 'if (stage == 4)')
-  l_axis=$(n '_AxisXWS.xyz')
+  l_origin=$(n '_OriginWS.xyz')
   l_s5=$(n 'if (stage == 5)')
+  l_axis=$(n '_AxisXWS.xyz')
+  l_s6=$(n 'if (stage == 6)')
   l_dot=$(n 'float dotMask')
   ladder_ok=1
-  for v in "$l_frag" "$l_s1" "$l_depth" "$l_s2" "$l_world" "$l_s3" "$l_origin" "$l_s4" \
-           "$l_axis" "$l_s5" "$l_dot"; do
+  for v in "$l_frag" "$l_s1" "$l_uv" "$l_s2" "$l_rawdepth" "$l_s3" "$l_world" "$l_s4" \
+           "$l_origin" "$l_s5" "$l_axis" "$l_s6" "$l_dot"; do
     [ -n "$v" ] || ladder_ok=0
   done
   if [ "$ladder_ok" -eq 1 ]; then
     prev="$l_frag"
-    for v in "$l_s1" "$l_depth" "$l_s2" "$l_world" "$l_s3" "$l_origin" "$l_s4" \
-             "$l_axis" "$l_s5" "$l_dot"; do
+    for v in "$l_s1" "$l_uv" "$l_s2" "$l_rawdepth" "$l_s3" "$l_world" "$l_s4" \
+             "$l_origin" "$l_s5" "$l_axis" "$l_s6" "$l_dot"; do
       [ "$prev" -lt "$v" ] || ladder_ok=0
       prev="$v"
     done
@@ -1185,7 +1187,7 @@ if [ -f "$SHDR" ]; then
   if [ "$ladder_ok" -eq 1 ]; then
     ok "each diagnostic rung returns above the work the next rung needs"
   else
-    fail "each diagnostic rung returns above the work the next rung needs (frag=$l_frag s1=$l_s1 depth=$l_depth s2=$l_s2 world=$l_world s3=$l_s3 origin=$l_origin s4=$l_s4 axis=$l_s4 s5=$l_s5 dot=$l_dot)"
+    fail "each diagnostic rung returns above the work the next rung needs (frag=$l_frag s1=$l_s1 uv=$l_uv s2=$l_s2 rawDepth=$l_rawdepth s3=$l_s3 world=$l_world s4=$l_s4 origin=$l_origin s5=$l_s5 axis=$l_axis s6=$l_s6 dot=$l_dot)"
   fi
 else
   fail "each diagnostic rung returns above the work the next rung needs"
@@ -1199,7 +1201,7 @@ fi
 #      have returned nothing has to return a NAMED COLOUR instead; the invisible returns belong
 #      to stage 0, which is the effect and must add nothing where there is no dot.
 if [ -f "$SHDR" ]; then
-  lastrung=$(printf '%s\n' "$scode" | { grep -n 'if (stage == 5)' || true; } | head -1 | cut -d: -f1)
+  lastrung=$(printf '%s\n' "$scode" | { grep -n 'if (stage == 6)' || true; } | head -1 | cut -d: -f1)
   early=$(printf '%s\n' "$scode" | { grep -n 'return half4(0, 0, 0, 0);' || true; } | cut -d: -f1)
   above=""
   if [ -n "$lastrung" ]; then
@@ -1216,6 +1218,60 @@ if [ -f "$SHDR" ]; then
   fi
 else
   fail "no diagnostic rung sits below an invisible early-out"
+fi
+
+# 26c. AND THE RAW-DEPTH RUNG CLASSIFIES NOTHING. "Sky" is an interpretation of the depth
+#      value, and an interpretation cannot be trusted to report on the number it interprets: the
+#      first ladder answered "is there depth here" with the sky test's own verdict, so an unbound
+#      texture and a correct one full of sky were the same picture. The rung has to sit ABOVE the
+#      line that computes isSky, and the shader has to reach it without ever asking.
+if [ -f "$SHDR" ]; then
+  l_raw=$(printf '%s\n' "$scode" | { grep -n 'if (stage == 3)' || true; } | head -1 | cut -d: -f1)
+  l_sky=$(printf '%s\n' "$scode" | { grep -n 'bool isSky' || true; } | head -1 | cut -d: -f1)
+  if [ -n "$l_raw" ] && [ -n "$l_sky" ] && [ "$l_raw" -lt "$l_sky" ]; then
+    ok "the raw-depth rung reports the value rather than the sky test's opinion of it"
+  else
+    fail "the raw-depth rung reports the value rather than the sky test's opinion of it (rung=$l_raw isSky=$l_sky)"
+  fi
+else
+  fail "the raw-depth rung reports the value rather than the sky test's opinion of it"
+fi
+
+# 26d. And the effect DECLARES that it needs a depth texture, on the cameras that render to a
+#      display. The pipeline asset asks for one globally, but a camera can override that, and the
+#      player's camera is created at RUNTIME - so the one link in the chain that no file in this
+#      repository can read is exactly the one upstream of a shader that reconstructs every dot
+#      from depth. A requirement that is only true by default is not declared.
+if [ -f "$PROJ" ]; then
+  req=$(printf '%s\n' "$pcode" | sed -n '/private void RequestSceneDepth/,/^        }$/p')
+  if printf '%s' "$req" | grep -qE 'depthTextureMode \|= DepthTextureMode\.Depth' \
+     && printf '%s' "$req" | grep -qE 'targetTexture != null' \
+     && printf '%s' "$pcode" | sed -n '/public void SetRunning/,/^        }$/p' \
+          | grep -qE 'RequestSceneDepth\(\)'; then
+    ok "the projection declares its need for a scene depth texture, skipping buffer cameras"
+  else
+    fail "the projection declares its need for a scene depth texture, skipping buffer cameras"
+  fi
+else
+  fail "the projection declares its need for a scene depth texture, skipping buffer cameras"
+fi
+
+# 26e. And it REPORTS whether one exists, from outside the shader. Rung 3 shows flat blue for
+#      two different causes - never produced, or produced and not given to this pass - and no
+#      amount of reading the shader separates them. Shader.GetGlobalTexture answers the first
+#      half in one line. It must not lean on Camera.main alone: this scene runs a portal camera
+#      and a mirror camera, and the tagged one is not necessarily the one drawing the view.
+if [ -f "$PROJ" ]; then
+  rep=$(printf '%s\n' "$pcode" | sed -n '/private void ReportDepth/,/^        }$/p')
+  if printf '%s' "$rep" | grep -qE 'GetGlobalTexture\("_CameraDepthTexture"\)' \
+     && printf '%s' "$rep" | grep -qE 'Camera\.allCameras' \
+     && printf '%s' "$rep" | grep -qE 'depthTextureAvailable='; then
+    ok "switch-on reports whether a scene depth texture exists, across every display camera"
+  else
+    fail "switch-on reports whether a scene depth texture exists, across every display camera"
+  fi
+else
+  fail "switch-on reports whether a scene depth texture exists, across every display camera"
 fi
 
 # 27. And rung 1 is the FIRST thing the fragment shader does. It answers "does this pass
@@ -1390,10 +1446,10 @@ fi
 #     jemand spielt, diagnostiziert nicht mehr, sondern erzeugt (Fehler 23).
 dbg_cs=0
 dbg_sh=0
-if [ -f "$PROJ" ] && printf '%s' "$pcode" | grep -qE 'Range\(0, 5\)\] private int debugStage = 0'; then
+if [ -f "$PROJ" ] && printf '%s' "$pcode" | grep -qE 'Range\(0, 6\)\] private int debugStage = 0'; then
   dbg_cs=1
 fi
-if [ -f "$SHDR" ] && printf '%s' "$scode" | grep -qE '_DebugMode \("Debug Stage \(0 = off\)", Range\(0, 5\)\) = 0'; then
+if [ -f "$SHDR" ] && printf '%s' "$scode" | grep -qE '_DebugMode \("Debug Stage \(0 = off\)", Range\(0, 6\)\) = 0'; then
   dbg_sh=1
 fi
 if [ "$dbg_cs" -eq 1 ] && [ "$dbg_sh" -eq 1 ]; then
