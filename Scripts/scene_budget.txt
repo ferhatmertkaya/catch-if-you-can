@@ -1,0 +1,16 @@
+# Scene mesh baseline. Written down so the number cannot move without somebody noticing.
+#
+#   scene                    vertices      triangles
+#
+# These are NOT targets. 01_MainMenu is 62 times a sane mobile working figure, and that is
+# why the app boots on an iPhone, plays its intro and is then killed by iOS with no managed
+# exception. Eleven props account for almost all of it, each roughly 1.5 million triangles:
+# raw photogrammetry exports that were never decimated. Unity's model importer cannot reduce
+# a polygon count, so this is fixed in the Editor or a DCC tool, not here.
+#
+# Lower these lines as the models are decimated. check_scene_budget.sh fails if a scene ever
+# goes ABOVE its line, so the debt can shrink and cannot silently grow.
+00_Boot.unity                       0              0
+01_MainMenu.unity            12324494       24658861
+02_Training.unity                   0              0
+03_Investigation.unity              0              0

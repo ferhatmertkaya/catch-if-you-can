@@ -572,7 +572,20 @@ place that number lives; everything else derives it.
   `AddComponent`. The ceiling rose does not glow on its own: a socket that glows while its lamp
   is off is a lamp that lies. 167 checks.
 
-All twelve run in CI (`.github/workflows/determinism.yml`). Run them locally before
+- `Scripts/check_scene_budget.sh` — a scene costs what it NAMES, not what is switched on in
+  it: Unity loads every asset a scene references when that scene loads, active or not. The app
+  booted on an iPhone, played its intro and closed with no managed exception, because iOS had
+  killed it - `01_MainMenu` names 24.7 million triangles in eleven models, about 846 MiB of
+  vertex and index buffers before a single texture, and every prop in it (a candle holder, a
+  rotary phone, a table) is roughly 1.5 million triangles on its own. Raw photogrammetry
+  exports that were never decimated. The triangle count is MEASURED out of each binary FBX
+  rather than estimated from a file size, and the numbers are written down in
+  `Scripts/scene_budget.txt` as a baseline: the debt can shrink and cannot silently grow. It is
+  not fixable by an import setting - Unity's model importer has no polygon reduction - so the
+  guard reports the gap to a mobile working figure rather than pretending a threshold makes it
+  go away. 2 checks.
+
+All thirteen run in CI (`.github/workflows/determinism.yml`). Run them locally before
 pushing; they need nothing but a shell (and `python3` for the roster checks).
 
 ## The mistakes this project has already made
@@ -1024,6 +1037,23 @@ Repeating one of these is the most likely way to break something.
    sehr kleine Punkte. Ein additiver Pass kann das, was ein Licht nicht kann: wo kein Punkt ist,
    gibt er Schwarz aus und aendert damit exakt nichts, egal wie hell die Punkte selbst sind.
    Helligkeit und Flut sind bei einem Licht dieselbe Zahl und hier zwei verschiedene Dinge.
+
+41. **Eine Szene kostet, was sie NENNT, nicht was in ihr eingeschaltet ist.** Die App lief auf
+   dem iPhone an, spielte ihr Intro und schloss sich - ohne Exception, ohne Log, ohne Absturz
+   im Managed-Code, weil es keiner war: iOS hatte den Prozess wegen Speicher beendet. Gesucht
+   wurde zuerst im Boot-Pfad, denn dort war das Letzte zu sehen. Die Ursache lag eine Szene
+   weiter: `01_MainMenu` referenziert 24,7 Millionen Dreiecke in elf Modellen, rund 846 MiB
+   reine Vertex- und Indexpuffer, bevor eine einzige Textur dazukommt. Unity laedt beim
+   Szenenwechsel ALLES, was eine Szene nennt - ob das Objekt aktiv ist, spielt keine Rolle,
+   und der Lobby-Raum ist beim Laden ausdruecklich inaktiv. Jeder einzelne Prop ist ~1,5
+   Millionen Dreiecke: ein Kerzenhalter, ein Waehlscheibentelefon, ein Tisch. Rohe
+   Photogrammetrie-Exporte, nie dezimiert.
+   Zwei Lehren. Ein Absturz ohne Log ist ein Befund und keine Sackgasse - "kein Stacktrace"
+   grenzt die Ursachen ein, statt sie zu verbergen, denn ein Managed-Fehler haette einen
+   hinterlassen. Und eine Zahl, die keine Importeinstellung senken kann, muss man aufschreiben:
+   der Modell-Importer hat keine Polygonreduktion, also ist eine Schwelle, die man setzt und
+   nicht erreicht, nur eine Ausrede. `Scripts/scene_budget.txt` haelt den Stand fest, damit die
+   Schuld schrumpfen kann und nicht unbemerkt waechst.
 
 ## Unity Editor availability
 

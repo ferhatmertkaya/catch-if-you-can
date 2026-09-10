@@ -58,3 +58,6 @@ jobs:
 
       - name: Room furnishing guard
         run: Scripts/check_room_furnishing.sh
+
+      - name: Scene mesh budget guard
+        run: Scripts/check_scene_budget.sh
