@@ -125,92 +125,42 @@ place that number lives; everything else derives it.
   and G belongs to ONE device - the torch offers the press to a deployed device first
   and skips itself only when that device took it. A debug convenience may not share a
   key with a real control: the dev take/drop sat on X, so one press ran both paths and
-  threw the projector on the floor. And the dots are a SPHERE of laser points around the emitter,
-  drawn by one volume and one shader: for every pixel the shader reconstructs the world position
-  of the surface BEHIND it from the depth buffer, takes the direction from the lens to that
-  point, and asks whether it lands on a dot of an ANGULAR grid in the device's own spherical
-  coordinates - so the pattern surrounds the projector, reaching the ceiling as much as the
-  floor, and converging towards its axis the way a real multi-directional projector does. Two
-  earlier attempts were shaped like the emitter instead of like the room - one 70-degree spot,
-  which is a torch, then five wider spots, which is a torch with company - and neither could
-  cover a sphere, because a cone cannot. There is no LIGHT in it at all now: the pass is purely
-  additive, so a pixel that is not on a dot outputs black and changes nothing, which is what
-  keeps a dark room dark instead of washing it green. The lens is its own named child and its
-  position and axes go to the shader in WORLD coordinates rather than through the object matrix,
-  because the object-space version drew nothing for a reason nobody ever established (mistake
-  33) and removing the dependency beats guessing at it a fifth time. The density is rounded to a
-  whole number of cells, because the azimuth grid runs from +PI back to -PI and only a whole
-  number meets itself there; the antialiasing width is CLAMPED, because fwidth explodes across
-  that seam and at the poles, where the direction changes by half a turn between neighbouring
-  pixels, and unclamped that one meridian swallows every dot on it; the range is finite and
-  tunable so geometry beyond it gets nothing; the sky gets nothing, a pixel with no depth being
-  infinitely far away; the volume is built once and adopted rather than rebuilt on a clone; a
-  second volume says so; and the per-frame update writes four vectors into a property block
-  allocated once, so nothing allocates while it runs. And G belongs to whoever is SELECTED: a
-  claim means "this press was mine", not "this press did something", so a projector in the hand
-  consumes G and does nothing with it instead of handing it on to the torch - one press used to
-  print two refusals from two devices, each correct about itself. And an EFFECT is not a
-  BODY: the volume the dots are drawn in is an eleven-metre box around the lens, and
-  everything that asks "how big is this item" leaves it out - measured in, the lobby's
-  "put its underside on the floor" lift raised a 0.25 m projector 5.19 m, through the
-  ceiling, which from inside the game is not a floating object but an item that never
-  spawned. Marked with a COMPONENT, because that is the one thing a clone brings with it;
-  marked GetComponent-first, because this runs on the template and on every clone of it.
-  And the shader is CUT BACK to what a camera has confirmed, which is nothing: it has never once
-  been observed drawing a pixel, so the occlusion march, the glow halo and the ddx/ddy grazing
-  term are gone from the shader AND from the C#, and a check keeps them off until the rung below
-  them is proven. Turned off is not the same as gone: a slider nobody moves is still a line every
-  later reader takes for tested, and one that pushes into a uniform the shader no longer declares
-  writes nowhere and says nothing. What is left is a LADDER of six rungs behind one number -
-  magenta over the whole volume, the screen UV, the RAW depth value, the reconstructed world
-  position, green in range against RED outside it, and a coarse angular chequerboard - with stage
-  0 the finished dots. The UV rung sits ABOVE the depth rung because sampling depth USES the UV, so
-  a broken UV and an unbound texture make the same picture: every fragment reading one constant.
-  And the raw-depth rung classifies NOTHING - it reports the value, above the line that computes
-  "is this sky", because sky is an interpretation and an interpretation cannot be trusted to
-  report on the number it interprets: flat blue then means exactly 0 everywhere rather than the
-  sky test's opinion, which is the difference between a texture that was never produced and a
-  correct one full of sky. The effect also DECLARES its need for depth on every camera that
-  renders to a display rather than to a buffer, and REPORTS from outside the shader whether one
-  exists at all - the pipeline asset asks for depth globally and a camera can override that, and
-  the player's camera is built at RUNTIME, so the one link in the chain is the one no file in this
-  repository can read. Rung 1 is RUNTIME CONFIRMED: it draws, so the pass rasterises, the volume renders, the
-  material resolves and the shader COMPILES (an uncompilable shader is drawn with Unity's magenta
-  error shader, which cannot be invisible - so every earlier "nothing on screen" rules that out).
-  Each rung `return`s ABOVE the work the next one needs, and the guard reads the line numbers
-  rather than trusting the order, because a rung that sits below the thing it bisects goes dark
-  for a reason further along and hands the reader a FALSE finding instead of none. The magenta
-  rung is the first statement in the fragment shader, nothing above it but the stage read itself.
-  AND NO RUNG SITS BELOW AN INVISIBLE EARLY-OUT, which is worth more than the ordering: the sky
-  test returned transparent black above rung 2 and the range test above rung 3, so ONE unbound
-  depth texture would have blacked out three rungs at once and read as three separate failures.
-  Above the last rung nothing returns nothing - sky is BLUE, out of range is RED, and every
-  condition that would have vanished names itself in colour. A bisect whose rungs can share a
-  cause is not a bisect. There is deliberately no rung for the finished dots:
-  it would have no branch of its own, fall through to stage 0, and answer a question nobody asked -
-  so the shader, the Inspector and the number of implemented branches must all name the same count.
-  Culling is OFF, one fewer thing that has to be right before a pixel appears, and the blend stays
-  additive even for the magenta rung: blend state comes from the MATERIAL and this device drives
-  everything through a MaterialPropertyBlock, so a per-instance alpha blend would mean mutating a
-  shared Resources material - and `One One` on (1, 0, 1) is brighter against a dark room than
-  0.75 alpha, not dimmer. The density STARTS at 144 rather than 240, because a fine grid that is
-  wrong is a green wash while a coarse one that is wrong is legible, and it costs nothing per
-  pixel either way. Every property the C# pushes is declared by the shader and every one the
-  shader declares is pushed, checked from the real `_block.Set` calls rather than from the
-  `PropertyToID` lines - having the id proves nothing, and the first version of that check stayed
-  green when the push was deleted. It ships at 0 in the shader AND in the C#: a diagnostic that
-  runs while somebody plays does not diagnose, it creates (mistake 23). And the tuning values
-  REACH the renderer: they were pushed once at switch-on and never again, so an Inspector edit
-  during Play moved a number that arrived nowhere - which is how a six-stage bisect came back with
-  six identical stages, all of them stage 0. A control that cannot move what it names is worse
-  than no control, because it manufactures evidence. And the device carries ONE of everything: a
-  clone adopts the ProjectorHead, the projection and the volume it already came with rather than
-  building a second set beside them - the inherited set is inert, which is exactly why it never
-  announced itself - and the count is reported from the DEVICE rather than from the component,
-  which can only ever find its own children and would report a clean 1 while a second projection
-  hung next door. Switch-on also reports whether the CAMERA stands inside the volume, which no
-  longer decides what is drawn but still separates "the volume is nowhere near the viewer" from
-  "the volume is all around the viewer and still draws nothing". 104 checks.
+  threw the projector on the floor. And the dots are REAL GEOMETRY, after three
+  versions that were not. The shader reconstructed the world position of the surface behind each
+  pixel from the scene depth texture, which is a correct technique, and the file compiled - the
+  diagnostic ladder proved both: its magenta rung drew over the whole volume and its screen-UV
+  rung drew a correct gradient. The rung below them read the RAW value out of `SampleSceneDepth`
+  with no interpretation on top and came back flat blue, which in that rung means exactly 0.0 at
+  every pixel. No depth texture reaches that pass in this project, on this platform, in this Unity
+  version, and the pipeline asset asking for one globally does not change it. A technique that
+  needs a resource nobody can hand it is the wrong technique here however right it is in the
+  abstract, so it is GONE rather than debugged a fourth time. What replaces it: rays go out of the
+  lens in every direction and one small quad is laid flat on each surface they hit, all of them in
+  ONE mesh on ONE renderer with ONE material. The shader reads nothing from the frame buffer - no
+  depth, no screen position, no inverse view-projection - so there is nothing left that can be
+  unbound, and a check keeps it that way. The covering is a SPHERE BY CONSTRUCTION rather than by
+  a shader working: a Fibonacci sphere is a uniform covering of all 4-pi steradians with no pole
+  clustering and no wrap seam, so floor, ceiling, both side walls, in front and behind all get the
+  same density, and the device's rotation only turns the pattern - no axis of it can remove a
+  hemisphere (mistakes 34 and 39). The dot is a distance from the quad's own centre rather than a
+  texture, because three importer defaults turned the last dot artwork into pills and a
+  computation has no sampler to be deformed by (mistake 35). The pass is purely additive, so a
+  pixel that is not on a dot outputs black and changes nothing, which keeps a dark room dark
+  instead of washing it green (mistake 40). The cost is proportional to how much the device MOVES
+  rather than to how many pixels it covers: the rays are cast at switch-on and then only past a
+  movement, turn and time threshold, so a deployed projector - the case this device is for - casts
+  once and then costs one draw call; carried, it casts a fifth as many. Nothing allocates per
+  rebuild (the UVs and indices are written once as the arrays grow), the unused tail of the mesh is
+  folded onto the lens rather than left holding last round's quads, and the bounds are set from the
+  known range rather than recalculated over every vertex. Switch-on reports the DOT COUNT first,
+  because that one number separates the two failures this device has spent its life confusing: a
+  field that was never cast (zero dots - there is no geometry around the projector) and a field
+  that was cast and is not drawn (thousands of dots and a black screen). The effect volume is
+  marked with a COMPONENT so the lobby measures the device rather than the field (mistake 42); a
+  clone adopts the head, the projection and the rig it already carries rather than building a
+  second set beside them (mistakes 27, 30, 46); and the one surviving diagnostic - every dot quad
+  magenta - ships at 0 in the shader AND in the C#, because a diagnostic that runs while somebody
+  plays does not diagnose, it creates (mistake 23). 94 checks.
 - `Scripts/check_multiplayer_architecture.sh` — the deterministic assembly stays
   engine-free, gameplay never reaches a Relay API, remote players never read
   local input, ghost decisions stay host-only, online capacity has exactly one
