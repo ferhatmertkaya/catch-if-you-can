@@ -104,6 +104,30 @@ namespace CatchIfYouCan.UI
 
         private void Awake()
         {
+            Wire();
+        }
+
+        /// <summary>
+        /// Binds every listener this component needs from its current fields.
+        ///
+        /// <para>
+        /// <b>Called from Awake AND from <see cref="Bind"/>, and that is the whole point.</b>
+        /// When <see cref="MainMenuScreenBuilder"/> adds this component at runtime, Awake runs
+        /// INSIDE that <c>AddComponent</c> - one line before the builder can hand over the rows -
+        /// so Awake sees an empty array and wires nothing. That is CLAUDE.md mistake 25 and 27,
+        /// the same trap twice, and the symptom here is the expensive one: a menu that draws
+        /// perfectly and answers nothing. Binding therefore re-runs this rather than only writing
+        /// the fields.
+        /// </para>
+        /// <para>
+        /// Listeners are CLEARED first. This runs at least twice on the runtime path, and a
+        /// second <c>AddListener</c> on the same button is a single click that activates the row
+        /// twice. Clearing is safe because this component builds and owns these buttons - nothing
+        /// else adds a listener to them.
+        /// </para>
+        /// </summary>
+        private void Wire()
+        {
             if (modeController == null)
                 modeController = GetComponentInParent<MainMenuModeController>();
 
@@ -111,7 +135,7 @@ namespace CatchIfYouCan.UI
                 modeController = FindAnyObjectByType<MainMenuModeController>();
 
             // Captured before anything moves them, so the nudge is measured from where the
-            // baker put each caption rather than from wherever the last selection left it.
+            // builder put each caption rather than from wherever the last selection left it.
             _labelHome = new Vector2[rows.Length];
             for (int i = 0; i < rows.Length; i++)
             {
@@ -125,12 +149,14 @@ namespace CatchIfYouCan.UI
                     continue;
 
                 int index = i;
+                rows[i].button.onClick.RemoveAllListeners();
                 rows[i].button.onClick.AddListener(() => Activate(index));
             }
 
-            // Every button inside a panel closes it. Wired here rather than at bake time: a
-            // listener added in the editor is either a lambda, which Unity does not serialise, or
-            // a persistent listener through an API this project cannot verify offline. This runs.
+            // Every button inside a panel closes it. Wired here rather than when the panel is
+            // built: a listener added in the editor is either a lambda, which Unity does not
+            // serialise, or a persistent listener through an API this project cannot verify
+            // offline. This runs.
             WirePanelExit(settingsPanel);
             WirePanelExit(creditsPanel);
         }
@@ -143,8 +169,11 @@ namespace CatchIfYouCan.UI
             var buttons = panel.GetComponentsInChildren<Button>(true);
             for (int i = 0; i < buttons.Length; i++)
             {
-                if (buttons[i] != null)
-                    buttons[i].onClick.AddListener(CloseOpenPanel);
+                if (buttons[i] == null)
+                    continue;
+
+                buttons[i].onClick.RemoveAllListeners();
+                buttons[i].onClick.AddListener(CloseOpenPanel);
             }
         }
 
@@ -432,15 +461,33 @@ namespace CatchIfYouCan.UI
                    UnityEngine.Input.GetKeyDown(KeyCode.Backspace);
         }
 
-        /// <summary>Editor-side wiring, so the baker never reaches into a private field.</summary>
-        public void EditorBind(MainMenuModeController controller, Row[] built,
-                               RectTransform brush, GameObject settings, GameObject credits)
+        /// <summary>
+        /// Hands this component its rows, so <see cref="MainMenuScreenBuilder"/> never reaches
+        /// into a private field.
+        ///
+        /// <para>
+        /// It does not only WRITE the fields - it re-runs the wiring and re-arms the screen.
+        /// Awake has already been and gone by the time this is called on the runtime path (it
+        /// runs inside <c>AddComponent</c>), and <c>OnEnable</c>'s <c>Select(0)</c> returned at
+        /// its first line because there were no rows yet. Setting the fields alone would leave
+        /// every button unlistened and no row highlighted.
+        /// </para>
+        /// </summary>
+        public void Bind(MainMenuModeController controller, Row[] built,
+                         RectTransform brush, GameObject settings, GameObject credits)
         {
             modeController = controller;
             rows = built ?? new Row[0];
             selectionBrush = brush;
             settingsPanel = settings;
             creditsPanel = credits;
+
+            Wire();
+
+            _armedAt = Time.unscaledTime + inputArmDelay;
+            _handedOver = false;
+            ClosePanels();
+            Select(0, instant: true);
         }
     }
 }

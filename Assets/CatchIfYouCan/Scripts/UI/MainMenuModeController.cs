@@ -201,10 +201,51 @@ namespace CatchIfYouCan.UI
         private void Start()
         {
             if (!_enterDirectly)
+            {
+                BuildMenuScreen();
                 return;
+            }
 
             _enterDirectly = false;
             EnterLobbyDirect();
+        }
+
+        /// <summary>
+        /// Puts the menu on the screen: PLAY, SETTINGS, CREDITS, QUIT, the brush stroke and the
+        /// footer.
+        ///
+        /// <para>
+        /// <b>Why this is here and not in an editor tool.</b> It WAS an editor tool, and that is
+        /// how it failed. The rows only came into being when somebody opened Unity and clicked a
+        /// menu item, so the scene file carried nothing but the logo and TAP ANYWHERE TO START:
+        /// the code shipped, the scene did not change, and the screen was byte for byte the one
+        /// from before the work. That is indistinguishable from the menu having been deleted, and
+        /// is exactly how it was read. Most work on this project happens where Unity cannot run,
+        /// so a screen only a click can create is a screen that does not exist.
+        /// </para>
+        /// <para>
+        /// This component is the right owner because it is ALREADY in the scene and already owns
+        /// the menu's one decision - <see cref="EnterLobby"/>, which PLAY calls. Adding a new
+        /// serialized field to point at a builder would have been null in the scene file that
+        /// exists today and fallen back to 0/null rather than to any C# initialiser, which is
+        /// CLAUDE.md mistakes 18 and 37.
+        /// </para>
+        /// <para>
+        /// <b>Not on the direct route.</b> A player returning from a finished mission is handed
+        /// straight to the lobby; building a title screen behind the black would put four rows
+        /// and a footer one frame from being switched off again.
+        /// </para>
+        /// <para>
+        /// The builder is idempotent, so a scene that already carries a baked menu is adopted
+        /// rather than doubled (mistakes 27, 30, 46).
+        /// </para>
+        /// </summary>
+        private void BuildMenuScreen()
+        {
+            string report = MainMenuScreenBuilder.Build(this);
+
+            if (logTransition)
+                Debug.Log("[CIYC] Menu screen: " + report, this);
         }
 
         /// <summary>

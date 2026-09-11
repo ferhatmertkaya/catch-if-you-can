@@ -424,7 +424,22 @@ place that number lives; everything else derives it.
   guard check together (mistake 14), because the left of the scene is already black and the panel
   was a rectangular answer to a problem that does not exist. The baker also DESTROYS a leftover
   one, since a switched-off object in the hierarchy reads to the next person like something
-  somebody meant to keep. 315 checks.
+  somebody meant to keep. And the menu BUILDS ITSELF, which is the part that had nothing to do
+  with how it looks: it was an editor tool, so the four rows only came into being when somebody
+  opened Unity and clicked a menu item, and on every machine that had not - which in this project
+  is nearly all of them - the scene file still carried only the logo and TAP ANYWHERE TO START.
+  `MainMenuModeController` is already in the scene and already owns the menu's one decision, so it
+  calls the builder on Start; the editor tool calls the SAME method rather than keeping a copy,
+  and holds none of the measurements itself. The builder is idempotent because it now runs more
+  than once - looked up before created, `GetComponent` before `AddComponent`, and a search that
+  finds INACTIVE objects, since the two panels and the retired tap label are exactly that sort
+  (mistakes 27, 30, 46). `Bind` re-runs the wiring rather than only writing fields, because
+  `MainMenuNavigation.Awake` has already run inside the `AddComponent` one line above it with no
+  rows to wire (mistakes 25, 27), and both button loops CLEAR their listeners first, or one click
+  fires the row twice. The brush comes through `Resources.Load` rather than an asset path, which
+  resolves in the editor and nowhere else (mistake 3), and the stale backdrop is removed with
+  `DestroyImmediate` when not playing, because `Object.Destroy` is deferred and does nothing at
+  all in edit mode - which is exactly where the editor tool calls it. 323 checks.
 
 - `Scripts/check_editor_menu.sh` — the editor menu stays legible, and the purchased architecture has ONE scale. The game scale is the measured ratio 2.95 / 3.92 in one place, with no tool carrying its own copy; the decision is made on effective world scale rather than `localScale`, because a vendor piece at localScale 1 inside a corrected wrapper IS already corrected and its own field says otherwise; an already-corrected ancestor is recognised and a second application is a named verdict rather than a silent pass; architecture is told from props by FOLDER, since a filename classifier caught 3 of 105 in a pack that numbers its prefabs and calls its glass Steklo; an undecidable piece is reported ambiguous rather than guessed, because a chair may already be at real-world size and shrinking one that was right is invisible; the portal is excluded, its opening being a gameplay dimension; the migration audits before it can apply and converts only original-size pieces; and the correction goes on a CIYC wrapper with nothing applied back to the purchased package. Also the menu itself: Fifty-one commands sit in
   seven named groups with none hiding in another root menu, every one carries a risk tag saying
@@ -1254,6 +1269,35 @@ Repeating one of these is the most likely way to break something.
    ausgehen. Von der Komponente aus gezaehlt findet sie nur ihre eigenen Kinder und meldet eine
    saubere 1, waehrend die zweite Projektion nebenan haengt - eine Zahl, die genau das nicht
    sehen kann, wofuer sie da ist.
+
+47. **Ein Bildschirm, den nur ein Klick erzeugen konnte.** Das Hauptmenue wurde gebaut, gemessen,
+   mit acht Pruefungen abgesichert, committet und gepusht - und auf dem Bildschirm stand danach
+   Byte fuer Byte dasselbe wie vorher: TAP ANYWHERE TO START. Nichts war kaputt. Der Code war
+   ein EDITOR-WERKZEUG, also entstanden die vier Zeilen erst in dem Moment, in dem jemand Unity
+   oeffnete und einen Menuepunkt anklickte. Die Szenendatei enthielt weiterhin nur
+   `MainMenuBrandingCanvas`, `GameLogo_Baked` und `TapToStartText`.
+   Gemeldet wurde es als **"wieso hast du die Menüeinträge entfernt?"**, und von aussen ist das
+   die einzig moegliche Lesart: ein Bildschirm ohne Menue und ein Bildschirm, dessen Menue nie
+   gebaut wurde, sind dasselbe Bild. Dieselbe Ununterscheidbarkeit wie in den Fehlern 20, 27, 28
+   und 42 - zum fuenften Mal - nur liegt die Ursache diesmal nicht im Spiel, sondern in der
+   AUSLIEFERUNG.
+   Die Lehre steht schon in diesem Dokument, eine Ueberschrift weiter: "Most work on this project
+   happens where Unity cannot run." Daraus folgt die Regel "Assets durch Editor-Werkzeuge
+   autorisieren" - und die gilt fuer ASSETS, fuer Prefabs und Szenen-YAML, die man nicht von Hand
+   schreiben darf. Sie auf einen ganzen BILDSCHIRM anzuwenden macht aus einer Vorsichtsmassnahme
+   eine Sackgasse: was ein Werkzeug erzeugt, existiert erst nach dem Klick, und wer nicht klickt,
+   bekommt den alten Stand ohne einen einzigen Hinweis darauf, warum.
+   Also gehoert die Frage vor jede Aenderung an etwas Sichtbarem: **wodurch erreicht das den
+   Bildschirm?** Wenn die Antwort "jemand klickt in Unity" lautet, ist die Arbeit nicht
+   ausgeliefert, sondern nur vorbereitet. Die Konstruktion liegt jetzt zur Laufzeit, in einer
+   Klasse, die ein Bauteil aufruft, das ohnehin schon in der Szene steht - das Werkzeug ruft
+   DENSELBEN Bauer auf, statt eine zweite Kopie zu behalten (Fehler 1), und ist damit nur noch
+   eine Bequemlichkeit: man sieht das Menue ohne Play.
+   Und eine Sache am Rande, die teuer haette werden koennen: ein Bauer, der zur Laufzeit
+   `AddComponent` aufruft, loest das `Awake` der Komponente SOFORT aus - eine Zeile bevor er ihr
+   die Zeilen uebergeben kann. `Bind` durfte deshalb nicht nur Felder schreiben, sondern musste
+   neu verdrahten. Fehler 25 und 27, ein drittes Mal, und das Symptom waere das teuerste gewesen,
+   das dieses Projekt kennt: ein Menue, das perfekt gezeichnet wird und auf nichts antwortet.
 
 ## Unity Editor availability
 

@@ -3523,17 +3523,127 @@ fi
 
 MENUBAKER="$ROOT/Assets/CatchIfYouCan/Editor/MainMenuLogoBaker.cs"
 MENUNAV="$ROOT/Assets/CatchIfYouCan/Scripts/UI/MainMenuNavigation.cs"
+MENUBUILD="$ROOT/Assets/CatchIfYouCan/Scripts/UI/MainMenuScreenBuilder.cs"
+MENUCTRL="$ROOT/Assets/CatchIfYouCan/Scripts/UI/MainMenuModeController.cs"
+MENUHOVER="$ROOT/Assets/CatchIfYouCan/Scripts/UI/MainMenuNavHover.cs"
 BRUSHPNG="$ROOT/Assets/CatchIfYouCan/Resources/UI/Menu/T_MenuBrushStroke.png"
 
-if [ -f "$MENUBAKER" ] && code "$MENUBAKER" | grep -E >/dev/null 'AddComponent<GraphicRaycaster>'; then
+# ---------------------------------------------------------------------------------------------
+# DAS MENUE MUSS OHNE UNITY ENTSTEHEN. Das ist die teuerste Lehre dieser Runde und sie hat
+# nichts mit dem Aussehen zu tun.
+#
+# Das Menue war ein EDITOR-WERKZEUG: die vier Zeilen entstanden erst, wenn jemand Unity oeffnete
+# und einen Menuepunkt anklickte. Auf jeder Maschine, die das nicht getan hatte - und in diesem
+# Projekt laeuft Unity fast nirgends - stand in der Szenendatei nur das Logo und TAP ANYWHERE TO
+# START. Also: der Code war da, die Szene aenderte sich nicht, und der Bildschirm war Byte fuer
+# Byte derselbe wie vor der Arbeit. Das ist von "das Menue wurde geloescht" nicht zu
+# unterscheiden und wurde genau so gelesen.
+#
+# Ein Bildschirm, den nur ein Klick erzeugen kann, existiert nicht.
+# ---------------------------------------------------------------------------------------------
+
+if [ -f "$MENUBUILD" ] && [ -f "$MENUCTRL" ] &&
+   code "$MENUCTRL" | grep -E >/dev/null 'MainMenuScreenBuilder\.Build\(' &&
+   ! code "$MENUBUILD" | grep -E >/dev/null 'using UnityEditor|UnityEditor\.'; then
+  ok "das Menue baut sich zur Laufzeit, ohne Editor und ohne Klick"
+else
+  bad "das Menue baut sich zur Laufzeit, ohne Editor und ohne Klick" \
+      "als reines Editor-Werkzeug entsteht es nur, wenn jemand Unity oeffnet - und die Szene " \
+      "auf jeder anderen Maschine zeigt weiter TAP ANYWHERE TO START"
+fi
+
+# Und der Baker baut es NICHT selbst noch einmal. Zwei Bauer waeren zwei Meinungen darueber, wo
+# PLAY sitzt, und der, der seltener laeuft, ist der, der abdriftet (Fehler 1).
+if [ -f "$MENUBAKER" ] &&
+   code "$MENUBAKER" | grep -E >/dev/null 'MainMenuScreenBuilder\.Build\(' &&
+   ! code "$MENUBAKER" | grep -E >/dev/null 'RowLabels|TextLeft|BrushLeft|RowStepPx'; then
+  ok "der Baker ruft denselben Bauer und haelt keine eigenen Masse"
+else
+  bad "der Baker ruft denselben Bauer und haelt keine eigenen Masse" \
+      "eine Kopie der Rechtecke im Editor-Werkzeug ist eine zweite Meinung darueber, wo PLAY sitzt"
+fi
+
+# Der Bauer laeuft MEHRFACH - einmal vom Controller, einmal vom Baker, und in einer Szene, die
+# schon ein gebackenes Menue traegt, auf vorhandenen Objekten. Er muss also uebernehmen statt
+# danebenzustellen: GetComponent vor AddComponent, Suchen vor Erzeugen (Fehler 27, 30, 46).
+if [ -f "$MENUBUILD" ]; then
+  ens=$(code "$MENUBUILD" | sed -n '/private static T Ensure<T>/,/^        }$/p')
+  chi=$(code "$MENUBUILD" | sed -n '/private static GameObject EnsureChild/,/^        }$/p')
+  if printf '%s' "$ens" | grep -E >/dev/null 'GetComponent<T>\(\)' &&
+     printf '%s' "$chi" | grep -E >/dev/null 'FindUnder\(parent\.transform, name\)'; then
+    ok "ein zweiter Lauf uebernimmt, was der erste gebaut hat"
+  else
+    bad "ein zweiter Lauf uebernimmt, was der erste gebaut hat" \
+        "sonst steht neben jedem Objekt ein zweites - Fehler 27, 30 und 46"
+  fi
+else
+  bad "ein zweiter Lauf uebernimmt, was der erste gebaut hat" "der Bauer fehlt"
+fi
+
+# Und die Suche findet AUSGESCHALTETE Objekte. Die beiden Panels und das stillgelegte
+# TAP-Schild sind genau die Sorte, nach der hier gesucht wird; eine Suche, die nur aktive
+# findet, baut neben jedem ein zweites.
+if [ -f "$MENUBUILD" ]; then
+  fu=$(code "$MENUBUILD" | sed -n '/private static GameObject FindUnder/,/^        }$/p')
+  if printf '%s' "$fu" | grep -E >/dev/null 'GetComponentsInChildren<Transform>\(true\)' &&
+     ! code "$MENUBUILD" | grep -E >/dev/null 'GameObject\.Find\('; then
+    ok "die Suche findet auch ausgeschaltete Objekte"
+  else
+    bad "die Suche findet auch ausgeschaltete Objekte" \
+        "GameObject.Find ueberspringt inaktive - und inaktiv ist hier der Normalfall"
+  fi
+else
+  bad "die Suche findet auch ausgeschaltete Objekte" "der Bauer fehlt"
+fi
+
+# Bind setzt nicht nur Felder, es VERDRAHTET neu. MainMenuNavigation.Awake laeuft INNERHALB des
+# AddComponent, eine Zeile bevor der Bauer die Zeilen uebergeben kann - also mit leerem Feld
+# (Fehler 25 und 27). Nur die Felder zu schreiben laesst ein Menue zurueck, das perfekt
+# gezeichnet wird und auf nichts antwortet.
+if [ -f "$MENUNAV" ]; then
+  bind=$(code "$MENUNAV" | sed -n '/public void Bind(/,/^        }$/p')
+  if printf '%s' "$bind" | grep -E >/dev/null 'Wire\(\)' &&
+     printf '%s' "$bind" | grep -E >/dev/null 'Select\(0, instant: true\)'; then
+    ok "Bind verdrahtet neu, statt nur Felder zu schreiben"
+  else
+    bad "Bind verdrahtet neu, statt nur Felder zu schreiben" \
+        "Awake lief schon, innerhalb von AddComponent, mit leeren Zeilen - Fehler 25 und 27"
+  fi
+else
+  bad "Bind verdrahtet neu, statt nur Felder zu schreiben" "die Navigation fehlt"
+fi
+
+# Und ein zweiter Lauf haengt nicht einen zweiten Listener an denselben Knopf: ein Klick, zwei
+# Aktivierungen.
+if [ -f "$MENUNAV" ] &&
+   code "$MENUNAV" | grep -E >/dev/null 'rows\[i\]\.button\.onClick\.RemoveAllListeners\(\)' &&
+   code "$MENUNAV" | grep -E >/dev/null 'buttons\[i\]\.onClick\.RemoveAllListeners\(\)'; then
+  ok "ein zweiter Lauf haengt keinen zweiten Listener an denselben Knopf"
+else
+  bad "ein zweiter Lauf haengt keinen zweiten Listener an denselben Knopf" \
+      "ein Klick wuerde die Zeile zweimal ausloesen"
+fi
+
+# Der Pinselstrich wird ueber Resources geladen, nicht ueber einen Asset-Pfad. Ein Asset-Pfad
+# loest im Editor auf und sonst nirgends (Fehler 3) - und der Bauer laeuft jetzt im Build.
+if [ -f "$MENUBUILD" ] &&
+   code "$MENUBUILD" | grep -E >/dev/null 'Resources\.Load<Sprite>\(BrushResource\)' &&
+   ! code "$MENUBUILD" | grep -E >/dev/null 'Assets/CatchIfYouCan/Resources'; then
+  ok "der Pinselstrich kommt ueber Resources statt ueber einen Asset-Pfad"
+else
+  bad "der Pinselstrich kommt ueber Resources statt ueber einen Asset-Pfad" \
+      "ein Pfad nach Assets/ loest im Editor auf und im Build nicht - Fehler 3"
+fi
+
+if [ -f "$MENUBUILD" ] && code "$MENUBUILD" | grep -E >/dev/null 'AddComponent<GraphicRaycaster>'; then
   ok "die Menue-Canvas bekommt einen GraphicRaycaster"
 else
   bad "die Menue-Canvas bekommt einen GraphicRaycaster" \
       "ohne ihn ist jeder Knopf sichtbar und nimmt keinen Klick an"
 fi
 
-if [ -f "$MENUBAKER" ] && code "$MENUBAKER" | grep -E >/dev/null 'EventSystemUtil\.EnsureEventSystem' &&
-   code "$MENUBAKER" | grep -E >/dev/null 'MoveGameObjectToScene'; then
+if [ -f "$MENUBUILD" ] && code "$MENUBUILD" | grep -E >/dev/null 'EventSystemUtil\.EnsureEventSystem' &&
+   code "$MENUBUILD" | grep -E >/dev/null 'MoveGameObjectToScene'; then
   ok "ein EventSystem entsteht und landet in DIESER Szene"
 else
   bad "ein EventSystem entsteht und landet in DIESER Szene" \
@@ -3556,8 +3666,8 @@ fi
 # Das Schild auszublenden reicht nicht: MainMenuTapToStart liest rohes Input von ueberall, also
 # haette EIN Klick auf SETTINGS zusaetzlich die Lobby gestartet - ein Druck durch zwei Pfade,
 # was Fehler 32 woertlich ist.
-if [ -f "$MENUBAKER" ]; then
-  retire=$(code "$MENUBAKER" | sed -n '/private static string RetireTapToStart/,/^        }$/p')
+if [ -f "$MENUBUILD" ]; then
+  retire=$(code "$MENUBUILD" | sed -n '/private static string RetireTapToStart/,/^        }$/p')
   if printf '%s' "$retire" | grep -E >/dev/null 'labelGo\.SetActive\(false\)' &&
      printf '%s' "$retire" | grep -E >/dev/null 'tap\.enabled = false'; then
     ok "TAP ANYWHERE TO START verschwindet MIT seinem Eingabepfad"
@@ -3566,7 +3676,7 @@ if [ -f "$MENUBAKER" ]; then
         "nur das Schild auszublenden laesst den Klickfaenger dahinter stehen"
   fi
 else
-  bad "TAP ANYWHERE TO START verschwindet MIT seinem Eingabepfad" "der Baker fehlt"
+  bad "TAP ANYWHERE TO START verschwindet MIT seinem Eingabepfad" "der Bauer fehlt"
 fi
 
 # EIN Pinselstrich, der sich bewegt. Drei umschaltbare waeren drei Dinge, die sich darueber
@@ -3594,22 +3704,34 @@ fi
 # nicht gibt, mit einer rechteckigen Antwort. Der Baker darf keines bauen UND muss ein
 # uebriggebliebenes entfernen: ein abgeschaltetes Objekt in der Hierarchie liest sich fuer den
 # Naechsten wie etwas, das jemand behalten wollte (Fehler 14).
-if [ -f "$MENUBAKER" ]; then
-  if ! code "$MENUBAKER" | grep -E >/dev/null 'GrungePath|MenuGrungeBackdrop"[^)]*out bool' &&
-     code "$MENUBAKER" | grep -E >/dev/null 'Undo\.DestroyObjectImmediate\(stale\)'; then
+if [ -f "$MENUBUILD" ]; then
+  if ! code "$MENUBUILD" | grep -E >/dev/null 'GrungePath|BuildGrunge' &&
+     code "$MENUBUILD" | grep -E >/dev/null 'DestroyImmediate\(stale\)'; then
     ok "kein Grunge-Panel mehr, und ein uebriggebliebenes wird entfernt"
   else
     bad "kein Grunge-Panel mehr, und ein uebriggebliebenes wird entfernt"
   fi
 else
-  bad "kein Grunge-Panel mehr, und ein uebriggebliebenes wird entfernt" "der Baker fehlt"
+  bad "kein Grunge-Panel mehr, und ein uebriggebliebenes wird entfernt" "der Bauer fehlt"
+fi
+
+# Und das Entfernen muss im EDIT-Modus auch wirklich entfernen. Object.Destroy ist bis zum
+# Ende des Frames aufgeschoben und tut im Editor gar nichts ausser warnen - und genau dort
+# ruft der Baker denselben Bauer auf.
+if [ -f "$MENUBUILD" ] &&
+   code "$MENUBUILD" | grep -E >/dev/null 'Application\.isPlaying' &&
+   code "$MENUBUILD" | grep -E >/dev/null 'DestroyImmediate\(stale\)'; then
+  ok "das Entfernen wirkt auch im Edit-Modus"
+else
+  bad "das Entfernen wirkt auch im Edit-Modus" \
+      "Object.Destroy ist aufgeschoben und im Editor wirkungslos"
 fi
 
 # Die vier Zeilen, in der Reihenfolge der Referenz. Die Reihenfolge ist nicht Kosmetik: der
 # Navigator schaltet nach INDEX, also waere eine vertauschte Liste ein PLAY, das die Credits
 # oeffnet.
-if [ -f "$MENUBAKER" ] &&
-   code "$MENUBAKER" | grep -E >/dev/null 'RowLabels = \{ "PLAY", "SETTINGS", "CREDITS", "QUIT" \}'; then
+if [ -f "$MENUBUILD" ] &&
+   code "$MENUBUILD" | grep -E >/dev/null 'RowLabels = \{ "PLAY", "SETTINGS", "CREDITS", "QUIT" \}'; then
   ok "die vier Zeilen stehen in der Reihenfolge der Referenz"
 else
   bad "die vier Zeilen stehen in der Reihenfolge der Referenz" \
@@ -3618,8 +3740,8 @@ fi
 
 # Der Texteinzug wird aus den GEMESSENEN Kanten gerechnet, nicht als runde Zahl hingeschrieben.
 # Genau daran ist der erste Anlauf gescheitert: 34 px sahen plausibel aus, die Referenz sagt 92.
-if [ -f "$MENUBAKER" ] &&
-   code "$MENUBAKER" | grep -E >/dev/null '\(TextLeft - BrushLeft\) \* 1920f'; then
+if [ -f "$MENUBUILD" ] &&
+   code "$MENUBUILD" | grep -E >/dev/null '\(TextLeft - BrushLeft\) \* 1920f'; then
   ok "der Texteinzug kommt aus den gemessenen Kanten statt aus einer runden Zahl"
 else
   bad "der Texteinzug kommt aus den gemessenen Kanten statt aus einer runden Zahl"
@@ -3627,8 +3749,8 @@ fi
 
 # Die Fusszeile: Version, Rechte, Engine, Claim. Am unteren linken Rand verankert - proportional
 # wandert sie auf einem Ultrawide zur Mitte und landet unter dem Geist.
-if [ -f "$MENUBAKER" ]; then
-  foot=$(code "$MENUBAKER" | sed -n '/private static string BuildFooter/,/^        }$/p')
+if [ -f "$MENUBUILD" ]; then
+  foot=$(code "$MENUBUILD" | sed -n '/private static string BuildFooter/,/^        }$/p')
   missing=""
   for part in '"Version"' '"Rights"' '"Engine"' '"Tagline"' 'FooterDivider'; do
     printf '%s' "$foot" | grep -E >/dev/null "$part" || missing="$missing $part"
@@ -3640,7 +3762,7 @@ if [ -f "$MENUBAKER" ]; then
         "fehlt:$missing"
   fi
 else
-  bad "die Fusszeile traegt Version, Rechte, Engine, Claim und den Trennstrich"
+  bad "die Fusszeile traegt Version, Rechte, Engine, Claim und den Trennstrich" "der Bauer fehlt"
 fi
 
 # QUIT tut im Editor sichtbar etwas. Application.Quit ist dort ein No-op, und ein Knopf, auf den
