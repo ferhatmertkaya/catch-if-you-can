@@ -395,7 +395,20 @@ place that number lives; everything else derives it.
   legacy Text, rather than through a second copy of that branch. And the grunge mask is MEASURED
   rather than claimed: its outermost row must be fully transparent, because one opaque pixel there
   is exactly the hard rectangular edge the texture exists to avoid, and a sprite is the one kind of
-  asset where that can be read out of the file. 306 checks.
+  asset where that can be read out of the file. And the boot readout PLAY raises - INITIALISING
+  SYSTEMS, LOADING ENVIRONMENT, CALIBRATING EQUIPMENT, RELEASING THE SPIRITS - names only things
+  that have ALREADY happened: the steps are advanced from the handover itself at the points where
+  the work is genuinely done (the director has stood down and the menu is silent, the room root is
+  active, the player and their kit exist, the ambience is running), never by a coroutine counting
+  on its own. The guard reads the line numbers to prove it - the environment step must sit below
+  `SetRoomActive`, the equipment step below `SpawnPlayer` - because a progress readout that runs
+  ahead of what it reports is a control that manufactures evidence, which is mistakes 23, 44 and
+  the guard of 43 in one line. The minimum dwell is the one part that is presentation, and it only
+  ever HOLDS a step longer: the wait sits ABOVE the counter, so a caption can lag the handover and
+  cannot lead it. It draws no black sheet of its own - `TransitionFade` owns the transition overlay
+  and is already opaque by the time this appears, so this is text one sorting order above it - and
+  the direct route back from a finished mission gets no readout at all, because nothing is being
+  initialised there and four captions would be four invented events. 311 checks.
 
 - `Scripts/check_editor_menu.sh` — the editor menu stays legible, and the purchased architecture has ONE scale. The game scale is the measured ratio 2.95 / 3.92 in one place, with no tool carrying its own copy; the decision is made on effective world scale rather than `localScale`, because a vendor piece at localScale 1 inside a corrected wrapper IS already corrected and its own field says otherwise; an already-corrected ancestor is recognised and a second application is a named verdict rather than a silent pass; architecture is told from props by FOLDER, since a filename classifier caught 3 of 105 in a pack that numbers its prefabs and calls its glass Steklo; an undecidable piece is reported ambiguous rather than guessed, because a chair may already be at real-world size and shrinking one that was right is invisible; the portal is excluded, its opening being a gameplay dimension; the migration audits before it can apply and converts only original-size pieces; and the correction goes on a CIYC wrapper with nothing applied back to the purchased package. Also the menu itself: Fifty-one commands sit in
   seven named groups with none hiding in another root menu, every one carries a risk tag saying

@@ -3636,6 +3636,86 @@ else
   bad "beide Menue-Sprites importieren als Sprite mit erhaltener Transparenz"
 fi
 
+# ------------------------------------------------------- die Startsequenz nach dem Druck auf PLAY
+#
+# Vier Zeilen - INITIALISING SYSTEMS, LOADING ENVIRONMENT, CALIBRATING EQUIPMENT, RELEASING THE
+# SPIRITS - und jede benennt etwas, das SCHON PASSIERT IST. Genau daran haengt alles: eine
+# Fortschrittsanzeige, die einem Timer folgt statt der Arbeit, ist ein Regler, der Beweise
+# erzeugt, und dieses Projekt hat diese Form dreimal bezahlt (Fehler 23, 44 und der Waechter
+# aus 43).
+
+BOOTSEQ="$ROOT/Assets/CatchIfYouCan/Scripts/UI/MissionBootSequence.cs"
+MODECTL="$ROOT/Assets/CatchIfYouCan/Scripts/UI/MainMenuModeController.cs"
+
+# Die Schritte werden AUS DEM UEBERGANG gemeldet, nicht von einer Coroutine, die mitzaehlt.
+if [ -f "$MODECTL" ] && [ -f "$BOOTSEQ" ]; then
+  advances=$(code "$MODECTL" | { grep -cE 'boot\.Advance\(MissionBootSequence\.Step\.' || true; })
+  if [ "$advances" -eq 4 ]; then
+    ok "alle vier Schritte werden aus dem echten Uebergang gemeldet"
+  else
+    bad "alle vier Schritte werden aus dem echten Uebergang gemeldet" \
+        "gefunden: $advances von 4 - ein Schritt, den niemand meldet, laeuft auf einer Uhr"
+  fi
+else
+  bad "alle vier Schritte werden aus dem echten Uebergang gemeldet" "eine der Dateien fehlt"
+fi
+
+# Und zwar NACH der Arbeit, die sie benennen. Die Umgebung wird nach SetRoomActive gemeldet, die
+# Ausruestung nach SpawnPlayer - vorher waere die Zeile eine Behauptung ueber etwas, das es noch
+# nicht gibt. Gelesen werden die Zeilennummern, nicht die Absicht.
+if [ -f "$MODECTL" ]; then
+  live=$(code "$MODECTL" | sed -n '/private IEnumerator GoLiveInLobby/,/^        }$/p')
+  n_room=$(printf '%s\n' "$live" | { grep -n 'SetRoomActive(true)' || true; } | head -1 | cut -d: -f1)
+  n_env=$(printf '%s\n' "$live" | { grep -n 'Step\.LoadingEnvironment' || true; } | head -1 | cut -d: -f1)
+  n_spawn=$(printf '%s\n' "$live" | { grep -n 'SpawnPlayer()' || true; } | head -1 | cut -d: -f1)
+  n_kit=$(printf '%s\n' "$live" | { grep -n 'Step\.CalibratingEquipment' || true; } | head -1 | cut -d: -f1)
+  if [ -n "$n_room" ] && [ -n "$n_env" ] && [ -n "$n_spawn" ] && [ -n "$n_kit" ] &&
+     [ "$n_room" -lt "$n_env" ] && [ "$n_env" -lt "$n_spawn" ] && [ "$n_spawn" -lt "$n_kit" ]; then
+    ok "jede Zeile wird gemeldet, NACHDEM ihre Arbeit getan ist"
+  else
+    bad "jede Zeile wird gemeldet, NACHDEM ihre Arbeit getan ist" \
+        "room=$n_room env=$n_env spawn=$n_spawn kit=$n_kit"
+  fi
+else
+  bad "jede Zeile wird gemeldet, NACHDEM ihre Arbeit getan ist" "der Controller fehlt"
+fi
+
+# Die Mindest-Standzeit HAELT einen Schritt nur laenger sichtbar; sie darf ihn nie frueher als
+# fertig melden. Deshalb wird gewartet, BEVOR weitergezaehlt wird.
+if [ -f "$BOOTSEQ" ]; then
+  adv=$(code "$BOOTSEQ" | sed -n '/public IEnumerator Advance(Step step)/,/^        }$/p')
+  n_wait=$(printf '%s\n' "$adv" | { grep -n 'WaitForSecondsRealtime' || true; } | head -1 | cut -d: -f1)
+  n_step=$(printf '%s\n' "$adv" | { grep -n '_current = Mathf.Min' || true; } | head -1 | cut -d: -f1)
+  if [ -n "$n_wait" ] && [ -n "$n_step" ] && [ "$n_wait" -lt "$n_step" ]; then
+    ok "die Mindeststandzeit haelt einen Schritt, statt ihn frueh fertigzumelden"
+  else
+    bad "die Mindeststandzeit haelt einen Schritt, statt ihn frueh fertigzumelden" \
+        "warten=$n_wait weiterzaehlen=$n_step"
+  fi
+else
+  bad "die Mindeststandzeit haelt einen Schritt, statt ihn frueh fertigzumelden"
+fi
+
+# Sie baut KEINE eigene schwarze Flaeche. TransitionFade besitzt das Uebergangs-Overlay und ist
+# schon undurchsichtig, wenn diese Anzeige kommt; eine zweite Vollbildflaeche waere ein zweiter
+# Besitzer derselben Sache - und genau das verbietet die Pruefung weiter oben.
+if [ -f "$BOOTSEQ" ] && code "$BOOTSEQ" | grep -E >/dev/null 'SortingOrder = TransitionFade\.SortingOrder \+ 1' &&
+   ! code "$BOOTSEQ" | grep -E >/dev/null 'anchorMin = Vector2\.zero;[[:space:]]*$'; then
+  ok "die Startsequenz zeichnet keine zweite schwarze Vollbildflaeche"
+else
+  bad "die Startsequenz zeichnet keine zweite schwarze Vollbildflaeche" \
+      "TransitionFade besitzt das Overlay; hier gehoert nur Text darueber"
+fi
+
+# Und die Rueckroute aus einer fertigen Mission bekommt sie NICHT: dort wird nichts
+# initialisiert, was jemand zusehen koennte - vier Zeilen waeren vier erfundene Ereignisse.
+if [ -f "$MODECTL" ] && code "$MODECTL" | grep -E >/dev/null 'GoLiveInLobby\(null\)'; then
+  ok "die Direktroute zurueck in die Lobby zeigt keine Startsequenz"
+else
+  bad "die Direktroute zurueck in die Lobby zeigt keine Startsequenz" \
+      "EnterLobbyDirect ist der Weg ZURUECK, kein Druck auf PLAY"
+fi
+
 echo
 echo "  $PASS passed, $FAIL failed"
 if [ "$FAIL" -ne 0 ]; then

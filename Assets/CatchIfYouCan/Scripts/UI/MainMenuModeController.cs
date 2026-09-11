@@ -244,6 +244,7 @@ namespace CatchIfYouCan.UI
             // The cinematic half never runs, so its label, its music and its phone are switched
             // off rather than faded: there is nothing audible to fade.
             SetCinematicUiActive(false);
+
             if (phoneRing != null)
                 phoneRing.StopRinging();
             for (int i = 0; i < cinematicAudioSources.Length; i++)
@@ -257,7 +258,11 @@ namespace CatchIfYouCan.UI
             if (UIManager.Instance != null)
                 UIManager.Instance.HideAll();
 
-            yield return GoLiveInLobby();
+            // No boot readout on this route, deliberately. This is the way BACK from a finished
+            // mission, not a press of PLAY: the room is already the player's and there is nothing
+            // being initialised for them to watch. Showing the four captions here would announce
+            // work that is not happening.
+            yield return GoLiveInLobby(null);
         }
 
         /// <summary>
@@ -292,6 +297,13 @@ namespace CatchIfYouCan.UI
             BuildFadeOverlay();
             yield return Fade(0f, 1f, fadeOutDuration);
 
+            // The boot readout comes up once the screen is actually black, never before: over a
+            // still-visible menu it would be text floating on the ghost. Every line it shows names
+            // something that has already happened - it is advanced from the points below, not by a
+            // timer, so it can lag the handover and cannot lead it.
+            var boot = MissionBootSequence.Ensure();
+            boot.Begin();
+
             // 4. Cinematic mode ends while the screen is covered. The director cancels a
             //    mid-flight event and restores its baselines, so the room is never entered with
             //    red lights up, the ghost displaced or the fog still agitated. This is visual
@@ -303,6 +315,10 @@ namespace CatchIfYouCan.UI
             //    the menu is still audible would be the one thing that gives the seam away.
             yield return musicFade;
             yield return sourceFades;
+
+            // The director has stood down and the menu has gone silent. That is the whole of
+            // step one, and it is finished before the caption says so.
+            yield return boot.Advance(MissionBootSequence.Step.Initialising);
 
             // 6. Only now is the phone told to stop for good. Its source has already faded, so
             //    this is bookkeeping rather than a cut, and it is what guarantees a ring that was
@@ -333,10 +349,14 @@ namespace CatchIfYouCan.UI
             if (Core.CiycScenes.IsRegisteredInBuild(Core.CiycScenes.Lobby))
             {
                 yield return HandOverToLobbyScene();
+                // Cleared rather than completed: that branch does its own loading and does not
+                // report these steps, so claiming they finished would be the readout inventing
+                // four events. A readout left on a black screen is worse than none.
+                boot.Hide();
                 yield break;
             }
 
-            yield return GoLiveInLobby();
+            yield return GoLiveInLobby(boot);
         }
 
         /// <summary>
@@ -350,7 +370,7 @@ namespace CatchIfYouCan.UI
         /// only after the player's exists so there is never a frame with none.
         /// </para>
         /// </summary>
-        private IEnumerator GoLiveInLobby()
+        private IEnumerator GoLiveInLobby(MissionBootSequence boot)
         {
             SetRoomActive(true);
 
@@ -360,7 +380,16 @@ namespace CatchIfYouCan.UI
             if (cinematicAudioListener != null)
                 cinematicAudioListener.enabled = false;
 
+            // The room root is on: the environment the player is about to stand in now exists.
+            if (boot != null)
+                yield return boot.Advance(MissionBootSequence.Step.LoadingEnvironment);
+
             SpawnPlayer();
+
+            // The player and whatever kit they carry now exist. This is the step that would be a
+            // lie if it were reported before SpawnPlayer rather than after it.
+            if (boot != null)
+                yield return boot.Advance(MissionBootSequence.Step.CalibratingEquipment);
 
             // The sky goes onto the player's camera, never onto RenderSettings: a global one
             // would start feeding ambient into a room lit without it, and would still be there
@@ -380,6 +409,12 @@ namespace CatchIfYouCan.UI
                 cinematicCamera.enabled = false;
 
             Mode = MenuMode.Lobby;
+
+            if (boot != null)
+            {
+                yield return boot.Advance(MissionBootSequence.Step.ReleasingTheSpirits);
+                yield return boot.Complete();
+            }
 
             // 10. Reveal, then arm input. Enabling movement and look before the fade finishes is
             //     what would let the tap that started all this carry through as a look delta,
