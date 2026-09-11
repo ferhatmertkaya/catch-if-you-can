@@ -1063,6 +1063,23 @@ else
     fail "das Punktemesh ist als Wirkung markiert, nicht als Koerper"
   fi
 
+  # 14b. Das Rig steht auf WELT-Identitaet, nicht auf lokaler. Das ist die eine Zeile, die
+  #      entscheidet, ob ueberhaupt irgendetwas an der richtigen Stelle erscheint: die Vierecke
+  #      sind in WELTkoordinaten gebaut, und das Rig haengt unter der Linse - `localPosition =
+  #      zero` heisst dort nicht "keine Transformation", sondern "trage Position und Drehung der
+  #      Linse", und jeder Punkt bekaeme die Linsentransformation ein ZWEITES Mal. Ein Projektor
+  #      zwei Meter vom Ursprung, auf die Seite gelegt, malte seine Punkte vier Meter weit weg und
+  #      doppelt verdreht. Und es muss je Bild neu gesetzt werden, sonst wandern die Punkte, die
+  #      auf der Wand liegen, mit dem Geraet mit.
+  neut=$(printf '%s\n' "$pcode" | sed -n '/private void NeutraliseRig/,/^        }$/p')
+  if printf '%s' "$neut" | grep -qE '_rig\.position = Vector3\.zero' \
+     && printf '%s' "$neut" | grep -qE '_rig\.rotation = Quaternion\.identity' \
+     && printf '%s' "$late" | grep -qE 'NeutraliseRig\(\)'; then
+    ok "das Rig steht auf Welt-Identitaet und bleibt je Bild dort"
+  else
+    fail "das Rig steht auf Welt-Identitaet und bleibt je Bild dort"
+  fi
+
   # 15. Der Bericht nennt die ZAHL DER PUNKTE zuerst. Diese eine Zahl trennt die beiden Fehler,
   #     die dieses Geraet sein Leben lang verwechselt hat: nie geworfen (null Punkte - rundherum
   #     ist keine Geometrie) und geworfen und nicht gezeichnet (tausende Punkte, schwarzer Schirm).

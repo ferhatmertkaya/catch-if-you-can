@@ -49,6 +49,13 @@ Shader "CatchIfYouCan/SpectralGrid"
             ZWrite Off
             Cull Off
 
+            // Pulled towards the camera in depth. The quads sit twelve millimetres off the
+            // surface they are painted on, which is plenty head-on and almost nothing at a
+            // grazing angle - exactly where a wall across the room is seen from. A polygon
+            // offset is the tool for that and costs nothing; without it the far half of the
+            // field flickers in and out against the wall it belongs to.
+            Offset -1, -1
+
             HLSLPROGRAM
             #pragma vertex vert
             #pragma fragment frag

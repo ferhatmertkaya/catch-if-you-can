@@ -160,7 +160,7 @@ place that number lives; everything else derives it.
   clone adopts the head, the projection and the rig it already carries rather than building a
   second set beside them (mistakes 27, 30, 46); and the one surviving diagnostic - every dot quad
   magenta - ships at 0 in the shader AND in the C#, because a diagnostic that runs while somebody
-  plays does not diagnose, it creates (mistake 23). 94 checks.
+  plays does not diagnose, it creates (mistake 23). And the rig stands at WORLD identity, re-asserted every frame: the quads are built in world coordinates and the rig hangs under the lens, so a LOCAL identity there means "wear the lens pose" and every dot would take the lens transform a second time - a projector two metres out, laid on its side, painting its dots four metres away and twice rotated. 95 checks.
 - `Scripts/check_multiplayer_architecture.sh` — the deterministic assembly stays
   engine-free, gameplay never reaches a Relay API, remote players never read
   local input, ghost decisions stay host-only, online capacity has exactly one

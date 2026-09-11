@@ -120,7 +120,7 @@ namespace CatchIfYouCan.Equipment
         /// How far along its own ray a dot sits off the surface, in metres. Enough to clear
         /// z-fighting with the wall it is painted on, small enough not to read as floating.
         /// </summary>
-        private const float SurfaceLift = 0.006f;
+        private const float SurfaceLift = 0.012f;
 
         /// <summary>
         /// Where a ray starts, in metres from the lens. The device's own body is around the lens,
@@ -145,7 +145,6 @@ namespace CatchIfYouCan.Equipment
         private Vector3 _lastBuildPosition;
         private Quaternion _lastBuildRotation;
         private float _lastBuildTime = -999f;
-        private bool _hasBuilt;
         private int _lastDotsPlaced;
 
         private static readonly int DotColorId = Shader.PropertyToID("_DotColor");
@@ -224,7 +223,7 @@ namespace CatchIfYouCan.Equipment
             if (running)
             {
                 PushProperties();
-                Rebuild(force: true);
+                Rebuild();
 #if UNITY_EDITOR || DEVELOPMENT_BUILD
                 Report();
 #endif
@@ -252,6 +251,11 @@ namespace CatchIfYouCan.Equipment
             if (!_running || _origin == null)
                 return;
 
+            // Before anything else: the device has moved this frame, so the rig has been dragged
+            // with it. Put it back on the world origin, or the dots painted on the walls last
+            // rebuild slide along with the projector.
+            NeutraliseRig();
+
             if (debugStage > 0)
                 PushProperties();
 
@@ -263,7 +267,7 @@ namespace CatchIfYouCan.Equipment
             if (moved < rebuildMoveThreshold && turned < rebuildTurnThreshold)
                 return;
 
-            Rebuild(force: false);
+            Rebuild();
         }
 
 #if UNITY_EDITOR
@@ -317,11 +321,7 @@ namespace CatchIfYouCan.Equipment
                 }
             }
 
-            // The dot quads are written in WORLD coordinates, so the rig must not add a transform
-            // of its own on top of them. Identity, every time, whatever the device is doing.
-            _rig.localPosition = Vector3.zero;
-            _rig.localRotation = Quaternion.identity;
-            _rig.localScale = Vector3.one;
+            NeutraliseRig();
 
             // The mesh is the effect's screen footprint, not the device. Marked so that everything
             // which measures "how big is this item" leaves it out - unmarked, the lobby measured
@@ -371,6 +371,42 @@ namespace CatchIfYouCan.Equipment
         }
 
         /// <summary>
+        /// Holds the rig at WORLD identity, so the mesh it carries is drawn exactly where its
+        /// vertices say.
+        ///
+        /// <para>
+        /// This is the one line that decides whether any of this appears in the right place. The
+        /// quads are built in WORLD coordinates, and the rig is a child of the lens - so setting
+        /// its LOCAL transform to identity does not mean "no transform", it means "wear the lens's
+        /// position and rotation", and every dot would have the lens transform applied to it a
+        /// second time. A projector standing two metres from the origin and turned on its side
+        /// would paint its dots four metres away, rotated twice. It has to be world identity, and
+        /// it has to be re-asserted whenever the device moves, which is why this is called from
+        /// the per-frame path as well as from the build.
+        /// </para>
+        ///
+        /// <para>
+        /// The scale is cancelled rather than set to one for the same reason: a one in local scale
+        /// inherits whatever the chain above it is doing, and this chain runs through the item's
+        /// visual, which is scaled to fit the model.
+        /// </para>
+        /// </summary>
+        private void NeutraliseRig()
+        {
+            if (_rig == null)
+                return;
+
+            _rig.position = Vector3.zero;
+            _rig.rotation = Quaternion.identity;
+
+            Vector3 lossy = _rig.parent != null ? _rig.parent.lossyScale : Vector3.one;
+            _rig.localScale = new Vector3(
+                Mathf.Approximately(lossy.x, 0f) ? 1f : 1f / lossy.x,
+                Mathf.Approximately(lossy.y, 0f) ? 1f : 1f / lossy.y,
+                Mathf.Approximately(lossy.z, 0f) ? 1f : 1f / lossy.z);
+        }
+
+        /// <summary>
         /// Casts the field and writes it into the mesh.
         ///
         /// <para>
@@ -382,7 +418,7 @@ namespace CatchIfYouCan.Equipment
         /// bounds the field to a room.
         /// </para>
         /// </summary>
-        private void Rebuild(bool force)
+        private void Rebuild()
         {
             if (_origin == null || _mesh == null)
                 return;
@@ -441,7 +477,6 @@ namespace CatchIfYouCan.Equipment
             _lastBuildPosition = lens;
             _lastBuildRotation = _origin.rotation;
             _lastBuildTime = Time.time;
-            _hasBuilt = true;
         }
 
         /// <summary>True while the device is in somebody's hands rather than deployed.</summary>
