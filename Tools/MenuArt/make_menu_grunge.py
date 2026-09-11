@@ -9,11 +9,17 @@ It carries its shape in the ALPHA channel and a flat white in RGB, so the Image 
 tinted from UITheme rather than from the artwork - one texture, any colour, and no second file
 when the palette moves.
 
-There WAS a second file here, a dark grunge panel behind the whole menu. It is gone: the design
-reference has no panel, and the scene's own left side is already black, so the panel was covering
-a problem that does not exist with a rectangle-shaped answer. Removed together with its meta, its
-use in the baker and the guard that measured it - a texture nobody draws is the kind of leftover
-that reads as intentional to the next person (mistake 14).
+It writes TWO files:
+
+  T_MenuBrushStroke  the white stroke behind the selected row
+  T_MenuGrungePanel  the dark torn backing behind the whole menu column
+
+The panel was removed once, when a design reference without one was being matched, and is back
+by request. The thing that has to be true of it is measurable and is measured at the bottom of
+this file: its outermost row must be FULLY transparent. One opaque pixel there is, when the
+Image is stretched, exactly the hard rectangular edge the texture exists to avoid - and the
+first attempt at it failed precisely that way, at 98.4% non-empty, because both noise layers had
+a floor and could never reach zero.
 
     python3 Tools/MenuArt/make_menu_grunge.py
 """
@@ -103,12 +109,76 @@ def coverage(img):
             sum(1 for v in px if v > 247) / n)
 
 
+def grunge_panel(w=512, h=512):
+    """The dark torn backing behind the menu column.
+
+    Carried in the ALPHA channel over near-black RGB, so the Image that draws it is tinted from
+    UITheme like everything else. Three things it must not be: a clean rectangle, a rounded card,
+    and opaque at its border. The first two are why the shape comes from noise rather than from a
+    draw call; the third is checked rather than hoped for.
+    """
+    px = [0] * (w * h)
+    cx, cy = w * 0.46, h * 0.50
+    rx, ry = w * 0.52, h * 0.54
+
+    for y in range(h):
+        dy = (y - cy) / ry
+        row = y * w
+        for x in range(w):
+            dx = (x - cx) / rx
+            d = math.sqrt(dx * dx + dy * dy)
+            # Dense core, long soft shoulder. Nothing survives past d = 1.
+            v = 1.0 - d
+            if v <= 0.0:
+                continue
+            px[row + x] = int(min(1.0, v * 1.35) ** 1.25 * 255)
+
+    field = Image.new("L", (w, h))
+    field.putdata(px)
+
+    # The edge is CHEWED rather than blurred: coarse noise multiplied in breaks the oval into a
+    # torn patch, and because the noise floor is zero the tears go all the way through.
+    tear = fractal_noise(w, h, octaves=6, base=3).point(lambda v: min(255, int(v * 1.55)))
+    field = ImageChops.multiply(field, tear)
+
+    # A hard vignette to zero over the outer eighth, so the border cannot be anything but empty
+    # whatever the noise did. This is the line that makes the measurement below pass.
+    margin = max(4, int(min(w, h) * 0.12))
+    fade = Image.new("L", (w, h), 255)
+    fd = ImageDraw.Draw(fade)
+    for i in range(margin):
+        level = int(255 * (i / float(margin)) ** 0.8)
+        fd.rectangle([i, i, w - 1 - i, h - 1 - i], outline=level)
+    field = ImageChops.multiply(field, fade)
+
+    # Lift the middle back up - the multiplies above cost the core its density - and cap well
+    # short of opaque, because the corridor has to stay readable through it.
+    field = field.point(lambda v: min(208, int(v * 1.6)))
+    field = field.filter(ImageFilter.GaussianBlur(1.6))
+
+    # Anything faint is snapped to nothing rather than left as a film. A 2-alpha haze over a
+    # whole quarter of the screen is not a shape, it is a tint nobody asked for.
+    field = field.point(lambda v: 0 if v < 14 else v)
+
+    img = Image.new("RGBA", (w, h), (10, 9, 11, 0))
+    img.putalpha(field)
+    return img
+
+
 if __name__ == "__main__":
     import os
     os.makedirs(OUT, exist_ok=True)
-    for name, img in (("T_MenuBrushStroke", brush_stroke()),):
+    for name, img in (("T_MenuBrushStroke", brush_stroke()),
+                      ("T_MenuGrungePanel", grunge_panel())):
         path = os.path.join(OUT, name + ".png")
         img.save(path)
         mean, lit, solid = coverage(img)
-        print(f"{name}.png  {img.size[0]}x{img.size[1]}  "
-              f"mean alpha {mean:.3f}  non-empty {lit:.1%}  fully opaque {solid:.1%}")
+        a = img.getchannel("A")
+        ww, hh = img.size
+        border = max([a.getpixel((x, 0)) for x in range(ww)] +
+                     [a.getpixel((x, hh - 1)) for x in range(ww)] +
+                     [a.getpixel((0, y)) for y in range(hh)] +
+                     [a.getpixel((ww - 1, y)) for y in range(hh)])
+        print(f"{name}.png  {ww}x{hh}  "
+              f"mean alpha {mean:.3f}  non-empty {lit:.1%}  fully opaque {solid:.1%}  "
+              f"max border alpha {border}")

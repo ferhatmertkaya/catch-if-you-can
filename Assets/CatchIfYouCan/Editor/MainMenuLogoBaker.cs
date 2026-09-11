@@ -50,10 +50,10 @@ namespace CatchIfYouCan.EditorTools
         private const string LabelName = "TapToStartText";
         private const string LabelMessage = "TAP ANYWHERE TO START";
 
-        // The menu's own names and every measured number live in MainMenuScreenBuilder, which
-        // builds it. They were duplicated here while this file did the building, and a copy that
-        // nothing reads is a second answer waiting to disagree with the first (mistake 1) - so
-        // there is exactly one set, in the class that uses it.
+        // This file is about the LOGO. The menu - its rows, labels, brush strokes and
+        // background - is authored by MainMenuAuthoringTool into real scene objects, and none of
+        // its names or numbers are repeated here: a copy that nothing reads is a second answer
+        // waiting to disagree with the first (mistake 1).
 
         [MenuItem("Catch If You Can/1. LOBBY/Logo und Hauptmenue backen [AENDERT SZENE]", false, 105)]
         public static void BakeLogoIntoScene()
@@ -132,7 +132,6 @@ namespace CatchIfYouCan.EditorTools
             image.enabled = true;
 
             GameObject labelGo = BuildLabel(scene, canvasGo, out string labelReport);
-            string menuReport = BuildMenu(scene, canvasGo);
             string wiring = WireIntoModeController(scene, canvasGo);
 
             EditorUtility.SetDirty(canvasGo);
@@ -149,9 +148,10 @@ namespace CatchIfYouCan.EditorTools
             Selection.activeGameObject = canvasGo;
 
             Debug.Log(
-                "[CIYC] Branding-Canvas in 01_MainMenu gebaut: Logo, Hauptmenue " +
-                "PLAY / SETTINGS / CREDITS / QUIT und die Fusszeile.\n" +
-                labelReport + "\n" + menuReport + "\n" + wiring + "\n" +
+                "[CIYC] Branding-Canvas in 01_MainMenu gebaut: Logo und TAP-Schild.\n" +
+                "Das Hauptmenue selbst schreibt '" + CatchIfYouCan.UI.MainMenuScreenCheck
+                    .AuthoringCommand + "' als echte Szenenobjekte.\n" +
+                labelReport + "\n" + wiring + "\n" +
                 "Die Szene ist GEAENDERT, aber NICHT gespeichert. Erst ansehen, dann speichern.");
         }
 
@@ -214,58 +214,6 @@ namespace CatchIfYouCan.EditorTools
             rect.localRotation = Quaternion.identity;
 
             return labelGo;
-        }
-
-        /// <summary>
-        /// The menu, built by the RUNTIME builder.
-        ///
-        /// <para>
-        /// <b>This file used to build it, and that is exactly why the menu did not exist.</b> The
-        /// rows only came into being when somebody opened Unity and clicked this menu item, so on
-        /// every machine that had not, the scene carried nothing but the logo and TAP ANYWHERE TO
-        /// START. The code shipped, the scene did not change, and the screen was byte for byte
-        /// the one from before the work - which is indistinguishable from the menu having been
-        /// deleted, and was read as exactly that.
-        /// </para>
-        /// <para>
-        /// The construction now lives in <see cref="MainMenuScreenBuilder"/>, which
-        /// <see cref="MainMenuModeController"/> calls on Start. This tool calls the SAME method
-        /// rather than keeping a copy: two builders would be two opinions about where PLAY sits,
-        /// and the one that runs less often is the one that drifts (CLAUDE.md mistake 1).
-        /// </para>
-        /// <para>
-        /// So baking is now OPTIONAL. What it still buys is seeing the menu in the Scene view
-        /// without entering Play; nothing about the menu working depends on it.
-        /// </para>
-        /// <para>
-        /// <b>No Undo entry for the menu.</b> Registering one would mean an API this project
-        /// cannot verify offline (mistake 9), and the cost of not having it is small: the builder
-        /// is idempotent, so a stray bake changes nothing that the next one does not redo, and
-        /// deleting the MainMenuNav object by hand removes it. Said out loud in the report rather
-        /// than left for somebody to discover with Cmd-Z.
-        /// </para>
-        /// </summary>
-        private static string BuildMenu(Scene scene, GameObject canvasGo)
-        {
-            var controller = FindComponentInScene<MainMenuModeController>(scene);
-            string report = MainMenuScreenBuilder.Build(canvasGo, controller, scene);
-
-            EditorUtility.SetDirty(canvasGo);
-
-            return report + "\nHinweis: das Menue baut sich beim Start selbst. Backen ist nur " +
-                   "dazu da, es ohne Play zu sehen, und ist NICHT rueckgaengig zu machen.";
-        }
-
-        private static T FindComponentInScene<T>(Scene scene) where T : Component
-        {
-            var roots = scene.GetRootGameObjects();
-            for (int i = 0; i < roots.Length; i++)
-            {
-                var found = roots[i].GetComponentsInChildren<T>(true);
-                if (found.Length > 0)
-                    return found[0];
-            }
-            return null;
         }
 
         /// <summary>
