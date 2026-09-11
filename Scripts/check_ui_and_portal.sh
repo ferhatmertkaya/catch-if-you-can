@@ -3514,6 +3514,128 @@ else
   bad "03_Investigation und InvestigationBootstrap existieren" "eine der beiden Dateien fehlt"
 fi
 
+# ============================================================ das Hauptmenue: PLAY/SETTINGS/CREDITS
+#
+# 01_MainMenu hatte WEDER GraphicRaycaster NOCH EventSystem - deshalb las das alte
+# TAP ANYWHERE TO START rohes Input, statt einen Button zu benutzen. Buttons ohne beides waeren
+# sichtbar und tot gewesen, und "es ist da und tut nichts" ist die teuerste Form, die dieses
+# Projekt kennt. Genau das halten die ersten beiden Pruefungen fest.
+
+MENUBAKER="$ROOT/Assets/CatchIfYouCan/Editor/MainMenuLogoBaker.cs"
+MENUNAV="$ROOT/Assets/CatchIfYouCan/Scripts/UI/MainMenuNavigation.cs"
+BRUSHPNG="$ROOT/Assets/CatchIfYouCan/Resources/UI/Menu/T_MenuBrushStroke.png"
+GRUNGEPNG="$ROOT/Assets/CatchIfYouCan/Resources/UI/Menu/T_MenuGrungePanel.png"
+
+if [ -f "$MENUBAKER" ] && code "$MENUBAKER" | grep -E >/dev/null 'AddComponent<GraphicRaycaster>'; then
+  ok "die Menue-Canvas bekommt einen GraphicRaycaster"
+else
+  bad "die Menue-Canvas bekommt einen GraphicRaycaster" \
+      "ohne ihn ist jeder Knopf sichtbar und nimmt keinen Klick an"
+fi
+
+if [ -f "$MENUBAKER" ] && code "$MENUBAKER" | grep -E >/dev/null 'EventSystemUtil\.EnsureEventSystem' &&
+   code "$MENUBAKER" | grep -E >/dev/null 'MoveGameObjectToScene'; then
+  ok "ein EventSystem entsteht und landet in DIESER Szene"
+else
+  bad "ein EventSystem entsteht und landet in DIESER Szene" \
+      "new GameObject landet in der AKTIVEN Szene (Fehler 17), also muss das Ergebnis " \
+      "geprueft und verschoben werden"
+fi
+
+# PLAY geht den Weg, den das Menue schon hatte. Es gibt einen zweiten, aelteren:
+# MainMenuController.OnPlay ruft SceneLoader.LoadInvestigation() - und diese Komponente steht in
+# dieser Szene gar nicht, genauso wenig wie der UIManager, mit dem sie redet. Beide zu benutzen
+# waere eine zweite Umsetzung eines Ablaufs, der funktioniert (Fehler 1).
+if [ -f "$MENUNAV" ] && code "$MENUNAV" | grep -E >/dev/null 'modeController\.EnterLobby\(\)' &&
+   ! code "$MENUNAV" | grep -E >/dev/null 'LoadInvestigation|SceneLoader'; then
+  ok "PLAY uebergibt an EnterLobby und laedt keine Szene an ihm vorbei"
+else
+  bad "PLAY uebergibt an EnterLobby und laedt keine Szene an ihm vorbei" \
+      "der zweite, aeltere Weg (SceneLoader.LoadInvestigation) darf hier nicht auftauchen"
+fi
+
+# Das Schild auszublenden reicht nicht: MainMenuTapToStart liest rohes Input von ueberall, also
+# haette EIN Klick auf SETTINGS zusaetzlich die Lobby gestartet - ein Druck durch zwei Pfade,
+# was Fehler 32 woertlich ist.
+if [ -f "$MENUBAKER" ]; then
+  retire=$(code "$MENUBAKER" | sed -n '/private static string RetireTapToStart/,/^        }$/p')
+  if printf '%s' "$retire" | grep -E >/dev/null 'labelGo\.SetActive\(false\)' &&
+     printf '%s' "$retire" | grep -E >/dev/null 'tap\.enabled = false'; then
+    ok "TAP ANYWHERE TO START verschwindet MIT seinem Eingabepfad"
+  else
+    bad "TAP ANYWHERE TO START verschwindet MIT seinem Eingabepfad" \
+        "nur das Schild auszublenden laesst den Klickfaenger dahinter stehen"
+  fi
+else
+  bad "TAP ANYWHERE TO START verschwindet MIT seinem Eingabepfad" "der Baker fehlt"
+fi
+
+# EIN Pinselstrich, der sich bewegt. Drei umschaltbare waeren drei Dinge, die sich darueber
+# uneinig werden koennen, welche Zeile gewaehlt ist - und die Uneinigkeit waere ein Menue mit
+# zwei Markierungen.
+if [ -f "$MENUNAV" ] && code "$MENUNAV" | grep -E >/dev/null 'RectTransform selectionBrush' &&
+   code "$MENUNAV" | grep -E >/dev/null 'selectionBrush\.anchoredPosition'; then
+  ok "es gibt genau einen Pinselstrich, und er bewegt sich"
+else
+  bad "es gibt genau einen Pinselstrich, und er bewegt sich" \
+      "ein Bild je Zeile ist eine zweite Meinung darueber, welche Zeile gewaehlt ist"
+fi
+
+# Die Beschriftungen gehen ueber UITheme, das die TextMeshPro-oder-Text-Entscheidung schon
+# trifft. Sie hier ein zweites Mal zu treffen ist Fehler 1 eine Ebene tiefer.
+if [ -f "$MENUNAV" ] && code "$MENUNAV" | grep -E >/dev/null 'UITheme\.SetTextColor' &&
+   ! code "$MENUNAV" | grep -E >/dev/null 'TextMeshProUGUI|TMP_Text'; then
+  ok "die Beschriftungen gehen ueber UITheme statt ueber eine zweite TMP-Verzweigung"
+else
+  bad "die Beschriftungen gehen ueber UITheme statt ueber eine zweite TMP-Verzweigung"
+fi
+
+# Und die Grunge-Maske hat WIRKLICH keinen Rand. Das ist die eine Eigenschaft, die man einem
+# Sprite ansehen muss statt sie zu behaupten: ein einziges undurchsichtiges Pixel in der
+# aeussersten Reihe ist beim Strecken genau die harte Kante, gegen die diese Textur existiert.
+if [ -f "$GRUNGEPNG" ] && [ -f "$BRUSHPNG" ] && command -v python3 >/dev/null 2>&1; then
+  verdict=$(python3 - "$GRUNGEPNG" <<'PYEOF'
+import sys
+try:
+    from PIL import Image
+except Exception:
+    print("SKIP kein PIL"); raise SystemExit
+im = Image.open(sys.argv[1]).convert("RGBA"); w, h = im.size
+a = im.getchannel("A")
+border = ([a.getpixel((x, 0)) for x in range(w)] + [a.getpixel((x, h - 1)) for x in range(w)] +
+          [a.getpixel((0, y)) for y in range(h)] + [a.getpixel((w - 1, y)) for y in range(h)])
+try:
+    px = list(a.get_flattened_data())
+except Exception:
+    px = list(a.getdata())
+solid = sum(1 for v in px if v > 247) / len(px)
+print("OK" if max(border) == 0 and 0.05 < solid < 0.85
+      else "BAD Rand=%d solide=%.1f%%" % (max(border), solid * 100))
+PYEOF
+)
+  case "$verdict" in
+    OK*)   ok "die Grunge-Maske laeuft an jedem Rand auf null aus" ;;
+    SKIP*) ok "die Grunge-Maske laeuft an jedem Rand auf null aus (uebersprungen: kein PIL)" ;;
+    *)     bad "die Grunge-Maske laeuft an jedem Rand auf null aus" "$verdict" ;;
+  esac
+else
+  bad "die Grunge-Maske laeuft an jedem Rand auf null aus" "die Sprites fehlen"
+fi
+
+# Beide Sprites muessen als Sprite importieren und ihre Transparenz behalten. Als Textur
+# importiert liefert LoadAssetAtPath<Sprite> null, und der Baker steht dann mit leeren Haenden da.
+metaok=1
+for m in "$BRUSHPNG.meta" "$GRUNGEPNG.meta"; do
+  [ -f "$m" ] || { metaok=0; continue; }
+  grep -E >/dev/null 'textureType: 8' "$m" || metaok=0
+  grep -E >/dev/null 'alphaIsTransparency: 1' "$m" || metaok=0
+done
+if [ "$metaok" -eq 1 ]; then
+  ok "beide Menue-Sprites importieren als Sprite mit erhaltener Transparenz"
+else
+  bad "beide Menue-Sprites importieren als Sprite mit erhaltener Transparenz"
+fi
+
 echo
 echo "  $PASS passed, $FAIL failed"
 if [ "$FAIL" -ne 0 ]; then

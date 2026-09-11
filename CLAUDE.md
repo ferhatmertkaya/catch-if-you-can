@@ -379,7 +379,23 @@ place that number lives; everything else derives it.
   RED); negated, a found pattern reads as absent and the check PASSES (false GREEN), and
   nineteen checks in this file had that shape. So the idiom is banned rather than tuned -
   every grep here reads to the end of its input - and the ban is itself a check, over every
-  guard that sets pipefail rather than only this one. 298 checks.
+  guard that sets pipefail rather than only this one. And it holds the cinematic menu to being
+  CLICKABLE: `01_MainMenu` had neither a GraphicRaycaster nor an EventSystem, which is why TAP
+  ANYWHERE TO START read raw Input instead of using a Button - so the baker adds both, and the
+  EventSystem is moved into THAT scene rather than left wherever `new GameObject` put it
+  (mistake 17). PLAY hands over through `MainMenuModeController.EnterLobby`, the route the menu
+  already used; the older `MainMenuController.OnPlay` reaching for `SceneLoader.LoadInvestigation`
+  is refused by name, because that component is not in this scene and neither is the `UIManager`
+  it talks to - wiring to it would be a second implementation of a flow that works (mistake 1).
+  The tap label goes away WITH its input path: `MainMenuTapToStart` reads raw Input from anywhere,
+  so hiding only the label would have left one click on SETTINGS also starting the lobby - one
+  press through two paths, which is mistake 32 word for word. There is ONE brush stroke and it
+  MOVES, because three switchable ones are three things that can disagree about which row is
+  selected; the captions go through `UITheme.SetTextColor`, which already decides TextMeshPro or
+  legacy Text, rather than through a second copy of that branch. And the grunge mask is MEASURED
+  rather than claimed: its outermost row must be fully transparent, because one opaque pixel there
+  is exactly the hard rectangular edge the texture exists to avoid, and a sprite is the one kind of
+  asset where that can be read out of the file. 306 checks.
 
 - `Scripts/check_editor_menu.sh` — the editor menu stays legible, and the purchased architecture has ONE scale. The game scale is the measured ratio 2.95 / 3.92 in one place, with no tool carrying its own copy; the decision is made on effective world scale rather than `localScale`, because a vendor piece at localScale 1 inside a corrected wrapper IS already corrected and its own field says otherwise; an already-corrected ancestor is recognised and a second application is a named verdict rather than a silent pass; architecture is told from props by FOLDER, since a filename classifier caught 3 of 105 in a pack that numbers its prefabs and calls its glass Steklo; an undecidable piece is reported ambiguous rather than guessed, because a chair may already be at real-world size and shrinking one that was right is invisible; the portal is excluded, its opening being a gameplay dimension; the migration audits before it can apply and converts only original-size pieces; and the correction goes on a CIYC wrapper with nothing applied back to the purchased package. Also the menu itself: Fifty-one commands sit in
   seven named groups with none hiding in another root menu, every one carries a risk tag saying
