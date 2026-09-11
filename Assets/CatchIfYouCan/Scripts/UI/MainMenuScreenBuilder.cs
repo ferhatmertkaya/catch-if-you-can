@@ -60,8 +60,14 @@ namespace CatchIfYouCan.UI
         // landscape, on 16:9 and on an ultrawide. Every one of them is meant to be dragged.
         private const float NavLeft = 0.055f;
         private const float NavRight = 0.400f;
-        private const float NavBottom = 0.150f;
-        private const float NavTop = 0.455f;
+        // BELOW the logo, not across it. The logo is drawn with preserveAspect inside a rect
+        // that runs from 16% to 88% of the screen and is scaled 1.23 in the scene, so its ink
+        // fills most of the left column - the first placement put PLAY straight through the
+        // word CAN. Where exactly its bottom edge lands depends on the aspect the CanvasScaler
+        // resolves, which is why this is a starting point and not a measurement: the column is
+        // an authored object now, so the last word on where it sits belongs to whoever drags it.
+        private const float NavBottom = 0.050f;
+        private const float NavTop = 0.280f;
         private const float RowHeightPx = 74f;
         private const float RowStepPx = 86f;
         private const int CaptionSize = 38;

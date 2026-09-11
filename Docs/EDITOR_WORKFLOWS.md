@@ -74,6 +74,32 @@ läuft sein Mondlicht beim Szenenstart über dem Menü an.
 Prüfen, was von Hand da ist und was erst zur Laufzeit entsteht:
 `Safe Inspection/Authored Lobby pruefen [NUR LESEN]`.
 
+## 1b. Das Hauptmenü — PLAY, SETTINGS, CREDITS
+
+```
+1. LOBBY/Hauptmenue in die Szene schreiben [AENDERT SZENE]
+1. LOBBY/Hauptmenue automatisch schreiben [EDITOR]     (Haken, an)
+```
+
+Der erste Befehl schreibt `MainMenuRoot/Navigation` mit den drei Zeilen, ihren Pinselstrichen
+und dem Grunge-Hintergrund als **echte Objekte** in `01_MainMenu.unity`. Danach gehören
+Position, Größe, Text und Schrift dem Inspector; kein Code fasst sie noch an.
+
+**Der zweite Haken ist der Grund, warum man den ersten selten braucht.** Er ist an, und sobald
+`01_MainMenu` im Editor offen ist und das Menü fehlt, wird es geschrieben — die Szene wird
+**geändert, nicht gespeichert**. Das ist keine Bequemlichkeit, sondern die Lehre aus Fehler 47:
+das Menü war dreimal hintereinander nur über einen Menüpunkt zu bekommen, der Menüpunkt wurde
+nie geklickt, und der Bildschirm blieb wortlos der alte. Ein Schritt, den ein Mensch sich merken
+muss, ist ein Schritt, der ausbleibt.
+
+Der Bauer **übernimmt, bevor er baut**: was schon in der Szene steht, behält sein RectTransform,
+seinen Text und seine Schrift. Beides zusammen läuft also höchstens einmal mit Wirkung, und
+danach ist es ein No-op — ein zweiter Lauf kann nichts zurücknehmen, was von Hand eingestellt
+wurde. Denselben Bauer ruft auch `MainMenuModeController` beim Spielstart, damit das Menü auch
+dort erscheint, wo niemand den Editor je geöffnet hat.
+
+Für eine Sitzung abschaltbar über den Haken.
+
 ## 2. Von Hand aus HQ-Teilen bauen
 
 ```
@@ -203,7 +229,7 @@ Die sechs Gruppen oben sind ersetzt. Es sind jetzt diese, in dieser Reihenfolge:
 
 ```
 Catch If You Can/
-├── 1. LOBBY                    7   den Menü-Raum bearbeiten und messen
+├── 1. LOBBY                    9   den Menü-Raum und das Hauptmenü bearbeiten
 ├── 2. HQ MODULAR HOUSE         7   alles, was das gekaufte Paket braucht
 ├── 3. PORTAL                   2
 ├── 4. SPIELINHALT             14   Characters · Equipment · Ghosts · Content
@@ -211,8 +237,9 @@ Catch If You Can/
 └── 9. ENTWICKLER - DEBUG      20   Forensik, Determinismus, Migration, Legacy
 ```
 
-53 Befehle. Zwei davon sind neu (`HQ-Massstab pruefen`, `Alle HQ-Bauteile auf Spielmass bringen`),
-51 sind dieselben wie vorher, nur woanders.
+55 Befehle. Vier davon sind neu (`HQ-Massstab pruefen`, `Alle HQ-Bauteile auf Spielmass
+bringen`, `Hauptmenue in die Szene schreiben`, `Hauptmenue automatisch schreiben`), 51 sind
+dieselben wie vorher, nur woanders.
 
 **Zwei Punkte aus der Vorgabe gibt es nicht, und ich habe sie nicht erfunden:** „Portal prüfen"
 und „Portal reparieren". Hinter „Portal prüfen" stünde dasselbe Werkzeug wie hinter

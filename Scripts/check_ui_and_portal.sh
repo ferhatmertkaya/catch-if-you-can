@@ -3828,6 +3828,54 @@ else
       "ein ungeschuetztes using TMPro faellt die ganze Assembly, nicht nur diese Datei:$unguarded"
 fi
 
+# ---------------------------------------------------------------------------------------------
+# Das automatische Schreiben in die Szene: es darf nur EINES tun.
+#
+# Drei Runden lang existierte das Menue nur nach einem Klick, den niemand gemacht hat (Fehler 47).
+# Der Haken schliesst das - und wird damit zu Code, der ungefragt an der Szene des Nutzers
+# arbeitet. Also gelten hier haertere Regeln als fuer einen Menuepunkt: nie speichern, nie
+# waehrend Play oder Kompilieren, und niemals ueberschreiben.
+# ---------------------------------------------------------------------------------------------
+MENUAUTO="$ROOT/Assets/CatchIfYouCan/Editor/MainMenuSceneAuthoring.cs"
+
+if [ -f "$MENUAUTO" ]; then
+  if ! code "$MENUAUTO" | grep -E >/dev/null 'SaveScene|SaveOpenScenes|SaveAssets'; then
+    ok "das automatische Schreiben speichert die Szene NICHT"
+  else
+    bad "das automatische Schreiben speichert die Szene NICHT" \
+        "ungefragt speichern begraebt jede unabhaengige Aenderung, die offen war"
+  fi
+else
+  bad "das automatische Schreiben speichert die Szene NICHT" "die Datei fehlt"
+fi
+
+if [ -f "$MENUAUTO" ] &&
+   code "$MENUAUTO" | grep -E >/dev/null 'isPlayingOrWillChangePlaymode' &&
+   code "$MENUAUTO" | grep -E >/dev/null 'isCompiling'; then
+  ok "es haelt sich aus Play und Kompilieren heraus"
+else
+  bad "es haelt sich aus Play und Kompilieren heraus" \
+      "waehrend beidem wird die Szene serialisiert bzw. die Typen getauscht"
+fi
+
+# Und es baut nur, wenn wirklich nichts da ist. Ohne diese Frage wuerde jeder Editor-Start an
+# einer Szene arbeiten, die schon fertig ist.
+if [ -f "$MENUAUTO" ] &&
+   code "$MENUAUTO" | grep -E >/dev/null 'MainMenuScreenBuilder\.AlreadyAuthored\(controller\)'; then
+  ok "es baut nur, wenn das Menue wirklich fehlt"
+else
+  bad "es baut nur, wenn das Menue wirklich fehlt" \
+      "sonst arbeitet jeder Editor-Start an einer Szene, die schon fertig ist"
+fi
+
+# Es gehoert in GENAU eine Szene. Ein Haken, der in jeder offenen Szene baut, ist kein Werkzeug.
+if [ -f "$MENUAUTO" ] &&
+   code "$MENUAUTO" | grep -E >/dev/null 'scene\.path != ScenePath'; then
+  ok "es ruehrt nur 01_MainMenu an"
+else
+  bad "es ruehrt nur 01_MainMenu an" "ein Haken, der in jeder Szene baut, ist kein Werkzeug"
+fi
+
 # ------------------------------------------------------- die Startsequenz nach dem Druck auf PLAY
 #
 # Vier Zeilen - INITIALISING SYSTEMS, LOADING ENVIRONMENT, CALIBRATING EQUIPMENT, RELEASING THE
