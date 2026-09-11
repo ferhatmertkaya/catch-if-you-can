@@ -900,6 +900,21 @@ fi
 PROJ="Assets/CatchIfYouCan/Scripts/Equipment/SpectralGridProjection.cs"
 SHDR="Assets/CatchIfYouCan/Shaders/SpectralGrid.shader"
 
+# ============================================================ the DOTS field, as real geometry
+#
+# The shader used to reconstruct the world position of the surface behind each pixel from the
+# scene depth texture. The technique is right and the file compiled - the diagnostic ladder
+# proved both, with a magenta rung that drew and a screen-UV rung that drew a correct gradient.
+# The rung below them read the RAW value out of SampleSceneDepth with nothing on top of it and
+# came back flat blue: exactly 0.0 at every pixel on the screen. No depth texture reaches that
+# pass in this project, on this platform, in this Unity version.
+#
+# So the effect is geometry now. Rays go out of the lens in every direction and one quad is laid
+# flat on each surface they hit, all of them in ONE mesh on ONE renderer. The checks below guard
+# that shape: no sampled frame-buffer state anywhere (there is nothing left to be unbound), a
+# covering that is a sphere by construction rather than by a shader working, and a cost that is
+# proportional to how much the device MOVES rather than to how many pixels it covers.
+
 if [ ! -f "$PROJ" ]; then
   fail "SpectralGridProjection.cs existiert"
 else
@@ -907,89 +922,126 @@ else
   PROJECTOR="$SGP"
   prcode=$([ -f "$PROJECTOR" ] && sed 's://.*::' "$PROJECTOR" | grep -v '^[[:space:]]*\*' || true)
 
-  # 1. Es gibt ueberhaupt etwas, das zeichnet.
-  if printf '%s' "$pcode" | grep -qE 'AddComponent<MeshRenderer>\(\)'; then
-    ok "der Projektor baut ein Zeichenvolumen"
+  # 1. There is something that draws, and exactly one of it.
+  if printf '%s' "$pcode" | grep -qE 'AddComponent<MeshRenderer>\(\)' \
+     && printf '%s' "$pcode" | grep -qE 'AddComponent<MeshFilter>\(\)'; then
+    ok "die Projektion baut genau einen Renderer und ein Mesh"
   else
-    fail "der Projektor baut ein Zeichenvolumen"
+    fail "die Projektion baut genau einen Renderer und ein Mesh"
   fi
 
-  # 2. Und es ist KEIN Licht mehr. Ein gruenes Licht im Raum ist genau die Flut, die die
-  #    Referenz nicht zeigt: ein dunkler Raum mit hellen Punkten darin.
-  if printf '%s' "$pcode" | grep -qE 'AddComponent<Light>|LightType\.|\.intensity[[:space:]]*=[[:space:]]*lightIntensity'; then
-    fail "die Projektion flutet den Raum nicht mit einem Licht"
+  # 2. Kein Objekt je Punkt. Das ist die eine Grenze, die diese Technik ueberhaupt bezahlbar
+  #    macht: tausende Punkte sind tausende Vierecke in EINEM Mesh, nicht tausende GameObjects,
+  #    Partikel, Lichter oder Decals.
+  build=$(printf '%s\n' "$pcode" | sed -n '/private void Rebuild(/,/^        }$/p')
+  if [ -n "$build" ] \
+     && ! printf '%s' "$build" | grep -qE 'new GameObject|Instantiate|AddComponent|new Light'; then
+    ok "kein GameObject, kein Partikel und kein Licht je Punkt"
   else
-    ok "die Projektion flutet den Raum nicht mit einem Licht"
+    fail "kein GameObject, kein Partikel und kein Licht je Punkt"
   fi
 
-  # 3. Der Ursprung ist ein eigener Transform am Geraet - nicht die Kamera, nicht der Spieler,
-  #    nicht der Weltursprung.
-  if printf '%s' "$pcode" | grep -qE 'OriginChildName = "ProjectionOrigin"' \
-     && printf '%s' "$pcode" | grep -qE 'ProjectionOrigin =>'; then
-    ok "die Punkte kommen aus einem eigenen Linsen-Transform am Geraet"
+  # 3. Das Feld ist eine KUGEL, weil die Richtungen eine sind. Eine Fibonacci-Kugel laeuft y von
+  #    +1 nach -1 und deckt damit alle 4-pi Steradiant gleichmaessig ab - Boden, Decke und jede
+  #    Wand. Keine Drehung des Geraets kann eine Halbkugel entfernen, sie dreht das Muster nur.
+  #    Zwei fruehere Anlaeufe waren Kegel (Fehler 39), und ein Kegel kann keine Kugel abdecken.
+  if printf '%s' "$build" | grep -qE 'float y = 1f - \(i \+ 0\.5f\) \* 2f / wanted' \
+     && printf '%s' "$build" | grep -qE 'GoldenAngle'; then
+    ok "die Richtungen decken die ganze Kugel ab, nicht einen Kegel"
   else
-    fail "die Punkte kommen aus einem eigenen Linsen-Transform am Geraet"
+    fail "die Richtungen decken die ganze Kugel ab, nicht einen Kegel"
   fi
 
-  # 4. Und er wird in WELTKOORDINATEN an den Shader gegeben. Die Fassung davor rechnete im
-  #    Objektraum und zeigte nichts, aus einem nie geklaerten Grund (Fehler 33). Ueber ein
-  #    Uniform kann keine Verschachtelung und keine geerbte Skalierung das Ergebnis kippen.
-  if printf '%s' "$pcode" | grep -qE '_OriginWS' \
-     && printf '%s' "$pcode" | grep -qE '_AxisYWS'; then
-    ok "Linse und Achsen gehen in Weltkoordinaten an den Shader"
+  # 4. Und die Drehung des Geraets dreht das Muster, statt es zu beschneiden.
+  if printf '%s' "$build" | grep -qE '_origin\.TransformDirection\(localDir\)'; then
+    ok "die Geraetedrehung dreht das Muster, statt eine Halbkugel zu entfernen"
   else
-    fail "Linse und Achsen gehen in Weltkoordinaten an den Shader"
+    fail "die Geraetedrehung dreht das Muster, statt eine Halbkugel zu entfernen"
   fi
 
-  # 5. Ein misslungener Zustand wird als ERROR gemeldet, nicht als Info. "0 von 0" in einer
-  #    Info-Zeile hat in diesem Projekt schon einmal eine Sitzung lang niemand gelesen
-  #    (Fehler 22).
-  if printf '%s' "$pcode" | grep -qE 'CIYCLog\.Error\(block'; then
-    ok "ein fehlgeschlagener Projektionszustand wird als Fehler gemeldet"
+  # 5. Der Strahl startet AUSSERHALB des eigenen Gehaeuses, und ein Treffer am eigenen Geraet
+  #    wird verworfen. Beginnt er in der Linse, trifft er sofort das Geraet selbst: das ganze
+  #    Feld waere eine Handvoll Punkte auf dem eigenen Gehaeuse - sichtbar und voellig falsch.
+  if printf '%s' "$build" | grep -qE 'dir \* RayStartOffset' \
+     && printf '%s' "$build" | grep -qE 'IsChildOf\(deviceRoot\)'; then
+    ok "ein Strahl startet ausserhalb des Geraets und trifft es nicht selbst"
   else
-    fail "ein fehlgeschlagener Projektionszustand wird als Fehler gemeldet"
+    fail "ein Strahl startet ausserhalb des Geraets und trifft es nicht selbst"
   fi
 
-  # 6. Das Volumen entsteht einmal, nicht je Frame.
-  if printf '%s' "$pcode" | grep -qE 'Mathf\.Approximately\(_builtRange, projectionRange\)'; then
-    ok "das Volumen wird einmal gebaut, nicht je Frame"
+  # 6. Die Strahlen laufen NICHT je Bild. Das ist die ganze Leistungsstrategie: der teure Teil
+  #    haengt daran, wie weit sich das Geraet bewegt, und ein aufgestelltes Geraet bewegt sich
+  #    nicht. Ohne die Schwelle waeren es tausende Raycasts je Bild - genau der Fehler, den
+  #    dieses Geraet schon einmal hatte.
+  late=$(printf '%s\n' "$pcode" | sed -n '/private void LateUpdate/,/^        }$/p')
+  if printf '%s' "$late" | grep -qE 'rebuildMinInterval' \
+     && printf '%s' "$late" | grep -qE 'rebuildMoveThreshold' \
+     && printf '%s' "$late" | grep -qE 'rebuildTurnThreshold'; then
+    ok "die Strahlen laufen auf Bewegung, nicht je Bild"
   else
-    fail "das Volumen wird einmal gebaut, nicht je Frame"
+    fail "die Strahlen laufen auf Bewegung, nicht je Bild"
   fi
 
-  # 7. Ausgeschaltet ist ausgeschaltet: kein einziger Punkt.
-  if printf '%s' "$pcode" | grep -qE '_renderer\.enabled[[:space:]]*=[[:space:]]*running'; then
-    ok "SetRunning schaltet das Zeichenvolumen mit"
+  # 7. Und je Bild alloziert nichts. UVs und Indizes stehen nach dem ersten Wachsen fest, ein
+  #    Neuaufbau schreibt nur Positionen und Farben, und der Property-Block wird einmal angelegt.
+  if ! printf '%s' "$build" | grep -qE 'new (Vector3|Vector2|Color32|int)\[' \
+     && ! printf '%s' "$late" | grep -qE 'new [A-Za-z]'; then
+    ok "ein Neuaufbau alloziert keine Felder"
   else
-    fail "SetRunning schaltet das Zeichenvolumen mit"
+    fail "ein Neuaufbau alloziert keine Felder"
   fi
 
-  # 8. Und der Klon bekommt kein zweites Volumen. Jedes Ausruestungsstueck erreicht die Welt als
-  #    Instantiate einer lebenden Vorlage: die Kinder sind dann schon da, die privaten Felder,
-  #    die auf sie zeigten, nicht. Zweimal dasselbe Muster ist doppelte Helligkeit (27 und 30).
+  # 8. Der ungenutzte Rest des Meshes wird eingeklappt statt stehengelassen. Ein Slot, der nicht
+  #    beschrieben wurde, haelt noch das Viereck der letzten Runde - an einer Stelle, an der
+  #    diesmal nichts getroffen wurde. Zusammengefaltet auf die Linse hat er keine Flaeche.
+  upload=$(printf '%s\n' "$pcode" | sed -n '/private void UploadMesh/,/^        }$/p')
+  if printf '%s' "$upload" | grep -qE 'for \(int i = placed; i < _capacity' ; then
+    ok "die nicht belegten Mesh-Plaetze werden eingeklappt, nicht stehengelassen"
+  else
+    fail "die nicht belegten Mesh-Plaetze werden eingeklappt, nicht stehengelassen"
+  fi
+
+  # 9. Die Grenzen werden GESETZT statt berechnet. RecalculateBounds laeuft ueber jeden Vertex,
+  #    und die Antwort steht ohnehin fest: weiter als die Reichweite kann das Feld nicht kommen.
+  if printf '%s' "$upload" | grep -qE '_mesh\.bounds = new Bounds' \
+     && ! printf '%s' "$upload" | grep -qE 'RecalculateBounds'; then
+    ok "die Mesh-Grenzen werden gesetzt statt ueber jeden Vertex berechnet"
+  else
+    fail "die Mesh-Grenzen werden gesetzt statt ueber jeden Vertex berechnet"
+  fi
+
+  # 10. Ausgeschaltet ist ausgeschaltet, und eingeschaltet baut nicht neu auf.
+  if printf '%s' "$pcode" | grep -qE '_renderer\.enabled = running'; then
+    ok "SetRunning schaltet den Renderer mit, statt das Rig neu zu bauen"
+  else
+    fail "SetRunning schaltet den Renderer mit, statt das Rig neu zu bauen"
+  fi
+
+  # 11. Ein Klon uebernimmt, was er schon mitbringt. Jedes Ausruestungsstueck erreicht die Welt
+  #     als Instantiate einer lebenden Vorlage: die Kinder sind dann schon da, die privaten
+  #     Felder, die auf sie zeigten, nicht (Fehler 27, 30 und 46).
   if printf '%s' "$pcode" | grep -qE 'transform\.Find\(OriginChildName\)' \
-     && printf '%s' "$pcode" | grep -qE 'transform\.Find\(VolumeChildName\)'; then
-    ok "ein geklonter Projektor bekommt kein zweites Volumen"
+     && printf '%s' "$pcode" | grep -qE 'Find\(RigChildName\)' \
+     && printf '%s' "$pcode" | sed -n '/public static SpectralGridProjection Attach/,/^        }$/p' \
+          | grep -qE 'GetComponentInChildren<SpectralGridProjection>'; then
+    ok "ein geklonter Projektor uebernimmt Linse, Rig und Projektion"
   else
-    fail "ein geklonter Projektor bekommt kein zweites Volumen"
+    fail "ein geklonter Projektor uebernimmt Linse, Rig und Projektion"
   fi
 
-  # Und er zaehlt vom GERAET aus, nicht von sich selbst. Von sich selbst aus findet er nur
-  # seine eigenen Kinder und meldet eine saubere 1, waehrend eine zweite Projektion nebenan
-  # haengt - genau der Fall, den `BuildCarried` jahrelang gebaut hat.
+  # 12. Und er MELDET, wenn doch zwei da sind - vom Geraet aus gezaehlt, nicht von sich selbst.
+  #     Von sich selbst aus findet er nur seine eigenen Kinder und meldet eine saubere 1, waehrend
+  #     die zweite Projektion nebenan haengt.
   if printf '%s' "$pcode" | grep -qE 'projectionCountUnderProjector=' \
      && printf '%s' "$pcode" | grep -qE 'volumeCountUnderProjector=' \
      && printf '%s' "$pcode" | grep -qE 'GetComponentInParent<SpectralGridProjector>'; then
-    ok "ein Projektor mit zwei Volumen meldet sich, vom Geraet aus gezaehlt"
+    ok "ein Projektor mit zwei Projektionen meldet sich, vom Geraet aus gezaehlt"
   else
-    fail "ein Projektor mit zwei Volumen meldet sich, vom Geraet aus gezaehlt"
+    fail "ein Projektor mit zwei Projektionen meldet sich, vom Geraet aus gezaehlt"
   fi
 
-  # Und er BAUT auch keine zweite. Jedes Ausruestungsstueck erreicht die Welt als Klon, und
-  # `BuildCarried` legte bis eben unbedingt einen neuen ProjectorHead an - der Klon trug also
-  # den geerbten samt Projektion und Volumen UND bekam ein zweites Paar daneben. Das geerbte
-  # Paar ist stumm (ein nie eingeschalteter Renderer kommt ausgeschaltet mit), weshalb es sich
-  # nie gemeldet hat. Fehler 30, eine Ebene unter der Stelle, an der er behoben wurde.
+  # 13. Dasselbe eine Ebene hoeher: BuildCarried uebernimmt den geerbten Kopf, statt einen
+  #     zweiten zu bauen. Das geerbte Paar ist stumm, weshalb es sich nie gemeldet hat.
   if [ -f "$PROJECTOR" ]; then
     built=$(printf '%s\n' "$prcode" | sed -n '/protected override void BuildCarried/,/^        }$/p')
     adoptline=$(printf '%s\n' "$built" | { grep -n 'GetComponentInChildren<SpectralGridProjection>' || true; } | head -1 | cut -d: -f1)
@@ -1003,345 +1055,128 @@ else
     fail "ein geklonter Projektor uebernimmt seinen Kopf, statt einen zweiten zu bauen"
   fi
 
-  # Dieselbe Regel in Attach, das den Kopf bekommt und nicht weiss, woher er stammt.
-  if printf '%s' "$pcode" \
-     | sed -n '/public static SpectralGridProjection Attach/,/^        }$/p' \
-     | grep -qE 'GetComponentInChildren<SpectralGridProjection>'; then
-    ok "Attach uebernimmt eine vorhandene Projektion, statt eine zweite anzuhaengen"
+  # 14. Das Rig ist als WIRKUNG markiert, nicht als Koerper. Das Punktemesh umspannt die ganze
+  #     Reichweite; mitgemessen hob die Lobby einen 0,25-m-Projektor ueber die Decke (Fehler 42).
+  if printf '%s' "$pcode" | grep -qE 'EffectVolume\.Mark\(_rig\.gameObject\)'; then
+    ok "das Punktemesh ist als Wirkung markiert, nicht als Koerper"
   else
-    fail "Attach uebernimmt eine vorhandene Projektion, statt eine zweite anzuhaengen"
+    fail "das Punktemesh ist als Wirkung markiert, nicht als Koerper"
   fi
 
-  # 9. Nichts alloziert je Frame. Der Property-Block wird einmal angelegt und danach nur noch
-  #    beschrieben; ein `new MaterialPropertyBlock` in LateUpdate waere Muell je Bild.
-  if printf '%s' "$pcode" | grep -qE 'private void LateUpdate' \
-     && ! printf '%s' "$pcode" | sed -n '/private void LateUpdate/,/^        }$/p' \
-          | grep -qE 'new [A-Za-z]'; then
-    ok "die Bild-fuer-Bild-Aktualisierung alloziert nichts"
+  # 15. Der Bericht nennt die ZAHL DER PUNKTE zuerst. Diese eine Zahl trennt die beiden Fehler,
+  #     die dieses Geraet sein Leben lang verwechselt hat: nie geworfen (null Punkte - rundherum
+  #     ist keine Geometrie) und geworfen und nicht gezeichnet (tausende Punkte, schwarzer Schirm).
+  if printf '%s' "$pcode" | grep -qE 'dotsPlaced=' \
+     && printf '%s' "$pcode" | grep -qE 'NOT ONE RAY HIT ANYTHING'; then
+    ok "der Bericht nennt die Zahl der gesetzten Punkte und den Fall null gesondert"
   else
-    fail "die Bild-fuer-Bild-Aktualisierung alloziert nichts"
+    fail "der Bericht nennt die Zahl der gesetzten Punkte und den Fall null gesondert"
   fi
 
-  # 10. Und die Reichweite ist einstellbar und endlich.
-  if printf '%s' "$pcode" | grep -qE 'projectionRange = 5\.5f' \
-     && printf '%s' "$pcode" | grep -qE 'SerializeField, Range\(2f, 10f\)\][[:space:]]*private float projectionRange'; then
+  # 16. Getragen wirft weniger Strahlen als aufgestellt. Ein getragener Projektor wird staendig
+  #     neu geworfen; ein aufgestellter einmal. Gleiche Zahl fuer beides heisst, eine der beiden
+  #     ist falsch.
+  dep=$(printf '%s' "$pcode" | sed -n 's/.*private int deployedDotCount = \([0-9]*\).*/\1/p' | head -1)
+  car=$(printf '%s' "$pcode" | sed -n 's/.*private int carriedDotCount = \([0-9]*\).*/\1/p' | head -1)
+  if [ -n "$dep" ] && [ -n "$car" ] && [ "$car" -lt "$dep" ] && [ "$dep" -ge 2000 ]; then
+    ok "getragen wirft weniger Strahlen als aufgestellt (getragen=$car aufgestellt=$dep)"
+  else
+    fail "getragen wirft weniger Strahlen als aufgestellt (getragen='$car' aufgestellt='$dep')"
+  fi
+
+  # 17. Die Reichweite ist endlich, einstellbar und steht auf 5,5 m.
+  if printf '%s' "$pcode" | grep -qE 'Range\(2f, 10f\)\] private float projectionRange = 5\.5f'; then
     ok "die Reichweite ist einstellbar, endlich und steht auf 5,5 m"
   else
     fail "die Reichweite ist einstellbar, endlich und steht auf 5,5 m"
   fi
 fi
 
-# ---- der Shader, der die Punkte macht ------------------------------------------------------
+# ------------------------------------------------------------------ und der Shader selbst
 if [ ! -f "$SHDR" ]; then
   fail "SpectralGrid.shader existiert"
 else
   scode=$(sed 's|//.*||' "$SHDR")
 
-  # 11. Er rechnet aus dem Tiefenpuffer. Ohne das gaebe es keine Punkte AUF Flaechen, sondern
-  #     Punkte in der Luft - und keine Verdeckung durch das, wovor man steht.
-  if printf '%s' "$scode" | grep -qE 'SampleSceneDepth' \
-     && printf '%s' "$scode" | grep -qE 'ComputeWorldSpacePosition'; then
-    ok "der Shader rekonstruiert die Flaeche hinter jedem Pixel"
+  # 18. NICHTS aus dem Framebuffer. Das ist der ganze Grund fuer den Umbau: eine Tiefentextur,
+  #     die diesen Pass nicht erreicht, hat drei Fassungen dieses Effekts unsichtbar gemacht, und
+  #     es gab keine Moeglichkeit, das von innen zu sehen. Was nicht gelesen wird, kann nicht
+  #     fehlen - jede Eingabe ist jetzt ein Vertex-Attribut oder eine Material-Eigenschaft.
+  if ! printf '%s' "$scode" | grep -qE 'SampleSceneDepth|_CameraDepthTexture|DeclareDepthTexture|ComputeWorldSpacePosition|UNITY_MATRIX_I_VP|ComputeScreenPos|_CameraOpaqueTexture'; then
+    ok "der Shader liest nichts aus dem Framebuffer, also kann nichts davon fehlen"
   else
-    fail "der Shader rekonstruiert die Flaeche hinter jedem Pixel"
+    fail "der Shader liest nichts aus dem Framebuffer, also kann nichts davon fehlen"
   fi
 
-  # 12. In KUGELKOORDINATEN, also rundum. Ein Kegeltest hier waere wieder eine Taschenlampe.
-  if printf '%s' "$scode" | grep -qE 'atan2\(local\.z, local\.x\)' \
-     && printf '%s' "$scode" | grep -qE 'asin\(clamp\(local\.y'; then
-    ok "das Raster liegt in Kugelkoordinaten um das Geraet"
+  # 19. Der Punkt ist GERECHNET, nicht gesampelt. Fehler 35: dieselbe Zeichnung kam als Pillen
+  #     an, weil drei Importer-Voreinstellungen fuer eine Maske alle drei falsch sind. Ein
+  #     Abstand vom eigenen Mittelpunkt hat keinen Sampler, der ihn verformen koennte.
+  if printf '%s' "$scode" | grep -qE 'length\(input\.uv - 0\.5\)' \
+     && ! printf '%s' "$scode" | grep -qE 'SAMPLE_TEXTURE2D|sampler_'; then
+    ok "ein Punkt ist gerechnet statt gesampelt, also kann kein Filter ihn zur Pille ziehen"
   else
-    fail "das Raster liegt in Kugelkoordinaten um das Geraet"
+    fail "ein Punkt ist gerechnet statt gesampelt, also kann kein Filter ihn zur Pille ziehen"
   fi
 
-  # 13. Und es gibt keinen Kegelabbruch mehr, der die obere Halbkugel wegschneidet.
-  if printf '%s' "$scode" | grep -qE 'coneRadius|_HalfAngle'; then
-    fail "kein Kegeltest schneidet die obere Halbkugel weg"
-  else
-    ok "kein Kegeltest schneidet die obere Halbkugel weg"
-  fi
-
-  # 14. Rein additiv: ein Pixel ohne Punkt gibt Schwarz aus und aendert damit gar nichts. Genau
-  #     das haelt einen dunklen Raum dunkel, statt ihn gruen zu waschen.
-  if printf '%s' "$scode" | grep -qE 'Blend One One'; then
+  # 20. Rein additiv. Wo kein Punkt ist, kommt Schwarz heraus und aendert exakt nichts - das ist
+  #     es, was einen dunklen Raum dunkel laesst, statt ihn gruen zu waschen (Fehler 40).
+  if printf '%s' "$scode" | grep -qE 'Blend One One' \
+     && printf '%s' "$scode" | grep -qE 'ZWrite Off'; then
     ok "die Punkte addieren Licht und fluten den Raum nicht"
   else
     fail "die Punkte addieren Licht und fluten den Raum nicht"
   fi
 
-  # 15. Ausserhalb der Reichweite passiert nichts. Ein Projektor ohne Grenze leuchtet das ganze
-  #     Haus aus.
-  if printf '%s' "$scode" | grep -qE 'dist >= _Range'; then
-    ok "Geometrie ausserhalb der Reichweite bekommt nichts"
+  # 21. Kein eingebauter Ersatz-Shader. Ein FallBack zeichnet unter URP Magenta (Fehler 2).
+  if printf '%s' "$scode" | grep -qE 'FallBack Off'; then
+    ok "der Shader hat keinen eingebauten Ersatz, der magenta zeichnen koennte"
   else
-    fail "Geometrie ausserhalb der Reichweite bekommt nichts"
+    fail "der Shader hat keinen eingebauten Ersatz, der magenta zeichnen koennte"
   fi
 
-  # 16. Der Himmel bekommt keine Punkte - ein Pixel ohne Tiefe ist unendlich weit weg.
-  if printf '%s' "$scode" | grep -qE 'rawDepth <= 0\.0' \
-     && printf '%s' "$scode" | grep -qE 'rawDepth >= 1\.0'; then
-    ok "der Himmel bekommt keine Punkte"
+  # 22. Die Diagnose steht auf 0 - in C# UND im Shader. Eingeschaltet ausgeliefert malt sie jeden
+  #     Punkt magenta. Ein Werkzeug, das laeuft, waehrend jemand spielt, diagnostiziert nicht
+  #     mehr, sondern erzeugt (Fehler 23).
+  dbg_cs=0
+  dbg_sh=0
+  if [ -f "$PROJ" ] && printf '%s' "$pcode" | grep -qE 'Range\(0, 1\)\] private int debugStage = 0'; then
+    dbg_cs=1
+  fi
+  if printf '%s' "$scode" | grep -qE '_DebugMode \("Debug Stage \(0 = off\)", Range\(0, 1\)\) = 0'; then
+    dbg_sh=1
+  fi
+  if [ "$dbg_cs" -eq 1 ] && [ "$dbg_sh" -eq 1 ]; then
+    ok "die Diagnosestufe steht in C# UND im Shader auf 0"
   else
-    fail "der Himmel bekommt keine Punkte"
+    fail "die Diagnosestufe steht in C# UND im Shader auf 0 (cs=$dbg_cs shader=$dbg_sh)"
   fi
 
-  # 17. Und die Kantenglaettung ist GEKLAMMERT. fwidth explodiert an der Azimut-Naht und an den
-  #     Polen, wo sich die Richtung zwischen zwei Pixeln um eine halbe Drehung aendert -
-  #     ungeklammert frisst dieser eine Meridian jeden Punkt, der auf ihm liegt.
-  if printf '%s' "$scode" | grep -qE 'clamp\(fwidth\(cellDist\)'; then
-    ok "die Kantenglaettung ist an Naht und Polen geklammert"
+  # 23. Jede Eigenschaft, die C# schiebt, deklariert der Shader - und umgekehrt. Gelesen aus den
+  #     echten _block.Set-Aufrufen statt aus den PropertyToID-Zeilen: eine Id zu HABEN beweist
+  #     nicht, dass geschoben wird, und genau daran blieb die erste Fassung dieser Pruefung gruen.
+  if [ -f "$PROJ" ]; then
+    pushed=$(printf '%s\n' "$pcode" \
+             | sed -n 's/.*int \([A-Za-z0-9_]*\) = Shader\.PropertyToID("\([A-Za-z_][A-Za-z0-9_]*\)").*/\1 \2/p' \
+             | while read -r idvar propname; do
+                 if printf '%s\n' "$pcode" | grep -qE "_block\.Set[A-Za-z]+\([[:space:]]*$idvar[[:space:]]*,"; then
+                   printf '%s\n' "$propname"
+                 fi
+               done | sort -u)
+    declared=$(printf '%s\n' "$scode" \
+                 | sed -n '/^    Properties$/,/^    }$/p' \
+                 | sed -n 's/^[[:space:]]*\(\[[A-Za-z]*\][[:space:]]*\)\?\(_[A-Za-z0-9_]*\)[[:space:]]*(.*/\2/p' | sort -u)
+    onlypush=$(comm -23 <(printf '%s\n' "$pushed") <(printf '%s\n' "$declared") | tr '\n' ' ')
+    onlydecl=$(comm -13 <(printf '%s\n' "$pushed") <(printf '%s\n' "$declared") | tr '\n' ' ')
+    if [ -z "$(printf '%s' "$onlypush$onlydecl" | tr -d ' ')" ]; then
+      ok "jede geschobene Eigenschaft ist deklariert, und jede deklarierte wird geschoben"
+    else
+      fail "jede geschobene Eigenschaft ist deklariert, und jede deklarierte wird geschoben (nur geschoben:$onlypush nur deklariert:$onlydecl)"
+    fi
   else
-    fail "die Kantenglaettung ist an Naht und Polen geklammert"
+    fail "jede geschobene Eigenschaft ist deklariert, und jede deklarierte wird geschoben"
   fi
 fi
 
-# 18. Und die Dichte geht als GANZE Zahl hinein. Das Azimutraster laeuft von +PI nach -PI in
-#     sich zurueck, und nur eine ganze Zahl von Zellen trifft sich dort wieder; eine gebrochene
-#     legt eine sichtbare Naht ueber einen Meridian.
-if [ -f "$PROJ" ] && printf '%s' "$pcode" \
-     | grep -qE 'SetFloat\(DensityId, Mathf\.Round\(density\)\)'; then
-  ok "die Dichte geht als ganze Zellenzahl in den Shader"
-else
-  fail "die Dichte geht als ganze Zellenzahl in den Shader"
-fi
-
-
-# ------------------------------------------------ the minimal rebuild, and the ladder in it
-#
-# The shader was cut back to the shortest path from a fragment to a green dot. The occlusion
-# march, the glow halo and the ddx/ddy grazing term are GONE - three layers no camera had ever
-# confirmed, stacked on a base nobody had confirmed either, on a shader that has never once been
-# observed drawing a pixel. What replaces them is a five-rung ladder, and the checks below guard
-# the ladder rather than the layers: order, parity and reachability, which are the three things
-# no compiler runs in CI to catch (mistake 16).
-
-# 24. The pattern STARTS coarse. A cell is 360/density degrees on both axes, so 144 is a 2.5
-#     degree cell - 13 cm apart on a wall 3 m away, under a thousand in view. The old guard
-#     demanded 200+ and that was the wrong direction: at 240 a mapping error and a correct
-#     field look identical from across a room, so a fine grid that is wrong is a green wash
-#     while a coarse one that is wrong is legible. Checked as a CEILING now, with the slider's
-#     top end left free - tuning it up once it is right is the whole point of a slider.
-if [ -f "$PROJ" ]; then
-  dens=$(printf '%s' "$pcode" \
-         | sed -n 's/.*private float density = \([0-9.]*\)f.*/\1/p' | head -1)
-  if [ -n "$dens" ] && awk "BEGIN{exit !($dens >= 96 && $dens <= 144)}"; then
-    ok "the dot grid starts coarse enough to be legible when it is wrong (density=$dens)"
-  else
-    fail "the dot grid starts coarse enough to be legible when it is wrong (density='$dens', wanted 96..144)"
-  fi
-else
-  fail "the dot grid starts coarse enough to be legible when it is wrong"
-fi
-
-# 25. Nothing unproven has crept back. These three came off because no camera had confirmed the
-#     rung below them; a NEGATIVE check is the only thing that keeps them off, because each one
-#     is individually reasonable and re-adding it costs nobody an argument. They come back when
-#     a camera has said the dots draw, and this check is what has to be deleted to do it.
-if [ -f "$SHDR" ]; then
-  regrown=""
-  if printf '%s' "$scode" | grep -qE '_OcclusionStrength|ProjectorOcclusion'; then regrown="$regrown occlusion"; fi
-  if printf '%s' "$scode" | grep -qE '_GlowRadius|_GlowStrength'; then regrown="$regrown glow"; fi
-  if printf '%s' "$scode" | grep -qE 'ddx\(|ddy\('; then regrown="$regrown screen-space-normal"; fi
-  if [ -z "$regrown" ]; then
-    ok "the unproven layers stay off until a camera has confirmed the one below them"
-  else
-    fail "the unproven layers stay off until a camera has confirmed the one below them (back:$regrown)"
-  fi
-else
-  fail "the unproven layers stay off until a camera has confirmed the one below them"
-fi
-
-# 26. THE LADDER IS ORDERED, and every rung returns ABOVE the work the next one needs. That is
-#     the whole value of it: a rung that sits below the thing it is meant to bisect goes dark
-#     for a reason further along, and the reader then has a false finding rather than none -
-#     which has already cost this project one session and six of them (mistake 44). So the
-#     positions are read out of the file and compared, rather than trusted.
-if [ -f "$SHDR" ]; then
-  n() { printf '%s\n' "$scode" | { grep -n "$1" || true; } | head -1 | cut -d: -f1; }
-  l_frag=$(n 'half4 frag(Varyings input)')
-  l_s1=$(n 'if (stage == 1)')
-  l_uv=$(n 'float2 screenUV = input.screenPos')
-  l_s2=$(n 'if (stage == 2)')
-  l_rawdepth=$(n 'SampleSceneDepth(screenUV)')
-  l_s3=$(n 'if (stage == 3)')
-  l_world=$(n 'ComputeWorldSpacePosition(screenUV')
-  l_s4=$(n 'if (stage == 4)')
-  l_origin=$(n '_OriginWS.xyz')
-  l_s5=$(n 'if (stage == 5)')
-  l_axis=$(n '_AxisXWS.xyz')
-  l_s6=$(n 'if (stage == 6)')
-  l_dot=$(n 'float dotMask')
-  ladder_ok=1
-  for v in "$l_frag" "$l_s1" "$l_uv" "$l_s2" "$l_rawdepth" "$l_s3" "$l_world" "$l_s4" \
-           "$l_origin" "$l_s5" "$l_axis" "$l_s6" "$l_dot"; do
-    [ -n "$v" ] || ladder_ok=0
-  done
-  if [ "$ladder_ok" -eq 1 ]; then
-    prev="$l_frag"
-    for v in "$l_s1" "$l_uv" "$l_s2" "$l_rawdepth" "$l_s3" "$l_world" "$l_s4" \
-             "$l_origin" "$l_s5" "$l_axis" "$l_s6" "$l_dot"; do
-      [ "$prev" -lt "$v" ] || ladder_ok=0
-      prev="$v"
-    done
-  fi
-  if [ "$ladder_ok" -eq 1 ]; then
-    ok "each diagnostic rung returns above the work the next rung needs"
-  else
-    fail "each diagnostic rung returns above the work the next rung needs (frag=$l_frag s1=$l_s1 uv=$l_uv s2=$l_s2 rawDepth=$l_rawdepth s3=$l_s3 world=$l_world s4=$l_s4 origin=$l_origin s5=$l_s5 axis=$l_axis s6=$l_s6 dot=$l_dot)"
-  fi
-else
-  fail "each diagnostic rung returns above the work the next rung needs"
-fi
-
-# 26b. AND NO RUNG SITS BELOW AN INVISIBLE EARLY-OUT. This is worth more than the ordering
-#      itself. The first version of the ladder returned transparent black for sky ABOVE rung 2
-#      and for out-of-range ABOVE rung 3, so ONE unbound depth texture would have blacked out
-#      three rungs at once - and three rungs failing for one cause is not a bisect, it is the
-#      same false finding printed three times. Above the last rung every condition that would
-#      have returned nothing has to return a NAMED COLOUR instead; the invisible returns belong
-#      to stage 0, which is the effect and must add nothing where there is no dot.
-if [ -f "$SHDR" ]; then
-  lastrung=$(printf '%s\n' "$scode" | { grep -n 'if (stage == 6)' || true; } | head -1 | cut -d: -f1)
-  early=$(printf '%s\n' "$scode" | { grep -n 'return half4(0, 0, 0, 0);' || true; } | cut -d: -f1)
-  above=""
-  if [ -n "$lastrung" ]; then
-    for l in $early; do
-      # The last rung's own body is BELOW its `if` line, so its transparent return is not one
-      # of these - what this catches is a return that would swallow a rung above it.
-      [ "$l" -lt "$lastrung" ] && above="$above $l"
-    done
-  fi
-  if [ -n "$lastrung" ] && [ -z "$above" ]; then
-    ok "no diagnostic rung sits below an invisible early-out"
-  else
-    fail "no diagnostic rung sits below an invisible early-out (lastRung=$lastrung invisible returns above it:$above)"
-  fi
-else
-  fail "no diagnostic rung sits below an invisible early-out"
-fi
-
-# 26c. AND THE RAW-DEPTH RUNG CLASSIFIES NOTHING. "Sky" is an interpretation of the depth
-#      value, and an interpretation cannot be trusted to report on the number it interprets: the
-#      first ladder answered "is there depth here" with the sky test's own verdict, so an unbound
-#      texture and a correct one full of sky were the same picture. The rung has to sit ABOVE the
-#      line that computes isSky, and the shader has to reach it without ever asking.
-if [ -f "$SHDR" ]; then
-  l_raw=$(printf '%s\n' "$scode" | { grep -n 'if (stage == 3)' || true; } | head -1 | cut -d: -f1)
-  l_sky=$(printf '%s\n' "$scode" | { grep -n 'bool isSky' || true; } | head -1 | cut -d: -f1)
-  if [ -n "$l_raw" ] && [ -n "$l_sky" ] && [ "$l_raw" -lt "$l_sky" ]; then
-    ok "the raw-depth rung reports the value rather than the sky test's opinion of it"
-  else
-    fail "the raw-depth rung reports the value rather than the sky test's opinion of it (rung=$l_raw isSky=$l_sky)"
-  fi
-else
-  fail "the raw-depth rung reports the value rather than the sky test's opinion of it"
-fi
-
-# 26d. And the effect DECLARES that it needs a depth texture, on the cameras that render to a
-#      display. The pipeline asset asks for one globally, but a camera can override that, and the
-#      player's camera is created at RUNTIME - so the one link in the chain that no file in this
-#      repository can read is exactly the one upstream of a shader that reconstructs every dot
-#      from depth. A requirement that is only true by default is not declared.
-if [ -f "$PROJ" ]; then
-  req=$(printf '%s\n' "$pcode" | sed -n '/private void RequestSceneDepth/,/^        }$/p')
-  if printf '%s' "$req" | grep -qE 'depthTextureMode \|= DepthTextureMode\.Depth' \
-     && printf '%s' "$req" | grep -qE 'targetTexture != null' \
-     && printf '%s' "$pcode" | sed -n '/public void SetRunning/,/^        }$/p' \
-          | grep -qE 'RequestSceneDepth\(\)'; then
-    ok "the projection declares its need for a scene depth texture, skipping buffer cameras"
-  else
-    fail "the projection declares its need for a scene depth texture, skipping buffer cameras"
-  fi
-else
-  fail "the projection declares its need for a scene depth texture, skipping buffer cameras"
-fi
-
-# 26e. And it REPORTS whether one exists, from outside the shader. Rung 3 shows flat blue for
-#      two different causes - never produced, or produced and not given to this pass - and no
-#      amount of reading the shader separates them. Shader.GetGlobalTexture answers the first
-#      half in one line. It must not lean on Camera.main alone: this scene runs a portal camera
-#      and a mirror camera, and the tagged one is not necessarily the one drawing the view.
-if [ -f "$PROJ" ]; then
-  rep=$(printf '%s\n' "$pcode" | sed -n '/private void ReportDepth/,/^        }$/p')
-  if printf '%s' "$rep" | grep -qE 'GetGlobalTexture\("_CameraDepthTexture"\)' \
-     && printf '%s' "$rep" | grep -qE 'Camera\.allCameras' \
-     && printf '%s' "$rep" | grep -qE 'depthTextureAvailable='; then
-    ok "switch-on reports whether a scene depth texture exists, across every display camera"
-  else
-    fail "switch-on reports whether a scene depth texture exists, across every display camera"
-  fi
-else
-  fail "switch-on reports whether a scene depth texture exists, across every display camera"
-fi
-
-# 27. And rung 1 is the FIRST thing the fragment shader does. It answers "does this pass
-#     rasterise at all", so anything above it can take the answer away and make a live pass
-#     read as a dead one. Nothing but the stage read itself may come first.
-if [ -f "$SHDR" ]; then
-  # From the opening brace of frag to the magenta return, comments already stripped.
-  pre=$(printf '%s\n' "$scode" | sed -n '/half4 frag(Varyings input)/,/if (stage == 1)/p' \
-        | grep -vE 'half4 frag|^[[:space:]]*\{[[:space:]]*$|if \(stage == 1\)' \
-        | grep -vE '^[[:space:]]*$' \
-        | grep -vE 'int stage = \(int\)round\(_DebugMode\);' || true)
-  if [ -z "$pre" ]; then
-    ok "the magenta rung is the first statement in the fragment shader"
-  else
-    fail "the magenta rung is the first statement in the fragment shader (before it: $(printf '%s' "$pre" | tr '\n' ';'))"
-  fi
-else
-  fail "the magenta rung is the first statement in the fragment shader"
-fi
-
-# 28. THE C# AND THE SHADER NAME THE SAME PROPERTIES, in both directions. This is the check that
-#     would have caught the whole class rather than one instance of it: a SetFloat into a
-#     uniform the shader no longer declares writes nowhere and says nothing, and a uniform
-#     nothing pushes sits at whatever the authored material happens to hold. Both are silent,
-#     both survive review, and both look on screen exactly like "the effect does not work" -
-#     which is how a slider that moved nothing produced six false findings.
-if [ -f "$SHDR" ] && [ -f "$PROJ" ]; then
-  # What C# actually PUSHES - not what it has an id for. Reading the PropertyToID lines alone
-  # proves the id exists, which is a weaker claim than this check's name: deleting the
-  # SetFloat while leaving the id behind kept it green on the first tooth test. So each id is
-  # mapped to its property name and then required to appear in a real _block.Set... call.
-  pushed=$(printf '%s\n' "$pcode" \
-           | sed -n 's/.*int \([A-Za-z0-9_]*\) = Shader\.PropertyToID("\([A-Za-z_][A-Za-z0-9_]*\)").*/\1 \2/p' \
-           | while read -r idvar propname; do
-               if printf '%s\n' "$pcode" | grep -qE "_block\.Set[A-Za-z]+\([[:space:]]*$idvar[[:space:]]*,"; then
-                 printf '%s\n' "$propname"
-               fi
-             done | sort -u)
-  # What the shader declares: the Properties block plus the uniforms outside the CBUFFER.
-  declared=$( { printf '%s\n' "$scode" \
-                  | sed -n '/^    Properties$/,/^    }$/p' \
-                  | sed -n 's/^[[:space:]]*\(\[[A-Za-z]*\][[:space:]]*\)\?\(_[A-Za-z0-9_]*\)[[:space:]]*(.*/\2/p'
-                printf '%s\n' "$scode" \
-                  | sed -n 's/^[[:space:]]*float4[[:space:]]*\(_[A-Za-z0-9_]*\);.*/\1/p'; } | sort -u)
-  onlypush=$(comm -23 <(printf '%s\n' "$pushed") <(printf '%s\n' "$declared") | tr '\n' ' ')
-  onlydecl=$(comm -13 <(printf '%s\n' "$pushed") <(printf '%s\n' "$declared") | tr '\n' ' ')
-  if [ -z "$(printf '%s' "$onlypush$onlydecl" | tr -d ' ')" ]; then
-    ok "every property the C# pushes is declared by the shader, and every one it declares is pushed"
-  else
-    fail "every property the C# pushes is declared by the shader, and every one it declares is pushed (pushed-only:$onlypush declared-only:$onlydecl)"
-  fi
-else
-  fail "every property the C# pushes is declared by the shader, and every one it declares is pushed"
-fi
-
-# 29. And the two agree on HOW MANY rungs there are. An Inspector that offers a stage the shader
-#     does not implement falls through to the full effect and reads as "that stage is broken" -
-#     which is a false finding about working code, and the expensive direction (mistake 26).
-if [ -f "$SHDR" ] && [ -f "$PROJ" ]; then
-  sh_top=$(printf '%s' "$scode" | sed -n 's/.*_DebugMode[^R]*Range(0,[[:space:]]*\([0-9]*\)).*/\1/p' | head -1)
-  cs_top=$(printf '%s' "$pcode" | sed -n 's/.*Range(0,[[:space:]]*\([0-9]*\))\][[:space:]]*private int debugStage.*/\1/p' | head -1)
-  impl=$(printf '%s\n' "$scode" | { grep -cE 'if \(stage == [0-9]+\)' || true; })
-  if [ -n "$sh_top" ] && [ "$sh_top" = "$cs_top" ] && [ "$impl" -eq "$sh_top" ]; then
-    ok "the shader and the Inspector offer the same $sh_top diagnostic rungs, and all of them exist"
-  else
-    fail "the shader and the Inspector offer the same diagnostic rungs (shader=$sh_top cs=$cs_top implemented=$impl)"
-  fi
-else
-  fail "the shader and the Inspector offer the same diagnostic rungs"
-fi
 
 # ---------------------------------------------------- an effect is not a body
 #
@@ -1394,7 +1229,7 @@ fi
 
 # 21. The projector marks its own volume. Unmarked, nothing below can tell it from the
 #     device: it is a MeshRenderer on a child, exactly like the model.
-if [ -f "$PROJ" ] && printf '%s' "$pcode" | grep -qE 'EffectVolume\.Mark\(host\.gameObject\)'; then
+if [ -f "$PROJ" ] && printf '%s' "$pcode" | grep -qE 'EffectVolume\.Mark\(_rig\.gameObject\)'; then
   ok "the projector marks its projection volume as an effect volume"
 else
   fail "the projector marks its projection volume as an effect volume"
@@ -1441,45 +1276,17 @@ else
   fail "die unbestaetigten Regler sind auch aus dem C# verschwunden, nicht nur abgedreht"
 fi
 
-# 30. Und die Stufendiagnose steht auf 0 - in C# UND im Shader. Eine davon eingeschaltet
-#     ausgeliefert malt den Raum magenta oder flach gruen. Ein Werkzeug, das laeuft, waehrend
-#     jemand spielt, diagnostiziert nicht mehr, sondern erzeugt (Fehler 23).
-dbg_cs=0
-dbg_sh=0
-if [ -f "$PROJ" ] && printf '%s' "$pcode" | grep -qE 'Range\(0, 6\)\] private int debugStage = 0'; then
-  dbg_cs=1
-fi
-if [ -f "$SHDR" ] && printf '%s' "$scode" | grep -qE '_DebugMode \("Debug Stage \(0 = off\)", Range\(0, 6\)\) = 0'; then
-  dbg_sh=1
-fi
-if [ "$dbg_cs" -eq 1 ] && [ "$dbg_sh" -eq 1 ]; then
-  ok "die Diagnosestufe steht in C# UND im Shader auf 0"
-else
-  fail "die Diagnosestufe steht in C# UND im Shader auf 0 (cs=$dbg_cs shader=$dbg_sh)"
-fi
-
-
 # 31. Ein Regler, der erreicht, was er benennt. Die Werte wurden EINMAL gepusht, beim
 #     Einschalten, und nie wieder: eine Aenderung im Inspector waehrend des Spiels landete
-#     nirgends. Das ist nicht klein - es ist der Grund, warum eine sechsstufige Diagnose mit
-#     sechs identischen Stufen zurueckkam. Alle sechs waren Stufe 0. Ein Regler, der das nicht
-#     bewegen kann, was er benennt, ist schlimmer als keiner, weil er BEWEISE erzeugt.
-if [ -f "$PROJ" ] && printf '%s' "$pcode" | grep -qE '_propertiesDirty = true' \
-   && printf '%s' "$pcode" | sed -n '/private void LateUpdate/,/^        }$/p' \
-        | grep -qE 'PushProperties\(\)'; then
+#     nirgends, und eine sechsstufige Diagnose kam mit sechs identischen Stufen zurueck. Alle
+#     sechs waren Stufe 0. Ein Regler, der das nicht bewegen kann, was er benennt, ist schlimmer
+#     als keiner, weil er BEWEISE erzeugt (Fehler 44). Hier schiebt OnValidate direkt und setzt
+#     ausserdem die Wurfschwelle zurueck, damit auch Zahlen ankommen, die das Feld neu werfen.
+if [ -f "$PROJ" ] && printf '%s' "$pcode" | sed -n '/private void OnValidate/,/^        }$/p' \
+     | grep -qE 'PushProperties\(\)'; then
   ok "eine Aenderung im Inspector erreicht den lebenden Renderer"
 else
   fail "eine Aenderung im Inspector erreicht den lebenden Renderer"
-fi
-
-# 32. Und beim Einschalten wird gemeldet, ob die Kamera IM Volumen steht. Davon haengt ab,
-#     welche Seiten des Kastens gezeichnet werden, und es ist die eine Tatsache, die man einem
-#     Screenshot von etwas Unsichtbarem nicht ansieht. Lieber eine Zeile als ein Streit.
-if [ -f "$PROJ" ] && printf '%s' "$pcode" | grep -qE 'volumeContainsCamera=' \
-   && printf '%s' "$pcode" | grep -qE 'cameraMaskIncludesVolume='; then
-  ok "beim Einschalten wird gemeldet, ob die Kamera im Volumen steht"
-else
-  fail "beim Einschalten wird gemeldet, ob die Kamera im Volumen steht"
 fi
 
 # 33. Die Dauerbatterie ist eine ENTWICKLERhilfe und aus einem Auslieferungsbuild gezaeunt.

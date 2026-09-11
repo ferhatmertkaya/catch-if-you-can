@@ -3371,14 +3371,15 @@ fi
 # also gibt AddComponent auf dem Klon NULL zurueck statt eines zweiten. Die Ausnahme kam aus
 # SetActive(true) im Installer und las sich wie ein Fehler des Installers - sie war keiner.
 #
-# Die Projektion ist inzwischen ein Spot mit Cookie statt eines Kegel-Meshes, also hat die
-# Falle ein neues Gesicht: das Licht haengt an einem KINDOBJEKT, und ein `new GameObject` auf
-# dem Klon haengt ein ZWEITES daneben. Zwei deckungsgleiche Lichter sieht man nicht als zwei,
-# sondern als eines mit doppelter Helligkeit. Gesucht wird deshalb nach der Komponente, denn
-# die ueberlebt die Kopie - das Feld, das auf sie zeigte, nicht.
+# Die Projektion ist inzwischen ein Punktemesh aus Raycasts - weder Spot mit Cookie noch
+# Kegel-Mesh noch Tiefenrekonstruktion -, aber die Falle hat bei jeder dieser Fassungen
+# dasselbe Gesicht gehabt: die Teile haengen an KINDOBJEKTEN, und ein `new GameObject` auf dem
+# Klon haengt ein ZWEITES daneben. Zwei deckungsgleiche Kopien sieht man nicht als zwei.
+# Gesucht wird deshalb nach dem NAMEN des Kindes, denn der ueberlebt die Kopie - das private
+# Feld, das darauf zeigte, nicht.
 PROJ="$ROOT/Assets/CatchIfYouCan/Scripts/Equipment/SpectralGridProjection.cs"
 if [ -f "$PROJ" ] && code "$PROJ" | grep -E >/dev/null  'transform\.Find\(OriginChildName\)' &&
-   code "$PROJ" | grep -E >/dev/null  'transform\.Find\(VolumeChildName\)'; then
+   code "$PROJ" | grep -E >/dev/null  'Find\(RigChildName\)'; then
   ok "die Projektion uebersteht das Klonen ihrer Vorlage"
 else
   bad "die Projektion uebersteht das Klonen ihrer Vorlage" \

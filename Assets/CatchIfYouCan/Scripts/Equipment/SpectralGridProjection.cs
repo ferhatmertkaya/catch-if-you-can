@@ -3,63 +3,77 @@ using UnityEngine;
 namespace CatchIfYouCan.Equipment
 {
     /// <summary>
-    /// The projector's field of laser points: one volume, one material, no dots as objects.
+    /// The DOTS projector's field of laser points: one mesh, one renderer, no dots as objects.
     ///
     /// <para>
-    /// The whole effect is a single box rendered with <c>CatchIfYouCan/SpectralGrid</c>. For
-    /// each of its pixels the shader reconstructs the world position of the scene surface
-    /// behind that pixel and asks whether the direction from the LENS to that point lands on a
-    /// dot of an angular grid. So the dots belong to the floor, the walls, the ceiling and the
-    /// props they fall on, and there is no dot anywhere in the scene graph: no GameObject per
-    /// dot, no particle, no light per dot, nothing instantiated or destroyed while it runs, and
-    /// nothing to replicate over a network later but the projector's transform and whether it
-    /// is on.
+    /// <b>What changed, and why.</b> Three versions of this drew the dots in a fragment shader by
+    /// reconstructing the world position of the surface behind each pixel from the scene depth
+    /// texture. The technique is correct and the shader compiled - the diagnostic ladder proved
+    /// both: its magenta rung drew over the whole volume, and its screen-UV rung drew a correct
+    /// gradient. The rung below it read the RAW value out of <c>SampleSceneDepth</c> with no
+    /// interpretation on top and came back flat blue, meaning exactly 0.0 at every pixel. No depth
+    /// texture reaches that pass in this project. A technique that needs a resource nobody can
+    /// hand it is the wrong technique here, however right it is in the abstract, so it is gone
+    /// rather than debugged a fourth time.
     /// </para>
     ///
     /// <para>
-    /// <b>A sphere, not a cone.</b> The pattern lives in the projector's own spherical
-    /// coordinates, so it surrounds the device - as much of it reaches the ceiling as the floor,
-    /// and it converges towards the device's axis the way a real multi-directional laser
-    /// projector does. Two previous attempts were shaped like the emitter instead of like the
-    /// room: one 70-degree spot, which is a torch, and then five wider spots, which is a torch
-    /// with company. Neither could cover a sphere, because a cone cannot.
+    /// <b>How it works now.</b> Rays are cast out of the lens in every direction, and one small
+    /// quad is laid flat on each surface they hit. All the quads go into ONE mesh on ONE
+    /// MeshRenderer with ONE material, so the whole field is a single draw call and there is no
+    /// GameObject, particle, light, decal or collider per dot. Nothing is sampled from the frame
+    /// buffer, so there is nothing left that can be unbound.
     /// </para>
     ///
     /// <para>
-    /// <b>Everything the shader needs is pushed in WORLD space.</b> The lens position and the
-    /// device's three axes go in as uniforms rather than being read from the object matrix. The
-    /// version before last worked in object space and drew nothing, for a reason that was never
-    /// established (CLAUDE.md mistake 33) - so rather than guess at it a fifth time, the
-    /// dependency is gone: nothing here can be broken by how this object is parented, nested or
-    /// scaled.
+    /// <b>A sphere by construction, not by hoping.</b> The ray directions are a Fibonacci sphere:
+    /// a genuinely uniform covering of all 4-pi steradians with no clustering at the poles and no
+    /// seam at the wrap. Floor, ceiling, both side walls, in front and behind all get the same
+    /// density, and no axis of the device can remove a hemisphere - the device's rotation only
+    /// turns the pattern. Two earlier attempts were cones (mistake 39), and a cone cannot cover a
+    /// sphere however many of them there are.
+    /// </para>
+    ///
+    /// <para>
+    /// <b>Cost.</b> The rays are cast when the field is switched on and then only when the lens
+    /// has actually moved, never per frame. A deployed projector - the case this device is for -
+    /// casts once and then costs one draw call until it is switched off. In the hand it rebuilds
+    /// on a movement threshold at a much lower count, because a projector being carried is being
+    /// carried somewhere rather than being read.
     /// </para>
     /// </summary>
-    [AddComponentMenu("Catch If You Can/Spectral Grid Projection")]
+    [DisallowMultipleComponent]
     public sealed class SpectralGridProjection : MonoBehaviour
     {
         [Header("Look")]
-        [Tooltip("Laser green. Bright and saturated; the room around the dots stays dark " +
-                 "because the material adds light and never floods it.")]
-        [SerializeField] private Color dotColor = new Color(0.224f, 1f, 0.290f, 1f);
+        [Tooltip("Laser green. Bright and saturated; the room around the dots stays dark because " +
+                 "the material adds light and never floods it.")]
+        [SerializeField] private Color dotColor = new Color(0.208f, 1f, 0.271f, 1f);
 
-        [Tooltip("How many dot cells go the whole way round the device. Elevation gets half " +
-                 "as many, spanning half the angle, which makes a cell square: 360/density " +
-                 "degrees on both axes. 144 is a 2.5 degree cell - dots about 13 cm apart on a " +
-                 "surface 3 m away and under a thousand of them inside a 90x60 degree view. " +
-                 "It STARTS here rather than at 240 because a coarse grid that is wrong is " +
-                 "legible and a fine one that is wrong is a green wash: at 240 a mapping error " +
-                 "and a correct field look the same from across a room. It costs nothing per " +
-                 "pixel either way - the shader evaluates a formula, not a list of dots - so " +
-                 "the number is a legibility decision, not a performance one.")]
-        [SerializeField, Range(16f, 320f)] private float density = 144f;
+        [Tooltip("Brightness of a dot. This is the only brightness there is - there is no light " +
+                 "in this effect, so it cannot flood a room however high it goes.")]
+        [SerializeField, Range(0f, 12f)] private float intensity = 2.4f;
 
-        [Tooltip("Size of one dot within its cell. Past about 0.3 they merge into the " +
-                 "continuous green wash this is not supposed to be.")]
-        [SerializeField, Range(0.02f, 0.45f)] private float dotSize = 0.16f;
+        [Tooltip("How soft a dot's edge is, as a fraction of its radius. Small keeps it a crisp " +
+                 "laser point; large turns it into a glow blob.")]
+        [SerializeField, Range(0.01f, 0.6f)] private float softness = 0.22f;
 
-        [Tooltip("Brightness of a dot. This is the only brightness there is - there is no " +
-                 "light in this effect, so it cannot flood a room however high it goes.")]
-        [SerializeField, Range(0f, 12f)] private float intensity = 3f;
+        [Tooltip("How wide a dot is on the surface at one metre, in metres. Dots grow with " +
+                 "distance the way a real projected beam does, so this is the size at the near " +
+                 "end rather than everywhere.")]
+        [SerializeField, Range(0.002f, 0.05f)] private float dotSizeAtOneMetre = 0.011f;
+
+        [Header("Field")]
+        [Tooltip("How many rays go out in every direction when the device is DEPLOYED. They are " +
+                 "spread over the whole sphere, so a 90x60 degree view holds roughly an eighth " +
+                 "of them: 6000 here is about 780 dots in view and 6000 around the room. Each " +
+                 "one is four vertices in a single shared mesh, not an object.")]
+        [SerializeField, Range(512, 16000)] private int deployedDotCount = 6000;
+
+        [Tooltip("The same, while the device is being CARRIED. Lower on purpose: a projector in " +
+                 "the hand moves constantly, so its field is rebuilt often, and a projector being " +
+                 "carried is being carried somewhere rather than being read.")]
+        [SerializeField, Range(128, 4000)] private int carriedDotCount = 1200;
 
         [Header("Reach")]
         [Tooltip("How far the dots reach, in metres. A room, not a building. Geometry beyond " +
@@ -70,63 +84,76 @@ namespace CatchIfYouCan.Equipment
                  "strength across most of a room and fades them over the last stretch.")]
         [SerializeField, Range(0.05f, 1f)] private float fadeStart = 0.55f;
 
+        [Header("Rebuilding")]
+        [Tooltip("How far the lens must move, in metres, before the field is cast again. Zero " +
+                 "would rebuild every frame; this is what keeps a carried projector affordable.")]
+        [SerializeField, Range(0.02f, 1f)] private float rebuildMoveThreshold = 0.18f;
+
+        [Tooltip("How far the lens must turn, in degrees, before the field is cast again.")]
+        [SerializeField, Range(1f, 45f)] private float rebuildTurnThreshold = 9f;
+
+        [Tooltip("The shortest time between two rebuilds, in seconds. A floor under the cost of " +
+                 "walking around with the device in hand.")]
+        [SerializeField, Range(0.05f, 1f)] private float rebuildMinInterval = 0.2f;
+
         [Header("Diagnosis")]
-        [Tooltip("A ladder for 'it says it is running and nothing is on screen', climbed one " +
-                 "rung at a time. RENUMBERED: rung 2 is new and the old 2-5 have each moved up " +
-                 "by one.\n\n" +
-                 "0 = the game, the finished dots.\n" +
-                 "1 = MAGENTA over the whole volume. Does this pass rasterise? CONFIRMED in " +
-                 "Unity.\n" +
-                 "2 = the screen UV as a red/green gradient. A smooth gradient means the UV is a " +
-                 "real screen coordinate; ONE FLAT COLOUR means every fragment reads the same " +
-                 "point, which would make the depth rung below look unbound when it is not. It " +
-                 "sits above the depth rung because sampling depth USES this UV.\n" +
-                 "3 = the RAW depth value with no sky classification at all. Whole view flat " +
-                 "BLUE = exactly 0 everywhere, so no depth texture is reaching this pass. Flat " +
-                 "GREEN = exactly 1 everywhere. Stripes over the room with blue only through the " +
-                 "window = real varying depth, which is correct.\n" +
-                 "4 = the reconstructed world position. Bands GLUED to the walls as you turn on " +
-                 "the spot are correct; bands that SWIM with the view mean the inverse " +
-                 "view-projection is wrong.\n" +
-                 "5 = green within range, RED outside. A green ball centred on the device means " +
-                 "the lens and range arrived; all red means the origin is elsewhere.\n" +
-                 "6 = a coarse 20-degree angular chequerboard. Squares on floor, ceiling and all " +
-                 "four walls mean a sphere; squares in one direction only mean a cone.\n\n" +
-                 "Every rung returns ABOVE the work the next needs, and none sits below an " +
-                 "invisible early-out. Ships at 0, and a guard keeps it there (mistake 23).")]
-        [SerializeField, Range(0, 6)] private int debugStage = 0;
+        [Tooltip("0 = the effect. 1 = magenta over every dot quad, which answers 'is this pass " +
+                 "running at all' and nothing else. The six-rung ladder that used to live here " +
+                 "was asking about a depth texture this effect no longer uses. Ships at 0, and a " +
+                 "guard keeps it there: a diagnostic that runs while somebody plays does not " +
+                 "diagnose, it creates (mistake 23).")]
+        [SerializeField, Range(0, 1)] private int debugStage = 0;
 
         [Header("Emitter")]
         [Tooltip("Where the lens sits relative to the device's pivot, in its own space. +Y is " +
-                 "the device's working axis by the shared carried-transform convention.")]
+                 "the device's working axis by the shared carried-transform convention. It moves " +
+                 "the ORIGIN of the field; it cannot make the field directional.")]
         [SerializeField] private Vector3 projectionOriginOffset = new Vector3(0f, 0.06f, 0f);
 
         /// <summary>The child that marks the lens. Found by name so it survives a clone.</summary>
         private const string OriginChildName = "ProjectionOrigin";
 
-        /// <summary>The child that carries the volume. Also found by name, for the same reason.</summary>
-        private const string VolumeChildName = "SpectralGrid_Volume";
+        /// <summary>The child that carries the dot mesh. Also found by name, for the same reason.</summary>
+        private const string RigChildName = "DOTS_ProjectionRig";
+
+        /// <summary>
+        /// How far along its own ray a dot sits off the surface, in metres. Enough to clear
+        /// z-fighting with the wall it is painted on, small enough not to read as floating.
+        /// </summary>
+        private const float SurfaceLift = 0.006f;
+
+        /// <summary>
+        /// Where a ray starts, in metres from the lens. The device's own body is around the lens,
+        /// and a ray that begins inside it hits it immediately: the whole field would be a
+        /// handful of dots on the projector's own casing.
+        /// </summary>
+        private const float RayStartOffset = 0.07f;
 
         private Transform _origin;
+        private Transform _rig;
         private MeshRenderer _renderer;
         private MeshFilter _filter;
-        private MaterialPropertyBlock _block;
-        private Mesh _volume;
-        private float _builtRange = -1f;
+        private Mesh _mesh;
         private bool _running;
-        private bool _propertiesDirty;
+
+        private Vector3[] _vertices;
+        private Vector2[] _uv;
+        private Color32[] _colors;
+        private int[] _indices;
+        private int _capacity;
+
+        private Vector3 _lastBuildPosition;
+        private Quaternion _lastBuildRotation;
+        private float _lastBuildTime = -999f;
+        private bool _hasBuilt;
+        private int _lastDotsPlaced;
 
         private static readonly int DotColorId = Shader.PropertyToID("_DotColor");
-        private static readonly int DensityId = Shader.PropertyToID("_Density");
-        private static readonly int DotSizeId = Shader.PropertyToID("_DotSize");
-        private static readonly int RangeId = Shader.PropertyToID("_Range");
         private static readonly int IntensityId = Shader.PropertyToID("_Intensity");
-        private static readonly int FadeStartId = Shader.PropertyToID("_FadeStart");
+        private static readonly int SoftnessId = Shader.PropertyToID("_Softness");
         private static readonly int DebugModeId = Shader.PropertyToID("_DebugMode");
-        private static readonly int OriginId = Shader.PropertyToID("_OriginWS");
-        private static readonly int AxisXId = Shader.PropertyToID("_AxisXWS");
-        private static readonly int AxisYId = Shader.PropertyToID("_AxisYWS");
-        private static readonly int AxisZId = Shader.PropertyToID("_AxisZWS");
+
+        private MaterialPropertyBlock _block;
 
         /// <summary>Where the dots come from. The lens, in world space.</summary>
         public Vector3 ProjectionOrigin => _origin != null
@@ -136,20 +163,24 @@ namespace CatchIfYouCan.Equipment
         /// <summary>How far the dots reach, in metres.</summary>
         public float Range => projectionRange;
 
+        /// <summary>How many dots the last cast actually landed on a surface.</summary>
+        public int DotsPlaced => _lastDotsPlaced;
+
         /// <summary>
-        /// Attaches a projection to a device head. The volume is a child, so it follows the
-        /// device without anything having to track it.
+        /// Attaches a projection to a device head. The rig is a child, so it follows the device
+        /// without anything having to track it.
+        ///
+        /// <para>
+        /// Adopt before building: a head that came across on a clone already carries one of
+        /// these, and a second would draw the whole field twice. This is the shape that produced
+        /// mistakes 27, 30 and 46.
+        /// </para>
         /// </summary>
         public static SpectralGridProjection Attach(Transform head)
         {
             if (head == null)
                 return null;
 
-            // Adopt before building, here as well as at the call site. A head that came across
-            // on a clone already carries one of these, and a second would be a second volume
-            // drawing the same pattern on top of the first. Defence in depth is worth one
-            // GetComponentInChildren on a path that runs once per item: this is the shape that
-            // produced mistakes 27 and 30, and both times the cost of finding it was a session.
             var existing = head.GetComponentInChildren<SpectralGridProjection>(true);
             if (existing != null)
                 return existing;
@@ -165,38 +196,37 @@ namespace CatchIfYouCan.Equipment
         /// <para>
         /// The angle argument describes the device's EVIDENCE cone, which
         /// <see cref="SpectralGridProjector.FieldStrengthAt"/> uses to decide whether a ghost is
-        /// standing in the field. It does not size the projection: the lit field is a sphere and
-        /// that cone is 70 degrees forward, so a ghost lit on a side wall is not currently
-        /// counted. Widening the evidence cone changes what the projector can prove and is an
-        /// evidence-contract decision, not a rendering one.
+        /// standing in the field. It does not shape the projection: the lit field is a sphere.
         /// </para>
         /// </summary>
         public void Configure(float evidenceRange, float evidenceConeDegrees)
         {
-            EnsureVolume();
-            PushProperties();
+            EnsureRig();
         }
 
         /// <summary>
         /// Turns the field on and off. Everything expensive is behind this: a projector that is
-        /// switched off, stowed or in a bag renders nothing at all.
+        /// switched off, stowed or in a bag renders nothing and casts nothing.
+        ///
+        /// <para>
+        /// The rig is built once and toggled, never created and destroyed - switching on is a
+        /// renderer flag plus one cast, and switching off is a renderer flag.
+        /// </para>
         /// </summary>
         public void SetRunning(bool running)
         {
             _running = running;
-            EnsureVolume();
+            EnsureRig();
 
             if (_renderer != null)
                 _renderer.enabled = running && _renderer.sharedMaterial != null;
 
             if (running)
             {
-                RequestSceneDepth();
-                _propertiesDirty = false;
                 PushProperties();
-                PushOrigin();
+                Rebuild(force: true);
 #if UNITY_EDITOR || DEVELOPMENT_BUILD
-                ReportProjection();
+                Report();
 #endif
             }
 #if UNITY_EDITOR || DEVELOPMENT_BUILD
@@ -208,65 +238,59 @@ namespace CatchIfYouCan.Equipment
         }
 
         /// <summary>
-        /// The lens moves whenever the device does - it is in the player's hand half the time -
-        /// so the world-space origin is refreshed after everything else has moved. Four vector
-        /// writes into a property block that is allocated once: no garbage, no material
-        /// instance, and nothing at all while the projector is off.
+        /// Recasts the field when the lens has actually moved, and never otherwise.
+        ///
+        /// <para>
+        /// A deployed projector does not move, so after the cast at switch-on this method does
+        /// nothing at all for the rest of its life but two comparisons. That is the whole
+        /// performance strategy: the expensive part is proportional to how much the device moves,
+        /// and the device it was designed for does not.
+        /// </para>
         /// </summary>
         private void LateUpdate()
         {
-            if (!_running)
+            if (!_running || _origin == null)
                 return;
 
-            // The tuning values were pushed ONCE, at switch-on, and never again. Everything
-            // below the lens - density, dot size, intensity, the debug stage - therefore sat in
-            // the renderer at whatever it was when G was pressed, and
-            // an Inspector edit during Play changed a number that reached nothing. That is not
-            // a small thing: it is why a six-stage bisect came back with all six stages
-            // identical. They were all stage 0. A control that cannot move what it names is
-            // worse than no control, because it produces evidence.
-            // While a diagnostic stage is selected, the values go across EVERY frame rather than
-            // on a dirty flag. The flag depends on OnValidate firing, and OnValidate is an editor
-            // callback with its own rules about when it runs; a bisect that quietly measures the
-            // wrong stage has already cost one whole session and produced six false findings.
-            // A diagnostic has to be the one thing in the frame that cannot be doubted, and the
-            // cost of that certainty is a dozen SetFloats on a block this method already owns.
-            if (_propertiesDirty || debugStage > 0)
-            {
-                _propertiesDirty = false;
+            if (debugStage > 0)
                 PushProperties();
-            }
 
-            PushOrigin();
+            if (Time.time - _lastBuildTime < rebuildMinInterval)
+                return;
+
+            float moved = Vector3.Distance(_origin.position, _lastBuildPosition);
+            float turned = Quaternion.Angle(_origin.rotation, _lastBuildRotation);
+            if (moved < rebuildMoveThreshold && turned < rebuildTurnThreshold)
+                return;
+
+            Rebuild(force: false);
         }
 
 #if UNITY_EDITOR
-        /// <summary>
-        /// An Inspector edit marks the values stale rather than pushing them here: OnValidate
-        /// can run before <see cref="EnsureVolume"/> has made a renderer, and it can run outside
-        /// Play. The next frame that is actually running does the work.
-        /// </summary>
         private void OnValidate()
         {
-            _propertiesDirty = true;
+            if (Application.isPlaying && _running)
+            {
+                PushProperties();
+                _lastBuildTime = -999f;
+            }
         }
 #endif
 
         /// <summary>
-        /// Builds the volume once, and adopts the one a CLONE already carries.
+        /// Builds the lens, the rig and the mesh once, and adopts the ones a CLONE already
+        /// carries.
         ///
         /// <para>
-        /// Every piece of equipment in this project reaches the world as an <c>Instantiate</c>
-        /// of a live template, and <c>Instantiate</c> copies GameObjects and components while
-        /// dropping the private field that pointed at them. So on the clone the children are
-        /// already there and the fields are null - and a <c>new GameObject</c> here would hang a
-        /// SECOND volume on the same device, drawing the whole pattern twice at double
-        /// brightness. That is mistakes 27 and 30 wearing another face, so the children are
-        /// looked for by NAME and their parts by component; both survive the copy, the fields
-        /// do not.
+        /// Every piece of equipment in this project reaches the world as an <c>Instantiate</c> of
+        /// a live template, and <c>Instantiate</c> copies GameObjects and components while
+        /// dropping the private fields that pointed at them. So on a clone the children are
+        /// already there and the fields are null - the one state a naive build reads as "nothing
+        /// here yet" (mistakes 27, 30 and 46). Children are found by NAME and their parts by
+        /// component; both survive the copy, the fields do not.
         /// </para>
         /// </summary>
-        private void EnsureVolume()
+        private void EnsureRig()
         {
             if (_origin == null)
             {
@@ -282,40 +306,36 @@ namespace CatchIfYouCan.Equipment
             _origin.localPosition = projectionOriginOffset;
             _origin.localRotation = Quaternion.identity;
 
-            Transform host = transform.Find(VolumeChildName);
-            if (host == null)
+            if (_rig == null)
             {
-                var hostGo = new GameObject(VolumeChildName);
-                hostGo.transform.SetParent(transform, false);
-                host = hostGo.transform;
+                _rig = _origin.Find(RigChildName);
+                if (_rig == null)
+                {
+                    var rigGo = new GameObject(RigChildName);
+                    rigGo.transform.SetParent(_origin, false);
+                    _rig = rigGo.transform;
+                }
             }
 
-            host.localPosition = projectionOriginOffset;
-            host.localRotation = Quaternion.identity;
+            // The dot quads are written in WORLD coordinates, so the rig must not add a transform
+            // of its own on top of them. Identity, every time, whatever the device is doing.
+            _rig.localPosition = Vector3.zero;
+            _rig.localRotation = Quaternion.identity;
+            _rig.localScale = Vector3.one;
 
-            // This box is the effect's screen footprint, not the device. Marked so that
-            // everything which measures "how big is this item" leaves it out - unmarked, the
-            // lobby measured eleven metres for a 25 cm projector and lifted it above the
-            // ceiling, where an item that is there and an item that never spawned look alike.
-            EffectVolume.Mark(host.gameObject);
+            // The mesh is the effect's screen footprint, not the device. Marked so that everything
+            // which measures "how big is this item" leaves it out - unmarked, the lobby measured
+            // the effect instead of the object and lifted a 0.25 m projector above the ceiling,
+            // where an item that is there and an item that never spawned look alike (mistake 42).
+            EffectVolume.Mark(_rig.gameObject);
 
-            // The volume is sized in METRES, so any scale inherited from the device's visual
-            // chain is cancelled here. Belt and braces - the chain is unit-scaled today - but it
-            // costs one line and removes a way for the box to end up a tenth of the size the
-            // range says it is.
-            Vector3 lossy = transform.lossyScale;
-            host.localScale = new Vector3(
-                Mathf.Approximately(lossy.x, 0f) ? 1f : 1f / lossy.x,
-                Mathf.Approximately(lossy.y, 0f) ? 1f : 1f / lossy.y,
-                Mathf.Approximately(lossy.z, 0f) ? 1f : 1f / lossy.z);
-
-            _filter = host.GetComponent<MeshFilter>();
+            _filter = _rig.GetComponent<MeshFilter>();
             if (_filter == null)
-                _filter = host.gameObject.AddComponent<MeshFilter>();
+                _filter = _rig.gameObject.AddComponent<MeshFilter>();
 
-            _renderer = host.GetComponent<MeshRenderer>();
+            _renderer = _rig.GetComponent<MeshRenderer>();
             if (_renderer == null)
-                _renderer = host.gameObject.AddComponent<MeshRenderer>();
+                _renderer = _rig.gameObject.AddComponent<MeshRenderer>();
 
             _renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
             _renderer.receiveShadows = false;
@@ -325,8 +345,8 @@ namespace CatchIfYouCan.Equipment
             if (_renderer.sharedMaterial == null)
             {
                 // The authored material, so its shader is referenced by an asset and survives a
-                // build. Asking Shader.Find for it directly is how a shader gets stripped and
-                // the effect quietly becomes nothing on a device.
+                // build. Asking Shader.Find for it directly is how a shader gets stripped and the
+                // effect quietly becomes nothing on a device (mistake 2).
                 var material = Resources.Load<Material>("Materials/MAT_SpectralGrid");
                 if (material == null)
                 {
@@ -339,60 +359,203 @@ namespace CatchIfYouCan.Equipment
                 _renderer.sharedMaterial = material;
             }
 
-            RebuildVolume();
+            if (_mesh == null)
+            {
+                _mesh = new Mesh { name = "SpectralGridDots" };
+                _mesh.MarkDynamic();
+                _filter.sharedMesh = _mesh;
+            }
 
-            _renderer.enabled = _running && _renderer.sharedMaterial != null;
             _block ??= new MaterialPropertyBlock();
+            _renderer.enabled = _running && _renderer.sharedMaterial != null;
         }
 
         /// <summary>
-        /// The box the shader runs inside: twelve triangles around the lens, half-extent equal
-        /// to the range.
+        /// Casts the field and writes it into the mesh.
         ///
         /// <para>
-        /// It exists only to give the fragment shader pixels to run on, and it is a box rather
-        /// than a full-screen pass so a projector across the house costs its own screen footprint
-        /// instead of the whole frame. Front faces are culled, so the volume still covers the
-        /// screen when the camera is inside it.
+        /// One ray per dot, in a Fibonacci-sphere direction, from just outside the device's own
+        /// casing. Each hit becomes a quad lying flat on that surface, lifted a few millimetres
+        /// along its normal so it does not fight the wall for the same pixels, sized so that it
+        /// grows with distance the way a real projected beam does, and given a per-dot fade in its
+        /// vertex colour. Rays that hit nothing within range simply produce no dot, which is what
+        /// bounds the field to a room.
         /// </para>
         /// </summary>
-        private void RebuildVolume()
+        private void Rebuild(bool force)
         {
-            if (Mathf.Approximately(_builtRange, projectionRange) && _volume != null)
-            {
-                _filter.sharedMesh = _volume;
+            if (_origin == null || _mesh == null)
                 return;
+
+            int wanted = Mathf.Max(16, IsCarried() ? carriedDotCount : deployedDotCount);
+            EnsureCapacity(wanted);
+
+            Vector3 lens = _origin.position;
+            Transform deviceRoot = transform.root;
+
+            // The golden angle. Successive directions land as far from their predecessors as the
+            // sphere allows, which is what makes the covering uniform without a grid - and a grid
+            // is what put a seam down one meridian and a pile at each pole last time.
+            const float GoldenAngle = 2.399963f;
+
+            int placed = 0;
+            for (int i = 0; i < wanted; i++)
+            {
+                float y = 1f - (i + 0.5f) * 2f / wanted;
+                float r = Mathf.Sqrt(Mathf.Max(0f, 1f - y * y));
+                float theta = GoldenAngle * i;
+                Vector3 localDir = new Vector3(Mathf.Cos(theta) * r, y, Mathf.Sin(theta) * r);
+
+                // Into the device's own frame, so the pattern turns with it. A rotation cannot
+                // remove a hemisphere: whatever the device's axis is, every direction is still
+                // covered (mistake 34 and 39 both live here).
+                Vector3 dir = _origin.TransformDirection(localDir);
+
+                Vector3 start = lens + dir * RayStartOffset;
+                float reach = projectionRange - RayStartOffset;
+
+                if (!Physics.Raycast(start, dir, out RaycastHit hit, reach,
+                                     Physics.DefaultRaycastLayers,
+                                     QueryTriggerInteraction.Ignore))
+                    continue;
+
+                // The device's own body, and the player carrying it, are not surfaces to paint.
+                if (hit.collider != null && hit.collider.transform.IsChildOf(deviceRoot))
+                    continue;
+
+                float dist = RayStartOffset + hit.distance;
+                float travel = dist / Mathf.Max(0.01f, projectionRange);
+                float fade = 1f - Mathf.SmoothStep(0f, 1f,
+                    Mathf.InverseLerp(fadeStart, 1f, travel));
+                if (fade <= 0.01f)
+                    continue;
+
+                WriteQuad(placed, hit.point + hit.normal * SurfaceLift, hit.normal,
+                          dotSizeAtOneMetre * dist, fade);
+                placed++;
             }
 
-            _builtRange = projectionRange;
+            _lastDotsPlaced = placed;
+            UploadMesh(placed, lens);
 
-            if (_volume == null)
-                _volume = new Mesh { name = "SpectralGridVolume" };
+            _lastBuildPosition = lens;
+            _lastBuildRotation = _origin.rotation;
+            _lastBuildTime = Time.time;
+            _hasBuilt = true;
+        }
 
-            float r = projectionRange;
-            var vertices = new Vector3[8]
+        /// <summary>True while the device is in somebody's hands rather than deployed.</summary>
+        private bool IsCarried()
+        {
+            var projector = GetComponentInParent<SpectralGridProjector>();
+            return projector != null && !projector.IsPlaced;
+        }
+
+        /// <summary>
+        /// One dot: four vertices lying in the surface's own plane, centred on the hit.
+        ///
+        /// <para>
+        /// Flat on the surface rather than facing the camera, because that is what a projected
+        /// dot is - it stretches into an ellipse on a wall seen at a glancing angle, exactly as a
+        /// real one does, and it needs nothing per frame to keep facing anybody.
+        /// </para>
+        /// </summary>
+        private void WriteQuad(int index, Vector3 centre, Vector3 normal, float size, float fade)
+        {
+            // Any two perpendicular directions in the surface's plane. Built from whichever world
+            // axis is least parallel to the normal, so the cross product never collapses.
+            Vector3 reference = Mathf.Abs(normal.y) > 0.9f ? Vector3.forward : Vector3.up;
+            Vector3 tangent = Vector3.Normalize(Vector3.Cross(normal, reference));
+            Vector3 bitangent = Vector3.Cross(normal, tangent);
+
+            float half = size * 0.5f;
+            Vector3 a = tangent * half;
+            Vector3 b = bitangent * half;
+
+            int v = index * 4;
+            _vertices[v + 0] = centre - a - b;
+            _vertices[v + 1] = centre + a - b;
+            _vertices[v + 2] = centre + a + b;
+            _vertices[v + 3] = centre - a + b;
+
+            var tint = new Color32(255, 255, 255, (byte)Mathf.Clamp(Mathf.RoundToInt(fade * 255f), 0, 255));
+            _colors[v + 0] = tint;
+            _colors[v + 1] = tint;
+            _colors[v + 2] = tint;
+            _colors[v + 3] = tint;
+        }
+
+        /// <summary>
+        /// Grows the working arrays, and only ever upwards.
+        ///
+        /// <para>
+        /// The UVs and the indices never change once written for a slot, so they are filled here
+        /// rather than per rebuild - a rebuild writes positions and colours only. Nothing is
+        /// allocated while the field is merely running.
+        /// </para>
+        /// </summary>
+        private void EnsureCapacity(int dots)
+        {
+            if (_capacity >= dots && _vertices != null)
+                return;
+
+            int previous = _capacity;
+            _capacity = Mathf.Max(dots, 16);
+
+            System.Array.Resize(ref _vertices, _capacity * 4);
+            System.Array.Resize(ref _uv, _capacity * 4);
+            System.Array.Resize(ref _colors, _capacity * 4);
+            System.Array.Resize(ref _indices, _capacity * 6);
+
+            for (int i = previous; i < _capacity; i++)
             {
-                new Vector3(-r, -r, -r), new Vector3(r, -r, -r),
-                new Vector3(r, -r, r),   new Vector3(-r, -r, r),
-                new Vector3(-r, r, -r),  new Vector3(r, r, -r),
-                new Vector3(r, r, r),    new Vector3(-r, r, r),
-            };
+                int v = i * 4;
+                _uv[v + 0] = new Vector2(0f, 0f);
+                _uv[v + 1] = new Vector2(1f, 0f);
+                _uv[v + 2] = new Vector2(1f, 1f);
+                _uv[v + 3] = new Vector2(0f, 1f);
 
-            var triangles = new int[]
+                int t = i * 6;
+                _indices[t + 0] = v + 0;
+                _indices[t + 1] = v + 2;
+                _indices[t + 2] = v + 1;
+                _indices[t + 3] = v + 0;
+                _indices[t + 4] = v + 3;
+                _indices[t + 5] = v + 2;
+            }
+        }
+
+        /// <summary>
+        /// Hands the mesh to Unity, with the unused tail collapsed rather than left behind.
+        ///
+        /// <para>
+        /// Slots past the number of dots actually placed keep whatever they held last time, so
+        /// they are folded onto the lens where they have zero area and draw nothing. Clearing the
+        /// mesh and rebuilding its arrays instead would allocate on every rebuild, which is the
+        /// one thing a per-movement path must not do.
+        /// </para>
+        /// </summary>
+        private void UploadMesh(int placed, Vector3 lens)
+        {
+            for (int i = placed; i < _capacity; i++)
             {
-                0, 2, 1, 0, 3, 2,   // bottom
-                4, 5, 6, 4, 6, 7,   // top
-                0, 1, 5, 0, 5, 4,   // -z
-                2, 3, 7, 2, 7, 6,   // +z
-                3, 0, 4, 3, 4, 7,   // -x
-                1, 2, 6, 1, 6, 5,   // +x
-            };
+                int v = i * 4;
+                _vertices[v + 0] = lens;
+                _vertices[v + 1] = lens;
+                _vertices[v + 2] = lens;
+                _vertices[v + 3] = lens;
+            }
 
-            _volume.Clear();
-            _volume.vertices = vertices;
-            _volume.triangles = triangles;
-            _volume.RecalculateBounds();
-            _filter.sharedMesh = _volume;
+            _mesh.Clear();
+            _mesh.vertices = _vertices;
+            _mesh.uv = _uv;
+            _mesh.colors32 = _colors;
+            _mesh.triangles = _indices;
+
+            // The dots are written in world space on an identity rig, so the bounds are a world
+            // box around the lens. Set rather than recalculated: recalculating walks every vertex,
+            // and the answer is known - the field cannot reach further than its own range.
+            _mesh.bounds = new Bounds(lens, Vector3.one * (projectionRange * 2f));
         }
 
         private void PushProperties()
@@ -402,355 +565,75 @@ namespace CatchIfYouCan.Equipment
 
             _block ??= new MaterialPropertyBlock();
             _renderer.GetPropertyBlock(_block);
-
             _block.SetColor(DotColorId, dotColor);
-            // Rounded: the azimuth grid wraps from +PI to -PI, and only a whole number of cells
-            // meets itself there. A fractional density puts a visible seam down one meridian.
-            _block.SetFloat(DensityId, Mathf.Round(density));
-            _block.SetFloat(DotSizeId, dotSize);
-            _block.SetFloat(RangeId, projectionRange);
             _block.SetFloat(IntensityId, intensity);
-            _block.SetFloat(FadeStartId, fadeStart);
+            _block.SetFloat(SoftnessId, softness);
             _block.SetFloat(DebugModeId, debugStage);
-
             _renderer.SetPropertyBlock(_block);
-        }
-
-        /// <summary>
-        /// The lens and the device's three axes, in world space. Everything angular in the
-        /// shader is measured from these, which is what keeps the pattern centred on the
-        /// physical projector and turning with it.
-        /// </summary>
-        private void PushOrigin()
-        {
-            if (_renderer == null || _origin == null)
-                return;
-
-            _block ??= new MaterialPropertyBlock();
-            _renderer.GetPropertyBlock(_block);
-
-            Vector3 o = _origin.position;
-            _block.SetVector(OriginId, new Vector4(o.x, o.y, o.z, 0f));
-            _block.SetVector(AxisXId, _origin.right);
-            _block.SetVector(AxisYId, _origin.up);
-            _block.SetVector(AxisZId, _origin.forward);
-
-            _renderer.SetPropertyBlock(_block);
-        }
-
-        /// <summary>
-        /// Declares that this effect cannot work without a scene depth texture, on the cameras
-        /// that actually render to a display.
-        ///
-        /// <para>
-        /// The shader reconstructs every dot from the depth buffer, so without one it draws
-        /// nothing at all - not something wrong, NOTHING, which is indistinguishable from a dead
-        /// pass. <c>CIYC_URP.asset</c> already carries <c>m_RequireDepthTexture: 1</c> and all
-        /// three quality levels use it (their <c>customRenderPipeline</c> is 0), so the pipeline
-        /// asks for depth globally. What the pipeline setting cannot do is override a CAMERA that
-        /// says no - and the player's camera is created at RUNTIME by <c>PlayerRigBuilder</c>,
-        /// which adds a <c>UniversalAdditionalCameraData</c> and sets only
-        /// <c>renderPostProcessing</c> on it. Whatever that component's depth option defaults to
-        /// on a freshly added instance is the one link in this chain that cannot be read from any
-        /// file in this repository.
-        /// </para>
-        ///
-        /// <para>
-        /// So the requirement is declared HERE, by the thing that has it, through
-        /// <c>Camera.depthTextureMode</c> - a core engine property rather than a package one.
-        /// That choice is deliberate: URP 17.5.0's sources are not on this machine and
-        /// <c>docs.unity3d.com</c> answers 403, so the URP-specific property that backs the
-        /// camera's own Depth Texture dropdown cannot be verified to exist under that name in
-        /// this version. Writing an unverifiable symbol into a build would not fail this
-        /// effect - it would fail EVERY script in the project (mistake 9), and a dark projector
-        /// is a far smaller bug than a project that will not compile.
-        /// </para>
-        ///
-        /// <para>
-        /// Cameras with a <c>targetTexture</c> are skipped on purpose: the portal and the mirror
-        /// both render into buffers of their own and neither is the view this effect is seen in.
-        /// </para>
-        /// </summary>
-        private void RequestSceneDepth()
-        {
-            Camera[] cameras = Camera.allCameras;
-            if (cameras == null)
-                return;
-
-            for (int i = 0; i < cameras.Length; i++)
-            {
-                Camera cam = cameras[i];
-                if (cam == null || cam.targetTexture != null)
-                    continue;
-
-                cam.depthTextureMode |= DepthTextureMode.Depth;
-            }
         }
 
 #if UNITY_EDITOR || DEVELOPMENT_BUILD
         /// <summary>
-        /// One line, at switch-on. Never per frame: this runs from <see cref="SetRunning"/>,
-        /// which runs on a keypress.
-        /// </summary>
-        private void ReportProjection()
-        {
-            int cells = Mathf.RoundToInt(Mathf.Round(density) * Mathf.Round(density) * 0.5f);
-            var volumes = GetComponentsInChildren<MeshRenderer>(true);
-
-            string block =
-                "[CIYC][DOTS] PROJECTION_ON" +
-                " mode=SphericalAngular" +
-                " origin=" + ProjectionOrigin.ToString("F2") +
-                " axis=" + (_origin != null ? _origin.up.ToString("F2") : "-") +
-                " range=" + projectionRange.ToString("F1") +
-                " density=" + Mathf.Round(density).ToString("F0") +
-                " cellsOnSphere=" + cells +
-                " dotSize=" + dotSize.ToString("F2") +
-                " cellDegrees=" + (360f / Mathf.Max(1f, Mathf.Round(density))).ToString("F2") +
-                " intensity=" + intensity.ToString("F1") +
-                " material=" + (_renderer != null && _renderer.sharedMaterial != null
-                    ? _renderer.sharedMaterial.name : "NULL") +
-                " renderer=" + (_renderer != null && _renderer.enabled) +
-                (debugStage > 0 ? "  DEBUG STAGE " + debugStage : string.Empty);
-
-            // Everything a person would otherwise have to pause the game and click through, in
-            // one line at the moment it is switched on. "It says PROJECTING and there is nothing
-            // on screen" has half a dozen causes that all look identical from the player's seat -
-            // a disabled renderer, a culled volume, a material that did not resolve, a shader the
-            // platform refuses, a volume the size of a coin - and each of them is a different
-            // afternoon. None of them can hide from this.
-            string volume = "[CIYC][DOTS][VOLUME]";
-            if (_renderer == null)
-            {
-                volume += " renderer=NULL";
-            }
-            else
-            {
-                Material mat = _renderer.sharedMaterial;
-                Bounds b = _renderer.bounds;
-                volume +=
-                    " go=" + _renderer.gameObject.name +
-                    " activeInHierarchy=" + _renderer.gameObject.activeInHierarchy +
-                    " rendererEnabled=" + _renderer.enabled +
-                    " layer=" + _renderer.gameObject.layer +
-                    " worldScale=" + _renderer.transform.lossyScale.ToString("F3") +
-                    " boundsCenter=" + b.center.ToString("F2") +
-                    " boundsSize=" + b.size.ToString("F2") +
-                    " mesh=" + (_filter != null && _filter.sharedMesh != null
-                        ? _filter.sharedMesh.name + "/" + _filter.sharedMesh.vertexCount + "v"
-                        : "NULL") +
-                    // The NAME answers "shared asset or per-instance copy": Unity suffixes an
-                    // instantiated material with " (Instance)". Reading an id would say the same
-                    // thing through an API this project cannot typecheck offline.
-                    " material=" + (mat != null ? mat.name : "NULL") +
-                    " shader=" + (mat != null && mat.shader != null ? mat.shader.name : "NONE") +
-                    " shaderSupported=" + (mat != null && mat.shader != null && mat.shader.isSupported) +
-                    " debugStage=" + debugStage;
-            }
-
-            Core.CIYCLog.Info(volume);
-
-            // Whether the camera stands INSIDE the box is the one fact nobody can read off a
-            // screenshot of an invisible effect, and it used to decide which faces were drawn.
-            // The pass culls NOTHING now, so it no longer decides anything - which is the point:
-            // one fewer thing that has to be right before a single pixel appears. The line stays
-            // because it still separates "the volume is nowhere near the viewer" from "the
-            // volume is all around the viewer and still draws nothing", and those are different
-            // afternoons.
-            Camera cam = Camera.main;
-            if (cam == null || _renderer == null)
-            {
-                Core.CIYCLog.Info("[CIYC][DOTS][CAMERA] no main camera or no renderer to compare");
-            }
-            else
-            {
-                Vector3 eye = cam.transform.position;
-                bool inside = _renderer.bounds.Contains(eye);
-                bool masked = (cam.cullingMask & (1 << _renderer.gameObject.layer)) != 0;
-                Core.CIYCLog.Info(
-                    "[CIYC][DOTS][CAMERA] camera=" + cam.name +
-                    " position=" + eye.ToString("F2") +
-                    " volumeContainsCamera=" + inside +
-                    " cameraMaskIncludesVolume=" + masked +
-                    " cullMode=Off (the camera is " + (inside ? "INSIDE" : "outside") + " the volume, " +
-                    "and with culling off that no longer changes what is drawn)");
-
-                if (!masked)
-                {
-                    Core.CIYCLog.Error("[CIYC][DOTS][CAMERA] the camera's culling mask EXCLUDES " +
-                                       "the volume's layer, so this pass never runs for it. " +
-                                       "Nothing downstream of here can be the reason.");
-                }
-            }
-
-            bool broken = _renderer == null || !_renderer.enabled ||
-                          _renderer.sharedMaterial == null;
-            if (broken)
-            {
-                Core.CIYCLog.Error(block + "  <- FAILED PROJECTION STATE");
-            }
-            else
-            {
-                // What this cannot see: whether the URP asset still has its depth texture. The
-                // shader reconstructs every dot from it, and without it every pixel resolves to
-                // the far plane and the effect is invisible rather than wrong.
-                Core.CIYCLog.Info(block);
-            }
-
-            ReportDuplicates(volumes);
-            ReportDepth();
-        }
-
-        /// <summary>
-        /// Whether a scene depth texture exists at all, and which camera would be producing it.
+        /// One line, at switch-on. Never per frame: this runs from <see cref="SetRunning"/>, which
+        /// runs on a keypress.
         ///
         /// <para>
-        /// This is the one question the shader's own rungs cannot fully answer. Rung 3 shows a
-        /// flat blue view when the sampled value is zero everywhere, and that has two causes with
-        /// one picture: the texture was never produced, or it was produced and this pass is not
-        /// being given it. <c>Shader.GetGlobalTexture</c> answers the first half from outside the
-        /// shader entirely - a null there means nothing produced it, and no amount of reading the
-        /// shader will ever say so.
-        /// </para>
-        ///
-        /// <para>
-        /// And it does NOT trust <c>Camera.main</c>. That is the camera tagged MainCamera, which
-        /// is not necessarily the camera the Game view is drawn by: this scene also runs a portal
-        /// camera and a mirror camera, and an Overlay camera in a stack renders through its Base.
-        /// Every camera without a <c>targetTexture</c> is listed with its depth ordering, so the
-        /// reader can see which one is on top rather than being told.
+        /// It reports the DOT COUNT above everything else, because that one number separates the
+        /// two failures this device has spent its life confusing: a field that was never cast
+        /// (zero dots - the rays hit nothing, so the projector is somewhere with no geometry
+        /// around it) and a field that was cast and is not being drawn (thousands of dots, and a
+        /// black screen - the renderer, the material or the shader).
         /// </para>
         /// </summary>
-        private void ReportDepth()
+        private void Report()
         {
-            // Read after a frame has rendered, so this is the texture the last frame actually
-            // had. Null is the finding; a size is the finding too.
-            Texture depth = Shader.GetGlobalTexture("_CameraDepthTexture");
-
-            var line = new System.Text.StringBuilder("[CIYC][DOTS][DEPTH]");
-            line.Append(" depthTextureAvailable=").Append(depth != null);
-            if (depth != null)
-                line.Append(" depthSize=").Append(depth.width).Append('x').Append(depth.height);
-            line.Append(" screenSize=").Append(Screen.width).Append('x').Append(Screen.height);
-
-            var pipeline = UnityEngine.Rendering.GraphicsSettings.currentRenderPipeline;
-            line.Append(" pipeline=").Append(pipeline != null ? pipeline.name : "NONE");
-            line.Append(" mainCamera=").Append(Camera.main != null ? Camera.main.name : "NULL");
-
-            Camera[] cameras = Camera.allCameras;
-            int displayCameras = 0;
-            if (cameras != null)
-            {
-                for (int i = 0; i < cameras.Length; i++)
-                {
-                    Camera cam = cameras[i];
-                    if (cam == null || cam.targetTexture != null)
-                        continue;
-
-                    displayCameras++;
-                    line.Append("\n  camera=").Append(cam.name)
-                        .Append(" depth=").Append(cam.depth.ToString("F1"))
-                        .Append(" targetDisplay=").Append(cam.targetDisplay)
-                        .Append(" isMainTagged=").Append(cam == Camera.main)
-                        .Append(" requestsDepth=")
-                        .Append((cam.depthTextureMode & DepthTextureMode.Depth) != 0);
-
-                    // GetComponent rather than the GetUniversalAdditionalCameraData()
-                    // extension: the extension needs a using this file does not carry, and a
-                    // plain GetComponent on a type three other files in this project already
-                    // name asks nothing new of the package.
-                    var data = cam.GetComponent<
-                        UnityEngine.Rendering.Universal.UniversalAdditionalCameraData>();
-                    line.Append(" renderType=")
-                        .Append(data != null ? data.renderType.ToString() : "NO_URP_DATA");
-                }
-            }
-
-            line.Append("\n  displayCameras=").Append(displayCameras);
-
-            if (depth == null)
-            {
-                Core.CIYCLog.Error(line + "\n  <- NO SCENE DEPTH TEXTURE. Every dot is " +
-                                   "reconstructed from it, so the projection can only draw " +
-                                   "nothing. This is upstream of the shader entirely.");
-            }
-            else
-            {
-                Core.CIYCLog.Info(line.ToString());
-            }
-        }
-
-        /// <summary>
-        /// How many of each of these there are under the DEVICE, which is a different question
-        /// from how many are under this component.
-        ///
-        /// <para>
-        /// Every item reaches the world as an <c>Instantiate</c> of a live template, so the
-        /// clone arrives carrying whatever the template built - a ProjectorHead, a projection, a
-        /// volume - while every private field that pointed at them is null. A build step that
-        /// reads one of those fields as "nothing here yet" then builds a SECOND set beside the
-        /// first (mistakes 27 and 30). Two coincident copies of one effect do not look like two
-        /// of anything; on an additive pass they look like one effect at double brightness, and
-        /// on a dead one they look like nothing at all. So they are COUNTED, from the device
-        /// rather than from here - counting from here can only ever find this component's own
-        /// children and would report a clean 1 while a second projection sat next door.
-        /// </para>
-        /// </summary>
-        private void ReportDuplicates(MeshRenderer[] volumesUnderThis)
-        {
-            // The device, not the scene root: the item spends half its life parented into the
-            // player's hand, and counting from there would sweep the whole rig.
+            int projections = 0;
+            int rigs = 0;
             Component device = GetComponentInParent<SpectralGridProjector>();
             Transform scope = device != null ? device.transform : transform;
+            projections = scope.GetComponentsInChildren<SpectralGridProjection>(true).Length;
+            rigs = scope.GetComponentsInChildren<EffectVolume>(true).Length;
 
-            var projections = scope.GetComponentsInChildren<SpectralGridProjection>(true);
-            var volumes = scope.GetComponentsInChildren<EffectVolume>(true);
-
+            Material mat = _renderer != null ? _renderer.sharedMaterial : null;
             Core.CIYCLog.Info(
-                "[CIYC][DOTS][COUNT] scope=" + scope.name +
-                " projectionCountUnderProjector=" + projections.Length +
-                " volumeCountUnderProjector=" + volumes.Length +
-                " renderersUnderThisProjection=" + volumesUnderThis.Length +
-                " expected=1/1/1");
+                "[CIYC][DOTS] PROJECTION_ON mode=RaycastQuads" +
+                " dotsPlaced=" + _lastDotsPlaced +
+                " of " + (IsCarried() ? carriedDotCount : deployedDotCount) + " rays" +
+                " origin=" + ProjectionOrigin.ToString("F2") +
+                " range=" + projectionRange.ToString("F1") +
+                " carried=" + IsCarried() +
+                " rendererEnabled=" + (_renderer != null && _renderer.enabled) +
+                " material=" + (mat != null ? mat.name : "NULL") +
+                " shader=" + (mat != null && mat.shader != null ? mat.shader.name : "NONE") +
+                " shaderSupported=" + (mat != null && mat.shader != null && mat.shader.isSupported) +
+                " meshVerts=" + (_mesh != null ? _mesh.vertexCount : 0) +
+                " projectionCountUnderProjector=" + projections +
+                " volumeCountUnderProjector=" + rigs +
+                (debugStage > 0 ? "  DEBUG STAGE " + debugStage : string.Empty));
 
-            if (projections.Length == 1 && volumes.Length == 1 && volumesUnderThis.Length == 1)
-                return;
-
-            // Named, not counted. "2" sends the reader looking for a second projector; the PATHS
-            // say whether it is a duplicated volume, a stray marked renderer or the device's own
-            // model caught by the marker.
-            Core.CIYCLog.Error("[CIYC][DOTS][ERROR] duplicate projection machinery on this " +
-                               "device: projections=" + Describe(projections) +
-                               " volumes=" + Describe(volumes) +
-                               " renderersUnderThisProjection=" + Describe(volumesUnderThis));
-        }
-
-        private static string Describe(Component[] parts)
-        {
-            if (parts == null || parts.Length == 0)
-                return "(none)";
-
-            var names = new System.Text.StringBuilder();
-            for (int i = 0; i < parts.Length; i++)
+            if (_lastDotsPlaced == 0)
             {
-                if (parts[i] == null)
-                    continue;
-                if (names.Length > 0)
-                    names.Append(" | ");
-                Transform t = parts[i].transform;
-                names.Append(t.name);
-                if (t.parent != null)
-                    names.Append(" (under ").Append(t.parent.name).Append(')');
+                Core.CIYCLog.Error("[CIYC][DOTS] NOT ONE RAY HIT ANYTHING within " +
+                                   projectionRange.ToString("F1") + " m of " +
+                                   ProjectionOrigin.ToString("F2") + ". The field is cast by " +
+                                   "raycasts, so this is a projector with no geometry around it " +
+                                   "rather than a rendering fault.");
             }
 
-            return names.Length > 0 ? names.ToString() : "(none)";
+            if (projections != 1 || rigs != 1)
+            {
+                Core.CIYCLog.Error("[CIYC][DOTS][ERROR] duplicate projection machinery: " +
+                                   "projections=" + projections + " rigs=" + rigs +
+                                   " expected=1/1. A clone built a second set beside the one it " +
+                                   "already carried (mistakes 27, 30, 46).");
+            }
         }
 #endif
 
         private void OnDestroy()
         {
-            if (_volume != null)
-                Destroy(_volume);
+            if (_mesh != null)
+                Destroy(_mesh);
         }
     }
 }
