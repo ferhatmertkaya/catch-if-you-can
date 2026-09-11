@@ -1320,6 +1320,29 @@ Repeating one of these is the most likely way to break something.
    unzusammenhaengende Systeme gleichzeitig ausfallen sieht, sucht nicht zwei Fehler, sondern
    die eine Ebene, auf der sie zusammenhaengen.
 
+## Den Stand holen
+
+Unity schreibt bei jeder Sitzung an getrackten Dateien herum - Materialien, ProBuilder-Settings,
+neu serialisierte Szenen - und `git pull --rebase` bricht dann mit "Sie haben Aenderungen, die
+nicht zum Commit vorgemerkt sind" ab. Das ist kein Fehler im Repository und war bisher jedes Mal
+nur Unity-Rauschen. Der Befehl dafuer, fertig zum Kopieren:
+
+```
+git checkout -- . && git pull --rebase origin claude-work
+```
+
+Das verwirft NUR Aenderungen an getrackten Dateien. Nicht getrackte Dateien - frisch importierte
+Modelle, Texturen, alles noch nicht Hinzugefuegte - bleiben unberuehrt.
+
+Wenn von Hand etwas geaendert wurde, das behalten werden soll, stattdessen:
+
+```
+git stash push -u && git pull --rebase origin claude-work && git stash pop
+```
+
+**Diesen Befehl unaufgefordert mitliefern**, wenn nach einem Push zum Pullen aufgefordert wird -
+die Frage ist in dieser Zusammenarbeit schon viermal gestellt worden.
+
 ## Unity Editor availability
 
 Most work on this project happens where Unity cannot run. When it cannot:
