@@ -160,7 +160,22 @@ place that number lives; everything else derives it.
   clone adopts the head, the projection and the rig it already carries rather than building a
   second set beside them (mistakes 27, 30, 46); and the one surviving diagnostic - every dot quad
   magenta - ships at 0 in the shader AND in the C#, because a diagnostic that runs while somebody
-  plays does not diagnose, it creates (mistake 23). And the rig stands at WORLD identity, re-asserted every frame: the quads are built in world coordinates and the rig hangs under the lens, so a LOCAL identity there means "wear the lens pose" and every dot would take the lens transform a second time - a projector two metres out, laid on its side, painting its dots four metres away and twice rotated. 95 checks.
+  plays does not diagnose, it creates (mistake 23). And the rig stands at WORLD identity, re-asserted every frame: the quads are built in world coordinates and the rig hangs under the lens, so a LOCAL identity there means "wear the lens pose" and every dot would take the lens transform a second time - a projector two metres out, laid on its side, painting its dots four metres away and twice rotated. And the device's own LENS shows its power
+  state: the model has carried an emission map since it arrived - black everywhere but the lens, so
+  the SHAPE of the glow was painted long ago - and the material was missing the `_EMISSION`
+  keyword, without which URP/Lit does not evaluate emission at all. An assigned map and a missing
+  keyword look exactly like a model nobody painted a lens on, which is why it read as dark plastic
+  rather than as a bug. The mask is what keeps the casing dark: one colour is pushed at the whole
+  renderer, and a colour multiplied by a black mask is still black, so the glow cannot spread to
+  the body however high the number goes. Off stays visible as green glass and under the project's
+  own Bloom threshold (0.8, already in the menu volume - nothing about Bloom was changed); on
+  clears it in the GREEN channel only, because a multiplier that lifts all three blooms white. It
+  rides the SAME signal as the projection - `running` already folds in the battery, the switch and
+  the lifecycle, so a second state variable for the glow could only disagree, and the disagreement
+  would read as a device that is off and still lit. A property block rather than
+  `renderer.material`, which would clone one material per projector on first touch, written only
+  when the state actually changes, and the dot field is left out of it by its EffectVolume mark.
+  102 checks.
 - `Scripts/check_multiplayer_architecture.sh` — the deterministic assembly stays
   engine-free, gameplay never reaches a Relay API, remote players never read
   local input, ghost decisions stay host-only, online capacity has exactly one

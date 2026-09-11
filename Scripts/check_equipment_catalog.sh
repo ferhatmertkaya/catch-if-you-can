@@ -1109,6 +1109,102 @@ else
   fi
 fi
 
+# --------------------------------------------------------------- die gruene Linse am Geraet
+#
+# Das Modell traegt seit jeher eine Emission-Map, die ueberall schwarz ist ausser auf der Linse -
+# die Form des Leuchtens war also laengst gemalt. Was fehlte, war das `_EMISSION`-Keyword, und
+# ohne das rechnet URP/Lit Emission GAR NICHT. Eine zugewiesene Map und ein fehlendes Keyword
+# sehen aus wie ein Modell, auf das nie jemand eine Linse gemalt hat.
+
+LENS="Assets/CatchIfYouCan/Scripts/Equipment/SpectralGridLens.cs"
+LENSMAT="Assets/CatchIfYouCan/Resources/Props/MAT_DOTSProjectorLevel1.mat"
+
+# 24. Das Keyword steht im Material. Ohne es ist jede Zahl in diesem Abschnitt wirkungslos.
+if [ -f "$LENSMAT" ] && grep -qE '^  - _EMISSION$' "$LENSMAT"; then
+  ok "das Projektor-Material hat das _EMISSION-Keyword, ohne das URP keine Emission rechnet"
+else
+  fail "das Projektor-Material hat das _EMISSION-Keyword, ohne das URP keine Emission rechnet"
+fi
+
+# 25. Und es hat weiterhin eine Emission-MAP. Die Maske entscheidet, WO geleuchtet wird; ohne sie
+#     wuerde dieselbe Farbe das ganze Gehaeuse zum Leuchten bringen, was ausdruecklich nicht
+#     gewollt ist. Die Farbe entscheidet nur, wie stark.
+if [ -f "$LENSMAT" ] && printf '%s\n' "$(sed -n '/_EmissionMap:/,/m_Offset/p' "$LENSMAT")" \
+     | grep -qE 'm_Texture: \{fileID: [0-9]+, guid: [0-9a-f]{32}'; then
+  ok "die Emission ist auf die Linse maskiert, statt dem ganzen Gehaeuse zu gehoeren"
+else
+  fail "die Emission ist auf die Linse maskiert, statt dem ganzen Gehaeuse zu gehoeren"
+fi
+
+# 26. Die Linse haengt an DERSELBEN Leitung wie die Projektion. `running` faltet Batterie,
+#     Schalter und Lebenszyklus schon zusammen - eine zweite Zustandsvariable fuer das Leuchten
+#     koennte mit dieser nur uneins werden, und die Uneinigkeit saehe aus wie ein Geraet, das aus
+#     ist und trotzdem leuchtet.
+if [ -f "$PROJECTOR" ]; then
+  changed=$(printf '%s\n' "$prcode" | sed -n '/protected virtual void OnProjectionStateChanged/,/^        }$/p')
+  if printf '%s' "$changed" | grep -qE '_lens\?\.SetPowered\(running\)' \
+     && printf '%s' "$changed" | grep -qE '_projection\?\.SetRunning\(running\)'; then
+    ok "die Linse haengt an derselben Leitung wie die Projektion, nicht an einer zweiten"
+  else
+    fail "die Linse haengt an derselben Leitung wie die Projektion, nicht an einer zweiten"
+  fi
+else
+  fail "die Linse haengt an derselben Leitung wie die Projektion, nicht an einer zweiten"
+fi
+
+# 27. Sie alloziert kein Material. `renderer.material` klont beim ersten Zugriff und hinterlaesst
+#     je Projektor eine Kopie; ein Property-Block wird einmal angelegt und nur bei einem echten
+#     Zustandswechsel beschrieben.
+if [ -f "$LENS" ]; then
+  lcode=$(sed 's://.*::' "$LENS" | grep -v '^[[:space:]]*\*')
+  if printf '%s' "$lcode" | grep -qE 'MaterialPropertyBlock' \
+     && ! printf '%s' "$lcode" | grep -qE '\.material\b|\.materials\b' \
+     && printf '%s' "$lcode" | sed -n '/public void SetPowered/,/^        }$/p' \
+          | grep -qE '_powered == powered'; then
+    ok "die Linse nutzt einen Property-Block und schreibt nur bei einem Zustandswechsel"
+  else
+    fail "die Linse nutzt einen Property-Block und schreibt nur bei einem Zustandswechsel"
+  fi
+else
+  fail "die Linse nutzt einen Property-Block und schreibt nur bei einem Zustandswechsel"
+fi
+
+# 28. Und sie fasst das PUNKTEFELD nicht an. Das ist ein Renderer unter demselben Visual und
+#     gehoert nicht zum Koerper - genau dafuer traegt es die EffectVolume-Markierung.
+if [ -f "$LENS" ] && printf '%s' "$lcode" | grep -qE 'EffectVolume\.Encloses'; then
+  ok "die Linse laesst das Punktefeld aus, statt ihm eine Emissionsfarbe zu schreiben"
+else
+  fail "die Linse laesst das Punktefeld aus, statt ihm eine Emissionsfarbe zu schreiben"
+fi
+
+# 29. Aus ist nicht schwarz. Die Linse soll im Ruhezustand als gruenes Glas lesbar bleiben, und
+#     dabei unter der Bloom-Schwelle dieses Projekts (0,8) liegen - sonst glueht ein Geraet, das
+#     niemand eingeschaltet hat.
+if [ -f "$LENS" ]; then
+  offg=$(printf '%s' "$lcode" | sed -n 's/.*offEmission = new Color([0-9.]*f, \([0-9.]*\)f.*/\1/p' | head -1)
+  if [ -n "$offg" ] && awk "BEGIN{exit !($offg > 0 && $offg < 0.8)}"; then
+    ok "die ausgeschaltete Linse bleibt sichtbar und bloomt nicht (gruen=$offg)"
+  else
+    fail "die ausgeschaltete Linse bleibt sichtbar und bloomt nicht (gruen='$offg', gewollt 0<g<0.8)"
+  fi
+else
+  fail "die ausgeschaltete Linse bleibt sichtbar und bloomt nicht"
+fi
+
+# 30. An ist ueber der Schwelle, und zwar im GRUENkanal. Ein Multiplikator, der alle drei Kanaele
+#     ueber 1 hebt, blooмt weiss statt gruen.
+if [ -f "$LENS" ]; then
+  ong=$(printf '%s' "$lcode" | sed -n 's/.*onEmission = new Color([0-9.]*f, \([0-9.]*\)f.*/\1/p' | head -1)
+  onm=$(printf '%s' "$lcode" | sed -n 's/.*private float onMultiplier = \([0-9.]*\)f.*/\1/p' | head -1)
+  if [ -n "$ong" ] && [ -n "$onm" ] && awk "BEGIN{exit !($ong * $onm > 0.8)}"; then
+    ok "die eingeschaltete Linse liegt ueber der Bloom-Schwelle ($ong x $onm)"
+  else
+    fail "die eingeschaltete Linse liegt ueber der Bloom-Schwelle (gruen='$ong' x '$onm')"
+  fi
+else
+  fail "die eingeschaltete Linse liegt ueber der Bloom-Schwelle"
+fi
+
 # ------------------------------------------------------------------ und der Shader selbst
 if [ ! -f "$SHDR" ]; then
   fail "SpectralGrid.shader existiert"

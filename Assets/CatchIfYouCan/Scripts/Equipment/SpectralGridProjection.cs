@@ -52,16 +52,17 @@ namespace CatchIfYouCan.Equipment
 
         [Tooltip("Brightness of a dot. This is the only brightness there is - there is no light " +
                  "in this effect, so it cannot flood a room however high it goes.")]
-        [SerializeField, Range(0f, 12f)] private float intensity = 2.4f;
+        [SerializeField, Range(0f, 12f)] private float intensity = 2.8f;
 
         [Tooltip("How soft a dot's edge is, as a fraction of its radius. Small keeps it a crisp " +
                  "laser point; large turns it into a glow blob.")]
-        [SerializeField, Range(0.01f, 0.6f)] private float softness = 0.22f;
+        [SerializeField, Range(0.01f, 0.6f)] private float softness = 0.26f;
 
         [Tooltip("How wide a dot is on the surface at one metre, in metres. Dots grow with " +
                  "distance the way a real projected beam does, so this is the size at the near " +
-                 "end rather than everywhere.")]
-        [SerializeField, Range(0.002f, 0.05f)] private float dotSizeAtOneMetre = 0.011f;
+                 "end rather than everywhere. 0.0065 is a 2 cm dot on a wall three metres away - " +
+                 "fine and crisp rather than a coin.")]
+        [SerializeField, Range(0.002f, 0.05f)] private float dotSizeAtOneMetre = 0.0065f;
 
         [Header("Field")]
         [Tooltip("How many rays go out in every direction when the device is DEPLOYED. They are " +
@@ -81,8 +82,9 @@ namespace CatchIfYouCan.Equipment
         [SerializeField, Range(2f, 10f)] private float projectionRange = 5.5f;
 
         [Tooltip("Where the fade begins, as a fraction of the range. 0.55 keeps dots at full " +
-                 "strength across most of a room and fades them over the last stretch.")]
-        [SerializeField, Range(0.05f, 1f)] private float fadeStart = 0.55f;
+                 "strength across most of a room and fades them over the last stretch. 0.70 holds " +
+                 "them longer before the falloff starts, which reads as reach rather than as dimming.")]
+        [SerializeField, Range(0.05f, 1f)] private float fadeStart = 0.7f;
 
         [Header("Rebuilding")]
         [Tooltip("How far the lens must move, in metres, before the field is cast again. Zero " +

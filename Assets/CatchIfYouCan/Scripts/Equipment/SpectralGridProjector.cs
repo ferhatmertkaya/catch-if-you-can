@@ -138,6 +138,13 @@ namespace CatchIfYouCan.Equipment
         protected virtual void OnProjectionStateChanged(bool running)
         {
             _projection?.SetRunning(running);
+
+            // The lens rides the SAME signal, deliberately. `running` already folds in the
+            // battery, the power switch and the lifecycle - stowed in a bag, packed up off a
+            // wall, or run flat all arrive here as false - so a second state variable for the
+            // glow could only ever disagree with this one, and the disagreement would show as a
+            // device that is off and still lit.
+            _lens?.SetPowered(running);
         }
 
         /// <summary>
@@ -237,6 +244,11 @@ namespace CatchIfYouCan.Equipment
 
             _projection?.Configure(projectionRange, projectionAngle);
             _projection?.SetRunning(false);
+
+            // On the visual rather than on the head: the emission mask lives in the model's own
+            // material, so the thing that lights up has to be the thing that wears it.
+            _lens = SpectralGridLens.Attach(CarriedRoot);
+            _lens?.SetPowered(false);
         }
 
         [Header("Development")]
@@ -270,6 +282,7 @@ namespace CatchIfYouCan.Equipment
         }
 
         private SpectralGridProjection _projection;
+        private SpectralGridLens _lens;
         private Transform _head;
         private float _scanTimer;
 
