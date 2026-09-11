@@ -33,7 +33,7 @@ namespace CatchIfYouCan.UI
         }
 
         /// <summary>
-        /// Wiring, so <see cref="MainMenuScreenBuilder"/> never reaches into a private field.
+        /// Wiring, so the authoring tool never reaches into a private field.
         /// Called from runtime code as well as from the editor tool, so it is not called
         /// EditorBind any more - a name that says editor while runtime code calls it is the
         /// kind of comment CLAUDE.md mistake 33 is about.

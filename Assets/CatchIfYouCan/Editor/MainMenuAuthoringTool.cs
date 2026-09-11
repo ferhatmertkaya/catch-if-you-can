@@ -1,6 +1,5 @@
 using System.Collections.Generic;
 using CatchIfYouCan.UI;
-using TMPro;
 using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
@@ -58,11 +57,11 @@ namespace CatchIfYouCan.EditorTools
         private const string GrungePath =
             "Assets/CatchIfYouCan/Resources/UI/Menu/T_MenuGrungePanel.png";
 
-        // The branded SDF font the project already ships for headings and buttons. Loaded rather
-        // than invented: if it is not there the label is left on TMP's default and SAID to be,
-        // because a font that silently is not the one you asked for reads as a font that does
-        // not exist (mistake 3).
-        private const string ButtonFontResource = "Fonts & Materials/Oswald Bold SDF";
+        // No font constant here on purpose. UITheme.ApplyFont already assigns the project's
+        // branded font for a role, and it is the ONE place that decides TextMeshPro-or-legacy -
+        // a decision this file must not make a second time. Reaching past it for a TMP type is
+        // precisely what took the build down: TMP_PRESENT is not defined in this project, so an
+        // unguarded `using TMPro;` fails the whole assembly.
 
         /// <summary>The three rows, and the text each one STARTS with. The scene wins after that.</summary>
         private static readonly (string Id, string Caption)[] Rows =
@@ -151,12 +150,6 @@ namespace CatchIfYouCan.EditorTools
                 notes.Add("WARNUNG: " + BrushPath + " laedt nicht als Sprite. Die Pinselstriche " +
                           "entstehen ohne Bild; weise es von Hand zu.");
 
-            var font = Resources.Load<TMP_FontAsset>(ButtonFontResource);
-            if (font == null)
-                notes.Add("Hinweis: " + ButtonFontResource + " wurde nicht gefunden. Die " +
-                          "Beschriftungen behalten TMPs Standardschrift - im Inspector unter " +
-                          "Font Asset austauschbar.");
-
             var built = new List<MainMenuNavigation.Row>();
 
             for (int i = 0; i < Rows.Length; i++)
@@ -222,25 +215,25 @@ namespace CatchIfYouCan.EditorTools
                 brushGo.SetActive(i == 0);
 
                 // ---- Label_* -----------------------------------------------------------------
-                GameObject labelGo = EnsureChild(buttonGo, "Label_" + Rows[i].Id, out bool lblNew);
-                var label = Ensure<TextMeshProUGUI>(labelGo);
+                Component label = EnsureLabel(buttonGo, "Label_" + Rows[i].Id, Rows[i].Caption,
+                                              CaptionSize, TextAnchor.MiddleLeft,
+                                              UITheme.FontRole.Button, out bool lblNew);
+                if (label == null)
+                {
+                    notes.Add("WARNUNG: Beschriftung '" + Rows[i].Caption + "' nicht gebaut.");
+                    continue;
+                }
 
                 if (lblNew)
                 {
                     // The ONLY place a caption's text is ever written. After this the scene is
                     // authoritative and nothing in the project touches it again.
-                    label.text = Rows[i].Caption;
-                    label.fontSize = CaptionSize;
-                    label.alignment = TextAlignmentOptions.Left;
-                    label.raycastTarget = false;
-                    label.color = i == 0
+                    UITheme.SetText(label, Rows[i].Caption);
+                    UITheme.SetTextColor(label, i == 0
                         ? new Color(0.055f, 0.055f, 0.067f, 1f)
-                        : new Color(0.78f, 0.78f, 0.80f, 1f);
+                        : new Color(0.78f, 0.78f, 0.80f, 1f));
 
-                    if (font != null)
-                        label.font = font;
-
-                    var lr = Rect(labelGo);
+                    var lr = Rect(label.gameObject);
                     lr.anchorMin = Vector2.zero;
                     lr.anchorMax = Vector2.one;
                     lr.offsetMin = new Vector2(54f, 0f);
@@ -261,9 +254,9 @@ namespace CatchIfYouCan.EditorTools
             // ---- the two panels ---------------------------------------------------------------
             GameObject settings = EnsurePanel(root, SettingsPanelName, "SETTINGS",
                 "Die Einstellungen kommen hierher. Diese Huelle ist absichtlich leer: der Knopf " +
-                "ist verdrahtet, das System dahinter ist eine eigene Aufgabe.", font);
+                "ist verdrahtet, das System dahinter ist eine eigene Aufgabe.");
             GameObject credits = EnsurePanel(root, CreditsPanelName, "CREDITS",
-                "Catch If You Can", font);
+                "Catch If You Can");
 
             notes.Add(RetireTapToStart(scene));
 
@@ -289,7 +282,7 @@ namespace CatchIfYouCan.EditorTools
 
         /// <summary>A panel shell: a dim sheet, a title, a line of body text, and a way out.</summary>
         private static GameObject EnsurePanel(GameObject parent, string name, string title,
-                                              string body, TMP_FontAsset font)
+                                              string body)
         {
             GameObject panel = EnsureChild(parent, name, out bool created);
 
@@ -301,11 +294,11 @@ namespace CatchIfYouCan.EditorTools
                 sheet.color = new Color(0.02f, 0.02f, 0.03f, 0.92f);
                 sheet.raycastTarget = true;
 
-                Label(panel, "Title", title, 64, TextAlignmentOptions.Center, font,
-                      new Vector2(0.2f, 0.60f), new Vector2(0.8f, 0.74f), Color.white);
-                Label(panel, "Body", body, 26, TextAlignmentOptions.Center, font,
-                      new Vector2(0.2f, 0.40f), new Vector2(0.8f, 0.58f),
-                      new Color(0.72f, 0.72f, 0.74f, 1f));
+                PanelLabel(panel, "Title", title, 64, UITheme.FontRole.Title,
+                           new Vector2(0.2f, 0.60f), new Vector2(0.8f, 0.74f), Color.white);
+                PanelLabel(panel, "Body", body, 26, UITheme.FontRole.Body,
+                           new Vector2(0.2f, 0.40f), new Vector2(0.8f, 0.58f),
+                           new Color(0.72f, 0.72f, 0.74f, 1f));
 
                 GameObject backGo = EnsureChild(panel, "Button_Back", out _);
                 Stretch(backGo, new Vector2(0.40f, 0.26f), new Vector2(0.60f, 0.34f));
@@ -313,8 +306,8 @@ namespace CatchIfYouCan.EditorTools
                 backImage.color = new Color(1f, 1f, 1f, 0.10f);
                 backImage.raycastTarget = true;
                 Ensure<Button>(backGo).targetGraphic = backImage;
-                Label(backGo, "Label_Back", "ZURUECK", 24, TextAlignmentOptions.Center, font,
-                      Vector2.zero, Vector2.one, Color.white);
+                PanelLabel(backGo, "Label_Back", "ZURUECK", 24, UITheme.FontRole.Button,
+                           Vector2.zero, Vector2.one, Color.white);
 
                 // The back button is NOT wired here. A listener added at author time is either a
                 // lambda, which Unity does not serialise, or a persistent listener through an API
@@ -327,24 +320,68 @@ namespace CatchIfYouCan.EditorTools
             return panel;
         }
 
-        private static void Label(GameObject parent, string name, string text, int size,
-                                  TextAlignmentOptions align, TMP_FontAsset font,
-                                  Vector2 min, Vector2 max, Color colour)
+        private static void PanelLabel(GameObject parent, string name, string text, int size,
+                                       UITheme.FontRole role, Vector2 min, Vector2 max,
+                                       Color colour)
         {
-            GameObject go = EnsureChild(parent, name, out bool created);
-            var tmp = Ensure<TextMeshProUGUI>(go);
-            if (!created)
+            Component label = EnsureLabel(parent, name, text, size, TextAnchor.MiddleCenter,
+                                          role, out bool created);
+            if (label == null || !created)
                 return;
 
-            tmp.text = text;
-            tmp.fontSize = size;
-            tmp.alignment = align;
-            tmp.color = colour;
-            tmp.raycastTarget = false;
-            if (font != null)
-                tmp.font = font;
+            UITheme.SetText(label, text);
+            UITheme.SetTextColor(label, colour);
+            Stretch(label.gameObject, min, max);
+        }
 
-            Stretch(go, min, max);
+        /// <summary>
+        /// A caption, built through the project's OWN text factory.
+        ///
+        /// <para>
+        /// <see cref="RuntimeUIFactory.CreateText"/> is the single place this project decides
+        /// between a TextMeshPro label and a legacy one, and it is guarded behind TMP_PRESENT
+        /// because that define is not set here. Naming a TMPro type directly - which an earlier
+        /// version of this file did - fails the entire assembly when the namespace does not
+        /// resolve, and a broken Assembly-CSharp is not a broken menu, it is a broken GAME.
+        /// </para>
+        /// <para>
+        /// An EXISTING label is returned untouched, so its text, font, size and rectangle are
+        /// whatever the last person set them to.
+        /// </para>
+        /// </summary>
+        private static Component EnsureLabel(GameObject parent, string name, string caption,
+                                             int size, TextAnchor align, UITheme.FontRole role,
+                                             out bool created)
+        {
+            GameObject existing = FindUnder(parent.transform, name);
+            if (existing != null)
+            {
+                created = false;
+                return FindTextComponent(existing);
+            }
+
+            created = true;
+            Component made = RuntimeUIFactory.CreateText(parent.transform, name, caption, size,
+                                                         align, true, role);
+            if (made != null)
+                Undo.RegisterCreatedObjectUndo(made.gameObject, "Author main menu");
+
+            return made;
+        }
+
+        /// <summary>
+        /// The text component on an object, whatever type the factory built it as. By
+        /// Graphic-minus-Image rather than by type, because this file must not name a TMPro type.
+        /// </summary>
+        private static Component FindTextComponent(GameObject go)
+        {
+            var parts = go.GetComponents<Component>();
+            for (int i = 0; i < parts.Length; i++)
+            {
+                if (parts[i] is Graphic && !(parts[i] is Image))
+                    return parts[i];
+            }
+            return null;
         }
 
         /// <summary>

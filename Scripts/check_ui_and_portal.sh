@@ -3624,9 +3624,12 @@ fi
 
 # 7. Das Werkzeug schreibt den Text NUR beim Anlegen.
 if [ -f "$MENUTOOL" ]; then
-  loop=$(code "$MENUTOOL" | sed -n '/GameObject labelGo = EnsureChild/,/^            }$/p')
+  loop=$(code "$MENUTOOL" | sed -n '/Component label = EnsureLabel/,/^            }$/p')
+  ensure=$(code "$MENUTOOL" | sed -n '/private static Component EnsureLabel/,/^        }$/p')
   if printf '%s' "$loop" | grep -E >/dev/null 'if \(lblNew\)' &&
-     printf '%s' "$loop" | grep -E >/dev/null 'label\.text = Rows\[i\]\.Caption'; then
+     printf '%s' "$loop" | grep -E >/dev/null 'UITheme\.SetText\(label, Rows\[i\]\.Caption\)' &&
+     printf '%s' "$ensure" | grep -E >/dev/null 'created = false;' &&
+     printf '%s' "$ensure" | grep -E >/dev/null 'return FindTextComponent\(existing\)'; then
     ok "das Werkzeug schreibt Beschriftungstext nur beim Anlegen"
   else
     bad "das Werkzeug schreibt Beschriftungstext nur beim Anlegen" \
@@ -3759,6 +3762,37 @@ PY_INNER
 else
   bad "der Grunge-Hintergrund laeuft an jedem Rand auf null aus und ist nirgends deckend" \
       "das Sprite fehlt"
+fi
+
+# ---------------------------------------------------------------------------------------------
+# KEIN UNGESCHUETZTES TMPro. Das hat einmal das ganze Spiel gekostet.
+#
+# TextMeshPro ist in diesem Projekt NICHT eingeschaltet: `TMP_PRESENT` steht in keiner
+# ProjectSettings-Zeile und in keinem asmdef. Deshalb steht in `RuntimeUIFactory` und `UITheme`
+# jede TMP-Zeile hinter `#if TMP_PRESENT || UNITY_TEXTMESHPRO` - fuenf- und sechsmal.
+#
+# Ein `using TMPro;` ohne diesen Schutz laesst nicht das Menue fallen, sondern ASSEMBLY-CSHARP.
+# Und damit jedes Gameplay-Skript im Projekt: gemeldet wurde es als "das Platzieren des DOTS
+# funktioniert nicht mehr" UND "im Menue steht wieder Tap to Start" - zwei Systeme ohne
+# gemeinsamen Code, eine Ursache. Ein Compilerfehler sieht von innen aus wie zehn kaputte
+# Features.
+#
+# Text wird deshalb ueber RuntimeUIFactory.CreateText gebaut und ueber UITheme.SetText /
+# SetTextColor angefasst - die eine Stelle, die TMP-oder-Legacy entscheidet.
+# ---------------------------------------------------------------------------------------------
+unguarded=""
+for f in $(find "$ROOT/Assets/CatchIfYouCan/Scripts" "$ROOT/Assets/CatchIfYouCan/Editor" \
+             -name '*.cs' 2>/dev/null | sort); do
+  names=$(code "$f" | grep -cE 'TMPro|TextMeshProUGUI|TMP_Text|TMP_FontAsset|TextAlignmentOptions')
+  [ "$names" -eq 0 ] && continue
+  guards=$(grep -cE '#if .*(TMP_PRESENT|UNITY_TEXTMESHPRO)' "$f")
+  [ "$guards" -eq 0 ] && unguarded="$unguarded ${f#$ROOT/Assets/CatchIfYouCan/}"
+done
+if [ -z "$unguarded" ]; then
+  ok "kein TMPro-Typ ohne TMP_PRESENT-Schutz"
+else
+  bad "kein TMPro-Typ ohne TMP_PRESENT-Schutz" \
+      "ein ungeschuetztes using TMPro faellt die ganze Assembly, nicht nur diese Datei:$unguarded"
 fi
 
 # ------------------------------------------------------- die Startsequenz nach dem Druck auf PLAY

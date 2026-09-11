@@ -1,5 +1,4 @@
 using System;
-using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -50,7 +49,7 @@ namespace CatchIfYouCan.UI
 
             [Tooltip("The authored caption. Its TEXT, FONT and SIZE are yours - this component " +
                      "only ever changes its colour, and only to show selection.")]
-            public TMP_Text label;
+            [SerializeField] public Component label;
 
             [Tooltip("The authored white brush stroke behind this row. Switched on for the " +
                      "selected row and off for the others. Never created, never moved, never " +
@@ -235,8 +234,13 @@ namespace CatchIfYouCan.UI
                 if (rows[i].selectionBrush != null && rows[i].selectionBrush.activeSelf != on)
                     rows[i].selectionBrush.SetActive(on);
 
+                // Through UITheme, which already decides TextMeshPro-or-legacy-Text in the one
+                // place this project makes that decision. Reaching for a TMP type here is what
+                // broke the build: every other file guards TMPro behind TMP_PRESENT, which is
+                // not defined in this project, and an unguarded `using TMPro;` takes the WHOLE
+                // assembly down - so the menu did nothing and neither did anything else.
                 if (rows[i].label != null)
-                    rows[i].label.color = on ? selectedColor : idleColor;
+                    UITheme.SetTextColor(rows[i].label, on ? selectedColor : idleColor);
             }
         }
 
