@@ -570,6 +570,114 @@ else:
         "beim Vorbereiten gebaut ist er Kulisse hinter dem Portal; nach dem Spawn faellt "
         "der Spieler durch")
 
+
+# ----------------------------------------------------- die Tasche ist Spieler-HUD
+#
+# Die Inventarleiste erschien erst nach START INVESTIGATION, und dahinter stand genau
+# EINE Zeile: `UIManager` zeigte `UIScreen.HUD` auf `OnInvestigationStarted`. Die HUD-Wurzel
+# wird beim Boot gebaut und inaktiv registriert, `MobileHUDController.OnEnable` kann also
+# nicht laufen, und die Bitte des Lobby-Installers wird abgelehnt, weil die UI-Wurzel schon
+# existierte. Der Spieler konnte in der Lobby aufheben und hatte keine Stelle, an der das zu
+# sehen war - in der Vorbereitungsraum, dem einen Ort, an dem Packen der Sinn der Sache ist.
+
+ui_src = io.open(root + "/Assets/CatchIfYouCan/Scripts/UI/UIManager.cs",
+                 encoding="utf-8").read()
+ui_code = re.sub(r"//.*", "", ui_src)
+
+reg = re.search(r"private void HandleLocalPlayerRegistered\(\)\s*\{(.*?)\n        \}",
+                ui_code, re.S)
+if ("LocalPlayerService.PlayerRegistered += HandleLocalPlayerRegistered" in ui_code
+        and "LocalPlayerService.PlayerRegistered -= HandleLocalPlayerRegistered" in ui_code
+        and reg and "Show(UIScreen.HUD, false)" in reg.group(1)):
+    ok("das HUD folgt dem Spieler, nicht dem Missionsstart")
+else:
+    bad("das HUD folgt dem Spieler, nicht dem Missionsstart",
+        "ohne das ist die Inventarleiste in der Lobby unsichtbar")
+
+# Und nur aus UIScreen.None, was beide Wege in die Lobby hinterlassen - jeder ruft HideAll
+# vor dem Spawn. Alles andere heisst, ein Bildschirm besitzt die Anzeige bereits, und ein
+# HUD ueber das Kinomenue oder ueber die Ermittlungstafel zu zeichnen waere diese Methode
+# beim Entscheiden von etwas, das ihr nicht gehoert.
+if reg and "_current != UIScreen.None" in reg.group(1):
+    ok("das HUD draengt sich nicht vor einen Bildschirm, der die Anzeige schon hat")
+else:
+    bad("das HUD draengt sich nicht vor einen Bildschirm, der die Anzeige schon hat")
+
+# ----------------------------------------------------- ein gefuellter Slot sieht gefuellt aus
+#
+# `EquipmentDefinition.Icon` ist die Architektur und bleibt es; nur ist keines der elf
+# Felder gefuellt, und ein `Image` ohne Sprite zeichnet NICHTS. Ein Slot mit dem
+# DOTS-Projektor darin war also Pixel fuer Pixel ein leerer Slot - genau die eine
+# Unterscheidung, fuer die diese Leiste existiert (Fehler 20, 27, 28, 42, 47).
+
+CANONICAL = ["flashlight", "emf_detector", "uv_light", "thermometer", "evp_recorder",
+             "parabolic_microphone", "photo_camera", "spectral_grid", "video_camera",
+             "warding_relic", "salt"]
+
+icon_dir = root + "/Assets/CatchIfYouCan/Resources/UI/Equipment"
+missing = [e for e in CANONICAL
+           if not os.path.isfile(icon_dir + "/Icon_Equipment_" + e + ".png")]
+if not missing:
+    ok("jede der elf Ausruestungs-Ids hat ein Symbol unter Resources")
+else:
+    bad("jede der elf Ausruestungs-Ids hat ein Symbol unter Resources",
+        "ohne Datei: " + ", ".join(missing))
+
+# Als Sprite importiert und mit erhaltener Transparenz. Als Default-Texture importiert ist
+# ein Symbol kein Sprite, und `Resources.Load<Sprite>` kommt mit null zurueck - wieder eine
+# leere Leiste, diesmal ohne dass eine Datei fehlt.
+wrong = []
+for e in CANONICAL:
+    meta = icon_dir + "/Icon_Equipment_" + e + ".png.meta"
+    if not os.path.isfile(meta):
+        wrong.append(e + " (kein .meta)")
+        continue
+    m = io.open(meta, encoding="utf-8").read()
+    if "textureType: 8" not in m:
+        wrong.append(e + " (nicht als Sprite)")
+    elif "alphaIsTransparency: 1" not in m:
+        wrong.append(e + " (Transparenz nicht erhalten)")
+if not wrong:
+    ok("jedes Symbol importiert als Sprite mit erhaltener Transparenz")
+else:
+    bad("jedes Symbol importiert als Sprite mit erhaltener Transparenz",
+        "; ".join(wrong))
+
+slot_src = io.open(root + "/Assets/CatchIfYouCan/Scripts/UI/InventorySlotSelector.cs",
+                   encoding="utf-8").read()
+slot_code = re.sub(r"//.*", "", slot_src)
+
+# Das authorierte Symbol gewinnt. Der Ersatz ist die letzte Instanz dahinter, keine zweite
+# Symboldatenbank: ein gefuelltes Icon-Feld stellt den Platzhalter ohne Codeaenderung ab.
+icon_for = re.search(r"private static Sprite IconFor\(.*?\n        \}", slot_code, re.S)
+if (icon_for and "definition.Icon != null" in icon_for.group(0)
+        and "HudSprites.EquipmentPlaceholder(definition.Id)" in icon_for.group(0)):
+    ok("das authorierte Symbol gewinnt, der Platzhalter steht dahinter")
+else:
+    bad("das authorierte Symbol gewinnt, der Platzhalter steht dahinter")
+
+# Die Ausstattung ist Ersatz fuer einen LEEREN Slot. Sie auch fuer einen belegten zu fragen
+# war eine zweite Antwort auf "was liegt in Slot 1" - mit leeren Icon-Feldern zeichnete sie
+# den dritten Gegenstand der Packliste ueber den Projektor, den der Spieler wirklich trug.
+refresh = re.search(r"public void Refresh\(\).*?\n        \}", slot_code, re.S)
+if (refresh and "if (item != null)" in refresh.group(0)
+        and "else if (loadout != null" in refresh.group(0)
+        and "slotIcons[i].color = item != null ? Color.white : emptyIcon;" in refresh.group(0)):
+    ok("die Packliste ist Ersatz fuer einen leeren Slot und nicht fuer einen belegten")
+else:
+    bad("die Packliste ist Ersatz fuer einen leeren Slot und nicht fuer einen belegten")
+
+# Ein Symbol ist ein Sprite. Kein RenderTexture, keine Kamera je Slot, kein 3D-Mesh vor der
+# UI: das sah als "ein Modell quer im Inventar" aus und kostet eine Kamera pro Slot.
+forbidden = [t for t in ("RenderTexture", "Camera", "MeshRenderer", "MeshFilter")
+             if t in slot_code]
+if not forbidden:
+    ok("ein Inventarsymbol ist ein Sprite, kein gerendertes Modell")
+else:
+    bad("ein Inventarsymbol ist ein Sprite, kein gerendertes Modell",
+        "InventorySlotSelector nennt: " + ", ".join(forbidden))
+
+
 print()
 print("  %d passed, %d failed" % (passed, failed))
 sys.exit(1 if failed else 0)

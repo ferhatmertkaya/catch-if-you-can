@@ -103,6 +103,11 @@ namespace CatchIfYouCan.Equipment
         protected override void OnLifecycleStateChanged(EquipmentLifecycleState from,
                                                         EquipmentLifecycleState to)
         {
+            // First, and not optional: the base owns the placement preview and hides it on every
+            // transition that is not an aim. Overriding this without it left the translucent
+            // ghost of the projector standing in the room after the real one was stowed.
+            base.OnLifecycleStateChanged(from, to);
+
             ApplyPower();
 
             if (to == EquipmentLifecycleState.Equipped)

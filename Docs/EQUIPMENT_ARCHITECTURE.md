@@ -79,6 +79,42 @@ World ──pickup──> Holstered <──holster── Equipped ──use─�
 Not every item reaches every state. `Definition.CanUse`, `CanPlace` and `CanDrop`
 decide, and the lifecycle refuses the rest **with a reason**.
 
+### One item, one ownership state — normative
+
+An item is in exactly one of four places, and never two at once:
+
+| Where it is | What holds it |
+|---|---|
+| `World` | the room. On the floor, dropped or never picked up. |
+| `Holstered` / `Equipped` / `Using` / `PlacementPreview` | a `PlayerInventory` slot. `EquipmentBase.Carrier` names which bag. |
+| `Placed` | the room again, installed. `Carrier` is null; `OwnerClientId` still records who put it there. |
+
+The held model, the HUD icon and the placement preview are **presentations** of one of
+those states. None of them is the state.
+
+`PlayerInventory` is the only file that writes `Carrier`, and the only one that claims or
+releases ownership. Two rules keep the invariant from depending on anybody remembering it:
+
+1. **A placement vacates its own slot**, in `EnterPlacedState` — the one statement that
+   makes an item installed. Doing it in `TryPlace` instead would leave the invariant
+   hanging on every future caller of `EnterPlacedState`.
+2. **A `Placed` item cannot be stowed.** `TryHolster` refuses it, `PlayerInventory.Holster`
+   refuses it, and `EquipSelected`'s sweep skips it and drops the slot reference.
+
+Why both, and why this is written down: for the life of the placement system `TryPlace`
+moved the object into the room and left the slot pointing at it — an `EquipmentBase` had no
+way to answer "whose slot am I in". `EquipSelected` then swept that occupant through
+`Holster`, `TryHolster` accepted a placed item, set `IsPlaced = false`, reparented it to the
+hand anchor and hid it. So pressing 2 silently took a mounted projector off the wall and
+pressing 1 handed it back: one object in the player's hand and, as far as the room was
+concerned, still on the wall — except nothing was on the wall any more. CLAUDE.md mistake 49.
+
+A pickup **selects the slot it fills**; packing a loadout does not. `AddItem` is the pickup
+and `TryAddItem` the pack, and that is the only difference between them. Without the
+selection the item went into the first free slot while the selection stayed where it was —
+in the lobby that is the torch — so it was holstered on the frame it was picked up, and a
+carried invisible item is the same screenshot as one that was never built.
+
 ### Every verb returns a reason
 
 `IHeldEquipment` is all `Try*` methods returning `EquipmentActionResult`. That is

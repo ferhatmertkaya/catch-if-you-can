@@ -143,6 +143,28 @@ namespace CatchIfYouCan.UI
         }
 
         /// <summary>
+        /// The icon for one definition: what the artist authored, and failing that the
+        /// placeholder for its id.
+        ///
+        /// <para>
+        /// <see cref="Equipment.EquipmentDefinition.Icon"/> stays the architecture - there is no
+        /// second icon table and nothing here overrides an authored sprite. The fallback exists
+        /// because all eleven of those fields are currently empty, and an Image with no sprite
+        /// draws nothing: a slot holding the DOTS projector was indistinguishable from an empty
+        /// one, which is the single thing this row is for.
+        /// </para>
+        /// </summary>
+        private static Sprite IconFor(Equipment.EquipmentDefinition definition)
+        {
+            if (definition == null)
+                return null;
+
+            return definition.Icon != null
+                ? definition.Icon
+                : HudSprites.EquipmentPlaceholder(definition.Id);
+        }
+
+        /// <summary>
         /// Redraws the row from the inventory. Public because the HUD refreshes it when it is
         /// shown, and cheap enough to call on any change worth redrawing for.
         /// </summary>
@@ -155,17 +177,34 @@ namespace CatchIfYouCan.UI
             {
                 var item = inventory != null ? inventory.GetSlot(i) : null;
 
-                // What is in the player's hands first, what they packed second. The loadout is
-                // only a stand-in for a slot the player has not filled yet.
-                Sprite icon = item != null && item.Definition != null ? item.Definition.Icon : null;
-                if (icon == null && loadout != null && i < loadout.Loadout.Count &&
-                    loadout.Loadout[i] != null)
-                    icon = loadout.Loadout[i].Icon;
+                // What is in the slot first; what the player packed for it only when the slot
+                // is empty. Asking the loadout for a slot that IS occupied was a second answer
+                // to "what is in slot 1" - with the authored icons all empty it drew the
+                // loadout's third item over the projector the player was actually carrying.
+                Sprite icon = null;
+                if (item != null)
+                {
+                    icon = IconFor(item.Definition);
+                }
+                else if (loadout != null && i < loadout.Loadout.Count &&
+                         loadout.Loadout[i] != null)
+                {
+                    icon = IconFor(loadout.Loadout[i]);
+                }
 
                 if (slotIcons != null && i < slotIcons.Length && slotIcons[i] != null)
                 {
                     slotIcons[i].sprite = icon;
-                    slotIcons[i].color = icon != null ? Color.white : emptyIcon;
+
+                    // Tinted by whether the slot is OCCUPIED rather than by whether a sprite
+                    // was found. A stand-in for something the player packed and is not carrying
+                    // has to read as a ghost, and a slot holding a real item has to read as
+                    // full even on the frame its art is missing.
+                    slotIcons[i].color = item != null ? Color.white : emptyIcon;
+
+                    // An authored icon need not be square. Set here rather than at build time so
+                    // it also holds for the three Images authored in a scene.
+                    slotIcons[i].preserveAspect = true;
                 }
 
                 bool selected = inventory != null && inventory.SelectedIndex == i;

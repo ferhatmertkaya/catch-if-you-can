@@ -205,7 +205,12 @@ namespace CatchIfYouCan.Equipment
 
             Transform view = ViewTransform;
             if (view == null)
+            {
+                // Hidden rather than left hanging. A preview parked at the last spot that
+                // worked is a promise about a place the player is no longer pointing at.
+                _preview?.SetVisible(false);
                 return;
+            }
 
             var query = new PlacementQuery
             {
@@ -238,6 +243,26 @@ namespace CatchIfYouCan.Equipment
                 _preview.Show(_candidate.Position, OrientForPlacement(_candidate), false);
             else
                 _preview.SetVisible(false);
+        }
+
+        /// <summary>
+        /// The preview exists only while a placement is in progress.
+        ///
+        /// <para>
+        /// Hooked at the ONE point every lifecycle change passes through, rather than at each
+        /// of the transitions that can end an aim - stowed, dropped, placed, picked back up,
+        /// out of battery, destroyed. A list of transitions is a list somebody has to keep
+        /// complete, and the one that gets forgotten leaves a translucent projector floating in
+        /// the room with nothing holding it.
+        /// </para>
+        /// </summary>
+        protected override void OnLifecycleStateChanged(EquipmentLifecycleState from,
+                                                        EquipmentLifecycleState to)
+        {
+            base.OnLifecycleStateChanged(from, to);
+
+            if (to != EquipmentLifecycleState.PlacementPreview)
+                _preview?.SetVisible(false);
         }
 
         private void EnsurePreview()

@@ -48,15 +48,51 @@ namespace CatchIfYouCan.Equipment
                 return null;
 
             var filters = source.GetComponentsInChildren<MeshFilter>(true);
-            if (filters.Length == 0)
+
+            int usable = 0;
+            for (int i = 0; i < filters.Length; i++)
+                if (IsBodyPart(filters[i]))
+                    usable++;
+
+            if (usable == 0)
+            {
+                Core.CIYCLog.Warn(
+                    "[CIYC][Placement] no preview for '" + name + "': " + filters.Length +
+                    " mesh(es) under its visual and not one of them is part of the object. " +
+                    "An effect volume is the screen area an effect is drawn on, not a shape.");
                 return null;
+            }
 
             var root = new GameObject(name);
+
+            // new GameObject lands in the ACTIVE scene, which is not necessarily the item's:
+            // while the lobby portal prepares a mission the investigation scene is loaded
+            // additively with the lobby still active, so a preview built there would be
+            // destroyed by the lobby unload while the item it belongs to survives (mistake 17).
+            var scene = source.gameObject.scene;
+            if (scene.IsValid() && scene.isLoaded)
+                UnityEngine.SceneManagement.SceneManager.MoveGameObjectToScene(root, scene);
+
             var preview = root.AddComponent<EquipmentPlacementPreview>();
             preview.Compose(source, filters);
             preview.SetVisible(false);
             return preview;
         }
+
+        /// <summary>
+        /// Whether this mesh is part of the OBJECT rather than of an effect it draws.
+        ///
+        /// <para>
+        /// The DOTS projector carries both: a 0.25 m casing, and an eleven-metre mesh the dot
+        /// field is drawn on. Copying the second one made a preview the size of a room that
+        /// followed the aim, which is the sideways-3D-render the player saw rather than a ghost
+        /// of the device. <see cref="EffectVolume"/> is the same mark the lobby's measuring code
+        /// asks for, so there is one answer to "how big is this thing" (mistake 42).
+        /// </para>
+        /// </summary>
+        private static bool IsBodyPart(MeshFilter filter) =>
+            filter != null && filter.sharedMesh != null &&
+            !EffectVolume.Encloses(filter.transform);
 
         private void Compose(Transform source, MeshFilter[] filters)
         {
@@ -66,11 +102,21 @@ namespace CatchIfYouCan.Equipment
                 _material = new Material(shader) { name = "EquipmentPlacementPreview_Runtime" };
                 ConfigureTransparent(_material);
             }
+            else
+            {
+                // Said out loud, and no Shader.Find("Standard") behind it. A renderer with no
+                // material draws nothing, so a silent null here is a preview that was built
+                // correctly and cannot be seen - the same screenshot as a preview that was never
+                // built, and as one whose meshes were all effect volumes (mistake 2).
+                Core.CIYCLog.Warn(
+                    "[CIYC][Placement] the preview for '" + gameObject.name + "' has no " +
+                    "material: CiycShaders.FindLit() resolved nothing. It will be invisible.");
+            }
 
             for (int i = 0; i < filters.Length; i++)
             {
                 var filter = filters[i];
-                if (filter == null || filter.sharedMesh == null)
+                if (!IsBodyPart(filter))
                     continue;
 
                 var piece = new GameObject("PreviewPiece");

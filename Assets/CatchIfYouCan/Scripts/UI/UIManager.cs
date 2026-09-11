@@ -48,6 +48,7 @@ namespace CatchIfYouCan.UI
             GameEvents.OnMissionFailed += HandleMissionFailed;
             GameEvents.OnInvestigationStarted += HandleInvestigationStarted;
             GameEvents.OnPlayerDied += HandlePlayerDied;
+            LocalPlayerService.PlayerRegistered += HandleLocalPlayerRegistered;
         }
 
         private void OnDisable()
@@ -56,11 +57,41 @@ namespace CatchIfYouCan.UI
             GameEvents.OnMissionFailed -= HandleMissionFailed;
             GameEvents.OnInvestigationStarted -= HandleInvestigationStarted;
             GameEvents.OnPlayerDied -= HandlePlayerDied;
+            LocalPlayerService.PlayerRegistered -= HandleLocalPlayerRegistered;
         }
 
         private void HandleMissionComplete() => Show(UIScreen.MissionComplete, false);
         private void HandleMissionFailed() => Show(UIScreen.MissionFailed, false);
         private void HandleInvestigationStarted() => Show(UIScreen.HUD);
+
+        /// <summary>
+        /// The HUD belongs to the PLAYER, so it comes up when there is one.
+        ///
+        /// <para>
+        /// <b>It used to come up when a mission started.</b> That is one line - the handler
+        /// above - and it is why the inventory row was invisible in the lobby: the HUD root is
+        /// built at boot and registered inactive, <c>MobileHUDController.OnEnable</c> cannot run
+        /// while it is inactive, and the lobby installer's own request is refused because the UI
+        /// root already existed. So the player could pick the DOTS projector up, and had nowhere
+        /// to see that they had. The lobby is the preparation area; a bag the player cannot look
+        /// into there is a bag they will pack blind.
+        /// </para>
+        ///
+        /// <para>
+        /// Only from <see cref="UIScreen.None"/>, which is exactly the state both routes into
+        /// the lobby leave behind - each calls <see cref="HideAll"/> before spawning the player.
+        /// Anything else means a screen already owns the display, and a HUD drawn over the
+        /// cinematic menu or over the board would be this method deciding something that is not
+        /// its business.
+        /// </para>
+        /// </summary>
+        private void HandleLocalPlayerRegistered()
+        {
+            if (_current != UIScreen.None)
+                return;
+
+            Show(UIScreen.HUD, false);
+        }
         private void HandlePlayerDied()
         {
             if (GameManager.Instance != null && !GameManager.Instance.Invincible)

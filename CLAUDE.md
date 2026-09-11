@@ -175,7 +175,37 @@ place that number lives; everything else derives it.
   would read as a device that is off and still lit. A property block rather than
   `renderer.material`, which would clone one material per projector on first touch, written only
   when the state actually changes, and the dot field is left out of it by its EffectVolume mark.
-  102 checks.
+  And it holds an item to ONE ownership state. A placed device is world state; a
+  carried one is bag content; the two cannot both be true, and for the life of the
+  placement system they were. `TryPlace` moved the object into the room and left the slot
+  pointing at it, because an `EquipmentBase` had no way to answer "whose slot am I in" -
+  so `EquipSelected`'s holster sweep found a mounted projector, `TryHolster` accepted it,
+  set `IsPlaced = false`, parented it to the hand anchor and hid it, and the next press of
+  its own number handed it straight back. Press 2, press 1, and the thing you installed is
+  in your hand with nothing left where you put it. The item carries a `Carrier`
+  back-reference that `PlayerInventory` is the only file allowed to write - asking
+  `LocalPlayerService` instead is mistake 6, right until a second player's item asks -
+  `EnterPlacedState` vacates the slot in the ONE statement that makes an item installed
+  rather than in the commit path, where the invariant would depend on every future caller,
+  a `Placed` item is refused by `TryHolster` and skipped by the sweep, a slot that still
+  points at one is let go of rather than carried, a cleared slot unbinds the item as well as
+  the array, and the same bag will not take the same item twice. A pickup SELECTS the slot it
+  fills, because without it the projector went into the first free slot while the selection
+  stayed where it was - in the lobby that is the torch - and was holstered on the same frame:
+  a carried, invisible item is the same screenshot as one that was never built (mistakes 20,
+  27, 28, 42 and 47). And the placement preview is the shape of the DEVICE: the projector
+  carries a 0.25 m casing and an eleven-metre mesh the dot field is drawn on, and copying the
+  second gave a room-sized ghost following the aim - reported as "a 3D model sideways in the
+  inventory" - so `EffectVolume` filters it out, the same mark the lobby measures by
+  (mistake 42). The aim itself is late-bound rather than latched in `Awake`, which for a
+  factory-built item runs inside `AddComponent` long before a player camera exists: the
+  field stayed null, `TickEquipped` turned round on its first line, and no preview was ever
+  drawn - indistinguishable from a missing mesh and from a missing shader. A preview with no
+  material SAYS so instead of being invisible, with no `Shader.Find("Standard")` behind it
+  (mistake 2); it is hidden at the one point every lifecycle change passes through rather
+  than at a list of transitions somebody has to keep complete; and the projector calls the
+  base hook it overrides, or the rule holds for every device except the one it is for.
+  118 checks.
 - `Scripts/check_multiplayer_architecture.sh` — the deterministic assembly stays
   engine-free, gameplay never reaches a Relay API, remote players never read
   local input, ghost decisions stay host-only, online capacity has exactly one
@@ -490,7 +520,23 @@ place that number lives; everything else derives it.
   looked down, which only the mirror can show, because nobody can see their own head), the neck's
   asymmetric limits stay asymmetric so the next sign error cannot hide behind them, and the crouch
   camera is gated by the reference it is about to use rather than by a flag Awake cached before
-  `PlayerRigBuilder` had assigned it. 61 checks.
+  `PlayerRigBuilder` had assigned it. And the inventory bar is PLAYER
+  HUD rather than mission HUD: it appeared only after START INVESTIGATION, and behind that
+  was one line - `UIManager` showed `UIScreen.HUD` on `OnInvestigationStarted`. The HUD root
+  is built at boot and registered inactive, so `MobileHUDController.OnEnable` cannot run,
+  and the lobby installer's own request is refused because the UI root already existed. The
+  player could pick things up in the preparation area and had nowhere to see that they had.
+  It follows the local player's registration instead, and only out of `UIScreen.None` -
+  which is exactly what both routes into the lobby leave behind - so it cannot draw itself
+  over the cinematic menu or over the board. And a filled slot LOOKS filled: all eleven
+  `EquipmentDefinition.Icon` fields are empty and an `Image` with no sprite draws nothing,
+  so a slot holding the DOTS projector was pixel for pixel an empty one. The authored field
+  stays the architecture and wins wherever it is set; behind it sits one placeholder sprite
+  per canonical id, imported as Sprite with transparency preserved - no RenderTexture, no
+  camera per slot, no 3D mesh in front of the UI. The packing list is a stand-in for an EMPTY
+  slot only: asked about an occupied one it was a second answer to "what is in slot 1", and
+  with the icon fields empty it drew the loadout's third item over the projector the player
+  was actually carrying. 68 checks.
 
 - `Scripts/check_project_tags.sh` — every tag and layer the code names really exists.
   Assigning an undefined tag throws and takes the rest of that build down with it; an
@@ -1325,6 +1371,34 @@ Repeating one of these is the most likely way to break something.
    daran vorbeibaut, muss die Frage kennen, nicht nur die Abweichung wollen. Und wer zwei
    unzusammenhaengende Systeme gleichzeitig ausfallen sieht, sucht nicht zwei Fehler, sondern
    die eine Ebene, auf der sie zusammenhaengen.
+
+49. **Ein Gegenstand in zwei Besitzzustaenden, und der Beweis dafuer war eine Taste.** Der
+   DOTS-Projektor liess sich an die Wand haengen, verschwand ordentlich aus Slot 1 - und nach
+   "2 druecken, 1 druecken" lag er wieder in der Hand, waehrend an der Wand nichts mehr stand.
+   Gemeldet als "er kommt zurueck", also als HUD-Fehler, als Doppel-Spawn, als verlorene
+   Referenz. Es war keines davon: es war EIN Objekt, das gleichzeitig im Raum montiert und
+   Insasse eines Slots war, und zwei Haelften, die beide fuer sich richtig aussahen.
+   `TryPlace` schob das Objekt in den Raum und liess den Slot darauf zeigen - und konnte nicht
+   anders, denn ein `EquipmentBase` hatte keine Moeglichkeit, "in welcher Tasche liege ich" zu
+   beantworten. Und `EquipSelected` schickte jeden nicht gewaehlten Insassen durch `Holster`,
+   ohne den Lebenszyklus zu fragen; `TryHolster` nahm ein PLATZIERTES Geraet an, setzte
+   `IsPlaced = false`, haengte es an den Handanker und schaltete es unsichtbar. Ein Slotwechsel
+   nahm das Geraet also still von der Wand, und der naechste Druck auf dessen eigene Nummer
+   fand es `Holstered` und gab es zurueck in die Hand.
+   Zwei Lehren. Ein Zustand, der an zwei Stellen steht, ist kein Zustand, sondern eine Wette
+   darauf, dass niemand die zweite Stelle anfasst - und die Wette wird IMMER verloren, weil
+   jede Stelle fuer sich plausibel bleibt. Die Antwort ist nicht "aufpassen", sondern eine
+   Rueckreferenz mit genau einem Schreiber und ein Raeumen in derselben Anweisung, die den
+   Gegenstand montiert macht: `EnterPlacedState`, nicht der Commit-Pfad, denn im Commit-Pfad
+   haengt die Invariante an jedem kuenftigen Aufrufer. Und die zweite: die Reihenfolge, in der
+   die drei sichtbaren Symptome gemeldet wurden - unsichtbares Item in der Hand, Leiste erst
+   nach Missionsstart, ein "3D-Modell quer im Inventar" - hatte drei verschiedene Ursachen, die
+   alle dasselbe Bild erzeugen wie "es wurde nie gebaut". Zum fuenften Mal in diesem Dokument
+   (Fehler 20, 27, 28, 42, 47). Was sie diesmal getrennt hat, war nicht Scharfsinn, sondern
+   dass jede der drei eine eigene MELDUNG bekommen hat: ein abgelehntes Equip nennt jetzt seinen
+   Grund statt weggeworfen zu werden, ein geraeumter Slot sagt es, eine Vorschau ohne Material
+   sagt es, und eine Vorschau ohne kopierbares Mesh sagt, wie viele Meshes sie gesehen und
+   warum sie keines genommen hat.
 
 ## Den Stand holen
 

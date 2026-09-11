@@ -78,10 +78,124 @@ namespace CatchIfYouCan.Player
             get
             {
                 for (int i = 0; i < SlotCount; i++)
-                    if (_slots[i] == null)
+                    if (IsSlotAvailable(i))
                         return true;
                 return false;
             }
+        }
+
+        /// <summary>
+        /// Whether a pickup could land in this slot.
+        ///
+        /// <para>
+        /// Empty is the ordinary case. The other one is a slot whose occupant is INSTALLED in
+        /// the room: that item is world state, anybody in reach may take it off the wall, and it
+        /// is not in this bag however much the array still points at it. Counting it as occupied
+        /// would cost the player a slot per device they set down, and treating it as bag content
+        /// is the resurrection bug itself - see <see cref="Equipment.EquipmentBase.Carrier"/>.
+        /// </para>
+        /// </summary>
+        private bool IsSlotAvailable(int index)
+        {
+            if (index < 0 || index >= SlotCount)
+                return false;
+
+            EquipmentBase occupant = _slots[index];
+            return occupant == null || occupant.IsPlaced;
+        }
+
+        /// <summary>
+        /// Which slot holds this exact item, or -1. <see cref="TorchSlotIndex"/> when it is the
+        /// torch.
+        ///
+        /// <para>
+        /// Compared by reference rather than with <c>==</c>: Unity's equality operator treats a
+        /// destroyed object as equal to null, and "which slot is this destroyed thing in" is a
+        /// question that still has to be answerable while the slot is being cleaned up.
+        /// </para>
+        /// </summary>
+        public int IndexOf(EquipmentBase item)
+        {
+            if (item == null)
+                return -1;
+
+            for (int i = 0; i < SlotCount; i++)
+                if (ReferenceEquals(_slots[i], item))
+                    return i;
+
+            return ReferenceEquals(_torch, item) ? TorchSlotIndex : -1;
+        }
+
+        /// <summary>
+        /// Lets go of an item that has just been installed in the room.
+        ///
+        /// <para>
+        /// <b>This is the other half of a placement.</b> Committing one moves the object out of
+        /// the hand and into the room; without this the slot went on pointing at it, so the same
+        /// device was both a thing standing on a wall and the occupant of slot 1. Selecting
+        /// another slot then swept that occupant through <see cref="Holster"/>, which un-placed
+        /// it, reparented it to the hand anchor and hid it - and selecting the first slot again
+        /// handed it straight back. The player saw the projector they had just installed
+        /// reappear in their hand, with nothing left where they put it.
+        /// </para>
+        ///
+        /// <para>
+        /// Ownership is deliberately NOT released. <c>EquipmentHold.Placed</c> says an installed
+        /// item remembers who placed it while staying takeable by anybody in reach, and that is
+        /// the state this leaves it in: out of the bag, still attributable.
+        /// </para>
+        ///
+        /// <para>
+        /// Answers false when this bag does not hold the item, which is the honest answer for a
+        /// device placed by somebody else or already released.
+        /// </para>
+        /// </summary>
+        public bool ReleaseToWorld(EquipmentBase item)
+        {
+            int index = IndexOf(item);
+            if (index < 0)
+                return false;
+
+            ClearSlot(index);
+            OnSlotChanged?.Invoke(index, null);
+
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+            CIYCLog.Info("[CIYC][Inventory] slot " + index + " released to the world: '" +
+                         (item.Definition != null ? item.Definition.Id : item.name) +
+                         "' is installed in the room and is no longer carried.");
+#endif
+
+            // The hand is empty now if that was the selected slot, so whatever else is carried
+            // gets its turn. Runs AFTER the slot is cleared, so the sweep cannot find the item
+            // it has just let go of.
+            if (index == _selectedIndex)
+                EquipSelected();
+
+            GameEvents.EquipmentChanged();
+            return true;
+        }
+
+        /// <summary>
+        /// Lets go of a slot whose occupant turned out to be installed in the room. Defence in
+        /// depth behind <see cref="ReleaseToWorld"/>: any path that ever leaves a placed item in
+        /// a slot is repaired the next time the bag is read, rather than producing a device in
+        /// two ownership states at once.
+        /// </summary>
+        private bool ForgetPlacedOccupant(int index)
+        {
+            EquipmentBase occupant = GetSlot(index);
+            if (occupant == null || !occupant.IsPlaced)
+                return false;
+
+            ClearSlot(index);
+            OnSlotChanged?.Invoke(index, null);
+
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+            CIYCLog.Info("[CIYC][Inventory] slot " + index + " still pointed at '" +
+                         (occupant.Definition != null ? occupant.Definition.Id : occupant.name) +
+                         "', which is installed in the room. Dropped the reference.");
+#endif
+            return true;
         }
 
         /// <summary>True once the player is carrying their torch.</summary>
@@ -128,12 +242,46 @@ namespace CatchIfYouCan.Player
             return true;
         }
 
-        public bool TryAddItem(EquipmentBase item) => AddItem(item);
+        /// <summary>
+        /// Packs an item WITHOUT changing what is in the hand. What the mission loadout installer
+        /// wants: it adds three items in a row, and selecting each one as it arrives would leave
+        /// the player holding whichever happened to be last in the list.
+        /// </summary>
+        public bool TryAddItem(EquipmentBase item) => AddItem(item, selectFilledSlot: false);
 
-        public bool AddItem(EquipmentBase item)
+        /// <summary>
+        /// Picks an item up, and puts it in the hand.
+        ///
+        /// <para>
+        /// Selecting the slot is what a pickup means. Without it the item went into the first
+        /// free slot while the selection stayed where it was - in the lobby that is the torch -
+        /// so the projector was picked up, holstered on the same frame, and the player was left
+        /// looking at an empty hand and a floor with nothing on it. An item that is carried and
+        /// invisible is indistinguishable from one that was never picked up (mistakes 20, 27, 28,
+        /// 42 and 47, all the same report).
+        /// </para>
+        /// </summary>
+        public bool AddItem(EquipmentBase item) => AddItem(item, selectFilledSlot: true);
+
+        /// <summary>
+        /// The one implementation. <paramref name="selectFilledSlot"/> is the only difference
+        /// between a pickup and a pack, so there is one set of rules rather than two.
+        /// </summary>
+        public bool AddItem(EquipmentBase item, bool selectFilledSlot)
         {
             if (item == null)
                 return false;
+
+            // Already in this bag. Not an error and not a second copy: a pickup offered twice in
+            // one frame, or a placed item handed back by a path that had not let go of it yet.
+            // Refusing would report NoInventorySpace, which is a lie about a bag that holds it.
+            int existing = IndexOf(item);
+            if (existing >= 0)
+            {
+                if (selectFilledSlot)
+                    SelectSlot(existing);
+                return true;
+            }
 
             // The torch always goes to its own place, whether it is being handed over at spawn
             // or picked back up off the floor. Without this, a torch put down and retrieved
@@ -143,7 +291,7 @@ namespace CatchIfYouCan.Player
 
             for (int i = 0; i < SlotCount; i++)
             {
-                if (_slots[i] != null)
+                if (!IsSlotAvailable(i))
                     continue;
 
                 // Claimed before the slot is filled, and only once a slot is known to be free.
@@ -158,7 +306,17 @@ namespace CatchIfYouCan.Player
                     return false;
                 }
 
+                // The slot was counted as free because its occupant is installed in the room.
+                // Letting go of it here rather than overwriting the reference means that device
+                // is left with no bag claiming it, which is what being on a wall means.
+                ForgetPlacedOccupant(i);
+
                 _slots[i] = item;
+
+                // The item can now answer "whose slot am I in", which is what lets a placement
+                // vacate its own slot instead of leaving the bag pointing at a wall.
+                item.BindCarrier(this);
+
                 OnSlotChanged?.Invoke(i, item);
 
 #if UNITY_EDITOR || DEVELOPMENT_BUILD
@@ -173,9 +331,12 @@ namespace CatchIfYouCan.Player
                              "; torch slot is " + TorchSlotIndex + ".");
 #endif
 
-                // Straight into a slot the player is not holding: stow it, do not unequip it.
-                // Unequip unparents to world space, which for an item entering a bag means
-                // leaving it behind in the room the moment it is picked up.
+                // A pickup goes into the hand. Anything else is a pack, and a packed item is
+                // stowed rather than unequipped: Unequip unparents to world space, which for an
+                // item entering a bag means leaving it behind in the room it was picked up from.
+                if (selectFilledSlot)
+                    _selectedIndex = i;
+
                 if (_selectedIndex == i)
                     EquipSelected();
                 else
@@ -217,6 +378,7 @@ namespace CatchIfYouCan.Player
             }
 
             _torch = item;
+            item.BindCarrier(this);
             OnSlotChanged?.Invoke(TorchSlotIndex, item);
 
             // A player who has only their torch has it in their hand. This is what the lobby
@@ -368,12 +530,28 @@ namespace CatchIfYouCan.Player
             return false;
         }
 
+        /// <summary>
+        /// Empties one slot, and tells the item it is no longer in this bag.
+        ///
+        /// <para>
+        /// The two halves belong together. A slot cleared without unbinding leaves an item whose
+        /// <see cref="Equipment.EquipmentBase.Carrier"/> names a bag that does not hold it, and
+        /// the next thing that asked would get the wrong answer with no way to tell.
+        /// </para>
+        /// </summary>
         private void ClearSlot(int index)
         {
+            EquipmentBase leaving = GetSlot(index);
+
             if (index == TorchSlotIndex)
                 _torch = null;
             else if (index >= 0 && index < SlotCount)
                 _slots[index] = null;
+            else
+                return;
+
+            if (leaving != null && leaving.Carrier == this)
+                leaving.BindCarrier(null);
         }
 
         private void EquipSelected()
@@ -386,12 +564,35 @@ namespace CatchIfYouCan.Player
                 if (item == null)
                     continue;
 
+                // An installed device is world state and not bag content. Sweeping it with the
+                // rest is what took a mounted projector off the wall on every slot change: the
+                // holster un-placed it, parented it to the hand and hid it, and the next press
+                // of its own number handed it back. The slot is let go of instead.
+                if (item.IsPlaced)
+                {
+                    ForgetPlacedOccupant(i);
+                    continue;
+                }
+
                 if (i == _selectedIndex)
                 {
                     if (item is IHeldEquipment held)
-                        held.TryEquip(anchor);
+                    {
+                        var equipped = held.TryEquip(anchor);
+                        if (!equipped.Ok)
+                        {
+#if UNITY_EDITOR || DEVELOPMENT_BUILD
+                            // A refused equip used to be thrown away here, so "the item is in my
+                            // bag and not in my hand" had no reason attached to it anywhere.
+                            CIYCLog.Info("[CIYC][Inventory] slot " + i + " refused the hand: " +
+                                         equipped.Status + " (" + equipped.Detail + ").");
+#endif
+                        }
+                    }
                     else
+                    {
                         item.Equip(anchor);
+                    }
                 }
                 else
                 {
@@ -407,6 +608,11 @@ namespace CatchIfYouCan.Player
         /// </summary>
         private void Holster(EquipmentBase item)
         {
+            // Never an installed device. The room owns it until somebody takes it off the wall,
+            // and stowing it here would be this bag quietly reclaiming world state.
+            if (item == null || item.IsPlaced)
+                return;
+
             if (item is HeldEquipmentBase held)
             {
                 held.TryHolster(ResolveHandAnchor());

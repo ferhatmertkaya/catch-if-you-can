@@ -1418,6 +1418,191 @@ else
   fail "die Dauerbatterie ist Entwicklerhilfe und aus dem Auslieferungsbuild gezaeunt"
 fi
 
+
+# ------------------------------------------------- eine Wirkung, zwei Zustaende
+#
+# Der DOTS-Projektor wurde an eine Wand gehaengt, verschwand aus Slot 1 - und kam nach
+# "2 druecken, 1 druecken" in der Hand zurueck, ohne dass an der Wand noch etwas stand.
+# Zwei Haelften, beide fuer sich harmlos:
+#
+#   1. `TryPlace` schob das Objekt in den Raum und liess den Slot darauf zeigen. Ein
+#      `EquipmentBase` hatte keine Rueckreferenz auf seine Tasche, konnte den Slot also
+#      gar nicht raeumen.
+#   2. `EquipSelected` schickte jeden nicht gewaehlten Insassen durch `Holster`, und
+#      `TryHolster` nahm ein PLATZIERTES Geraet an: `IsPlaced = false`, an den Handanker
+#      gehaengt, unsichtbar geschaltet. Also nahm ein Slotwechsel das Geraet still von
+#      der Wand, und der naechste Druck auf dessen Nummer gab es zurueck.
+#
+# Ein Gegenstand hat genau EINEN Besitzzustand. Das hier ist die Pruefung darauf.
+
+EB="Assets/CatchIfYouCan/Scripts/Equipment/EquipmentBase.cs"
+HEB="Assets/CatchIfYouCan/Scripts/Equipment/HeldEquipmentBase.cs"
+PEB="Assets/CatchIfYouCan/Scripts/Equipment/PlaceableEquipmentBase.cs"
+PINV="Assets/CatchIfYouCan/Scripts/Player/PlayerInventory.cs"
+PREV="Assets/CatchIfYouCan/Scripts/Equipment/EquipmentPlacementPreview.cs"
+
+ebcode=$(sed 's://.*::' "$EB" 2>/dev/null || true)
+hebcode=$(sed 's://.*::' "$HEB" 2>/dev/null || true)
+pebcode=$(sed 's://.*::' "$PEB" 2>/dev/null || true)
+pinvcode=$(sed 's://.*::' "$PINV" 2>/dev/null || true)
+prevcode=$(sed 's://.*::' "$PREV" 2>/dev/null || true)
+
+# Die Rueckreferenz selbst. Eine Auto-Property, die `Instantiate` fallen laesst - was
+# richtig ist: ein frischer Klon liegt in keiner Tasche (Fehler 30).
+if printf '%s' "$ebcode" | grep -qE 'public Player\.PlayerInventory Carrier \{ get; private set; \}' \
+   && printf '%s' "$ebcode" | grep -qE 'public void BindCarrier\(Player\.PlayerInventory carrier\)'; then
+  ok "ein Gegenstand weiss, in welcher Tasche er liegt"
+else
+  fail "ein Gegenstand weiss, in welcher Tasche er liegt"
+fi
+
+# Und genau EIN Schreiber. Die Deklaration in EquipmentBase zaehlt nicht als Aufruf; alles
+# andere ausser PlayerInventory waere eine zweite Antwort auf "wo ist dieser Gegenstand",
+# und der Widerspruch zwischen zwei Antworten IST der Fehler.
+writers=$(grep -rl 'BindCarrier(' Assets/CatchIfYouCan --include='*.cs' 2>/dev/null \
+          | grep -v 'Scripts/Equipment/EquipmentBase\.cs$' \
+          | grep -v 'Scripts/Player/PlayerInventory\.cs$' | wc -l | tr -d ' ')
+if [ "$writers" -eq 0 ]; then
+  ok "nur PlayerInventory schreibt diese Rueckreferenz"
+else
+  fail "nur PlayerInventory schreibt diese Rueckreferenz ($writers weitere Datei(en) rufen BindCarrier auf)"
+fi
+
+# Platziert-Werden und Getragen-Werden koennen nicht beide wahr sein. Geraeumt wird in der
+# EINEN Anweisung, die einen Gegenstand montiert macht - im Commit-Pfad haette es an jedem
+# kuenftigen Aufrufer gehangen.
+placed=$(printf '%s\n' "$hebcode" | sed -n '/protected void EnterPlacedState/,/^        }$/p')
+if printf '%s' "$placed" | grep -qE 'Player\.PlayerInventory carrier = Carrier' \
+   && printf '%s' "$placed" | grep -qE 'carrier\.ReleaseToWorld\(this\)'; then
+  ok "eine Platzierung raeumt ihren Slot, in derselben Anweisung"
+else
+  fail "eine Platzierung raeumt ihren Slot, in derselben Anweisung"
+fi
+
+if printf '%s' "$pinvcode" | grep -qE 'public bool ReleaseToWorld\(EquipmentBase item\)'; then
+  ok "PlayerInventory bietet den Weg aus einem Slot in den Raum an"
+else
+  fail "PlayerInventory bietet den Weg aus einem Slot in den Raum an"
+fi
+
+# Der Rueckweg aus Placed ist das echte Geraet ansehen und aufheben - und sonst keiner.
+holster=$(printf '%s\n' "$hebcode" \
+          | sed -n '/public EquipmentActionResult TryHolster(Transform ownerAnchor)/,/^        }$/p')
+if printf '%s' "$holster" | grep -qE 'LifecycleState == EquipmentLifecycleState\.Placed' \
+   && printf '%s' "$holster" | grep -qE 'EquipmentActionResult\.Fail\('; then
+  ok "ein montiertes Geraet laesst sich nicht einstecken"
+else
+  fail "ein montiertes Geraet laesst sich nicht einstecken"
+fi
+
+# Zweite Verteidigungslinie, im Rundlauf selbst: was montiert ist, wird nicht angefasst,
+# und die Referenz darauf wird fallengelassen statt mitgeschleppt.
+equipsel=$(printf '%s\n' "$pinvcode" | sed -n '/private void EquipSelected()/,/^        }$/p')
+if printf '%s' "$equipsel" | grep -qE 'item\.IsPlaced' \
+   && printf '%s' "$equipsel" | grep -qE 'ForgetPlacedOccupant\(i\)'; then
+  ok "der Holster-Rundlauf laesst ein montiertes Geraet an der Wand"
+else
+  fail "der Holster-Rundlauf laesst ein montiertes Geraet an der Wand"
+fi
+
+hol=$(printf '%s\n' "$pinvcode" | sed -n '/private void Holster(EquipmentBase item)/,/^        }$/p')
+if printf '%s' "$hol" | grep -qE 'item\.IsPlaced'; then
+  ok "Holster lehnt ein montiertes Geraet auch einzeln ab"
+else
+  fail "Holster lehnt ein montiertes Geraet auch einzeln ab"
+fi
+
+# Ein geraeumter Slot ohne geloeste Rueckreferenz laesst einen Gegenstand eine Tasche
+# nennen, die ihn nicht haelt - dieselbe Klasse Widerspruch, nur andersherum.
+clearslot=$(printf '%s\n' "$pinvcode" | sed -n '/private void ClearSlot(int index)/,/^        }$/p')
+if printf '%s' "$clearslot" | grep -qE 'leaving\.BindCarrier\(null\)'; then
+  ok "ein geraeumter Slot loest auch die Rueckreferenz"
+else
+  fail "ein geraeumter Slot loest auch die Rueckreferenz"
+fi
+
+# Aufheben heisst in die Hand nehmen. Ohne das ging der Projektor in den ersten freien Slot,
+# waehrend die Auswahl blieb, wo sie war - in der Lobby ist das die Fackel -, wurde also im
+# selben Frame eingesteckt. Ein getragener, unsichtbarer Gegenstand sieht genauso aus wie
+# einer, der nie gebaut wurde (Fehler 20, 27, 28, 42, 47).
+if printf '%s' "$pinvcode" | grep -qE 'public bool AddItem\(EquipmentBase item\) => AddItem\(item, selectFilledSlot: true\)' \
+   && printf '%s' "$pinvcode" | grep -qE 'public bool TryAddItem\(EquipmentBase item\) => AddItem\(item, selectFilledSlot: false\)'; then
+  ok "ein Aufheben waehlt den Slot, den es fuellt; ein Einpacken nicht"
+else
+  fail "ein Aufheben waehlt den Slot, den es fuellt; ein Einpacken nicht"
+fi
+
+additem=$(printf '%s\n' "$pinvcode" | sed -n '/public bool AddItem(EquipmentBase item, bool selectFilledSlot)/,/^        }$/p')
+if printf '%s' "$additem" | grep -qE 'int existing = IndexOf\(item\)'; then
+  ok "dieselbe Tasche nimmt denselben Gegenstand nicht zweimal"
+else
+  fail "dieselbe Tasche nimmt denselben Gegenstand nicht zweimal"
+fi
+
+# Ein montierter Insasse darf keinen Platz kosten, sonst verliert der Spieler pro
+# abgestelltem Geraet einen Slot.
+freeslot=$(printf '%s\n' "$pinvcode" | sed -n '/public bool HasFreeSlot/,/^        }$/p')
+if printf '%s' "$freeslot" | grep -qE 'IsSlotAvailable\(i\)'; then
+  ok "ein Slot mit montiertem Insassen zaehlt als frei"
+else
+  fail "ein Slot mit montiertem Insassen zaehlt als frei"
+fi
+
+# Die Blickachse wurde EINMAL in Awake gelesen. Ein per Fabrik gebauter Gegenstand laeuft
+# sein Awake innerhalb von AddComponent - lange bevor eine Spielerkamera existiert -, also
+# blieb das Feld null, TickEquipped kehrte in seiner ersten Zeile um, und die Vorschau
+# wurde nie gezeichnet: dasselbe Bild wie ein fehlendes Mesh und wie ein fehlender Shader.
+viewprop=$(printf '%s\n' "$hebcode" | sed -n '/protected Transform ViewTransform/,/^        }$/p')
+if printf '%s' "$viewprop" | grep -qE 'ResolveViewCamera\(\)'; then
+  ok "die Blickachse wird nachgeholt statt in Awake festgenagelt"
+else
+  fail "die Blickachse wird nachgeholt statt in Awake festgenagelt"
+fi
+
+# Die Vorschau ist die Form des GERAETS. Der Projektor traegt beides: ein Gehaeuse von
+# 0,25 m und ein elfmetriges Mesh, auf dem das Punktfeld gezeichnet wird. Das zweite
+# mitzukopieren gab eine raumgrosse Vorschau, die dem Blick folgte - und genau das wurde
+# als "ein 3D-Modell quer im Inventar" gemeldet (Fehler 42, dieselbe Markierung).
+if printf '%s' "$prevcode" | grep -qE 'EffectVolume\.Encloses\(filter\.transform\)' \
+   && printf '%s' "$prevcode" | grep -qE 'IsBodyPart\('; then
+  ok "die Vorschau laesst Wirkungsvolumen aus"
+else
+  fail "die Vorschau laesst Wirkungsvolumen aus"
+fi
+
+# Und sie sagt es, wenn sie kein Material bekommt - ohne Shader.Find("Standard") dahinter,
+# das ueberall aufloest und unter URP magenta zeichnet (Fehler 2).
+if printf '%s' "$prevcode" | grep -qE 'CIYCLog\.Warn' \
+   && ! printf '%s' "$prevcode" | grep -qE 'Shader\.Find'; then
+  ok "eine Vorschau ohne Material sagt es, statt unsichtbar zu sein"
+else
+  fail "eine Vorschau ohne Material sagt es, statt unsichtbar zu sein"
+fi
+
+# Aufgehaengt am EINEN Punkt, durch den jeder Zustandswechsel laeuft, statt an der Liste
+# der Uebergaenge, die ein Zielen beenden koennen - eine Liste, die jemand vollstaendig
+# halten muss, und der vergessene Eintrag laesst einen durchsichtigen Projektor im Raum
+# stehen.
+lifecycle=$(printf '%s\n' "$pebcode" \
+            | sed -n '/protected override void OnLifecycleStateChanged/,/^        }$/p')
+if printf '%s' "$lifecycle" | grep -qE 'to != EquipmentLifecycleState\.PlacementPreview' \
+   && printf '%s' "$lifecycle" | grep -qE '_preview\?\.SetVisible\(false\)'; then
+  ok "die Vorschau verschwindet bei jedem Wechsel, der kein Zielen ist"
+else
+  fail "die Vorschau verschwindet bei jedem Wechsel, der kein Zielen ist"
+fi
+
+# Und der Projektor ueberschreibt denselben Haken, ruft die Basis also auf. Ohne das gilt
+# die Regel darueber fuer jedes Geraet ausser dem einen, um das es geht.
+sgplife=$(printf '%s\n' "$sgpcode" \
+          | sed -n '/protected override void OnLifecycleStateChanged/,/^        }$/p')
+if printf '%s' "$sgplife" | grep -qE 'base\.OnLifecycleStateChanged\(from, to\)'; then
+  ok "der Projektor ruft den Basis-Haken auf, statt ihn zu verdecken"
+else
+  fail "der Projektor ruft den Basis-Haken auf, statt ihn zu verdecken"
+fi
+
+
 printf '\npassed: %s   failed: %s\n\n' "$passed" "$failed"
 
 if [ "$failed" -gt 0 ]; then

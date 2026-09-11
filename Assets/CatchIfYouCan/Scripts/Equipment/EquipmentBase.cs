@@ -118,6 +118,44 @@ namespace CatchIfYouCan.Equipment
             OwnerClientId = Procedural.Deterministic.EquipmentOwnership.Nobody;
         }
 
+        /// <summary>
+        /// The bag this is in, or null when it is in the room - lying on the floor, or installed
+        /// on a wall.
+        ///
+        /// <para>
+        /// <b>An item had no way to answer "whose slot am I in".</b> Committing a placement moved
+        /// the object into the room and left the slot still pointing at it, so the same projector
+        /// was a device standing on a wall AND an occupant of slot 1. The next selection change
+        /// swept that occupant through <c>Holster</c>, which un-placed it and pulled it back to
+        /// the hand anchor: press 2, press 1, and the thing you just installed is in your hand
+        /// again, with a copy of itself nowhere. One object, two ownership states.
+        /// </para>
+        ///
+        /// <para>
+        /// Asking <c>LocalPlayerService</c> instead is mistake 6 wearing different clothes: it
+        /// holds exactly one player - the one on this machine - so it is right until a second
+        /// player's item asks the question.
+        /// </para>
+        ///
+        /// <para>
+        /// Not serialized, and that is correct rather than a limitation: <c>Instantiate</c> drops
+        /// it, and a fresh clone is in nobody's bag until an inventory puts it in one.
+        /// </para>
+        /// </summary>
+        public Player.PlayerInventory Carrier { get; private set; }
+
+        /// <summary>
+        /// Records which bag holds this, or null when none does.
+        ///
+        /// <para>
+        /// Called only by <see cref="Player.PlayerInventory"/>, which is the one file that
+        /// decides what is in a bag - a guard keeps it that way, because a second writer is a
+        /// second answer to "where is this item", and the disagreement between two answers is
+        /// exactly the bug this field exists to end.
+        /// </para>
+        /// </summary>
+        public void BindCarrier(Player.PlayerInventory carrier) => Carrier = carrier;
+
         /// <summary>Whether this player may press the button on it.</summary>
         public bool MayBeUsedBy(int clientId) =>
             Procedural.Deterministic.EquipmentOwnership.MayUse(Hold, OwnerClientId, clientId);

@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using UnityEngine;
 
 namespace CatchIfYouCan.UI
@@ -22,6 +23,15 @@ namespace CatchIfYouCan.UI
     public static class HudSprites
     {
         private const string Root = "UI/Controls/";
+
+        /// <summary>
+        /// Where the PLACEHOLDER equipment icons live, one per id from
+        /// <see cref="Equipment.EquipmentIds"/>.
+        /// </summary>
+        private const string EquipmentRoot = "UI/Equipment/Icon_Equipment_";
+
+        private static readonly Dictionary<string, Sprite> _equipment =
+            new Dictionary<string, Sprite>();
 
         private static Sprite _disc, _ring, _glow, _chevron, _reticle;
         private static Sprite _flashlight, _sprint, _crouch, _interact, _pickup, _drop;
@@ -59,6 +69,46 @@ namespace CatchIfYouCan.UI
         /// <summary>The same hand with the item falling out of it.</summary>
         public static Sprite Drop { get { Load(); return _drop; } }
 
+        /// <summary>
+        /// A PLACEHOLDER icon for an equipment id, or null when there is none for it.
+        ///
+        /// <para>
+        /// <b>This is not the icon architecture; it is the last resort behind it.</b>
+        /// <see cref="Equipment.EquipmentDefinition.Icon"/> is the authored slot and it wins
+        /// wherever it is filled in. All eleven of those slots are currently empty, and an
+        /// <see cref="UnityEngine.UI.Image"/> with a null sprite draws NOTHING - so a slot
+        /// holding the DOTS projector was pixel-for-pixel a slot holding nothing, which is the
+        /// one distinction the inventory row exists to make. FINAL ART IS STILL NEEDED: filling
+        /// in the definition's Icon retires the placeholder for that item with no code change.
+        /// </para>
+        ///
+        /// <para>
+        /// A failed load is cached as null, so a missing icon costs one <c>Resources.Load</c>
+        /// per id for the life of the process rather than one per HUD refresh.
+        /// </para>
+        /// </summary>
+        public static Sprite EquipmentPlaceholder(string equipmentId)
+        {
+            if (string.IsNullOrEmpty(equipmentId))
+                return null;
+
+            if (_equipment.TryGetValue(equipmentId, out Sprite cached))
+                return cached;
+
+            Sprite loaded = Resources.Load<Sprite>(EquipmentRoot + equipmentId);
+            _equipment[equipmentId] = loaded;
+
+            if (loaded == null)
+            {
+                Debug.LogWarning("[CIYC] No inventory icon for equipment id '" + equipmentId +
+                                 "'. Fill in EquipmentDefinition.Icon, or add " +
+                                 EquipmentRoot + equipmentId + ".png under Resources. Until " +
+                                 "then that slot draws empty while holding something.");
+            }
+
+            return loaded;
+        }
+
         private static void Load()
         {
             if (_loaded)
@@ -87,6 +137,10 @@ namespace CatchIfYouCan.UI
         }
 
         /// <summary>Drops the cache. For editor tooling that reimports the sprites.</summary>
-        public static void Invalidate() => _loaded = false;
+        public static void Invalidate()
+        {
+            _loaded = false;
+            _equipment.Clear();
+        }
     }
 }

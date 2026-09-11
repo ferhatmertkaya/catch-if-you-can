@@ -217,8 +217,38 @@ namespace CatchIfYouCan.Equipment
 
         private Character.CharacterRigProfile _rigProfile;
 
-        /// <summary>The view the fallback aim is taken from, when there is one.</summary>
-        protected Transform ViewTransform => _view;
+        /// <summary>
+        /// The view the aim is taken from, when there is one.
+        ///
+        /// <para>
+        /// <b>Resolved late, not latched.</b> It used to be read once in <c>Awake</c>, and an
+        /// item built by <c>EquipmentRuntimeFactory</c> runs its Awake while the factory is
+        /// constructing it - before the player's camera has registered, and in the lobby before
+        /// the player exists at all. The field stayed null for the life of that item, so
+        /// <c>TickEquipped</c> returned on its first line and the placement preview was never
+        /// drawn: an item that aims at nothing looks exactly like one whose preview mesh failed
+        /// to build, and like one whose shader is missing.
+        /// </para>
+        ///
+        /// <para>
+        /// Still cached, so this is not a search per frame: the lookup only runs while there is
+        /// no view to be had, and stops the moment there is one.
+        /// </para>
+        /// </summary>
+        protected Transform ViewTransform
+        {
+            get
+            {
+                if (_view == null)
+                {
+                    var late = Core.LocalPlayerService.ResolveViewCamera();
+                    if (late != null)
+                        _view = late.transform;
+                }
+
+                return _view;
+            }
+        }
 
         protected override void Awake()
         {
@@ -229,8 +259,9 @@ namespace CatchIfYouCan.Equipment
             if (playerBody == null && playerController != null)
                 playerBody = playerController.transform;
 
-            // Cached once. The aim follows the look rather than the body, so this is read every
-            // frame and must never be a search.
+            // Best effort, and no more than that: a code-built item's Awake runs inside
+            // AddComponent, which for the runtime factory is long before any player camera
+            // exists. ViewTransform resolves it later if this comes back empty.
             var view = Core.LocalPlayerService.ResolveViewCamera();
             if (view != null)
                 _view = view.transform;
@@ -541,6 +572,17 @@ namespace CatchIfYouCan.Equipment
         {
             if (LifecycleState == EquipmentLifecycleState.Holstered)
                 return EquipmentActionResult.Success;
+
+            // An installed device is not stowable. This refusal is the second half of the
+            // resurrection fix: stowing one used to set IsPlaced = false, reparent it to the
+            // hand anchor and hide it, so selecting another slot silently took a mounted
+            // projector off the wall and selecting its own slot handed it back. The way out of
+            // Placed is looking at the real device and picking it up - TryPickupPlaced - and
+            // there is deliberately no other.
+            if (LifecycleState == EquipmentLifecycleState.Placed)
+                return EquipmentActionResult.Fail(
+                    EquipmentActionStatus.WrongState,
+                    "installed in the room; take it off the wall before stowing it");
 
             Transform anchor = ownerAnchor != null ? ownerAnchor : HandAnchor;
             if (anchor == null)
@@ -888,6 +930,16 @@ namespace CatchIfYouCan.Equipment
         /// <summary>
         /// Marks this item as installed in the room. Called by a subclass once it has actually
         /// put itself somewhere, so the base is never the thing deciding where.
+        ///
+        /// <para>
+        /// <b>The bag lets go here, in the one statement that makes an item installed.</b> A
+        /// placement that moved the object into the room and left the slot pointing at it gave
+        /// the same device two ownership states at once, and the next selection change turned
+        /// that into the projector reappearing in the player's hand with nothing left where they
+        /// put it. Doing it in the commit path instead would leave the invariant depending on
+        /// every future caller remembering; doing it here means being placed and being carried
+        /// cannot both be true.
+        /// </para>
         /// </summary>
         protected void EnterPlacedState()
         {
@@ -896,6 +948,13 @@ namespace CatchIfYouCan.Equipment
             _onGround = false;
             SetPresentationVisible(true);
             SetLifecycleState(EquipmentLifecycleState.Placed);
+
+            // Asked of the item rather than of LocalPlayerService, which holds exactly one
+            // player and would answer for the wrong bag the moment there are two (mistake 6).
+            Player.PlayerInventory carrier = Carrier;
+            if (carrier != null)
+                carrier.ReleaseToWorld(this);
+
             OnCarryChanged();
             Core.GameEvents.EquipmentChanged();
         }
@@ -1112,7 +1171,8 @@ namespace CatchIfYouCan.Equipment
 
             // Taken from the camera rather than the body so it goes where the player is looking
             // rather than only where they are facing.
-            Vector3 look = _view != null ? _view.forward : playerBody.forward;
+            Transform view = ViewTransform;
+            Vector3 look = view != null ? view.forward : playerBody.forward;
             _aim = EquipmentPresentation.AdvanceAim(
                 _aim, ref _aimVelocity, look, playerBody.right, grip.AimPitch, grip.AimLag);
 
