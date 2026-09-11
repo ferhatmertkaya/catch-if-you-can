@@ -305,6 +305,9 @@ namespace CatchIfYouCan.UI
                 case 2:
                     OpenPanel(creditsPanel);
                     break;
+                case 3:
+                    QuitGame();
+                    break;
             }
         }
 
@@ -331,6 +334,33 @@ namespace CatchIfYouCan.UI
 
             _handedOver = true;
             modeController.EnterLobby();
+        }
+
+        /// <summary>
+        /// Leaves the game.
+        ///
+        /// <para>
+        /// <c>Application.Quit</c> does nothing in the editor, so the editor branch says so out
+        /// loud rather than looking like a dead button - "I pressed QUIT and nothing happened" is
+        /// a bug report this project would otherwise have earned honestly.
+        /// </para>
+        /// <para>
+        /// Worth knowing before this ships: iOS's guidelines discourage an in-app quit, and a
+        /// button that terminates the app has been a review rejection there. It is here because
+        /// the design reference has it; whether it survives on mobile is a design call, not this
+        /// component's.
+        /// </para>
+        /// </summary>
+        private void QuitGame()
+        {
+            _handedOver = true;
+#if UNITY_EDITOR
+            Core.CIYCLog.Info("[CIYC][MENU] QUIT pressed. Application.Quit does nothing in the " +
+                              "editor; in a build this closes the game.");
+            UnityEditor.EditorApplication.isPlaying = false;
+#else
+            Application.Quit();
+#endif
         }
 
         private void OpenPanel(GameObject panel)

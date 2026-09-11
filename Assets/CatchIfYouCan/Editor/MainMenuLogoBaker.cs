@@ -52,16 +52,26 @@ namespace CatchIfYouCan.EditorTools
 
         private const string BrushPath =
             "Assets/CatchIfYouCan/Resources/UI/Menu/T_MenuBrushStroke.png";
-        private const string GrungePath =
-            "Assets/CatchIfYouCan/Resources/UI/Menu/T_MenuGrungePanel.png";
-
-        private const string GrungeName = "MenuGrungeBackdrop";
         private const string MenuRootName = "MainMenuNav";
+        private const string FooterName = "MainMenuFooter";
         private const string BrushName = "SelectionBrush";
         private const string SettingsPanelName = "MenuSettingsPanel";
         private const string CreditsPanelName = "MenuCreditsPanel";
 
-        private static readonly string[] RowLabels = { "PLAY", "SETTINGS", "CREDITS" };
+        private static readonly string[] RowLabels = { "PLAY", "SETTINGS", "CREDITS", "QUIT" };
+
+        // Every number below is MEASURED off the design reference (1672 x 941, 16:9) and written
+        // as a fraction, so it lands the same on any aspect the CanvasScaler serves. Reading them
+        // out of the image beat guessing at them: the first pass had the stroke at 4.8:1 when the
+        // reference is 6.9:1, and the captions at 44 pt when the reference cap height works out
+        // to 38.
+        private const float TextLeft = 0.100f;    // where every caption starts
+        private const float BrushLeft = 0.052f;   // the stroke overhangs the text to the left
+        private const float MenuRight = 0.345f;
+        private const float MenuTop = 0.520f;     // top of the PLAY row, measured from the BOTTOM
+        private const float RowStepPx = 70f;      // 0.065 of height at the 1080 reference
+        private const float RowHeightPx = 74f;    // 0.069 of height - the stroke's own height
+        private const int CaptionSize = 38;
 
         [MenuItem("Catch If You Can/1. LOBBY/Logo und Hauptmenue backen [AENDERT SZENE]", false, 105)]
         public static void BakeLogoIntoScene()
@@ -157,8 +167,8 @@ namespace CatchIfYouCan.EditorTools
             Selection.activeGameObject = canvasGo;
 
             Debug.Log(
-                "[CIYC] Branding-Canvas in 01_MainMenu gebaut: Logo, Grunge-Hintergrund und das " +
-                "Hauptmenue PLAY / SETTINGS / CREDITS.\n" +
+                "[CIYC] Branding-Canvas in 01_MainMenu gebaut: Logo, Hauptmenue " +
+                "PLAY / SETTINGS / CREDITS / QUIT und die Fusszeile.\n" +
                 labelReport + "\n" + menuReport + "\n" + wiring + "\n" +
                 "Die Szene ist GEAENDERT, aber NICHT gespeichert. Erst ansehen, dann speichern.");
         }
@@ -225,8 +235,7 @@ namespace CatchIfYouCan.EditorTools
         }
 
         /// <summary>
-        /// The menu itself: the grunge backdrop, the three rows, the brush stroke, and the two
-        /// panel shells.
+        /// The menu itself: four rows, the brush stroke, the footer and the two panel shells.
         ///
         /// <para>
         /// <b>It also adds a GraphicRaycaster and an EventSystem, and that is not a detail.</b>
@@ -249,16 +258,24 @@ namespace CatchIfYouCan.EditorTools
             var notes = new List<string>();
 
             var brushSprite = AssetDatabase.LoadAssetAtPath<Sprite>(BrushPath);
-            var grungeSprite = AssetDatabase.LoadAssetAtPath<Sprite>(GrungePath);
 
-            if (brushSprite == null || grungeSprite == null)
+            if (brushSprite == null)
             {
-                // Named apart, because "no sprite" has two very different causes: the file is
-                // missing, or it imported as a plain Texture rather than as a Sprite.
-                return "WARNUNG: Menue-Sprites fehlen - brush=" +
-                       (brushSprite != null ? "ok" : BrushPath) + " grunge=" +
-                       (grungeSprite != null ? "ok" : GrungePath) +
-                       ". Texture Type muss Sprite (2D and UI) sein.";
+                // "No sprite" has two very different causes: the file is missing, or it imported
+                // as a plain Texture rather than as a Sprite. The path says which.
+                return "WARNUNG: " + BrushPath + " laedt nicht als Sprite. " +
+                       "Texture Type muss Sprite (2D and UI) sein.";
+            }
+
+            // A leftover grunge backdrop from the previous pass is REMOVED rather than left
+            // switched off. The reference has no panel and the scene's left side is already
+            // black; a disabled object in the hierarchy reads to the next person as something
+            // somebody meant to keep.
+            GameObject stale = FindInScene(scene, "MenuGrungeBackdrop");
+            if (stale != null)
+            {
+                Undo.DestroyObjectImmediate(stale);
+                notes.Add("alter Grunge-Hintergrund entfernt (die Referenz hat keinen).");
             }
 
             // --- the canvas must be able to receive a click at all -------------------------
@@ -271,22 +288,13 @@ namespace CatchIfYouCan.EditorTools
 
             notes.Add(EnsureEventSystem(scene));
 
-            // --- the dark irregular backdrop ----------------------------------------------
-            GameObject grungeGo = EnsureChild(scene, canvasGo, GrungeName, out bool grungeNew);
-            var grungeImage = Ensure<Image>(grungeGo);
-            grungeImage.sprite = grungeSprite;
-            grungeImage.type = Image.Type.Simple;
-            grungeImage.preserveAspect = false;
-            // Tinted rather than baked dark: the sprite carries its SHAPE in alpha and a flat
-            // black in RGB, so the palette lives in UITheme and one texture serves any colour.
-            grungeImage.color = new Color(0f, 0f, 0f, 0.82f);
-            grungeImage.raycastTarget = false;
-            SetRect(grungeGo, new Vector2(-0.02f, -0.015f), new Vector2(0.40f, 0.40f));
-            grungeGo.transform.SetSiblingIndex(0);
-
             // --- the menu column ------------------------------------------------------------
             GameObject menuGo = EnsureChild(scene, canvasGo, MenuRootName, out _);
-            SetRect(menuGo, new Vector2(0.035f, 0.045f), new Vector2(0.315f, 0.325f));
+            // Four rows of RowStepPx, hung from the measured top of the PLAY row.
+            float menuHeight = (RowLabels.Length - 1) * RowStepPx + RowHeightPx;
+            SetRect(menuGo,
+                new Vector2(BrushLeft, MenuTop - menuHeight / 1080f),
+                new Vector2(MenuRight, MenuTop));
 
             var nav = Ensure<MainMenuNavigation>(menuGo);
 
@@ -328,7 +336,7 @@ namespace CatchIfYouCan.EditorTools
                 if (label == null)
                 {
                     label = RuntimeUIFactory.CreateText(
-                        rowGo.transform, "Caption", RowLabels[i], 44,
+                        rowGo.transform, "Caption", RowLabels[i], CaptionSize,
                         TextAnchor.MiddleLeft, true, UITheme.FontRole.Button);
 
                     if (label == null)
@@ -349,7 +357,9 @@ namespace CatchIfYouCan.EditorTools
                 {
                     labelRect.anchorMin = new Vector2(0f, 0f);
                     labelRect.anchorMax = new Vector2(1f, 1f);
-                    labelRect.offsetMin = new Vector2(34f, 0f);
+                    // The captions line up at TextLeft while the stroke starts further out, so
+                    // the inset is the measured gap between the two rather than a round number.
+                    labelRect.offsetMin = new Vector2((TextLeft - BrushLeft) * 1920f, 0f);
                     labelRect.offsetMax = new Vector2(-12f, 0f);
                     labelRect.localScale = Vector3.one;
                 }
@@ -367,6 +377,8 @@ namespace CatchIfYouCan.EditorTools
 
                 EditorUtility.SetDirty(rowGo);
             }
+
+            notes.Add(BuildFooter(scene, canvasGo));
 
             // --- the two panel shells ---------------------------------------------------------
             GameObject settings = BuildPanelShell(scene, canvasGo, SettingsPanelName, "SETTINGS",
@@ -386,13 +398,123 @@ namespace CatchIfYouCan.EditorTools
                 credits);
             EditorUtility.SetDirty(nav);
             EditorUtility.SetDirty(menuGo);
-            EditorUtility.SetDirty(grungeGo);
 
             notes.Add("Menue: " + built.Count + " von " + RowLabels.Length + " Zeilen, " +
-                      "Pinselstrich " + (brushGo != null ? "gesetzt" : "FEHLT") +
-                      ", Grunge " + (grungeNew ? "neu" : "aktualisiert") + ".");
+                      "Pinselstrich " + (brushGo != null ? "gesetzt" : "FEHLT") + ".");
 
             return string.Join("\n", notes);
+        }
+
+        /// <summary>
+        /// The footer: version, rights, engine credit and the tagline.
+        ///
+        /// <para>
+        /// Anchored to the BOTTOM-LEFT corner rather than laid out proportionally with the menu.
+        /// On an ultrawide screen a proportional footer drifts towards the middle and ends up
+        /// under the ghost; pinned to the corner it stays a footer at every aspect, which is the
+        /// only thing a footer has to do.
+        /// </para>
+        ///
+        /// <para>
+        /// The engine credit is TEXT. The reference shows Unity's cube mark, and this project has
+        /// no such file - drawing a company's trademark from memory into a generated PNG is not
+        /// a thing to do quietly in a baker. "Unity | URP" says the same and is honest about
+        /// where it came from; drop the real mark in later and point this Image at it.
+        /// </para>
+        /// </summary>
+        private static string BuildFooter(Scene scene, GameObject canvasGo)
+        {
+            GameObject footer = EnsureChild(scene, canvasGo, FooterName, out _);
+            SetRect(footer, Vector2.zero, Vector2.one);
+
+            var rect = footer.GetComponent<RectTransform>();
+            if (rect != null)
+                rect.SetSiblingIndex(0);
+
+            int built = 0;
+
+            // Measured off the reference: the version sits at 0.833 from the top, the rights
+            // block at 0.896..0.938, both starting at x 0.026.
+            built += Line(scene, footer, "Version", "v0.1.0", 20, UITheme.TextDisabled,
+                          new Vector2(0.026f, 0.147f), new Vector2(0.20f, 0.173f),
+                          TextAnchor.LowerLeft) ? 1 : 0;
+
+            built += Line(scene, footer, "Rights", "A CATCH IF YOU CAN GAME\nALL RIGHTS RESERVED.",
+                          17, UITheme.TextMuted,
+                          new Vector2(0.026f, 0.055f), new Vector2(0.175f, 0.105f),
+                          TextAnchor.LowerLeft) ? 1 : 0;
+
+            // The rule between the rights block and the engine credit, as in the reference.
+            GameObject divider = EnsureChild(scene, footer, "FooterDivider", out _);
+            SetRect(divider, new Vector2(0.188f, 0.058f), new Vector2(0.1895f, 0.102f));
+            var rule = Ensure<Image>(divider);
+            rule.sprite = null;
+            rule.color = UITheme.Border;
+            rule.raycastTarget = false;
+
+            built += Line(scene, footer, "Engine", "Unity  |  URP", 19, UITheme.TextMuted,
+                          new Vector2(0.203f, 0.055f), new Vector2(0.34f, 0.105f),
+                          TextAnchor.LowerLeft) ? 1 : 0;
+
+            built += Line(scene, footer, "Tagline", "Some places never let go.", 22,
+                          UITheme.TextMuted,
+                          new Vector2(0.70f, 0.048f), new Vector2(0.972f, 0.098f),
+                          TextAnchor.LowerRight) ? 1 : 0;
+
+            EditorUtility.SetDirty(footer);
+            return "Fusszeile: " + built + " von 4 Zeilen plus Trennstrich.";
+        }
+
+        /// <summary>One footer line, through the project's own text builder.</summary>
+        private static bool Line(Scene scene, GameObject parent, string name, string value,
+                                 int size, Color colour, Vector2 min, Vector2 max,
+                                 TextAnchor align)
+        {
+            GameObject go = FindInScene(scene, "Footer_" + name);
+            Component text;
+
+            if (go == null)
+            {
+                text = RuntimeUIFactory.CreateText(parent.transform, "Footer_" + name, value, size,
+                                                   align, false, UITheme.FontRole.Body);
+                if (text == null)
+                    return false;
+
+                Undo.RegisterCreatedObjectUndo(text.gameObject, "Bake menu");
+                go = text.gameObject;
+            }
+            else
+            {
+                text = FindTextComponent(go);
+                if (text == null)
+                    return false;
+            }
+
+            go.transform.SetParent(parent.transform, false);
+            UITheme.SetText(text, value);
+            UITheme.SetTextColor(text, colour);
+            SetRect(go, min, max);
+            EditorUtility.SetDirty(go);
+            return true;
+        }
+
+        /// <summary>
+        /// The text component on an object, whatever type the factory built it as.
+        ///
+        /// <para>
+        /// By Graphic-minus-Image rather than by type: this file cannot see TMPro at all, because
+        /// the project guards it behind TMP_PRESENT, so there is no type here to ask for.
+        /// </para>
+        /// </summary>
+        private static Component FindTextComponent(GameObject go)
+        {
+            var parts = go.GetComponents<Component>();
+            for (int i = 0; i < parts.Length; i++)
+            {
+                if (parts[i] is Graphic && !(parts[i] is Image))
+                    return parts[i];
+            }
+            return null;
         }
 
         /// <summary>
@@ -534,16 +656,13 @@ namespace CatchIfYouCan.EditorTools
             if (rect == null)
                 rect = go.AddComponent<RectTransform>();
 
-            const float RowHeight = 84f;
-            const float RowStep = 100f;
-
             rect.anchorMin = new Vector2(0f, 1f);
             rect.anchorMax = new Vector2(1f, 1f);
             rect.pivot = new Vector2(0.5f, 1f);
             rect.offsetMin = new Vector2(0f, 0f);
             rect.offsetMax = new Vector2(0f, 0f);
-            rect.sizeDelta = new Vector2(0f, RowHeight);
-            rect.anchoredPosition = new Vector2(0f, -index * RowStep);
+            rect.sizeDelta = new Vector2(0f, RowHeightPx);
+            rect.anchoredPosition = new Vector2(0f, -index * RowStepPx);
             rect.localScale = Vector3.one;
             rect.localRotation = Quaternion.identity;
             return rect;

@@ -3524,7 +3524,6 @@ fi
 MENUBAKER="$ROOT/Assets/CatchIfYouCan/Editor/MainMenuLogoBaker.cs"
 MENUNAV="$ROOT/Assets/CatchIfYouCan/Scripts/UI/MainMenuNavigation.cs"
 BRUSHPNG="$ROOT/Assets/CatchIfYouCan/Resources/UI/Menu/T_MenuBrushStroke.png"
-GRUNGEPNG="$ROOT/Assets/CatchIfYouCan/Resources/UI/Menu/T_MenuGrungePanel.png"
 
 if [ -f "$MENUBAKER" ] && code "$MENUBAKER" | grep -E >/dev/null 'AddComponent<GraphicRaycaster>'; then
   ok "die Menue-Canvas bekommt einen GraphicRaycaster"
@@ -3590,50 +3589,82 @@ else
   bad "die Beschriftungen gehen ueber UITheme statt ueber eine zweite TMP-Verzweigung"
 fi
 
-# Und die Grunge-Maske hat WIRKLICH keinen Rand. Das ist die eine Eigenschaft, die man einem
-# Sprite ansehen muss statt sie zu behaupten: ein einziges undurchsichtiges Pixel in der
-# aeussersten Reihe ist beim Strecken genau die harte Kante, gegen die diese Textur existiert.
-if [ -f "$GRUNGEPNG" ] && [ -f "$BRUSHPNG" ] && command -v python3 >/dev/null 2>&1; then
-  verdict=$(python3 - "$GRUNGEPNG" <<'PYEOF'
-import sys
-try:
-    from PIL import Image
-except Exception:
-    print("SKIP kein PIL"); raise SystemExit
-im = Image.open(sys.argv[1]).convert("RGBA"); w, h = im.size
-a = im.getchannel("A")
-border = ([a.getpixel((x, 0)) for x in range(w)] + [a.getpixel((x, h - 1)) for x in range(w)] +
-          [a.getpixel((0, y)) for y in range(h)] + [a.getpixel((w - 1, y)) for y in range(h)])
-try:
-    px = list(a.get_flattened_data())
-except Exception:
-    px = list(a.getdata())
-solid = sum(1 for v in px if v > 247) / len(px)
-print("OK" if max(border) == 0 and 0.05 < solid < 0.85
-      else "BAD Rand=%d solide=%.1f%%" % (max(border), solid * 100))
-PYEOF
-)
-  case "$verdict" in
-    OK*)   ok "die Grunge-Maske laeuft an jedem Rand auf null aus" ;;
-    SKIP*) ok "die Grunge-Maske laeuft an jedem Rand auf null aus (uebersprungen: kein PIL)" ;;
-    *)     bad "die Grunge-Maske laeuft an jedem Rand auf null aus" "$verdict" ;;
-  esac
+# KEIN dunkles Panel hinter dem Menue. Der erste Anlauf hatte eines; die Referenz hat keines, und
+# die linke Seite der Szene ist von sich aus schwarz - das Panel deckte ein Problem zu, das es
+# nicht gibt, mit einer rechteckigen Antwort. Der Baker darf keines bauen UND muss ein
+# uebriggebliebenes entfernen: ein abgeschaltetes Objekt in der Hierarchie liest sich fuer den
+# Naechsten wie etwas, das jemand behalten wollte (Fehler 14).
+if [ -f "$MENUBAKER" ]; then
+  if ! code "$MENUBAKER" | grep -E >/dev/null 'GrungePath|MenuGrungeBackdrop"[^)]*out bool' &&
+     code "$MENUBAKER" | grep -E >/dev/null 'Undo\.DestroyObjectImmediate\(stale\)'; then
+    ok "kein Grunge-Panel mehr, und ein uebriggebliebenes wird entfernt"
+  else
+    bad "kein Grunge-Panel mehr, und ein uebriggebliebenes wird entfernt"
+  fi
 else
-  bad "die Grunge-Maske laeuft an jedem Rand auf null aus" "die Sprites fehlen"
+  bad "kein Grunge-Panel mehr, und ein uebriggebliebenes wird entfernt" "der Baker fehlt"
 fi
 
-# Beide Sprites muessen als Sprite importieren und ihre Transparenz behalten. Als Textur
-# importiert liefert LoadAssetAtPath<Sprite> null, und der Baker steht dann mit leeren Haenden da.
-metaok=1
-for m in "$BRUSHPNG.meta" "$GRUNGEPNG.meta"; do
-  [ -f "$m" ] || { metaok=0; continue; }
-  grep -E >/dev/null 'textureType: 8' "$m" || metaok=0
-  grep -E >/dev/null 'alphaIsTransparency: 1' "$m" || metaok=0
-done
-if [ "$metaok" -eq 1 ]; then
-  ok "beide Menue-Sprites importieren als Sprite mit erhaltener Transparenz"
+# Die vier Zeilen, in der Reihenfolge der Referenz. Die Reihenfolge ist nicht Kosmetik: der
+# Navigator schaltet nach INDEX, also waere eine vertauschte Liste ein PLAY, das die Credits
+# oeffnet.
+if [ -f "$MENUBAKER" ] &&
+   code "$MENUBAKER" | grep -E >/dev/null 'RowLabels = \{ "PLAY", "SETTINGS", "CREDITS", "QUIT" \}'; then
+  ok "die vier Zeilen stehen in der Reihenfolge der Referenz"
 else
-  bad "beide Menue-Sprites importieren als Sprite mit erhaltener Transparenz"
+  bad "die vier Zeilen stehen in der Reihenfolge der Referenz" \
+      "der Navigator schaltet nach Index - vertauscht oeffnet PLAY die Credits"
+fi
+
+# Der Texteinzug wird aus den GEMESSENEN Kanten gerechnet, nicht als runde Zahl hingeschrieben.
+# Genau daran ist der erste Anlauf gescheitert: 34 px sahen plausibel aus, die Referenz sagt 92.
+if [ -f "$MENUBAKER" ] &&
+   code "$MENUBAKER" | grep -E >/dev/null '\(TextLeft - BrushLeft\) \* 1920f'; then
+  ok "der Texteinzug kommt aus den gemessenen Kanten statt aus einer runden Zahl"
+else
+  bad "der Texteinzug kommt aus den gemessenen Kanten statt aus einer runden Zahl"
+fi
+
+# Die Fusszeile: Version, Rechte, Engine, Claim. Am unteren linken Rand verankert - proportional
+# wandert sie auf einem Ultrawide zur Mitte und landet unter dem Geist.
+if [ -f "$MENUBAKER" ]; then
+  foot=$(code "$MENUBAKER" | sed -n '/private static string BuildFooter/,/^        }$/p')
+  missing=""
+  for part in '"Version"' '"Rights"' '"Engine"' '"Tagline"' 'FooterDivider'; do
+    printf '%s' "$foot" | grep -E >/dev/null "$part" || missing="$missing $part"
+  done
+  if [ -z "$missing" ]; then
+    ok "die Fusszeile traegt Version, Rechte, Engine, Claim und den Trennstrich"
+  else
+    bad "die Fusszeile traegt Version, Rechte, Engine, Claim und den Trennstrich" \
+        "fehlt:$missing"
+  fi
+else
+  bad "die Fusszeile traegt Version, Rechte, Engine, Claim und den Trennstrich"
+fi
+
+# QUIT tut im Editor sichtbar etwas. Application.Quit ist dort ein No-op, und ein Knopf, auf den
+# nichts passiert, ist von einem kaputten nicht zu unterscheiden.
+if [ -f "$MENUNAV" ]; then
+  quit=$(code "$MENUNAV" | sed -n '/private void QuitGame/,/^        }$/p')
+  if printf '%s' "$quit" | grep -E >/dev/null 'Application\.Quit\(\)' &&
+     printf '%s' "$quit" | grep -E >/dev/null 'UNITY_EDITOR'; then
+    ok "QUIT beendet den Build und sagt im Editor, warum es dort nichts tut"
+  else
+    bad "QUIT beendet den Build und sagt im Editor, warum es dort nichts tut"
+  fi
+else
+  bad "QUIT beendet den Build und sagt im Editor, warum es dort nichts tut"
+fi
+
+# Das eine Sprite muss als Sprite importieren und seine Transparenz behalten. Als Textur
+# importiert liefert LoadAssetAtPath<Sprite> null, und der Baker steht mit leeren Haenden da.
+if [ -f "$BRUSHPNG.meta" ] &&
+   grep -E >/dev/null 'textureType: 8' "$BRUSHPNG.meta" &&
+   grep -E >/dev/null 'alphaIsTransparency: 1' "$BRUSHPNG.meta"; then
+  ok "der Pinselstrich importiert als Sprite mit erhaltener Transparenz"
+else
+  bad "der Pinselstrich importiert als Sprite mit erhaltener Transparenz"
 fi
 
 # ------------------------------------------------------- die Startsequenz nach dem Druck auf PLAY

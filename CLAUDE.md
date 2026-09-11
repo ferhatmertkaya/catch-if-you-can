@@ -408,7 +408,23 @@ place that number lives; everything else derives it.
   cannot lead it. It draws no black sheet of its own - `TransitionFade` owns the transition overlay
   and is already opaque by the time this appears, so this is text one sorting order above it - and
   the direct route back from a finished mission gets no readout at all, because nothing is being
-  initialised there and four captions would be four invented events. 311 checks.
+  initialised there and four captions would be four invented events. And the menu is built to a
+  MEASURED reference rather than to a description of one: the text column, the brush's left edge,
+  the row step and the cap height are read off the reference image in fractions of its width and
+  height, and the label's inset is computed from those two measured edges instead of written down
+  as a round number - the first attempt guessed 34 px where the reference says 92, which reads as
+  a brush stroke that has slipped rather than as a wrong constant. The four rows are PLAY,
+  SETTINGS, CREDITS, QUIT in that order, and the order is not cosmetic: the navigator switches by
+  INDEX, so a swapped list is a PLAY that opens the credits. QUIT does something VISIBLE in the
+  editor - `Application.Quit` is a no-op there, and a button nothing happens on cannot be told
+  apart from a broken one. The footer carries the version, the rights block, the engine line, the
+  tagline and the divider, anchored to the bottom LEFT rather than proportionally, because a
+  proportional anchor walks it towards the middle on an ultrawide and parks it under the ghost.
+  And the dark panel behind the menu is GONE - texture, meta, generator function, baker use and
+  guard check together (mistake 14), because the left of the scene is already black and the panel
+  was a rectangular answer to a problem that does not exist. The baker also DESTROYS a leftover
+  one, since a switched-off object in the hierarchy reads to the next person like something
+  somebody meant to keep. 315 checks.
 
 - `Scripts/check_editor_menu.sh` — the editor menu stays legible, and the purchased architecture has ONE scale. The game scale is the measured ratio 2.95 / 3.92 in one place, with no tool carrying its own copy; the decision is made on effective world scale rather than `localScale`, because a vendor piece at localScale 1 inside a corrected wrapper IS already corrected and its own field says otherwise; an already-corrected ancestor is recognised and a second application is a named verdict rather than a silent pass; architecture is told from props by FOLDER, since a filename classifier caught 3 of 105 in a pack that numbers its prefabs and calls its glass Steklo; an undecidable piece is reported ambiguous rather than guessed, because a chair may already be at real-world size and shrinking one that was right is invisible; the portal is excluded, its opening being a gameplay dimension; the migration audits before it can apply and converts only original-size pieces; and the correction goes on a CIYC wrapper with nothing applied back to the purchased package. Also the menu itself: Fifty-one commands sit in
   seven named groups with none hiding in another root menu, every one carries a risk tag saying
