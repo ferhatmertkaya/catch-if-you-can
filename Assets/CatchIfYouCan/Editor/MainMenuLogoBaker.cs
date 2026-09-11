@@ -149,8 +149,9 @@ namespace CatchIfYouCan.EditorTools
 
             Debug.Log(
                 "[CIYC] Branding-Canvas in 01_MainMenu gebaut: Logo und TAP-Schild.\n" +
-                "Das Hauptmenue selbst schreibt '" + CatchIfYouCan.UI.MainMenuScreenCheck
-                    .AuthoringCommand + "' als echte Szenenobjekte.\n" +
+                "Das Hauptmenue baut sich beim Start selbst; " +
+                "'1. LOBBY > Hauptmenue in die Szene schreiben' macht daraus echte, " +
+                "editierbare Szenenobjekte.\n" +
                 labelReport + "\n" + wiring + "\n" +
                 "Die Szene ist GEAENDERT, aber NICHT gespeichert. Erst ansehen, dann speichern.");
         }

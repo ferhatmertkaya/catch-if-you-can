@@ -3524,7 +3524,7 @@ fi
 MENUBAKER="$ROOT/Assets/CatchIfYouCan/Editor/MainMenuLogoBaker.cs"
 MENUNAV="$ROOT/Assets/CatchIfYouCan/Scripts/UI/MainMenuNavigation.cs"
 MENUTOOL="$ROOT/Assets/CatchIfYouCan/Editor/MainMenuAuthoringTool.cs"
-MENUCHECK="$ROOT/Assets/CatchIfYouCan/Scripts/UI/MainMenuScreenCheck.cs"
+MENUBUILD="$ROOT/Assets/CatchIfYouCan/Scripts/UI/MainMenuScreenBuilder.cs"
 MENUCTRL="$ROOT/Assets/CatchIfYouCan/Scripts/UI/MainMenuModeController.cs"
 BRUSHPNG="$ROOT/Assets/CatchIfYouCan/Resources/UI/Menu/T_MenuBrushStroke.png"
 GRUNGEPNG="$ROOT/Assets/CatchIfYouCan/Resources/UI/Menu/T_MenuGrungePanel.png"
@@ -3569,17 +3569,48 @@ else
   bad "die Navigation fasst weder Layout noch Schrift an" "die Navigation fehlt"
 fi
 
-# 3. Kein Laufzeit-Code baut Menue-Objekte.
-if [ -f "$MENUNAV" ] && [ -f "$MENUCHECK" ]; then
-  if ! code "$MENUNAV" | grep -E >/dev/null 'new GameObject|AddComponent<' &&
-     ! code "$MENUCHECK" | grep -E >/dev/null 'new GameObject|AddComponent<'; then
-    ok "kein Laufzeit-Code erzeugt Menue-Objekte"
+# 3. Die NAVIGATION baut nichts. Sie entscheidet, welche Zeile gewaehlt ist - das Bauen gehoert
+#    dem einen Bauer, den Werkzeug und Laufzeit gemeinsam benutzen.
+if [ -f "$MENUNAV" ]; then
+  if ! code "$MENUNAV" | grep -E >/dev/null 'new GameObject|AddComponent<'; then
+    ok "die Navigation erzeugt keine Objekte"
   else
-    bad "kein Laufzeit-Code erzeugt Menue-Objekte" \
-        "das Menue ist gespeicherte Szene, keine Konstruktion beim Start"
+    bad "die Navigation erzeugt keine Objekte" \
+        "sie ist Verhalten; Bauen gehoert MainMenuScreenBuilder"
   fi
 else
-  bad "kein Laufzeit-Code erzeugt Menue-Objekte" "Navigation oder Pruefer fehlt"
+  bad "die Navigation erzeugt keine Objekte" "die Navigation fehlt"
+fi
+
+# 3b. EIN Bauer, ZWEI Aufrufer. Das Werkzeug schreibt die Objekte in die Szene, die Laufzeit
+#     baut sie, wenn niemand das getan hat - und beide rufen DIESELBE Methode. Zwei Bauer waeren
+#     zwei Meinungen darueber, wo PLAY sitzt, und der seltener laufende driftet ab (Fehler 1).
+if [ -f "$MENUBUILD" ] && [ -f "$MENUTOOL" ] && [ -f "$MENUCTRL" ] &&
+   code "$MENUTOOL" | grep -E >/dev/null 'MainMenuScreenBuilder\.Build\(' &&
+   code "$MENUCTRL" | grep -E >/dev/null 'MainMenuScreenBuilder\.Build\(' &&
+   ! code "$MENUTOOL" | grep -E >/dev/null 'RowLabels|NavLeft|RowStepPx|CaptionSize'; then
+  ok "ein Bauer, von Werkzeug UND Laufzeit gerufen"
+else
+  bad "ein Bauer, von Werkzeug UND Laufzeit gerufen" \
+      "eine zweite Kopie der Konstruktion im Editor-Werkzeug driftet ab"
+fi
+
+# 3c. Und die Laufzeit UEBERSCHREIBT nichts Authoriertes: was schon in der Szene steht, behaelt
+#     sein RectTransform, seinen Text und seine Schrift. Genau das macht beide Aufrufer
+#     vertraeglich - sonst nimmt der Spielstart jedem Handgriff im Inspector die Wirkung.
+if [ -f "$MENUBUILD" ]; then
+  chi=$(code "$MENUBUILD" | sed -n '/private static GameObject EnsureChild/,/^        }$/p')
+  lbl=$(code "$MENUBUILD" | sed -n '/private static Component EnsureLabel/,/^        }$/p')
+  if printf '%s' "$chi" | grep -E >/dev/null 'FindUnder\(parent\.transform, name\)' &&
+     printf '%s' "$lbl" | grep -E >/dev/null 'created = false;' &&
+     printf '%s' "$lbl" | grep -E >/dev/null 'return FindTextComponent\(existing\)'; then
+    ok "der Bauer uebernimmt, was schon da ist, statt es zu ueberschreiben"
+  else
+    bad "der Bauer uebernimmt, was schon da ist, statt es zu ueberschreiben" \
+        "sonst nimmt jeder Spielstart zurueck, was im Inspector eingestellt wurde"
+  fi
+else
+  bad "der Bauer uebernimmt, was schon da ist, statt es zu ueberschreiben" "der Bauer fehlt"
 fi
 
 # 4. Der Pinselstrich wird GESCHALTET, nicht erzeugt.
@@ -3590,26 +3621,28 @@ else
       "er ist ein gespeichertes Objekt je Zeile - Position und Groesse gehoeren dem Inspector"
 fi
 
-# 5. Ein fehlendes Menue ist NIE still (Fehler 47 woertlich).
-if [ -f "$MENUCHECK" ] && [ -f "$MENUCTRL" ]; then
-  if code "$MENUCHECK" | grep -E >/dev/null 'const string AuthoringCommand[[:space:]]*=' &&
-     code "$MENUCHECK" | grep -E >/dev/null 'Hauptmenue in die Szene schreiben' &&
-     code "$MENUCTRL" | grep -E >/dev/null 'Debug\.LogError'; then
-    ok "ein fehlendes Menue nennt den Befehl, der es schreibt"
+# 5. Ein fehlendes Menue wird GEBAUT, nicht nur gemeldet. Das ist Fehler 47, zweimal bezahlt:
+#    ein Bildschirm, den nur ein Klick in Unity erzeugt, ist auf jeder Maschine, wo niemand
+#    geklickt hat, stillschweigend der alte. Eine Konsolenzeile ist kein Menue.
+if [ -f "$MENUCTRL" ]; then
+  vm=$(code "$MENUCTRL" | sed -n '/private void VerifyMenuScreen/,/^        }$/p')
+  if printf '%s' "$vm" | grep -E >/dev/null 'MainMenuScreenBuilder\.Build\(this, out string report\)' &&
+     printf '%s' "$vm" | grep -E >/dev/null 'Debug\.LogError'; then
+    ok "ein fehlendes Menue wird gebaut, und ein Scheitern wird laut gemeldet"
   else
-    bad "ein fehlendes Menue nennt den Befehl, der es schreibt" \
-        "sonst sieht ein nie geschriebenes Menue aus wie ein geloeschtes - Fehler 47"
+    bad "ein fehlendes Menue wird gebaut, und ein Scheitern wird laut gemeldet" \
+        "Fehler 47: ohne Bauen bleibt der Bildschirm der alte, ohne dass irgendwo steht warum"
   fi
 else
-  bad "ein fehlendes Menue nennt den Befehl, der es schreibt" "Pruefer oder Controller fehlt"
+  bad "ein fehlendes Menue wird gebaut, und ein Scheitern wird laut gemeldet" "der Controller fehlt"
 fi
 
 # 6. Drei Zeilen, in dieser Reihenfolge, ohne QUIT.
 if [ -f "$MENUTOOL" ] &&
-   code "$MENUTOOL" | grep -E >/dev/null '\("Play", "PLAY"\)' &&
-   code "$MENUTOOL" | grep -E >/dev/null '\("Settings", "SETTINGS"\)' &&
-   code "$MENUTOOL" | grep -E >/dev/null '\("Credits", "CREDITS"\)' &&
-   ! code "$MENUTOOL" | grep -E >/dev/null '"QUIT"'; then
+   code "$MENUBUILD" | grep -E >/dev/null '\("Play", "PLAY"\)' &&
+   code "$MENUBUILD" | grep -E >/dev/null '\("Settings", "SETTINGS"\)' &&
+   code "$MENUBUILD" | grep -E >/dev/null '\("Credits", "CREDITS"\)' &&
+   ! code "$MENUBUILD" | grep -E >/dev/null '"QUIT"'; then
   ok "drei Zeilen - PLAY, SETTINGS, CREDITS - und kein QUIT"
 else
   bad "drei Zeilen - PLAY, SETTINGS, CREDITS - und kein QUIT" \
@@ -3623,9 +3656,9 @@ else
 fi
 
 # 7. Das Werkzeug schreibt den Text NUR beim Anlegen.
-if [ -f "$MENUTOOL" ]; then
-  loop=$(code "$MENUTOOL" | sed -n '/Component label = EnsureLabel/,/^            }$/p')
-  ensure=$(code "$MENUTOOL" | sed -n '/private static Component EnsureLabel/,/^        }$/p')
+if [ -f "$MENUBUILD" ]; then
+  loop=$(code "$MENUBUILD" | sed -n '/Component label = EnsureLabel/,/^            }$/p')
+  ensure=$(code "$MENUBUILD" | sed -n '/private static Component EnsureLabel/,/^        }$/p')
   if printf '%s' "$loop" | grep -E >/dev/null 'if \(lblNew\)' &&
      printf '%s' "$loop" | grep -E >/dev/null 'UITheme\.SetText\(label, Rows\[i\]\.Caption\)' &&
      printf '%s' "$ensure" | grep -E >/dev/null 'created = false;' &&
@@ -3640,10 +3673,10 @@ else
 fi
 
 # 8. Vorhandene Objekte werden GEFUNDEN statt neu gebaut - auch ausgeschaltete.
-if [ -f "$MENUTOOL" ]; then
-  fu=$(code "$MENUTOOL" | sed -n '/private static GameObject FindUnder/,/^        }$/p')
+if [ -f "$MENUBUILD" ]; then
+  fu=$(code "$MENUBUILD" | sed -n '/private static GameObject FindUnder/,/^        }$/p')
   if printf '%s' "$fu" | grep -E >/dev/null 'GetComponentsInChildren<Transform>\(true\)' &&
-     ! code "$MENUTOOL" | grep -E >/dev/null 'GameObject\.Find\('; then
+     ! code "$MENUBUILD" | grep -E >/dev/null 'GameObject\.Find\('; then
     ok "das Werkzeug findet auch ausgeschaltete Objekte"
   else
     bad "das Werkzeug findet auch ausgeschaltete Objekte" \
@@ -3655,9 +3688,9 @@ fi
 
 # 9. Keine zweite Canvas, kein zweites EventSystem.
 if [ -f "$MENUTOOL" ] &&
-   code "$MENUTOOL" | grep -E >/dev/null 'FindInScene\(scene, CanvasName\)' &&
-   ! code "$MENUTOOL" | grep -E >/dev/null 'AddComponent<Canvas>|new GameObject\(CanvasName' &&
-   code "$MENUTOOL" | grep -E >/dev/null 'EventSystemUtil\.EnsureEventSystem'; then
+   code "$MENUBUILD" | grep -E >/dev/null 'FindInScene\(scene, CanvasName\)' &&
+   ! code "$MENUBUILD" | grep -E >/dev/null 'AddComponent<Canvas>|new GameObject\(CanvasName' &&
+   code "$MENUBUILD" | grep -E >/dev/null 'EventSystemUtil\.EnsureEventSystem'; then
   ok "das Werkzeug benutzt die vorhandene Canvas und das vorhandene EventSystem"
 else
   bad "das Werkzeug benutzt die vorhandene Canvas und das vorhandene EventSystem" \
@@ -3665,15 +3698,15 @@ else
 fi
 
 # 10. Ein neu gebautes EventSystem landet in DIESER Szene (Fehler 17).
-if [ -f "$MENUTOOL" ] && code "$MENUTOOL" | grep -E >/dev/null 'MoveGameObjectToScene'; then
+if [ -f "$MENUBUILD" ] && code "$MENUBUILD" | grep -E >/dev/null 'MoveGameObjectToScene'; then
   ok "ein neues EventSystem wird in diese Szene verschoben"
 else
   bad "ein neues EventSystem wird in diese Szene verschoben" "Fehler 17"
 fi
 
 # 11. GetComponent vor AddComponent, auch im Werkzeug (Fehler 27).
-if [ -f "$MENUTOOL" ]; then
-  ens=$(code "$MENUTOOL" | sed -n '/private static T Ensure<T>/,/^        }$/p')
+if [ -f "$MENUBUILD" ]; then
+  ens=$(code "$MENUBUILD" | sed -n '/private static T Ensure<T>/,/^        }$/p')
   if printf '%s' "$ens" | grep -E >/dev/null 'GetComponent<T>\(\)'; then
     ok "das Werkzeug fragt nach einer Komponente, bevor es eine anhaengt"
   else
@@ -3684,8 +3717,8 @@ else
 fi
 
 # 12. TAP ANYWHERE TO START verschwindet MIT seinem Eingabepfad (Fehler 32).
-if [ -f "$MENUTOOL" ]; then
-  retire=$(code "$MENUTOOL" | sed -n '/private static string RetireTapToStart/,/^        }$/p')
+if [ -f "$MENUBUILD" ]; then
+  retire=$(code "$MENUBUILD" | sed -n '/private static string RetireTapToStart/,/^        }$/p')
   if printf '%s' "$retire" | grep -E >/dev/null 'labelGo\.SetActive\(false\)' &&
      printf '%s' "$retire" | grep -E >/dev/null 'tap\.enabled = false'; then
     ok "TAP ANYWHERE TO START verschwindet MIT seinem Eingabepfad"
@@ -3707,7 +3740,7 @@ else
 fi
 
 # 14. Die Canvas kann ueberhaupt einen Klick annehmen.
-if [ -f "$MENUTOOL" ] && code "$MENUTOOL" | grep -E >/dev/null 'AddComponent<GraphicRaycaster>'; then
+if [ -f "$MENUBUILD" ] && code "$MENUBUILD" | grep -E >/dev/null 'AddComponent<GraphicRaycaster>'; then
   ok "die Menue-Canvas bekommt einen GraphicRaycaster"
 else
   bad "die Menue-Canvas bekommt einen GraphicRaycaster" \

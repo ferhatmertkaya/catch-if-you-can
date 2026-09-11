@@ -211,30 +211,40 @@ namespace CatchIfYouCan.UI
         }
 
         /// <summary>
-        /// Checks the authored menu is present, and says exactly what to run if it is not.
+        /// Puts the menu on screen: PLAY, SETTINGS, CREDITS.
         ///
         /// <para>
-        /// It does not BUILD the menu. The rows, labels, brush strokes and background are real
-        /// objects saved in this scene so they can be edited in the Inspector, and code that
-        /// recreated them on load would overwrite the editing they exist for. What code still
-        /// owes the reader is a reason when they are missing: a screen that silently stays the
-        /// way it was is mistake 47, and it cost two rounds of "why did you delete the menu".
+        /// <b>Authored objects win.</b> When `01_MainMenu.unity` already carries the menu -
+        /// because somebody ran "Hauptmenue in die Szene schreiben" and saved - this adopts it
+        /// and changes nothing: the text, the font, the size and every RectTransform stay
+        /// exactly as they were set in the Inspector.
+        /// </para>
+        /// <para>
+        /// <b>And when it does not, it is BUILT rather than merely reported.</b> That is the
+        /// whole of mistake 47, which this project has now paid for twice: a screen that exists
+        /// only after somebody clicks a menu item in Unity is a screen that, on every machine
+        /// where nobody clicked, is silently the old one. A complaint in the console is not a
+        /// menu. The same builder runs either way, so the built menu and the authored one are
+        /// the same menu.
         /// </para>
         /// <para>
         /// <b>Not on the direct route.</b> A player returning from a finished mission is handed
-        /// straight to the lobby, so there is no title screen to check for.
+        /// straight to the lobby; there is no title screen to put up.
         /// </para>
         /// </summary>
         private void VerifyMenuScreen()
         {
-            if (MainMenuScreenCheck.Verify(this, out string report))
+            bool authored = MainMenuScreenBuilder.AlreadyAuthored(this);
+
+            if (!MainMenuScreenBuilder.Build(this, out string report))
             {
-                if (logTransition)
-                    Debug.Log("[CIYC] Menu: " + report, this);
+                Debug.LogError("[CIYC] Menu: " + report, this);
                 return;
             }
 
-            Debug.LogError("[CIYC] Menu: " + report, this);
+            if (logTransition)
+                Debug.Log("[CIYC] Menu: " + (authored ? "authored menu adopted - " : "built - ")
+                          + report, this);
         }
 
         /// <summary>
